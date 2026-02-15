@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Flashy Games - Arcade Collection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1e1e2e 0%, #2d1b4e 100%);
+            color: #fff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 60px 20px 40px;
+            background: linear-gradient(180deg, rgba(138, 43, 226, 0.1) 0%, transparent 100%);
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 8vw, 5rem);
+            font-weight: 900;
+            background: linear-gradient(135deg, #FF006E, #8338EC, #3A86FF, #FFBE0B);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 3s ease infinite;
+            margin-bottom: 10px;
+        }
+
+        .hero .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.7;
+            margin-bottom: 30px;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .featured {
+            max-width: 900px;
+            margin: 0 auto 60px;
+            padding: 0 20px;
+        }
+
+        .featured-card {
+            background: linear-gradient(135deg, rgba(131, 56, 236, 0.15), rgba(58, 134, 255, 0.15));
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .featured-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 60px rgba(131, 56, 236, 0.4);
+            border-color: rgba(131, 56, 236, 0.5);
+        }
+
+        .featured-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 30px;
+            align-items: center;
+        }
+
+        @media (max-width: 768px) {
+            .featured-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .featured-preview {
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .featured-preview img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .featured-info h2 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .featured-tagline {
+            font-size: 1.1rem;
+            opacity: 0.8;
+            margin-bottom: 15px;
+        }
+
+        .play-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #FF006E, #8338EC);
+            color: white;
+            padding: 15px 40px;
+            border-radius: 50px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.9rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 20px rgba(255, 0, 110, 0.3);
+        }
+
+        .play-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 8px 30px rgba(255, 0, 110, 0.5);
+        }
+
+        .controls {
+            max-width: 1400px;
+            margin: 0 auto 40px;
+            padding: 0 20px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 15px 20px;
+            border-radius: 50px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #8338EC;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 10px 20px;
+            border-radius: 25px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: transparent;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .filter-btn.active {
+            background: linear-gradient(135deg, #8338EC, #3A86FF);
+            border-color: transparent;
+        }
+
+        .filter-btn:hover {
+            border-color: #8338EC;
+        }
+
+        .games-grid {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px 80px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 30px;
+        }
+
+        .game-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .game-card:hover {
+            transform: translateY(-10px);
+            border-color: rgba(131, 56, 236, 0.5);
+            box-shadow: 0 20px 50px rgba(131, 56, 236, 0.3);
+        }
+
+        .game-preview {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+
+        .game-info {
+            padding: 20px;
+        }
+
+        .game-info h3 {
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+        }
+
+        .game-description {
+            font-size: 0.9rem;
+            opacity: 0.7;
+            margin-bottom: 15px;
+            line-height: 1.4;
+        }
+
+        .game-meta {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .tag {
+            padding: 4px 12px;
+            border-radius: 12px;
+            background: rgba(131, 56, 236, 0.2);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .difficulty {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .difficulty.easy { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+        .difficulty.medium { background: rgba(255, 190, 11, 0.2); color: #FFBE0B; }
+        .difficulty.hard { background: rgba(255, 0, 110, 0.2); color: #FF006E; }
+
+        .game-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            opacity: 0.6;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid white;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 700;
+            z-index: 1001;
+            transition: all 0.3s ease;
+        }
+
+        .close-modal:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .game-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            opacity: 0.5;
+        }
+
+        .no-results h3 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>Daily Flashy Games</h1>
+        <p class="subtitle">A new addictive game every day 🎮✨</p>
+    </div>
+
+    <div id="featured" class="featured"></div>
+
+    <div class="controls">
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="🔍 Search games...">
+        </div>
+        <div class="filter-group">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="action">Action</button>
+            <button class="filter-btn" data-filter="puzzle">Puzzle</button>
+            <button class="filter-btn" data-filter="reflex">Reflex</button>
+            <button class="filter-btn" data-filter="casual">Casual</button>
+        </div>
+        <div class="filter-group">
+            <button class="filter-btn" data-difficulty="easy">Easy</button>
+            <button class="filter-btn" data-difficulty="medium">Medium</button>
+            <button class="filter-btn" data-difficulty="hard">Hard</button>
+        </div>
+    </div>
+
+    <div id="gamesGrid" class="games-grid"></div>
+
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeGame()">✕ Close</button>
+            <iframe id="gameFrame" class="game-frame"></iframe>
+        </div>
+    </div>
+
+    <script type="module">
+        let allGames = [];
+        let currentFilter = 'all';
+        let currentDifficulty = null;
+        let searchQuery = '';
+
+        async function loadGames() {
+            const response = await fetch('games-registry.json');
+            allGames = await response.json();
+            allGames.sort((a, b) => new Date(b.date) - new Date(a.date));
+            renderFeatured();
+            renderGames();
+        }
+
+        function renderFeatured() {
+            if (allGames.length === 0) return;
+            const featured = allGames[0];
+            const featuredEl = document.getElementById('featured');
+            featuredEl.innerHTML = `
+                <div class="featured-card" onclick="playGame('${featured.file}')">
+                    <div class="featured-content">
+                        <div class="featured-preview">
+                            <img src="${featured.preview}" alt="${featured.name}">
+                        </div>
+                        <div class="featured-info">
+                            <div style="opacity: 0.6; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 2px; margin-bottom: 10px;">🆕 Featured Today</div>
+                            <h2>${featured.name}</h2>
+                            <p class="featured-tagline">${featured.tagline}</p>
+                            <p class="game-description">${featured.description}</p>
+                            <button class="play-button">Play Now →</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderGames() {
+            const filtered = allGames.filter(game => {
+                const matchesSearch = !searchQuery || 
+                    game.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    game.description.toLowerCase().includes(searchQuery.toLowerCase());
+                
+                const matchesFilter = currentFilter === 'all' || 
+                    game.tags.includes(currentFilter);
+                
+                const matchesDifficulty = !currentDifficulty || 
+                    game.difficulty === currentDifficulty;
+                
+                return matchesSearch && matchesFilter && matchesDifficulty;
+            });
+
+            const grid = document.getElementById('gamesGrid');
+            
+            if (filtered.length === 0) {
+                grid.innerHTML = `
+                    <div class="no-results">
+                        <h3>No games found</h3>
+                        <p>Try adjusting your filters or search query</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = filtered.map(game => `
+                <div class="game-card" onclick="playGame('${game.file}')">
+                    <img src="${game.preview}" alt="${game.name}" class="game-preview">
+                    <div class="game-info">
+                        <h3>${game.name}</h3>
+                        <p class="game-description">${game.description}</p>
+                        <div class="game-meta">
+                            ${game.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}
+                            <span class="difficulty ${game.difficulty}">${game.difficulty}</span>
+                        </div>
+                        <div class="game-stats">
+                            <span>📅 ${new Date(game.date).toLocaleDateString()}</span>
+                            <span>⏱️ ${game.avgPlayTime}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.playGame = function(file) {
+            const modal = document.getElementById('modal');
+            const frame = document.getElementById('gameFrame');
+            frame.src = file;
+            modal.classList.add('active');
+        };
+
+        window.closeGame = function() {
+            const modal = document.getElementById('modal');
+            const frame = document.getElementById('gameFrame');
+            modal.classList.remove('active');
+            frame.src = '';
+        };
+
+        // Search
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            renderGames();
+        });
+
+        // Filter buttons
+        document.querySelectorAll('[data-filter]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                currentFilter = e.target.dataset.filter;
+                renderGames();
+            });
+        });
+
+        // Difficulty buttons
+        document.querySelectorAll('[data-difficulty]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (e.target.classList.contains('active')) {
+                    e.target.classList.remove('active');
+                    currentDifficulty = null;
+                } else {
+                    document.querySelectorAll('[data-difficulty]').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    currentDifficulty = e.target.dataset.difficulty;
+                }
+                renderGames();
+            });
+        });
+
+        // ESC to close modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeGame();
+        });
+
+        // Initialize
+        loadGames();
+    </script>
+</body>
+</html>
