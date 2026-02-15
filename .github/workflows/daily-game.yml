@@ -28,13 +28,14 @@ jobs:
           fetch-depth: 0
           
       - name: Generate Daily Game with Claude Code
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@01e756b34ef7a1447e9508f674143b07d20c2631  # Pinned to working SHA before SDK 0.2.27 bug
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          show_full_output: true  # Enable debug output
           prompt: |
             Generate today's daily game following all instructions in Claude.md.
-            
+
             CRITICAL REQUIREMENTS:
             1. First, read and analyze games-registry.json to see all existing games
             2. Ensure the new game is mechanically unique and different from the last 7 games
@@ -44,7 +45,7 @@ jobs:
             6. Generate the preview image: games/YYYY-MM-DD/preview.png
             7. Update games-registry.json with the new entry
             8. Commit everything with a descriptive message
-            
+
             Complete the full workflow in one shot. Follow the quality checklist in Claude.md.
           
       - name: Check for changes
