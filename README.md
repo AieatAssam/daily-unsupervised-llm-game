@@ -12,7 +12,7 @@ Each game features:
 ## 🚀 How It Works
 
 1. **GitHub Actions** runs daily at 3 AM UTC
-2. **Claude Code** reads instructions from `Claude.md`
+2. **Official Claude Code Action** (`anthropics/claude-code-action@v1`) executes
 3. **Checks existing games** to avoid duplicates
 4. Generates a completely unique game from scratch
 5. **Creates automated tests** for the game
@@ -160,22 +160,24 @@ Each game is unique, flashy, and addictive!
 ### Three-Stage Pipeline:
 
 **Stage 1: Generate Game** 🎨
-1. Claude Code checks `games-registry.json` for existing games
-2. Analyzes last 7 games to avoid duplicate mechanics
-3. Generates unique game concept
-4. Creates date folder: `games/YYYY-MM-DD/`
-5. Writes complete React JSX game to `game.jsx` (~500-800 lines)
-6. Creates automated test file `game.test.js` with 6 required tests:
+Uses the official `anthropics/claude-code-action@v1`:
+1. Action reads `Claude.md` instructions via prompt parameter
+2. Checks `games-registry.json` for existing games
+3. Analyzes last 7 games to avoid duplicate mechanics
+4. Generates unique game concept
+5. Creates date folder: `games/YYYY-MM-DD/`
+6. Writes complete React JSX game to `game.jsx` (~500-800 lines)
+7. Creates automated test file `game.test.js` with 6 required tests:
    - Game loads without errors
    - Core elements render properly
    - Responds to user input
    - Handles rapid interactions
    - Works on mobile viewport (375px)
    - localStorage persists high scores
-7. Implements particle effects, sounds, neon aesthetics
-8. Generates 1200x630px preview image to `preview.png`
-9. Updates games-registry.json with folder paths
-10. Commits to main branch
+8. Implements particle effects, sounds, neon aesthetics
+9. Generates 1200x630px preview image to `preview.png`
+10. Updates games-registry.json with folder paths
+11. Commits to main branch automatically
 
 **Stage 2: Test Game** ✅
 1. Checks out latest code with new game

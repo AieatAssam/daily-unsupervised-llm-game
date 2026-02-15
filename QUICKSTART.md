@@ -197,19 +197,20 @@ npm run test:ui
 
 Each day at 3 AM UTC:
 
-1. Claude Code wakes up
-2. Reads `Claude.md` instructions
-3. Checks existing games to avoid duplicates
-4. Invents a completely unique game concept
-5. Creates folder `games/YYYY-MM-DD/`
-6. Writes 500-800 lines of polished React code to `game.jsx`
-7. Creates 6 automated tests in `game.test.js`
-8. Generates a beautiful preview image as `preview.png`
-9. Updates the registry with folder paths
-10. Commits everything
-11. Tests run automatically
-12. If tests pass → Deploys to GitHub Pages
-13. Your collection grows! 🎮
+1. GitHub Actions triggers the workflow
+2. Official Claude Code Action (`anthropics/claude-code-action@v1`) starts
+3. Reads `Claude.md` instructions via the prompt parameter
+4. Checks existing games to avoid duplicates
+5. Invents a completely unique game concept
+6. Creates folder `games/YYYY-MM-DD/`
+7. Writes 500-800 lines of polished React code to `game.jsx`
+8. Creates 6 automated tests in `game.test.js`
+9. Generates a beautiful preview image as `preview.png`
+10. Updates the registry with folder paths
+11. Commits everything automatically
+12. Tests run automatically
+13. If tests pass → Deploys to GitHub Pages
+14. Your collection grows! 🎮
 
 ## Support
 
