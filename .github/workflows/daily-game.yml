@@ -10,6 +10,7 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  pull-requests: write
 
 concurrency:
   group: "pages"
@@ -20,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       game-generated: ${{ steps.check-changes.outputs.game-generated }}
+      branch-name: ${{ steps.create-branch.outputs.branch-name }}
     
     steps:
       - name: Checkout repository
@@ -27,20 +29,27 @@ jobs:
         with:
           fetch-depth: 0
           
+      - name: Create branch for new game
+        id: create-branch
+        run: |
+          TODAY=$(date +'%Y-%m-%d')
+          BRANCH_NAME="game/$TODAY"
+          echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          git checkout -b "$BRANCH_NAME"
+          
+      - name: Configure Git
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "Daily Game Bot"
+          
       - name: Generate Daily Game with Claude Code
         uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          show_full_output: true
-          acknowledge-dangerously-skip-permissions-responsibility: "true"
-          claude_args: |
-            --model claude-sonnet-4-5-20250929
-            
-            
           prompt: |
             Generate today's daily game following all instructions in Claude.md.
-
+            
             CRITICAL REQUIREMENTS:
             1. First, read and analyze games-registry.json to see all existing games
             2. Ensure the new game is mechanically unique and different from the last 7 games
@@ -49,31 +58,49 @@ jobs:
             5. Create the corresponding test file: games/YYYY-MM-DD/game.test.js with all 6 required tests
             6. Generate the preview image: games/YYYY-MM-DD/preview.png
             7. Update games-registry.json with the new entry
-            8. Commit everything with a descriptive message
-
+            
             Complete the full workflow in one shot. Follow the quality checklist in Claude.md.
           
       - name: Check for changes
         id: check-changes
         run: |
-          if git diff --quiet && git diff --staged --quiet; then
+          git add -A
+          if git diff --staged --quiet; then
             echo "game-generated=false" >> $GITHUB_OUTPUT
-            echo "No new game generated"
+            echo "❌ No new game generated"
           else
             echo "game-generated=true" >> $GITHUB_OUTPUT
-            echo "New game generated successfully"
+            echo "✅ New game generated successfully"
+            echo "📁 Changed files:"
+            git diff --staged --stat
           fi
+          
+      - name: Commit to branch
+        if: steps.check-changes.outputs.game-generated == 'true'
+        run: |
+          TODAY=$(date +'%Y-%m-%d')
+          LATEST_GAME=$(ls -t games/*/game.jsx 2>/dev/null | head -1)
+          DATE_FOLDER=$(dirname "$LATEST_GAME")
+          
+          git commit -m "🎮 Daily Game Generated - $TODAY" -m "Generated new game in $DATE_FOLDER"
+          
+      - name: Push branch
+        if: steps.check-changes.outputs.game-generated == 'true'
+        run: |
+          git push origin "${{ steps.create-branch.outputs.branch-name }}"
 
   test-game:
     needs: generate-game
     if: needs.generate-game.outputs.game-generated == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      tests-passed: ${{ steps.run-tests.outputs.tests-passed }}
     
     steps:
-      - name: Checkout repository
+      - name: Checkout branch
         uses: actions/checkout@v4
         with:
-          ref: main  # Get the latest commit with new game
+          ref: ${{ needs.generate-game.outputs.branch-name }}
           
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -82,48 +109,30 @@ jobs:
           
       - name: Install dependencies
         run: |
-          npm init -y
-          npm install -D @playwright/test
+          npm install -D @playwright/test http-server
           npx playwright install --with-deps chromium
           
-      - name: Create Playwright config
-        run: |
-          cat > playwright.config.js << 'EOF'
-          import { defineConfig } from '@playwright/test';
-          
-          export default defineConfig({
-            testDir: './games',
-            testMatch: '**/*.test.js',
-            fullyParallel: true,
-            forbidOnly: !!process.env.CI,
-            retries: process.env.CI ? 2 : 0,
-            workers: process.env.CI ? 1 : undefined,
-            reporter: 'html',
-            use: {
-              baseURL: 'http://localhost:8080',
-              trace: 'on-first-retry',
-              screenshot: 'only-on-failure',
-            },
-            webServer: {
-              command: 'npx http-server -p 8080',
-              port: 8080,
-              reuseExistingServer: !process.env.CI,
-            },
-          });
-          EOF
-          
-      - name: Install HTTP server
-        run: npm install -D http-server
-          
       - name: Run tests
+        id: run-tests
         run: |
           # Find the most recent test file
           LATEST_TEST=$(ls -t games/*/game.test.js 2>/dev/null | head -1)
-          if [ -n "$LATEST_TEST" ]; then
-            echo "Testing: $LATEST_TEST"
-            npx playwright test "$LATEST_TEST"
+          
+          if [ -z "$LATEST_TEST" ]; then
+            echo "❌ No test file found"
+            echo "tests-passed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "🧪 Testing: $LATEST_TEST"
+          
+          if npx playwright test "$LATEST_TEST"; then
+            echo "✅ All tests passed!"
+            echo "tests-passed=true" >> $GITHUB_OUTPUT
           else
-            echo "No test file found, skipping tests"
+            echo "❌ Tests failed!"
+            echo "tests-passed=false" >> $GITHUB_OUTPUT
+            exit 1
           fi
           
       - name: Upload test results
@@ -136,8 +145,43 @@ jobs:
             test-results/
           retention-days: 7
 
+  merge-to-main:
+    needs: [generate-game, test-game]
+    if: needs.test-game.outputs.tests-passed == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Configure Git
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "Daily Game Bot"
+          
+      - name: Merge to main
+        run: |
+          git fetch origin
+          git checkout main
+          git merge --no-ff origin/${{ needs.generate-game.outputs.branch-name }} -m "Merge daily game from ${{ needs.generate-game.outputs.branch-name }}"
+          git push origin main
+          
+      - name: Delete branch
+        run: |
+          git push origin --delete ${{ needs.generate-game.outputs.branch-name }}
+          
+      - name: Create Summary
+        run: |
+          echo "## 🎮 Daily Game Merged to Main!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Merged from branch: ${{ needs.generate-game.outputs.branch-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "🚀 Ready for deployment" >> $GITHUB_STEP_SUMMARY
+
   deploy:
-    needs: test-game
+    needs: merge-to-main
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -166,7 +210,9 @@ jobs:
           echo "## 🎮 Daily Game Deployed!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Merged to main" >> $GITHUB_STEP_SUMMARY
           echo "🚀 Deployed to GitHub Pages" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Visit [the gallery](${{ steps.deployment.outputs.page_url }}) to play!" >> $GITHUB_STEP_SUMMARY
+
 
