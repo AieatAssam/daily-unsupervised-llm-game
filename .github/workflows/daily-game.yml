@@ -49,6 +49,7 @@ jobs:
           claude_args: |
             --model claude-sonnet-4-5-20250929
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: ${{ github.workspace }} 
           prompt: |
             Generate today's daily game following all instructions in Claude.md.
             
@@ -62,6 +63,14 @@ jobs:
             7. Update games-registry.json with the new entry
             
             Complete the full workflow in one shot. Follow the quality checklist in Claude.md.
+
+      - name: Debug - Check what was created
+        run: |
+          echo "📂 Working directory: $(pwd)"
+          echo "📁 Contents of games/:"
+          ls -laR games/ 2>/dev/null || echo "No games directory found"
+          echo "📄 Git status:"
+          git status
           
       - name: Check for changes
         id: check-changes
