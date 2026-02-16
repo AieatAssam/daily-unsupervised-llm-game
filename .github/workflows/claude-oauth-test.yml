@@ -1,0 +1,16 @@
+name: Claude OAuth Secret Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-claude-oauth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test Claude Code OAuth
+        uses: anthropics/claude-code-action@beta
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          direct_prompt: "Return the word OK and nothing else."
