@@ -49,7 +49,7 @@ jobs:
           claude_args: |
             --model claude-sonnet-4-5-20250929
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          working_directory: ${{ github.workspace }} 
+          mode: agent
           prompt: |
             Generate today's daily game following all instructions in Claude.md.
 
@@ -73,7 +73,10 @@ jobs:
           echo "📁 Contents of games/:"
           ls -laR games/ 2>/dev/null || echo "No games directory found"
           echo "📄 Git status:"
-          git status
+          echo "👉 git status --short"
+          git status --short
+          echo "👉 ls -la"
+          ls -la
           
       - name: Check for changes
         id: check-changes
