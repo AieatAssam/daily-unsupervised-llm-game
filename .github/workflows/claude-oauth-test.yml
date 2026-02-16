@@ -3,6 +3,10 @@ name: Claude OAuth Secret Test
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   test-claude-oauth:
     runs-on: ubuntu-latest
