@@ -48,6 +48,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
             --model claude-sonnet-4-5-20250929
+            --dangerously-skip-permissions
           github_token: ${{ secrets.GITHUB_TOKEN }}
           mode: agent
           prompt: |
