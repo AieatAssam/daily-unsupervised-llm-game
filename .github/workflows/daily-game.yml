@@ -52,6 +52,9 @@ jobs:
           working_directory: ${{ github.workspace }} 
           prompt: |
             Generate today's daily game following all instructions in Claude.md.
+
+            IMPORTANT: Work in the current directory. All file paths should be relative (e.g., games/2026-02-16/game.jsx).
+            Do NOT use /tmp or absolute paths. Use relative paths only.
             
             CRITICAL REQUIREMENTS:
             1. First, read and analyze games-registry.json to see all existing games
