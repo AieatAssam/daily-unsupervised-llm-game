@@ -69,29 +69,71 @@ After ensuring uniqueness:
 - Note how it differs from recent games
 
 ### 2. Game Development
-Create a complete React JSX file with:
-- Game state management (useState, useEffect, useRef)
-- Canvas or CSS-based rendering
-- Input handling (mouse, touch, keyboard)
-- Score tracking and display
-- High score persistence
-- Particle effects system
-- Sound effects via Web Audio API
-- Gradient animated backgrounds
-- Proper mobile responsiveness
+Create a complete **HTML file** with React and JSX support:
+
+**File format**: Single HTML file with:
+- React and ReactDOM loaded from CDN (unpkg.com)
+- Babel standalone for JSX transpilation
+- Game code in a `<script type="text/babel">` tag
+- All styles inline (CSS or styled with React inline styles)
+
+**Structure**:
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Name</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    /* ... game styles ... */
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    
+    const GameComponent = () => {
+      // Game state management
+      // Canvas or CSS-based rendering
+      // Input handling (mouse, touch, keyboard)
+      // Score tracking and display
+      // High score persistence (localStorage)
+      // Particle effects system
+      // Sound effects via Web Audio API
+      // Gradient animated backgrounds
+      // Proper mobile responsiveness
+      
+      return (
+        <div>
+          {/* Game UI */}
+        </div>
+      );
+    };
+    
+    ReactDOM.render(<GameComponent />, document.getElementById('root'));
+  </script>
+</body>
+</html>
+```
 
 **File organization**: All files for a single game go in a date-based folder:
 - Create folder: `games/YYYY-MM-DD/`
-- Game file: `games/YYYY-MM-DD/game.jsx`
+- Game file: `games/YYYY-MM-DD/index.html` (NOT .jsx!)
 - Test file: `games/YYYY-MM-DD/game.test.js`
 - Preview image: `games/YYYY-MM-DD/preview.png`
 
-Example for February 15, 2026:
+Example for February 16, 2026:
 ```
-games/2026-02-15/
-  ├── game.jsx
-  ├── game.test.js
-  └── preview.png
+games/2026-02-16/
+  ├── index.html       (complete playable game)
+  ├── game.test.js     (Playwright tests)
+  └── preview.png      (1200x630px screenshot)
 ```
 
 ### 3. Preview Image Generation
@@ -117,7 +159,7 @@ Update `games-registry.json` with new entry:
   "avgPlayTime": "30 seconds|2 minutes|5 minutes",
   "controls": "Click to jump, Arrow keys to move",
   "folder": "games/YYYY-MM-DD",
-  "file": "games/YYYY-MM-DD/game.jsx",
+  "file": "games/YYYY-MM-DD/index.html",
   "preview": "games/YYYY-MM-DD/preview.png"
 }
 ```
@@ -132,7 +174,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('YYYY-MM-DD Game Name', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/games/YYYY-MM-DD/game.jsx');
+    await page.goto('/games/YYYY-MM-DD/index.html');  // ← Load index.html, NOT .jsx
     await page.waitForLoadState('networkidle');
   });
 
@@ -210,6 +252,7 @@ test.describe('YYYY-MM-DD Game Name', () => {
 
 **Test Requirements:**
 - All 6 tests must pass
+- Tests load `/games/YYYY-MM-DD/index.html` (the HTML file, not JSX!)
 - No console errors during gameplay
 - Game must respond to both mouse and touch input
 - localStorage must work for high scores
@@ -233,16 +276,22 @@ The `index.html` serves as the main entry page. Ensure it:
 ├── games-registry.json          # Metadata for all games
 ├── games/
 │   ├── 2026-02-15/
-│   │   ├── game.jsx
+│   │   ├── index.html          # Complete game as HTML (React via CDN + JSX transpiled inline)
 │   │   ├── game.test.js
 │   │   └── preview.png
 │   ├── 2026-02-16/
-│   │   ├── game.jsx
+│   │   ├── index.html
 │   │   ├── game.test.js
 │   │   └── preview.png
 │   └── ...
 └── playwright.config.js         # Test configuration
 ```
+
+**CRITICAL: Use RELATIVE paths only!**
+- ✅ CORRECT: `games/2026-02-16/index.html`
+- ❌ WRONG: `/tmp/game.jsx` or `/home/runner/work/...`
+- All file operations must be relative to the current working directory
+- Do NOT use temporary directories - create files directly in the games/ folder
 
 ## One-Shot Execution Rules
 
@@ -250,8 +299,8 @@ The `index.html` serves as the main entry page. Ensure it:
 1. ✅ Read games-registry.json to check for duplicates
 2. ✅ Brainstorm and select a unique game concept (verify uniqueness)
 3. ✅ Create date folder: `games/YYYY-MM-DD/`
-4. ✅ Write the complete game code to `games/YYYY-MM-DD/game.jsx` (500-800 lines typical)
-5. ✅ Write automated test file `games/YYYY-MM-DD/game.test.js` with all 6 required tests
+4. ✅ Write the complete game HTML to `games/YYYY-MM-DD/index.html` (complete standalone HTML file with React from CDN)
+5. ✅ Write automated test file `games/YYYY-MM-DD/game.test.js` with all 6 required tests (loading index.html)
 6. ✅ Test that the game runs properly
 7. ✅ Generate preview image to `games/YYYY-MM-DD/preview.png` (screenshot mid-gameplay)
 8. ✅ Update games-registry.json with new entry
@@ -344,7 +393,7 @@ gravitational fields using mouse/touch. Features beautiful particle trails,
 pulsing celestial bodies, and increasingly chaotic gravity wells.
 
 Files:
-- games/2026-02-15/game.jsx (new)
+- games/2026-02-15/index.html (new)
 - games/2026-02-15/game.test.js (new)
 - games/2026-02-15/preview.png (new)
 - games-registry.json (updated)

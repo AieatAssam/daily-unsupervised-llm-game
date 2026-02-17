@@ -54,18 +54,24 @@ jobs:
           prompt: |
             Generate today's daily game following all instructions in Claude.md.
 
-            IMPORTANT: Work in the current directory. All file paths should be relative (e.g., games/2026-02-16/game.jsx).
-            Do NOT use /tmp or absolute paths. Use relative paths only.
-            
+            IMPORTANT: Work in the current directory. All file paths must be relative.
+            Do NOT use /tmp or absolute paths.
+
             CRITICAL REQUIREMENTS:
-            1. First, read and analyze games-registry.json to see all existing games
+            1. Read and analyze games-registry.json to see all existing games
             2. Ensure the new game is mechanically unique and different from the last 7 games
-            3. Create the date folder: games/YYYY-MM-DD/
-            4. Create the complete game JSX file: games/YYYY-MM-DD/game.jsx
-            5. Create the corresponding test file: games/YYYY-MM-DD/game.test.js with all 6 required tests
-            6. Generate the preview image: games/YYYY-MM-DD/preview.png
-            7. Update games-registry.json with the new entry
-            
+            3. Create the date folder: games/YYYY-MM-DD/ (use today's actual date)
+            4. Create a complete standalone HTML file: games/YYYY-MM-DD/index.html
+               - Single HTML file with React 18 and ReactDOM loaded from unpkg.com CDN
+               - Include Babel standalone from unpkg.com for JSX transpilation
+               - All game code goes in a <script type="text/babel"> tag
+               - Must be fully playable when opened directly in a browser
+            5. Create the test file: games/YYYY-MM-DD/game.test.js
+               - Tests MUST load /games/YYYY-MM-DD/index.html (NOT .jsx or .js)
+               - Include all 6 required tests (load, render, input, rapid input, mobile, localStorage)
+            6. Update games-registry.json with the new entry
+               - Set "file" to "games/YYYY-MM-DD/index.html"
+
             Complete the full workflow in one shot. Follow the quality checklist in Claude.md.
 
       - name: Debug - Check what was created
@@ -74,7 +80,6 @@ jobs:
           echo "📁 Contents of games/:"
           ls -laR games/ 2>/dev/null || echo "No games directory found"
           echo "📄 Git status:"
-          echo "👉 git status --short"
           git status --short
           echo "👉 ls -la"
           ls -la
@@ -97,9 +102,8 @@ jobs:
         if: steps.check-changes.outputs.game-generated == 'true'
         run: |
           TODAY=$(date +'%Y-%m-%d')
-          LATEST_GAME=$(ls -t games/*/game.jsx 2>/dev/null | head -1)
+          LATEST_GAME=$(ls -t games/*/index.html 2>/dev/null | head -1)
           DATE_FOLDER=$(dirname "$LATEST_GAME")
-          
           git commit -m "🎮 Daily Game Generated - $TODAY" -m "Generated new game in $DATE_FOLDER"
           
       - name: Push branch
@@ -107,7 +111,7 @@ jobs:
         run: |
           git push origin "${{ steps.create-branch.outputs.branch-name }}"
 
-  test-game:
+  test-games:
     needs: generate-game
     if: needs.generate-game.outputs.game-generated == 'true'
     runs-on: ubuntu-latest
@@ -129,26 +133,32 @@ jobs:
         run: |
           npm install -D @playwright/test http-server
           npx playwright install --with-deps chromium
+
+      - name: List all test files
+        run: |
+          echo "🧪 All test files found:"
+          find games -name "game.test.js" | sort
+          echo ""
+          echo "Total: $(find games -name "game.test.js" | wc -l) test suite(s)"
           
-      - name: Run tests
+      - name: Run all game tests
         id: run-tests
         run: |
-          # Find the most recent test file
-          LATEST_TEST=$(ls -t games/*/game.test.js 2>/dev/null | head -1)
-          
-          if [ -z "$LATEST_TEST" ]; then
-            echo "❌ No test file found"
+          TEST_FILES=$(find games -name "game.test.js" | sort)
+
+          if [ -z "$TEST_FILES" ]; then
+            echo "❌ No test files found"
             echo "tests-passed=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-          
-          echo "🧪 Testing: $LATEST_TEST"
-          
-          if npx playwright test "$LATEST_TEST"; then
-            echo "✅ All tests passed!"
+
+          echo "🧪 Running tests for all $(echo "$TEST_FILES" | wc -l) game(s)..."
+
+          if npx playwright test $TEST_FILES; then
+            echo "✅ All games passed!"
             echo "tests-passed=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ Tests failed!"
+            echo "❌ One or more games failed!"
             echo "tests-passed=false" >> $GITHUB_OUTPUT
             exit 1
           fi
@@ -164,8 +174,8 @@ jobs:
           retention-days: 7
 
   merge-to-main:
-    needs: [generate-game, test-game]
-    if: needs.test-game.outputs.tests-passed == 'true'
+    needs: [generate-game, test-games]
+    if: needs.test-games.outputs.tests-passed == 'true'
     runs-on: ubuntu-latest
     
     steps:
@@ -194,7 +204,7 @@ jobs:
         run: |
           echo "## 🎮 Daily Game Merged to Main!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All games passed regression tests" >> $GITHUB_STEP_SUMMARY
           echo "✅ Merged from branch: ${{ needs.generate-game.outputs.branch-name }}" >> $GITHUB_STEP_SUMMARY
           echo "🚀 Ready for deployment" >> $GITHUB_STEP_SUMMARY
 
@@ -227,10 +237,8 @@ jobs:
         run: |
           echo "## 🎮 Daily Game Deployed!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All games passed" >> $GITHUB_STEP_SUMMARY
           echo "✅ Merged to main" >> $GITHUB_STEP_SUMMARY
           echo "🚀 Deployed to GitHub Pages" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Visit [the gallery](${{ steps.deployment.outputs.page_url }}) to play!" >> $GITHUB_STEP_SUMMARY
-
-
