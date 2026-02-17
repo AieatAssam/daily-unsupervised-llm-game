@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Word Blitz</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #0a0015;
+      font-family: 'Courier New', monospace;
+      user-select: none;
+    }
+    #root { width: 100vw; height: 100vh; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    @keyframes bgShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes slideIn {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes explode {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.8); opacity: 0.6; }
+      100% { transform: scale(2.5); opacity: 0; }
+    }
+    @keyframes floatUp {
+      0% { transform: translateY(0) scale(1); opacity: 1; }
+      100% { transform: translateY(-80px) scale(0.5); opacity: 0; }
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-4px); }
+      75% { transform: translateX(4px); }
+    }
+    @keyframes glow {
+      0%, 100% { text-shadow: 0 0 10px currentColor, 0 0 20px currentColor; }
+      50% { text-shadow: 0 0 20px currentColor, 0 0 40px currentColor, 0 0 60px currentColor; }
+    }
+    @keyframes comboFlash {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.3); }
+      100% { transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // Word bank by difficulty tier
+    const WORD_BANKS = {
+      easy: ['cat', 'dog', 'run', 'hit', 'pop', 'sky', 'sun', 'art', 'fun', 'win',
+             'fire', 'jump', 'neon', 'glow', 'fast', 'cyan', 'nova', 'flux', 'zap', 'ray'],
+      medium: ['spark', 'blast', 'surge', 'drift', 'phase', 'light', 'pixel', 'shift',
+               'power', 'hyper', 'storm', 'nexus', 'swift', 'flash', 'pulse', 'vortex'],
+      hard: ['quantum', 'circuit', 'phantom', 'reactor', 'synapse', 'cascade', 'radiant',
+             'nebular', 'chrome', 'fractal', 'kinetic', 'neutron', 'orbital', 'crystal'],
+      expert: ['supernova', 'labyrinth', 'frequency', 'hyperdrive', 'warpfield', 'chromatic',
+               'resonance', 'singularity', 'antimatter', 'ultraviolet']
+    };
+
+    // Color palette for words
+    const WORD_COLORS = [
+      '#ff00ff', '#00ffff', '#ff6600', '#00ff88', '#ff3366',
+      '#ffff00', '#cc00ff', '#00ccff', '#ff9900', '#66ff00'
+    ];
+
+    // Web Audio API sound engine
+    const createAudioCtx = () => {
+      try {
+        return new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) { return null; }
+    };
+
+    const playSound = (audioCtx, type, freq = 440, duration = 0.15) => {
+      if (!audioCtx) return;
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'type') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+          gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+        } else if (type === 'blast') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(freq * 2, audioCtx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+          duration = 0.3;
+        } else if (type === 'combo') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(freq * 3, audioCtx.currentTime + 0.3);
+          gain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+          duration = 0.4;
+        } else if (type === 'miss') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.3);
+          gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+          duration = 0.3;
+        } else if (type === 'gameover') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(55, audioCtx.currentTime + 0.8);
+          gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+          duration = 0.8;
+        }
+
+        osc.start(audioCtx.currentTime);
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {}
+    };
+
+    // Particle system
+    const ParticleLayer = ({ particles }) => (
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 100 }}>
+        {particles.map(p => (
+          <div key={p.id} style={{
+            position: 'absolute',
+            left: p.x,
+            top: p.y,
+            width: p.size,
+            height: p.size,
+            borderRadius: '50%',
+            background: p.color,
+            boxShadow: `0 0 ${p.size * 2}px ${p.color}`,
+            animation: `floatUp ${p.duration}ms ease-out forwards`,
+            animationDelay: `${p.delay}ms`,
+            pointerEvents: 'none',
+          }} />
+        ))}
+      </div>
+    );
+
+    // Floating score popups
+    const ScorePopup = ({ popups }) => (
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 99 }}>
+        {popups.map(p => (
+          <div key={p.id} style={{
+            position: 'absolute',
+            left: p.x,
+            top: p.y,
+            color: p.color,
+            fontSize: p.fontSize || '24px',
+            fontWeight: 'bold',
+            fontFamily: 'Courier New, monospace',
+            textShadow: `0 0 10px ${p.color}, 0 0 20px ${p.color}`,
+            animation: 'floatUp 1s ease-out forwards',
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+          }}>{p.text}</div>
+        ))}
+      </div>
+    );
+
+    // Falling word component
+    const FallingWord = ({ word, progress, color, typed, shaking }) => {
+      const displayWord = word.text;
+      const typedLen = typed.length;
+
+      return (
+        <div style={{
+          position: 'absolute',
+          left: `${word.x}%`,
+          top: `${progress * 100}%`,
+          transform: 'translateX(-50%)',
+          fontSize: `${word.fontSize}px`,
+          fontFamily: 'Courier New, monospace',
+          fontWeight: 'bold',
+          letterSpacing: '2px',
+          animation: shaking ? 'shake 0.3s ease-in-out' : 'none',
+          filter: `drop-shadow(0 0 8px ${color})`,
+          zIndex: 10,
+        }}>
+          {displayWord.split('').map((char, i) => (
+            <span key={i} style={{
+              color: i < typedLen ? '#ffffff' : color,
+              textShadow: i < typedLen
+                ? `0 0 10px #fff, 0 0 20px #fff`
+                : `0 0 8px ${color}, 0 0 16px ${color}`,
+              transition: 'color 0.1s, text-shadow 0.1s',
+            }}>{char}</span>
+          ))}
+        </div>
+      );
+    };
+
+    // Main game component
+    const WordBlitz = () => {
+      const [phase, setPhase] = useState('menu'); // menu, playing, gameover
+      const [score, setScore] = useState(0);
+      const [highScore, setHighScore] = useState(() => {
+        try { return parseInt(localStorage.getItem('wordblitz_highScore') || '0'); } catch(e) { return 0; }
+      });
+      const [combo, setCombo] = useState(0);
+      const [maxCombo, setMaxCombo] = useState(0);
+      const [lives, setLives] = useState(5);
+      const [level, setLevel] = useState(1);
+      const [words, setWords] = useState([]);
+      const [typedInput, setTypedInput] = useState('');
+      const [activeWordId, setActiveWordId] = useState(null);
+      const [particles, setParticles] = useState([]);
+      const [popups, setPopups] = useState([]);
+      const [bgHue, setBgHue] = useState(270);
+      const [wordsBlasted, setWordsBlasted] = useState(0);
+      const [shakeWordId, setShakeWordId] = useState(null);
+
+      const audioCtxRef = useRef(null);
+      const gameLoopRef = useRef(null);
+      const spawnTimerRef = useRef(null);
+      const wordIdRef = useRef(0);
+      const particleIdRef = useRef(0);
+      const popupIdRef = useRef(0);
+      const wordsRef = useRef([]);
+      const scoreRef = useRef(0);
+      const comboRef = useRef(0);
+      const livesRef = useRef(5);
+      const levelRef = useRef(1);
+      const wordsBlastRef = useRef(0);
+      const typedRef = useRef('');
+      const activeWordIdRef = useRef(null);
+      const phaseRef = useRef('menu');
+
+      // Keep refs in sync
+      wordsRef.current = words;
+      scoreRef.current = score;
+      comboRef.current = combo;
+      livesRef.current = lives;
+      levelRef.current = level;
+      wordsBlastRef.current = wordsBlasted;
+      typedRef.current = typedInput;
+      activeWordIdRef.current = activeWordId;
+      phaseRef.current = phase;
+
+      // Speed config per level
+      const getSpeedConfig = (lvl) => {
+        const base = 0.000008;
+        const speed = base + (lvl - 1) * 0.000004;
+        const maxWords = Math.min(3 + Math.floor(lvl / 2), 8);
+        const spawnInterval = Math.max(3000 - lvl * 200, 1000);
+        return { speed, maxWords, spawnInterval };
+      };
+
+      const getWordTier = (lvl) => {
+        if (lvl <= 2) return 'easy';
+        if (lvl <= 5) return 'medium';
+        if (lvl <= 8) return 'hard';
+        return 'expert';
+      };
+
+      const spawnWord = useCallback(() => {
+        if (phaseRef.current !== 'playing') return;
+        const cfg = getSpeedConfig(levelRef.current);
+        if (wordsRef.current.length >= cfg.maxWords) return;
+
+        const tier = getWordTier(levelRef.current);
+        const bank = WORD_BANKS[tier];
+        const text = bank[Math.floor(Math.random() * bank.length)];
+        const color = WORD_COLORS[Math.floor(Math.random() * WORD_COLORS.length)];
+        const x = 10 + Math.random() * 80; // 10-90% from left
+        const fontSize = 18 + Math.floor(Math.random() * 12);
+        const id = ++wordIdRef.current;
+
+        setWords(prev => [...prev, {
+          id,
+          text,
+          color,
+          x,
+          fontSize,
+          progress: 0,
+          startTime: Date.now(),
+          speed: cfg.speed + (Math.random() - 0.5) * 0.000002,
+        }]);
+      }, []);
+
+      const addParticles = useCallback((x, y, color, count = 12) => {
+        const newParticles = Array.from({ length: count }, (_, i) => ({
+          id: ++particleIdRef.current,
+          x: x + (Math.random() - 0.5) * 60,
+          y: y + (Math.random() - 0.5) * 40,
+          size: 4 + Math.random() * 8,
+          color,
+          duration: 600 + Math.random() * 400,
+          delay: Math.random() * 200,
+        }));
+        setParticles(prev => [...prev.slice(-80), ...newParticles]);
+        setTimeout(() => {
+          setParticles(prev => prev.filter(p => !newParticles.find(np => np.id === p.id)));
+        }, 1200);
+      }, []);
+
+      const addPopup = useCallback((text, x, y, color, fontSize = '24px') => {
+        const id = ++popupIdRef.current;
+        setPopups(prev => [...prev, { id, text, x, y, color, fontSize }]);
+        setTimeout(() => setPopups(prev => prev.filter(p => p.id !== id)), 1000);
+      }, []);
+
+      // Game loop
+      useEffect(() => {
+        if (phase !== 'playing') return;
+
+        const tick = () => {
+          if (phaseRef.current !== 'playing') return;
+
+          const now = Date.now();
+          let lostLife = false;
+          let lostWordId = null;
+
+          setWords(prev => {
+            const cfg = getSpeedConfig(levelRef.current);
+            const updated = prev.map(w => ({
+              ...w,
+              progress: (now - w.startTime) * w.speed,
+            }));
+
+            const alive = updated.filter(w => {
+              if (w.progress >= 1) {
+                lostLife = true;
+                lostWordId = w.id;
+                return false;
+              }
+              return true;
+            });
+
+            return alive;
+          });
+
+          if (lostLife) {
+            playSound(audioCtxRef.current, 'miss');
+            const newLives = livesRef.current - 1;
+            livesRef.current = newLives;
+            setLives(newLives);
+            setCombo(0);
+            comboRef.current = 0;
+            if (activeWordIdRef.current === lostWordId) {
+              setActiveWordId(null);
+              activeWordIdRef.current = null;
+              setTypedInput('');
+              typedRef.current = '';
+            }
+            if (newLives <= 0) {
+              phaseRef.current = 'gameover';
+              setPhase('gameover');
+              playSound(audioCtxRef.current, 'gameover');
+              const finalScore = scoreRef.current;
+              try {
+                const stored = parseInt(localStorage.getItem('wordblitz_highScore') || '0');
+                if (finalScore > stored) {
+                  localStorage.setItem('wordblitz_highScore', String(finalScore));
+                  setHighScore(finalScore);
+                }
+              } catch(e) {}
+              return;
+            }
+          }
+
+          // Animate background hue
+          setBgHue(h => (h + 0.3) % 360);
+
+          gameLoopRef.current = requestAnimationFrame(tick);
+        };
+
+        gameLoopRef.current = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(gameLoopRef.current);
+      }, [phase]);
+
+      // Word spawner
+      useEffect(() => {
+        if (phase !== 'playing') return;
+        spawnWord();
+        const cfg = getSpeedConfig(level);
+        spawnTimerRef.current = setInterval(spawnWord, cfg.spawnInterval);
+        return () => clearInterval(spawnTimerRef.current);
+      }, [phase, level, spawnWord]);
+
+      // Level progression
+      useEffect(() => {
+        if (phase !== 'playing') return;
+        const newLevel = Math.floor(wordsBlasted / 5) + 1;
+        if (newLevel !== level) {
+          setLevel(newLevel);
+          levelRef.current = newLevel;
+          clearInterval(spawnTimerRef.current);
+          const cfg = getSpeedConfig(newLevel);
+          spawnTimerRef.current = setInterval(spawnWord, cfg.spawnInterval);
+        }
+      }, [wordsBlasted, phase, level, spawnWord]);
+
+      // Keyboard handler
+      useEffect(() => {
+        if (phase !== 'playing') return;
+
+        const handleKey = (e) => {
+          if (phaseRef.current !== 'playing') return;
+          const key = e.key;
+
+          // Only handle printable single chars and backspace
+          if (key === 'Backspace') {
+            const newTyped = typedRef.current.slice(0, -1);
+            setTypedInput(newTyped);
+            typedRef.current = newTyped;
+            if (newTyped === '') {
+              setActiveWordId(null);
+              activeWordIdRef.current = null;
+            }
+            return;
+          }
+
+          if (key.length !== 1 || !/[a-zA-Z]/.test(key)) return;
+          e.preventDefault();
+
+          const char = key.toLowerCase();
+          const newTyped = typedRef.current + char;
+
+          // Play typing sound
+          const noteFreqs = [261, 293, 329, 349, 392, 440, 493, 523];
+          playSound(audioCtxRef.current, 'type', noteFreqs[char.charCodeAt(0) % noteFreqs.length], 0.1);
+
+          // Find matching word
+          const currentWords = wordsRef.current;
+          let targetWord = null;
+
+          if (activeWordIdRef.current !== null) {
+            targetWord = currentWords.find(w => w.id === activeWordIdRef.current);
+            if (targetWord && !targetWord.text.startsWith(newTyped)) {
+              // Wrong char - shake
+              setShakeWordId(activeWordIdRef.current);
+              setTimeout(() => setShakeWordId(null), 300);
+              return;
+            }
+          } else {
+            // Find word that starts with newTyped
+            targetWord = currentWords.find(w => w.text.startsWith(newTyped));
+          }
+
+          if (!targetWord) {
+            // No match - shake briefly
+            setShakeWordId(-1);
+            setTimeout(() => setShakeWordId(null), 300);
+            return;
+          }
+
+          setTypedInput(newTyped);
+          typedRef.current = newTyped;
+          setActiveWordId(targetWord.id);
+          activeWordIdRef.current = targetWord.id;
+
+          // Check if word completed
+          if (newTyped === targetWord.text) {
+            // BLAST IT!
+            const wordEl = document.querySelector(`[data-wordid="${targetWord.id}"]`);
+            const rect = wordEl ? wordEl.getBoundingClientRect() : { left: window.innerWidth * targetWord.x / 100, top: window.innerHeight * targetWord.progress };
+
+            const newCombo = comboRef.current + 1;
+            comboRef.current = newCombo;
+            setCombo(newCombo);
+            if (newCombo > maxCombo) setMaxCombo(newCombo);
+
+            const basePoints = targetWord.text.length * 10;
+            const comboBonus = Math.floor(newCombo * 5);
+            const speedBonus = Math.floor((1 - targetWord.progress) * 20);
+            const points = basePoints + comboBonus + speedBonus;
+
+            const newScore = scoreRef.current + points;
+            scoreRef.current = newScore;
+            setScore(newScore);
+
+            const newBlasted = wordsBlastRef.current + 1;
+            wordsBlastRef.current = newBlasted;
+            setWordsBlasted(newBlasted);
+
+            // Particles
+            addParticles(rect.left + (wordEl ? wordEl.offsetWidth/2 : 30), rect.top, targetWord.color, 16);
+
+            // Sound
+            const comboFreqs = [523, 587, 659, 698, 784, 880, 988, 1047];
+            if (newCombo >= 3) {
+              playSound(audioCtxRef.current, 'combo', comboFreqs[Math.min(newCombo - 1, 7)]);
+            } else {
+              playSound(audioCtxRef.current, 'blast', 440 + targetWord.text.length * 30);
+            }
+
+            // Score popup
+            let popupText = `+${points}`;
+            if (newCombo >= 3) popupText += ` COMBO x${newCombo}!`;
+            addPopup(popupText, rect.left, rect.top - 20, targetWord.color,
+              newCombo >= 3 ? '28px' : '22px');
+
+            // Remove word
+            setWords(prev => prev.filter(w => w.id !== targetWord.id));
+            setTypedInput('');
+            typedRef.current = '';
+            setActiveWordId(null);
+            activeWordIdRef.current = null;
+          }
+        };
+
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+      }, [phase, addParticles, addPopup, maxCombo]);
+
+      const startGame = () => {
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = createAudioCtx();
+        }
+        setPhase('playing');
+        phaseRef.current = 'playing';
+        setScore(0);
+        scoreRef.current = 0;
+        setCombo(0);
+        comboRef.current = 0;
+        setMaxCombo(0);
+        setLives(5);
+        livesRef.current = 5;
+        setLevel(1);
+        levelRef.current = 1;
+        setWords([]);
+        wordsRef.current = [];
+        setTypedInput('');
+        typedRef.current = '';
+        setActiveWordId(null);
+        activeWordIdRef.current = null;
+        setWordsBlasted(0);
+        wordsBlastRef.current = 0;
+        setParticles([]);
+        setPopups([]);
+      };
+
+      // Render hearts
+      const renderLives = () => {
+        return Array.from({ length: 5 }, (_, i) => (
+          <span key={i} style={{
+            fontSize: '22px',
+            marginLeft: '4px',
+            filter: i < lives ? 'none' : 'grayscale(1) opacity(0.3)',
+            textShadow: i < lives ? '0 0 10px #ff3366' : 'none',
+          }}>&#10084;</span>
+        ));
+      };
+
+      const bgGradient = `radial-gradient(ellipse at ${30 + Math.sin(bgHue * 0.017) * 20}% ${30 + Math.cos(bgHue * 0.013) * 20}%,
+        hsl(${bgHue}, 80%, 8%) 0%,
+        hsl(${(bgHue + 60) % 360}, 70%, 5%) 40%,
+        hsl(${(bgHue + 120) % 360}, 60%, 3%) 100%)`;
+
+      // MENU
+      if (phase === 'menu') {
+        return (
+          <div style={{
+            width: '100vw', height: '100vh',
+            background: 'radial-gradient(ellipse at 30% 40%, #1a0033 0%, #000820 40%, #000510 100%)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', overflow: 'hidden', position: 'relative',
+          }}>
+            {/* Animated background orbs */}
+            {[...Array(6)].map((_, i) => (
+              <div key={i} style={{
+                position: 'absolute',
+                width: `${80 + i * 40}px`, height: `${80 + i * 40}px`,
+                borderRadius: '50%',
+                background: `radial-gradient(circle, ${WORD_COLORS[i]}33, transparent)`,
+                left: `${10 + i * 15}%`, top: `${10 + i * 13}%`,
+                animation: `pulse ${2 + i * 0.4}s ease-in-out infinite`,
+                filter: `blur(${10 + i * 5}px)`,
+              }} />
+            ))}
+
+            <div style={{
+              fontSize: 'clamp(48px, 10vw, 80px)',
+              fontWeight: 'bold',
+              fontFamily: 'Courier New, monospace',
+              letterSpacing: '6px',
+              background: 'linear-gradient(90deg, #ff00ff, #00ffff, #ff6600, #00ff88)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              animation: 'glow 2s ease-in-out infinite',
+              textAlign: 'center',
+              marginBottom: '12px',
+            }}>WORD BLITZ</div>
+
+            <div style={{
+              color: '#aaddff',
+              fontSize: 'clamp(14px, 2.5vw, 18px)',
+              marginBottom: '48px',
+              textAlign: 'center',
+              letterSpacing: '2px',
+              textShadow: '0 0 10px #00ffff',
+            }}>TYPE THE FALLING WORDS BEFORE THEY ESCAPE</div>
+
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: '12px',
+              alignItems: 'center', marginBottom: '36px',
+              color: '#88ccff', fontSize: '15px', lineHeight: '1.8',
+            }}>
+              <div>&#9654; Words fall from the top — type them to BLAST!</div>
+              <div>&#9654; Match colors build COMBOS for bonus points</div>
+              <div>&#9654; 5 lives — miss a word, lose a life</div>
+              <div>&#9654; Speed increases every 5 words</div>
+            </div>
+
+            <button onClick={startGame} style={{
+              padding: '18px 56px',
+              fontSize: '22px',
+              fontFamily: 'Courier New, monospace',
+              fontWeight: 'bold',
+              letterSpacing: '4px',
+              background: 'linear-gradient(135deg, #ff00ff, #00ffff)',
+              border: 'none',
+              borderRadius: '8px',
+              color: '#000',
+              cursor: 'pointer',
+              boxShadow: '0 0 30px #ff00ff, 0 0 60px #00ffff',
+              transition: 'transform 0.1s, box-shadow 0.1s',
+              marginBottom: '24px',
+            }}
+              onMouseOver={e => { e.target.style.transform = 'scale(1.05)'; e.target.style.boxShadow = '0 0 50px #ff00ff, 0 0 80px #00ffff'; }}
+              onMouseOut={e => { e.target.style.transform = 'scale(1)'; e.target.style.boxShadow = '0 0 30px #ff00ff, 0 0 60px #00ffff'; }}
+            >PLAY NOW</button>
+
+            {highScore > 0 && (
+              <div style={{
+                color: '#ffff00',
+                fontSize: '18px',
+                textShadow: '0 0 15px #ffff00',
+                letterSpacing: '2px',
+              }}>BEST: {highScore.toLocaleString()}</div>
+            )}
+          </div>
+        );
+      }
+
+      // GAME OVER
+      if (phase === 'gameover') {
+        const isNewHigh = score >= highScore;
+        return (
+          <div style={{
+            width: '100vw', height: '100vh',
+            background: 'radial-gradient(ellipse at 50% 50%, #1a0010 0%, #000510 100%)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', overflow: 'hidden',
+          }}>
+            <div style={{
+              fontSize: 'clamp(40px, 8vw, 64px)',
+              fontWeight: 'bold',
+              color: '#ff3366',
+              textShadow: '0 0 20px #ff3366, 0 0 40px #ff3366',
+              letterSpacing: '4px',
+              marginBottom: '24px',
+              animation: 'pulse 1s ease-in-out infinite',
+            }}>GAME OVER</div>
+
+            {isNewHigh && (
+              <div style={{
+                fontSize: '24px',
+                color: '#ffff00',
+                textShadow: '0 0 20px #ffff00',
+                marginBottom: '16px',
+                animation: 'comboFlash 0.5s ease-in-out infinite',
+                letterSpacing: '3px',
+              }}>&#11088; NEW HIGH SCORE! &#11088;</div>
+            )}
+
+            <div style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: '12px',
+              padding: '32px 48px',
+              marginBottom: '32px',
+              textAlign: 'center',
+              backdropFilter: 'blur(10px)',
+            }}>
+              <div style={{ fontSize: '52px', fontWeight: 'bold', color: '#00ffff', textShadow: '0 0 20px #00ffff', marginBottom: '8px' }}>
+                {score.toLocaleString()}
+              </div>
+              <div style={{ color: '#aaaaaa', fontSize: '14px', letterSpacing: '2px', marginBottom: '24px' }}>FINAL SCORE</div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', color: '#cccccc' }}>
+                <div>
+                  <div style={{ color: '#ff6600', fontSize: '24px', fontWeight: 'bold' }}>{wordsBlasted}</div>
+                  <div style={{ fontSize: '12px', letterSpacing: '1px' }}>WORDS BLASTED</div>
+                </div>
+                <div>
+                  <div style={{ color: '#ff00ff', fontSize: '24px', fontWeight: 'bold' }}>x{maxCombo}</div>
+                  <div style={{ fontSize: '12px', letterSpacing: '1px' }}>MAX COMBO</div>
+                </div>
+                <div>
+                  <div style={{ color: '#00ff88', fontSize: '24px', fontWeight: 'bold' }}>{level}</div>
+                  <div style={{ fontSize: '12px', letterSpacing: '1px' }}>LEVEL REACHED</div>
+                </div>
+                <div>
+                  <div style={{ color: '#ffff00', fontSize: '24px', fontWeight: 'bold' }}>{highScore.toLocaleString()}</div>
+                  <div style={{ fontSize: '12px', letterSpacing: '1px' }}>BEST SCORE</div>
+                </div>
+              </div>
+            </div>
+
+            <button onClick={startGame} style={{
+              padding: '16px 48px',
+              fontSize: '20px',
+              fontFamily: 'Courier New, monospace',
+              fontWeight: 'bold',
+              letterSpacing: '3px',
+              background: 'linear-gradient(135deg, #ff3366, #ff6600)',
+              border: 'none',
+              borderRadius: '8px',
+              color: '#fff',
+              cursor: 'pointer',
+              boxShadow: '0 0 25px #ff3366',
+              transition: 'transform 0.1s',
+              marginBottom: '16px',
+            }}
+              onMouseOver={e => e.target.style.transform = 'scale(1.05)'}
+              onMouseOut={e => e.target.style.transform = 'scale(1)'}
+            >PLAY AGAIN</button>
+
+            <button onClick={() => setPhase('menu')} style={{
+              padding: '10px 32px',
+              fontSize: '15px',
+              fontFamily: 'Courier New, monospace',
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.3)',
+              borderRadius: '6px',
+              color: '#aaaaaa',
+              cursor: 'pointer',
+              letterSpacing: '2px',
+              transition: 'all 0.2s',
+            }}
+              onMouseOver={e => { e.target.style.color = '#fff'; e.target.style.borderColor = '#fff'; }}
+              onMouseOut={e => { e.target.style.color = '#aaaaaa'; e.target.style.borderColor = 'rgba(255,255,255,0.3)'; }}
+            >MAIN MENU</button>
+          </div>
+        );
+      }
+
+      // PLAYING
+      return (
+        <div id="game-container" style={{
+          width: '100vw', height: '100vh',
+          background: bgGradient,
+          overflow: 'hidden', position: 'relative',
+          transition: 'background 0.5s ease',
+        }}>
+          {/* Particles & Popups */}
+          <ParticleLayer particles={particles} />
+          <ScorePopup popups={popups} />
+
+          {/* HUD */}
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '12px 20px',
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(6px)',
+            borderBottom: '1px solid rgba(255,255,255,0.1)',
+            zIndex: 50,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div style={{ color: '#00ffff', fontSize: '14px', letterSpacing: '1px' }}>LVL {level}</div>
+              <div style={{ color: '#888', fontSize: '12px' }}>WORDS: {wordsBlasted}</div>
+            </div>
+
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: 'clamp(20px, 4vw, 28px)',
+                fontWeight: 'bold',
+                color: '#fff',
+                textShadow: '0 0 15px #fff',
+                letterSpacing: '2px',
+              }}>{score.toLocaleString()}</div>
+              {combo >= 2 && (
+                <div style={{
+                  fontSize: '13px', color: '#ff00ff',
+                  textShadow: '0 0 10px #ff00ff',
+                  animation: 'comboFlash 0.4s ease-in-out infinite',
+                  letterSpacing: '1px',
+                }}>COMBO x{combo}!</div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              {renderLives()}
+            </div>
+          </div>
+
+          {/* Scanlines overlay */}
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)',
+            pointerEvents: 'none', zIndex: 5,
+          }} />
+
+          {/* Falling words */}
+          {words.map(word => (
+            <div key={word.id} data-wordid={word.id}>
+              <FallingWord
+                word={word}
+                progress={word.progress}
+                color={word.color}
+                typed={word.id === activeWordId ? typedInput : ''}
+                shaking={shakeWordId === word.id}
+              />
+            </div>
+          ))}
+
+          {/* Danger zone indicator */}
+          <div style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0, height: '6px',
+            background: `linear-gradient(90deg, #ff3366, #ff6600, #ff3366)`,
+            boxShadow: '0 0 20px #ff3366',
+            opacity: lives <= 2 ? '0.8' : '0.3',
+            transition: 'opacity 0.3s',
+          }} />
+
+          {/* Typing input display */}
+          <div style={{
+            position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(0,0,0,0.7)',
+            border: `2px solid ${activeWordId ? (words.find(w=>w.id===activeWordId)?.color || '#00ffff') : 'rgba(255,255,255,0.3)'}`,
+            borderRadius: '8px',
+            padding: '10px 24px',
+            minWidth: '200px', maxWidth: '400px',
+            textAlign: 'center',
+            zIndex: 50,
+            backdropFilter: 'blur(8px)',
+            boxShadow: activeWordId ? `0 0 20px ${words.find(w=>w.id===activeWordId)?.color || '#00ffff'}` : 'none',
+            transition: 'border-color 0.2s, box-shadow 0.2s',
+          }}>
+            {typedInput ? (
+              <span style={{
+                fontSize: '22px',
+                fontFamily: 'Courier New, monospace',
+                fontWeight: 'bold',
+                color: words.find(w=>w.id===activeWordId)?.color || '#00ffff',
+                textShadow: `0 0 10px ${words.find(w=>w.id===activeWordId)?.color || '#00ffff'}`,
+                letterSpacing: '4px',
+              }}>{typedInput}</span>
+            ) : (
+              <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '16px', letterSpacing: '2px' }}>
+                TYPE A WORD...
+              </span>
+            )}
+            <span style={{
+              display: 'inline-block',
+              width: '2px', height: '22px',
+              background: '#fff',
+              verticalAlign: 'middle',
+              marginLeft: '2px',
+              animation: 'pulse 0.8s step-end infinite',
+            }} />
+          </div>
+
+          {/* Tip overlay on start */}
+          {words.length === 0 && wordsBlasted === 0 && (
+            <div style={{
+              position: 'fixed', top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center', color: 'rgba(255,255,255,0.5)',
+              fontSize: '18px', pointerEvents: 'none',
+              letterSpacing: '2px',
+              animation: 'pulse 1.5s ease-in-out infinite',
+            }}>
+              Get ready...
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<WordBlitz />);
+  </script>
+</body>
+</html>
