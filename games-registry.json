@@ -26,5 +26,19 @@
     "folder": "games/2026-02-17",
     "file": "games/2026-02-17/index.html",
     "preview": "games/2026-02-17/preview.png"
+  },
+  {
+    "id": "2026-02-18",
+    "name": "Neon Slicer",
+    "date": "2026-02-18",
+    "description": "Swipe and slash through glowing geometric shapes flying across the screen — chain slices for insane combos, but dodge the red bombs!",
+    "tagline": "Swipe to slice, dodge the bombs!",
+    "tags": ["swipe", "action", "reflex", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Mouse drag / touch swipe to slice shapes",
+    "folder": "games/2026-02-18",
+    "file": "games/2026-02-18/index.html",
+    "preview": "games/2026-02-18/preview.png"
   }
 ]
