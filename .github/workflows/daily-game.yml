@@ -2,9 +2,8 @@ name: Daily Game Generator
 
 on:
   schedule:
-    # Runs every day at 3:00 AM UTC
     - cron: '0 3 * * *'
-  workflow_dispatch: # Allows manual triggering
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -74,38 +73,52 @@ jobs:
 
             Complete the full workflow in one shot. Follow the quality checklist in Claude.md.
 
-      - name: Debug - Check what was created
+      - name: Debug - Check git state
         run: |
           echo "📂 Working directory: $(pwd)"
+          echo ""
+          echo "📜 Recent commits (last 5):"
+          git log --oneline -5
+          echo ""
+          echo "📄 Git status (uncommitted changes):"
+          git status --short
+          echo ""
           echo "📁 Contents of games/:"
           ls -laR games/ 2>/dev/null || echo "No games directory found"
-          echo "📄 Git status:"
-          git status --short
-          echo "👉 ls -la"
-          ls -la
-          
+
       - name: Check for changes
         id: check-changes
         run: |
+          # Stage any uncommitted files first
           git add -A
-          if git diff --staged --quiet; then
-            echo "game-generated=false" >> $GITHUB_OUTPUT
-            echo "❌ No new game generated"
-          else
+
+          STAGED_COUNT=$(git diff --staged --name-only | wc -l | tr -d ' ')
+          COMMITS_AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
+
+          echo "📊 Commits ahead of main: $COMMITS_AHEAD"
+          echo "📊 Uncommitted staged files: $STAGED_COUNT"
+
+          if [ "$STAGED_COUNT" -gt 0 ]; then
+            # Uncommitted files found — commit them now
+            TODAY=$(date +'%Y-%m-%d')
+            git commit -m "🎮 Daily Game Generated - $TODAY"
+            echo "✅ Committed $STAGED_COUNT new/modified file(s)"
             echo "game-generated=true" >> $GITHUB_OUTPUT
-            echo "✅ New game generated successfully"
-            echo "📁 Changed files:"
-            git diff --staged --stat
+
+          elif [ "$COMMITS_AHEAD" -gt 0 ]; then
+            # Claude already committed — nothing to do except confirm
+            echo "✅ Claude Code committed $COMMITS_AHEAD ahead of main"
+            echo "game-generated=true" >> $GITHUB_OUTPUT
+
+          else
+            echo "❌ No new game generated — branch is even with main and no staged changes"
+            echo "game-generated=false" >> $GITHUB_OUTPUT
           fi
-          
-      - name: Commit to branch
-        if: steps.check-changes.outputs.game-generated == 'true'
-        run: |
-          TODAY=$(date +'%Y-%m-%d')
-          LATEST_GAME=$(ls -t games/*/index.html 2>/dev/null | head -1)
-          DATE_FOLDER=$(dirname "$LATEST_GAME")
-          git commit -m "🎮 Daily Game Generated - $TODAY" -m "Generated new game in $DATE_FOLDER"
-          
+
+          echo ""
+          echo "📁 Changed vs main:"
+          git diff origin/main...HEAD --stat || echo "(none)"
+
       - name: Push branch
         if: steps.check-changes.outputs.game-generated == 'true'
         run: |
