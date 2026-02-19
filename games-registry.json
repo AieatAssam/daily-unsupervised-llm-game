@@ -40,5 +40,19 @@
     "folder": "games/2026-02-18",
     "file": "games/2026-02-18/index.html",
     "preview": "games/2026-02-18/preview.png"
+  },
+  {
+    "id": "2026-02-19",
+    "name": "Vortex Shift",
+    "date": "2026-02-19",
+    "description": "Guide a glowing orb that spirals around a central vortex — click to flip inward/outward and thread through rotating neon barrier arcs before they absorb you!",
+    "tagline": "Flip the spiral, dodge the rings!",
+    "tags": ["reflex", "timing", "orbital", "action", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click / Tap / Space to flip spiral direction",
+    "folder": "games/2026-02-19",
+    "file": "games/2026-02-19/index.html",
+    "preview": "games/2026-02-19/preview.png"
   }
 ]
