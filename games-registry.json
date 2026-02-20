@@ -1,19 +1,5 @@
 [
   {
-    "id": "2026-02-15-example",
-    "name": "Example Game",
-    "date": "2026-02-15",
-    "description": "This is a placeholder - your first game will appear here!",
-    "tagline": "Daily games start today!",
-    "tags": ["action", "casual"],
-    "difficulty": "easy",
-    "avgPlayTime": "2 minutes",
-    "controls": "Click to start",
-    "folder": "games/2026-02-15",
-    "file": "games/2026-02-15/index.html",
-    "preview": "games/2026-02-15/preview.png"
-  },
-  {
     "id": "2026-02-17",
     "name": "Word Blitz",
     "date": "2026-02-17",
