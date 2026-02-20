@@ -1,0 +1,359 @@
+name: Fix and Polish Games
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_description:
+        description: 'Describe the issue to fix (e.g. broken previews, unplayable games)'
+        required: false
+        default: 'General fix and polish pass'
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: "fix-and-polish"
+  cancel-in-progress: false
+
+jobs:
+  fix-and-polish:
+    runs-on: ubuntu-latest
+    outputs:
+      fixes-applied: ${{ steps.check-changes.outputs.fixes-applied }}
+      branch-name: ${{ steps.create-branch.outputs.branch-name }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "Game Fix Bot"
+
+      - name: Create fix branch off main
+        id: create-branch
+        run: |
+          TIMESTAMP=$(date +'%Y-%m-%d-%H%M')
+          BRANCH_NAME="fix/games-$TIMESTAMP"
+          echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          git checkout -b "$BRANCH_NAME"
+          git push origin "$BRANCH_NAME"
+          echo "✅ Created branch: $BRANCH_NAME"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install agent-browser
+        run: |
+          echo "📦 Installing agent-browser from Vercel Labs..."
+          npm install -g agent-browser
+
+          echo "🌐 Downloading Chromium with system dependencies..."
+          # --with-deps installs any missing system-level libs needed on Ubuntu
+          agent-browser install --with-deps
+
+          echo "✅ agent-browser ready"
+          agent-browser --version
+
+      - name: Install agent-browser skill via skills CLI
+        run: |
+          echo "🧠 Installing agent-browser skill for Claude Code..."
+
+          # npx skills add (vercel-labs/skills) — CI-friendly flags:
+          #   source: vercel-labs/agent-browser (the tool's own repo, which bundles its skill)
+          #   --skill agent-browser  → only install the agent-browser skill
+          #   -a claude-code         → target Claude Code's skills dir (.claude/skills/)
+          #   -y                     → non-interactive, no prompts (required in CI)
+          npx skills add vercel-labs/agent-browser --skill agent-browser -a claude-code -y
+
+          echo ""
+          echo "📋 Installed skills:"
+          ls .claude/skills/ 2>/dev/null || echo "(installed globally)"
+
+      - name: Start local HTTP server
+        run: |
+          echo "🌐 Starting HTTP server on port 8080..."
+          npm install -g http-server
+          http-server . -p 8080 --cors -c-1 &
+          echo "HTTP_SERVER_PID=$!" >> $GITHUB_ENV
+          sleep 3
+          curl -sf http://localhost:8080/ > /dev/null && echo "✅ HTTP server is up" || echo "⚠️ HTTP server check failed"
+
+      - name: Run Fix and Polish pass with Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --model claude-sonnet-4-6
+            --dangerously-skip-permissions
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          mode: agent
+          prompt: |
+            You are performing a comprehensive fix and polish pass on the Daily Flashy Games codebase.
+
+            ISSUE REPORTED: ${{ github.event.inputs.issue_description }}
+
+            You have access to:
+            - The full codebase in the current directory
+            - A live HTTP server at http://localhost:8080 serving all game files
+            - The agent-browser CLI (invoked via bash commands, NOT via MCP)
+              Read the skill at .claude/skills/agent-browser/SKILL.md for full command reference
+            
+            Key agent-browser commands you'll use:
+              agent-browser open <url>         # navigate to a page
+              agent-browser snapshot           # get accessibility tree + element refs
+              agent-browser screenshot <path>  # save screenshot to file
+              agent-browser wait <ms>          # wait for rendering
+
+            Read CLAUDE.md and games-registry.json first to understand the project structure.
+
+            == YOUR TASKS ==
+
+            1. AUDIT ALL GAMES
+               - Read games-registry.json to get the complete list of all games
+               - For EACH real game entry, verify:
+                 a) The HTML file exists at the path listed in "file"
+                 b) It renders — navigate with agent-browser and take a screenshot:
+                      agent-browser open http://localhost:8080/<game-path>/index.html
+                      agent-browser wait 3000
+                      agent-browser screenshot /tmp/check.png
+                    Then read /tmp/check.png to confirm the game isn't blank/white
+                 c) Interactive elements are present in the snapshot
+                 d) A preview image exists alongside the game
+
+            2. FIX BROKEN GAMES
+               - For games that fail to render or throw JS errors:
+                 a) Diagnose from the snapshot output and page source
+                 b) Fix the HTML — ensure React 18 + Babel standalone load from unpkg.com CDN
+                 c) Re-test with agent-browser after fixing
+               - Do NOT rewrite working games. Only fix what is genuinely broken.
+
+            3. GENERATE MISSING PREVIEWS
+               - For any game without a preview image:
+                 a) agent-browser open http://localhost:8080/<game-path>/index.html
+                 b) agent-browser wait 3000
+                 c) agent-browser screenshot games/YYYY-MM-DD/preview.png
+                 d) Update games-registry.json to reference the preview if not already set
+
+            4. REMOVE EXAMPLE GAME FROM REGISTRY
+               - Scan games-registry.json for placeholder/example/template entries:
+                 • name or title contains "example", "template", "demo", "test", "sample"
+                 • file path contains games/example/, games/template/, games/sample/
+               - Remove those entries from games-registry.json so they do NOT show in the gallery
+               - Do NOT delete the actual files on disk — registry removal only
+
+            5. VALIDATE THE GALLERY
+               - agent-browser open http://localhost:8080/
+               - agent-browser wait 2000
+               - agent-browser screenshot /tmp/gallery-check.png
+               - Confirm real games appear with thumbnails, no example tiles visible
+
+            6. COMMIT YOUR WORK
+               - Commit with descriptive messages, e.g.:
+                 "fix: repair broken game 2025-01-15"
+                 "fix: generate missing previews for 3 games"
+                 "fix: remove example entry from registry"
+               - If a game is unfixable, add "broken": true to its registry entry instead of deleting
+
+            IMPORTANT: All file paths must be relative. Do not use absolute paths.
+
+      - name: Stop HTTP server
+        if: always()
+        run: |
+          if [ -n "$HTTP_SERVER_PID" ]; then
+            kill $HTTP_SERVER_PID 2>/dev/null || true
+            echo "🛑 HTTP server stopped"
+          fi
+
+      - name: Check for changes
+        id: check-changes
+        run: |
+          git add -A
+
+          STAGED_COUNT=$(git diff --staged --name-only | wc -l | tr -d ' ')
+          COMMITS_AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
+
+          echo "📊 Commits ahead of main: $COMMITS_AHEAD"
+          echo "📊 Uncommitted staged files: $STAGED_COUNT"
+
+          if [ "$STAGED_COUNT" -gt 0 ]; then
+            TIMESTAMP=$(date +'%Y-%m-%d %H:%M')
+            git commit -m "🔧 Fix and polish pass - $TIMESTAMP"
+            echo "✅ Committed $STAGED_COUNT modified file(s)"
+            echo "fixes-applied=true" >> $GITHUB_OUTPUT
+          elif [ "$COMMITS_AHEAD" -gt 0 ]; then
+            echo "✅ Claude Code committed $COMMITS_AHEAD fix commit(s)"
+            echo "fixes-applied=true" >> $GITHUB_OUTPUT
+          else
+            echo "ℹ️ No changes — all games appear healthy!"
+            echo "fixes-applied=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo ""
+          echo "📁 Changed vs main:"
+          git diff origin/main...HEAD --stat || echo "(none)"
+
+      - name: Push fix branch
+        if: steps.check-changes.outputs.fixes-applied == 'true'
+        run: |
+          git push origin "${{ steps.create-branch.outputs.branch-name }}"
+
+  regression-tests:
+    needs: fix-and-polish
+    if: needs.fix-and-polish.outputs.fixes-applied == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      tests-passed: ${{ steps.run-tests.outputs.tests-passed }}
+
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.fix-and-polish.outputs.branch-name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install test dependencies
+        run: |
+          npm install -D @playwright/test http-server
+          npx playwright install --with-deps chromium
+
+      - name: List all test files
+        run: |
+          echo "🧪 Test files found:"
+          find games -name "game.test.js" | sort
+          echo "Total: $(find games -name "game.test.js" | wc -l) test suite(s)"
+
+      - name: Run regression tests on all games
+        id: run-tests
+        run: |
+          TEST_FILES=$(find games -name "game.test.js" | sort)
+
+          if [ -z "$TEST_FILES" ]; then
+            echo "⚠️ No test files found — skipping test gate"
+            echo "tests-passed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "🧪 Running regression tests for $(echo "$TEST_FILES" | wc -l) game(s)..."
+
+          if npx playwright test $TEST_FILES; then
+            echo "✅ All regression tests passed!"
+            echo "tests-passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Some tests failed — review before merging"
+            echo "tests-passed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fix-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  merge-to-main:
+    needs: [fix-and-polish, regression-tests]
+    if: needs.regression-tests.outputs.tests-passed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "Game Fix Bot"
+
+      - name: Merge fix branch to main
+        run: |
+          git fetch origin
+          git checkout main
+          git merge --no-ff origin/${{ needs.fix-and-polish.outputs.branch-name }} \
+            -m "🔧 Merge fix/polish pass from ${{ needs.fix-and-polish.outputs.branch-name }}"
+          git push origin main
+
+      - name: Delete fix branch
+        run: |
+          git push origin --delete ${{ needs.fix-and-polish.outputs.branch-name }}
+
+      - name: Create Summary
+        run: |
+          echo "## 🔧 Fix and Polish Pass Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Issue addressed:** ${{ github.event.inputs.issue_description }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All regression tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Merged from: ${{ needs.fix-and-polish.outputs.branch-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "🚀 Ready for deployment" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    needs: merge-to-main
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Create Summary
+        run: |
+          echo "## 🎮 Fixed Games Deployed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Issue addressed:** ${{ github.event.inputs.issue_description }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Fix pass applied and tested" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Merged to main" >> $GITHUB_STEP_SUMMARY
+          echo "🚀 Deployed to GitHub Pages" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Visit [the gallery](${{ steps.deployment.outputs.page_url }}) to verify!" >> $GITHUB_STEP_SUMMARY
+
+  no-changes-summary:
+    needs: fix-and-polish
+    if: needs.fix-and-polish.outputs.fixes-applied == 'false'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: All clear
+        run: |
+          echo "## ✅ Games Already Healthy!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Issue checked:** ${{ github.event.inputs.issue_description }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Claude Code found no issues to fix — all games appear to be working correctly." >> $GITHUB_STEP_SUMMARY
