@@ -228,6 +228,35 @@
       const [wordsBlasted, setWordsBlasted] = useState(0);
       const [shakeWordId, setShakeWordId] = useState(null);
 
+      // Track the actual visible viewport height so the game reflows when the
+      // mobile soft keyboard appears (keyboard reduces the visible area).
+      const [viewportHeight, setViewportHeight] = useState(
+        () => (window.visualViewport ? window.visualViewport.height : window.innerHeight)
+      );
+
+      useEffect(() => {
+        const update = () => {
+          const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+          setViewportHeight(h);
+          // Prevent the browser from scrolling the game off-screen when the keyboard opens.
+          window.scrollTo(0, 0);
+        };
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', update);
+          window.visualViewport.addEventListener('scroll', update);
+        }
+        window.addEventListener('resize', update);
+        window.addEventListener('scroll', update);
+        return () => {
+          if (window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', update);
+            window.visualViewport.removeEventListener('scroll', update);
+          }
+          window.removeEventListener('resize', update);
+          window.removeEventListener('scroll', update);
+        };
+      }, []);
+
       const audioCtxRef = useRef(null);
       const gameLoopRef = useRef(null);
       const spawnTimerRef = useRef(null);
@@ -785,7 +814,7 @@
       // PLAYING
       return (
         <div id="game-container" style={{
-          width: '100vw', height: '100vh',
+          width: '100vw', height: `${viewportHeight}px`,
           background: bgGradient,
           overflow: 'hidden', position: 'relative',
           transition: 'background 0.5s ease',
