@@ -571,7 +571,7 @@
                   Best Score: {highScore}
                 </div>
               )}
-              <div style={{
+              <div onClick={() => { startGame(G.current, canvasRef.current); syncUi(); }} style={{
                 padding: '16px 52px', borderRadius: 50, cursor: 'pointer',
                 background: 'linear-gradient(135deg, #ff006e, #7b2fff)',
                 color: '#fff', fontSize: 18, fontWeight: 900, letterSpacing: 3,
@@ -619,7 +619,7 @@
               )}
               <div style={{ color: '#666', fontSize: 14, marginBottom: 6 }}>Best: {highScore}</div>
               <div style={{ color: '#666', fontSize: 14, marginBottom: 36 }}>Max Combo: ×{maxCombo}</div>
-              <div style={{
+              <div onClick={() => { startGame(G.current, canvasRef.current); syncUi(); }} style={{
                 padding: '14px 44px', borderRadius: 50, cursor: 'pointer',
                 background: 'linear-gradient(135deg, #ff006e, #7b2fff)',
                 color: '#fff', fontSize: 16, fontWeight: 900, letterSpacing: 3,
