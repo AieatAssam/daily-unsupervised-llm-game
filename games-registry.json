@@ -54,5 +54,19 @@
     "folder": "games/2026-02-19",
     "file": "games/2026-02-19/index.html",
     "preview": "games/2026-02-19/preview.png"
+  },
+  {
+    "id": "2026-02-20",
+    "name": "Chrono Pop",
+    "date": "2026-02-20",
+    "description": "Neon circles expand outward from glowing dots — click them precisely when they hit the dashed target ring for perfect scores and chain combos!",
+    "tagline": "Pop the ring at the perfect moment!",
+    "tags": ["timing", "precision", "rhythm", "reflex", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap circles when they hit the target ring",
+    "folder": "games/2026-02-20",
+    "file": "games/2026-02-20/index.html",
+    "preview": "games/2026-02-20/preview.png"
   }
 ]
