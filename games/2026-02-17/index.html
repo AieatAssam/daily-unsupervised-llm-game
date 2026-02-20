@@ -243,6 +243,7 @@
       const typedRef = useRef('');
       const activeWordIdRef = useRef(null);
       const phaseRef = useRef('menu');
+      const hiddenInputRef = useRef(null);
 
       // Keep refs in sync
       wordsRef.current = words;
@@ -522,12 +523,37 @@
         return () => window.removeEventListener('keydown', handleKey);
       }, [phase, addParticles, addPopup, maxCombo]);
 
+      // Mobile input handler — dispatches synthetic keydown events so the
+      // existing keyboard handler picks them up without duplicating logic.
+      const handleMobileInput = useCallback((e) => {
+        const inputType = e.nativeEvent?.inputType;
+        if (inputType === 'deleteContentBackward') {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+          e.target.value = '';
+          return;
+        }
+        const data = e.nativeEvent?.data || e.target.value;
+        if (data) {
+          for (const char of data) {
+            if (/[a-zA-Z]/.test(char)) {
+              window.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+            }
+          }
+        }
+        e.target.value = '';
+      }, []);
+
+      const focusHiddenInput = useCallback(() => {
+        if (hiddenInputRef.current) hiddenInputRef.current.focus();
+      }, []);
+
       const startGame = () => {
         if (!audioCtxRef.current) {
           audioCtxRef.current = createAudioCtx();
         }
         setPhase('playing');
         phaseRef.current = 'playing';
+        setTimeout(() => { if (hiddenInputRef.current) hiddenInputRef.current.focus(); }, 100);
         setScore(0);
         scoreRef.current = 0;
         setCombo(0);
@@ -763,7 +789,9 @@
           background: bgGradient,
           overflow: 'hidden', position: 'relative',
           transition: 'background 0.5s ease',
-        }}>
+        }}
+        onClick={focusHiddenInput}
+        >
           {/* Particles & Popups */}
           <ParticleLayer particles={particles} />
           <ScorePopup popups={popups} />
@@ -835,20 +863,48 @@
             transition: 'opacity 0.3s',
           }} />
 
+          {/* Hidden input to trigger mobile keyboard */}
+          <input
+            ref={hiddenInputRef}
+            type="text"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            inputMode="text"
+            onInput={handleMobileInput}
+            style={{
+              position: 'fixed',
+              bottom: '20px', left: '50%',
+              width: '1px', height: '1px',
+              opacity: 0.01,
+              border: 'none', outline: 'none',
+              background: 'transparent',
+              color: 'transparent',
+              caretColor: 'transparent',
+              zIndex: 49,
+              pointerEvents: 'none',
+            }}
+          />
+
           {/* Typing input display */}
-          <div style={{
-            position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(0,0,0,0.7)',
-            border: `2px solid ${activeWordId ? (words.find(w=>w.id===activeWordId)?.color || '#00ffff') : 'rgba(255,255,255,0.3)'}`,
-            borderRadius: '8px',
-            padding: '10px 24px',
-            minWidth: '200px', maxWidth: '400px',
-            textAlign: 'center',
-            zIndex: 50,
-            backdropFilter: 'blur(8px)',
-            boxShadow: activeWordId ? `0 0 20px ${words.find(w=>w.id===activeWordId)?.color || '#00ffff'}` : 'none',
-            transition: 'border-color 0.2s, box-shadow 0.2s',
-          }}>
+          <div
+            onClick={focusHiddenInput}
+            style={{
+              position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.7)',
+              border: `2px solid ${activeWordId ? (words.find(w=>w.id===activeWordId)?.color || '#00ffff') : 'rgba(255,255,255,0.3)'}`,
+              borderRadius: '8px',
+              padding: '10px 24px',
+              minWidth: '200px', maxWidth: '400px',
+              textAlign: 'center',
+              zIndex: 50,
+              backdropFilter: 'blur(8px)',
+              boxShadow: activeWordId ? `0 0 20px ${words.find(w=>w.id===activeWordId)?.color || '#00ffff'}` : 'none',
+              transition: 'border-color 0.2s, box-shadow 0.2s',
+              cursor: 'text',
+              WebkitTapHighlightColor: 'transparent',
+            }}>
             {typedInput ? (
               <span style={{
                 fontSize: '22px',
@@ -860,7 +916,7 @@
               }}>{typedInput}</span>
             ) : (
               <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '16px', letterSpacing: '2px' }}>
-                TYPE A WORD...
+                TAP HERE TO TYPE...
               </span>
             )}
             <span style={{
