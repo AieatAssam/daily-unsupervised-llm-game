@@ -54,5 +54,19 @@
     "folder": "games/2026-02-20",
     "file": "games/2026-02-20/index.html",
     "preview": "games/2026-02-20/preview.png"
+  },
+  {
+    "id": "2026-02-21",
+    "name": "Circuit Blaze",
+    "date": "2026-02-21",
+    "description": "Drag glowing energy lines to connect matching-colored nodes before their countdown expires — chain combos for massive scores but lose a life every time a node burns out!",
+    "tagline": "Connect the nodes before they burn out!",
+    "tags": ["puzzle", "strategy", "reflex", "drag", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click and drag from one node to a matching-color node to connect",
+    "folder": "games/2026-02-21",
+    "file": "games/2026-02-21/index.html",
+    "preview": "games/2026-02-21/preview.png"
   }
 ]
