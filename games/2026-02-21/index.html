@@ -19,11 +19,6 @@
     }
     #root { width: 100vw; height: 100vh; position: relative; }
     canvas { display: block; }
-    .ui-overlay {
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      pointer-events: none;
-    }
     .hud {
       position: absolute;
       top: 0; left: 0; right: 0;
@@ -32,6 +27,7 @@
       align-items: center;
       padding: 12px 20px;
       background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+      pointer-events: none;
     }
     .hud-block { text-align: center; }
     .hud-label {
@@ -194,10 +190,22 @@
     ];
 
     const NODE_RADIUS = 22;
-    const BASE_LIFETIME = 7500;
+    const BASE_LIFETIME = 8000;
     const MAX_LIVES = 3;
     const INITIAL_SPAWN_INTERVAL = 2200;
     const STORAGE_KEY = 'circuitBlazeHighScore';
+
+    // Line-segment intersection helper for crossing visuals
+    function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+      const denom = (dx - cx) * (ay - by) - (dy - cy) * (ax - bx);
+      if (Math.abs(denom) < 1e-10) return null;
+      const t = ((dx - cx) * (ay - cy) - (dy - cy) * (ax - cx)) / denom;
+      const u = ((ax - bx) * (ay - cy) - (ay - by) * (ax - cx)) / denom;
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+        return { x: ax + t * (bx - ax), y: ay + t * (by - ay) };
+      }
+      return null;
+    }
 
     function Heart({ filled }) {
       return (
@@ -228,7 +236,8 @@
           phase: 'intro',
           nodes: [],
           particles: [],
-          connections: [], // animating completed connections
+          connections: [],    // animating completed connections
+          crossSparks: [],    // crossing spark effects
           score: 0,
           combo: 0,
           lives: MAX_LIVES,
@@ -245,6 +254,7 @@
           audioCtx: null,
           nodeId: 0,
           levelUpScore: 500,
+          isDragging: false,
         };
       }
 
@@ -292,6 +302,10 @@
         setTimeout(() => playTone(80, 'sawtooth', 0.7, 0.35, 40), 550);
       }, [playTone]);
 
+      const playCross = useCallback(() => {
+        playTone(600, 'triangle', 0.08, 0.15, 800);
+      }, [playTone]);
+
       // ── Particles ───────────────────────────────────────────
       const spawnParticles = useCallback((x, y, colorIdx, count) => {
         const color = COLORS[colorIdx];
@@ -311,32 +325,60 @@
         }
       }, []);
 
+      // Spawn crossing sparks at intersection point
+      const spawnCrossSpark = useCallback((x, y) => {
+        for (let i = 0; i < 8; i++) {
+          const angle = (Math.PI * 2 * i) / 8 + Math.random() * 0.5;
+          const speed = 40 + Math.random() * 80;
+          S.crossSparks.push({
+            x, y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1,
+            decay: 2.5 + Math.random(),
+            size: 2 + Math.random() * 3,
+          });
+        }
+      }, []);
+
       // ── Node spawning ────────────────────────────────────────
-      const spawnNode = useCallback((canvas) => {
+      const spawnNode = useCallback((canvas, forceColorIdx) => {
         const W = canvas.width;
         const H = canvas.height;
-        const margin = 70;
+        const margin = 80;
+        const hudHeight = 65; // keep nodes below HUD
 
-        // Pick color: prefer one that already has an odd count (to form pairs)
-        const counts = Array(COLORS.length).fill(0);
-        S.nodes.forEach(n => counts[n.colorIdx]++);
-        const oddOnes = counts.map((c, i) => i).filter(i => counts[i] % 2 === 1 && counts[i] < 6);
-        const evenOnes = counts.map((c, i) => i).filter(i => counts[i] % 2 === 0 && counts[i] < 6);
+        // Pick color: strongly prefer completing an existing unpaired node
         let colorIdx;
-        if (oddOnes.length > 0 && Math.random() > 0.25) {
-          colorIdx = oddOnes[Math.floor(Math.random() * oddOnes.length)];
-        } else if (evenOnes.length > 0) {
-          colorIdx = evenOnes[Math.floor(Math.random() * evenOnes.length)];
+        if (forceColorIdx !== undefined) {
+          colorIdx = forceColorIdx;
         } else {
-          colorIdx = Math.floor(Math.random() * COLORS.length);
+          const counts = Array(COLORS.length).fill(0);
+          S.nodes.forEach(n => counts[n.colorIdx]++);
+          const oddOnes = COLORS.map((_, i) => i).filter(i => counts[i] % 2 === 1 && counts[i] < 6);
+          const evenOnes = COLORS.map((_, i) => i).filter(i => counts[i] % 2 === 0 && counts[i] < 6);
+          if (oddOnes.length > 0) {
+            // 85% chance: complete an unpaired node
+            if (Math.random() > 0.15) {
+              colorIdx = oddOnes[Math.floor(Math.random() * oddOnes.length)];
+            } else {
+              colorIdx = evenOnes.length > 0
+                ? evenOnes[Math.floor(Math.random() * evenOnes.length)]
+                : Math.floor(Math.random() * COLORS.length);
+            }
+          } else {
+            colorIdx = evenOnes.length > 0
+              ? evenOnes[Math.floor(Math.random() * evenOnes.length)]
+              : Math.floor(Math.random() * COLORS.length);
+          }
         }
 
         let x, y, tries = 0;
         do {
           x = margin + Math.random() * (W - margin * 2);
-          y = margin + Math.random() * (H - margin * 2);
+          y = hudHeight + margin + Math.random() * (H - hudHeight - margin * 2);
           tries++;
-        } while (tries < 25 && S.nodes.some(n => Math.hypot(n.x - x, n.y - y) < NODE_RADIUS * 3));
+        } while (tries < 30 && S.nodes.some(n => Math.hypot(n.x - x, n.y - y) < NODE_RADIUS * 3.5));
 
         const lifetime = BASE_LIFETIME * S.lifetimeMultiplier;
         S.nodes.push({
@@ -349,6 +391,18 @@
           opacity: 0,
         });
       }, []);
+
+      // Guarantee at least one connectable pair exists (or will soon)
+      const ensurePairExists = useCallback((canvas) => {
+        const counts = Array(COLORS.length).fill(0);
+        S.nodes.forEach(n => counts[n.colorIdx]++);
+        const hasAnyPair = counts.some(c => c >= 2);
+        if (!hasAnyPair && S.nodes.length > 0) {
+          // Force-spawn a partner for the most-urgent (lowest timeLeft) node
+          const urgentNode = S.nodes.reduce((a, b) => a.timeLeft < b.timeLeft ? a : b);
+          spawnNode(canvas, urgentNode.colorIdx);
+        }
+      }, [spawnNode]);
 
       // ── Drawing ──────────────────────────────────────────────
       const drawFrame = useCallback((timestamp) => {
@@ -388,6 +442,8 @@
             S.spawnTimer = 0;
             spawnNode(canvas);
             if (Math.random() < 0.25 + S.level * 0.05) spawnNode(canvas);
+            // After each spawn, verify a pair exists
+            ensurePairExists(canvas);
           }
 
           // ── Update nodes ──
@@ -402,6 +458,11 @@
             }
             return true;
           });
+
+          // After expiry, ensure a pair still exists
+          if (expiredNodes.length > 0) {
+            ensurePairExists(canvas);
+          }
 
           for (const node of expiredNodes) {
             spawnParticles(node.x, node.y, node.colorIdx, 10);
@@ -453,23 +514,73 @@
           return true;
         });
 
-        // ── Drag line ──
+        // ── Drag line + crossing visuals ──
         if (S.dragFrom && S.phase === 'playing') {
           const col = COLORS[S.dragFrom.node.colorIdx];
+          const mx = S.mouseX;
+          const my = S.mouseY;
+          const nx = S.dragFrom.node.x;
+          const ny = S.dragFrom.node.y;
+
+          // Check if drag line passes near a same-color node (potential target highlight)
+          let hoverTarget = null;
+          S.nodes.forEach(node => {
+            if (node.id === S.dragFrom.node.id) return;
+            if (node.colorIdx === S.dragFrom.node.colorIdx) {
+              const dist = Math.hypot(node.x - mx, node.y - my);
+              if (dist < NODE_RADIUS * 2.5) {
+                hoverTarget = node;
+              }
+            }
+          });
+
+          // Check if drag line crosses existing connection flashes → spawn sparks
+          S.connections.forEach(c => {
+            const pt = segmentsIntersect(nx, ny, mx, my, c.x1, c.y1, c.x2, c.y2);
+            if (pt && Math.random() < 0.3) {
+              spawnCrossSpark(pt.x, pt.y);
+            }
+          });
+
+          // Draw drag line - brighter/wider when near a target
           ctx.save();
-          ctx.strokeStyle = col.fill;
-          ctx.lineWidth = 3;
-          ctx.shadowColor = col.fill;
-          ctx.shadowBlur = 12;
+          if (hoverTarget) {
+            ctx.strokeStyle = col.fill;
+            ctx.lineWidth = 5;
+            ctx.shadowColor = col.fill;
+            ctx.shadowBlur = 24;
+            ctx.globalAlpha = 0.95;
+          } else {
+            ctx.strokeStyle = col.fill;
+            ctx.lineWidth = 3;
+            ctx.shadowColor = col.fill;
+            ctx.shadowBlur = 12;
+            ctx.globalAlpha = 0.75;
+          }
           ctx.setLineDash([8, 5]);
           ctx.lineDashOffset = -(timestamp * 0.06) % 13;
           ctx.beginPath();
-          ctx.moveTo(S.dragFrom.node.x, S.dragFrom.node.y);
-          ctx.lineTo(S.mouseX, S.mouseY);
+          ctx.moveTo(nx, ny);
+          ctx.lineTo(mx, my);
           ctx.stroke();
           ctx.shadowBlur = 0;
           ctx.setLineDash([]);
           ctx.restore();
+
+          // Draw "snap" ring on hover target
+          if (hoverTarget) {
+            ctx.save();
+            ctx.globalAlpha = 0.6 + 0.4 * Math.sin(timestamp * 0.015);
+            ctx.strokeStyle = col.fill;
+            ctx.lineWidth = 3;
+            ctx.shadowColor = col.fill;
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.arc(hoverTarget.x, hoverTarget.y, NODE_RADIUS * 1.8, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+          }
         }
 
         // ── Draw nodes ──
@@ -480,6 +591,11 @@
           const pulse = 1 + 0.08 * Math.sin(timestamp * 0.006 + node.id * 1.5);
           const r = NODE_RADIUS * node.scale * pulse;
           const selected = S.dragFrom && S.dragFrom.node.id === node.id;
+
+          // Highlight if it's a valid hover target during drag
+          const isHoverTarget = S.dragFrom && !selected
+            && node.colorIdx === S.dragFrom.node.colorIdx
+            && Math.hypot(node.x - S.mouseX, node.y - S.mouseY) < NODE_RADIUS * 2.5;
 
           ctx.save();
           ctx.translate(node.x, node.y);
@@ -510,9 +626,9 @@
           ctx.fillStyle = 'rgba(0,0,0,0.85)';
           ctx.fill();
           ctx.strokeStyle = col.fill;
-          ctx.lineWidth = selected ? 4 : 2.5;
+          ctx.lineWidth = (selected || isHoverTarget) ? 4 : 2.5;
           ctx.shadowColor = col.fill;
-          ctx.shadowBlur = selected ? 25 * urgency : 15 * urgency;
+          ctx.shadowBlur = (selected || isHoverTarget) ? 28 * urgency : 15 * urgency;
           ctx.stroke();
           ctx.shadowBlur = 0;
 
@@ -525,13 +641,16 @@
           ctx.fill();
           ctx.shadowBlur = 0;
 
-          // Selected ring pulse
-          if (selected) {
+          // Selected or hover-target ring pulse
+          if (selected || isHoverTarget) {
+            const ringR = isHoverTarget
+              ? r + 18 + 6 * Math.abs(Math.sin(timestamp * 0.015))
+              : r + 14 + 4 * Math.sin(timestamp * 0.012);
             ctx.beginPath();
-            ctx.arc(0, 0, r + 14 + 4 * Math.sin(timestamp * 0.012), 0, Math.PI * 2);
+            ctx.arc(0, 0, ringR, 0, Math.PI * 2);
             ctx.strokeStyle = col.fill;
-            ctx.lineWidth = 1.5;
-            ctx.globalAlpha = node.opacity * 0.5;
+            ctx.lineWidth = isHoverTarget ? 2.5 : 1.5;
+            ctx.globalAlpha = node.opacity * (isHoverTarget ? 0.7 : 0.5);
             ctx.stroke();
           }
 
@@ -555,11 +674,30 @@
           ctx.fill();
           return true;
         });
+
+        // ── Draw crossing sparks ──
+        S.crossSparks = S.crossSparks.filter(s => {
+          s.x += s.vx * dt;
+          s.y += s.vy * dt;
+          s.vx *= Math.pow(0.7, dt * 60);
+          s.vy *= Math.pow(0.7, dt * 60);
+          s.life -= dt * s.decay;
+          if (s.life <= 0) return false;
+          ctx.globalAlpha = s.life;
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = '#ffffff';
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.size * s.life, 0, Math.PI * 2);
+          ctx.fill();
+          return true;
+        });
+
         ctx.globalAlpha = 1;
         ctx.shadowBlur = 0;
 
         rafRef.current = requestAnimationFrame(drawFrame);
-      }, [spawnNode, spawnParticles, playConnect, playExpire, playGameOver]);
+      }, [spawnNode, ensurePairExists, spawnParticles, spawnCrossSpark, playConnect, playExpire, playGameOver]);
 
       // ── Resize ──────────────────────────────────────────────
       useEffect(() => {
@@ -591,6 +729,7 @@
         S.nodes = [];
         S.particles = [];
         S.connections = [];
+        S.crossSparks = [];
         S.score = 0;
         S.combo = 0;
         S.lives = MAX_LIVES;
@@ -599,11 +738,17 @@
         S.spawnInterval = INITIAL_SPAWN_INTERVAL;
         S.lifetimeMultiplier = 1.0;
         S.dragFrom = null;
+        S.isDragging = false;
         S.lastTime = null;
         S.nodeId = 0;
 
-        // Seed with 4 nodes
-        for (let i = 0; i < 4; i++) spawnNode(canvas);
+        // Seed with guaranteed pairs: 2 pairs of random colors
+        const c1 = Math.floor(Math.random() * COLORS.length);
+        let c2 = (c1 + 1 + Math.floor(Math.random() * (COLORS.length - 1))) % COLORS.length;
+        spawnNode(canvas, c1);
+        spawnNode(canvas, c2);
+        spawnNode(canvas, c1);
+        spawnNode(canvas, c2);
 
         setUi({
           phase: 'playing',
@@ -616,55 +761,51 @@
 
       // ── Node hit test ─────────────────────────────────────────
       const getNodeAt = useCallback((x, y) => {
-        return S.nodes.find(n => Math.hypot(n.x - x, n.y - y) < NODE_RADIUS * 1.6);
+        // Sort by distance, pick closest within hit radius
+        let closest = null;
+        let closestDist = NODE_RADIUS * 2.0; // generous hit radius
+        S.nodes.forEach(n => {
+          const d = Math.hypot(n.x - x, n.y - y);
+          if (d < closestDist) {
+            closestDist = d;
+            closest = n;
+          }
+        });
+        return closest;
       }, []);
 
-      // ── Pointer position ─────────────────────────────────────
+      // ── Robust pointer position ─────────────────────────────
       const getPos = useCallback((e) => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
         const sx = canvas.width / rect.width;
         const sy = canvas.height / rect.height;
-        const src = e.touches ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
+
+        // For touchend, e.touches is empty — use changedTouches
+        let src;
+        if (e.changedTouches && e.changedTouches.length > 0) {
+          src = e.changedTouches[0];
+        } else if (e.touches && e.touches.length > 0) {
+          src = e.touches[0];
+        } else {
+          src = e;
+        }
+
         return {
           x: (src.clientX - rect.left) * sx,
           y: (src.clientY - rect.top) * sy,
         };
       }, []);
 
-      // ── Input handlers ───────────────────────────────────────
-      const handlePointerDown = useCallback((e) => {
-        e.preventDefault();
-        initAudio();
-        const { x, y } = getPos(e);
-        S.mouseX = x; S.mouseY = y;
-
-        if (S.phase !== 'playing') {
-          startGame();
-          return;
-        }
-
-        const node = getNodeAt(x, y);
-        if (node) {
-          S.dragFrom = { node, startX: x, startY: y };
-        }
-      }, [initAudio, getPos, startGame, getNodeAt]);
-
-      const handlePointerMove = useCallback((e) => {
-        e.preventDefault();
-        const { x, y } = getPos(e);
-        S.mouseX = x; S.mouseY = y;
-      }, [getPos]);
-
-      const handlePointerUp = useCallback((e) => {
-        e.preventDefault();
+      // ── Connection logic (shared by mouse and global window handler) ──
+      const tryConnect = useCallback((x, y) => {
         if (!S.dragFrom || S.phase !== 'playing') {
           S.dragFrom = null;
+          S.isDragging = false;
           return;
         }
 
-        const { x, y } = getPos(e);
         const target = getNodeAt(x, y);
 
         if (target && target.id !== S.dragFrom.node.id && target.colorIdx === S.dragFrom.node.colorIdx) {
@@ -679,6 +820,20 @@
             x2: target.x, y2: target.y,
             colorIdx: target.colorIdx,
             life: 1,
+          });
+
+          // Check if new connection crosses existing connections → crossing bonus
+          S.connections.forEach(c => {
+            if (c.life >= 1) return; // skip the just-added one
+            const pt = segmentsIntersect(
+              S.dragFrom.node.x, S.dragFrom.node.y, target.x, target.y,
+              c.x1, c.y1, c.x2, c.y2
+            );
+            if (pt) {
+              spawnCrossSpark(pt.x, pt.y);
+              spawnCrossSpark(pt.x, pt.y);
+              playCross();
+            }
           });
 
           spawnParticles(S.dragFrom.node.x, S.dragFrom.node.y, S.dragFrom.node.colorIdx, 22);
@@ -696,6 +851,12 @@
           }
 
           setUi(u => ({ ...u, score: S.score, combo: S.combo }));
+
+          // After connecting, ensure a pair still exists
+          const canvas = canvasRef.current;
+          if (canvas) {
+            setTimeout(() => ensurePairExists(canvas), 100);
+          }
         } else if (target && target.id !== S.dragFrom.node.id) {
           // Wrong color - break combo
           S.combo = 0;
@@ -703,7 +864,55 @@
         }
 
         S.dragFrom = null;
-      }, [getPos, getNodeAt, spawnParticles, playConnect]);
+        S.isDragging = false;
+      }, [getNodeAt, spawnParticles, spawnCrossSpark, playConnect, playCross, ensurePairExists]);
+
+      // ── Input handlers ───────────────────────────────────────
+      const handlePointerDown = useCallback((e) => {
+        e.preventDefault();
+        initAudio();
+        const { x, y } = getPos(e);
+        S.mouseX = x; S.mouseY = y;
+
+        if (S.phase !== 'playing') {
+          startGame();
+          return;
+        }
+
+        const node = getNodeAt(x, y);
+        if (node) {
+          S.dragFrom = { node, startX: x, startY: y };
+          S.isDragging = true;
+        }
+      }, [initAudio, getPos, startGame, getNodeAt]);
+
+      const handlePointerMove = useCallback((e) => {
+        e.preventDefault();
+        const { x, y } = getPos(e);
+        S.mouseX = x; S.mouseY = y;
+      }, [getPos]);
+
+      const handlePointerUp = useCallback((e) => {
+        if (e.preventDefault) e.preventDefault();
+        const { x, y } = getPos(e);
+        tryConnect(x, y);
+      }, [getPos, tryConnect]);
+
+      // ── Global window listeners for reliable drag-release ────
+      useEffect(() => {
+        const onWindowMouseUp = (e) => {
+          if (S.isDragging) handlePointerUp(e);
+        };
+        const onWindowTouchEnd = (e) => {
+          if (S.isDragging) handlePointerUp(e);
+        };
+        window.addEventListener('mouseup', onWindowMouseUp);
+        window.addEventListener('touchend', onWindowTouchEnd, { passive: false });
+        return () => {
+          window.removeEventListener('mouseup', onWindowMouseUp);
+          window.removeEventListener('touchend', onWindowTouchEnd);
+        };
+      }, [handlePointerUp]);
 
       // ── Keyboard shortcut ────────────────────────────────────
       useEffect(() => {
@@ -735,7 +944,7 @@
             onTouchEnd={handlePointerUp}
           />
 
-          {/* HUD - only during play */}
+          {/* HUD - pointer-events: none so it never blocks drag interactions */}
           {ui.phase === 'playing' && (
             <div className="hud">
               <div className="hud-block">
@@ -788,6 +997,7 @@
                 <div className="inst-row"><span>DRAG</span> from one node to a same-color node</div>
                 <div className="inst-row">Build <span>COMBOS</span> for massive point multipliers</div>
                 <div className="inst-row">Nodes expire if left too long — <span>3 LIVES</span></div>
+                <div className="inst-row">Cross connection sparks for <span>extra flair!</span></div>
               </div>
               <button className="start-btn" onMouseDown={e => { e.stopPropagation(); handlePointerDown(e); }}>
                 IGNITE
