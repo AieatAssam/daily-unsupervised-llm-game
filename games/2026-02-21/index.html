@@ -44,7 +44,7 @@
     }
     .hud-score { color: #00ffff; text-shadow: 0 0 12px #00ffff; }
     .hud-combo { color: #ff00ff; text-shadow: 0 0 12px #ff00ff; }
-    .hud-best { color: #ffff00; text-shadow: 0 0 12px #ffff00; }
+    .hud-best  { color: #ffff00; text-shadow: 0 0 12px #ffff00; }
     .lives { display: flex; gap: 6px; align-items: center; }
     .heart {
       width: 18px; height: 18px;
@@ -137,7 +137,7 @@
     }
     @keyframes pulse-text {
       from { opacity: 0.7; transform: scale(1); }
-      to { opacity: 1; transform: scale(1.05); }
+      to   { opacity: 1;   transform: scale(1.05); }
     }
     .combo-flash {
       position: absolute;
@@ -146,18 +146,17 @@
       color: #ff00ff;
       text-shadow: 0 0 20px #ff00ff;
       pointer-events: none;
-      animation: combo-pop 0.6s ease-out forwards;
+      animation: combo-pop 0.7s ease-out forwards;
       letter-spacing: 2px;
     }
     @keyframes combo-pop {
-      0% { opacity: 1; transform: scale(0.5) translateY(0); }
-      50% { opacity: 1; transform: scale(1.3) translateY(-20px); }
-      100% { opacity: 0; transform: scale(1) translateY(-50px); }
+      0%   { opacity: 1; transform: scale(0.5) translateY(0); }
+      50%  { opacity: 1; transform: scale(1.3) translateY(-20px); }
+      100% { opacity: 0; transform: scale(1)   translateY(-50px); }
     }
     .level-flash {
       position: absolute;
-      top: 50%;
-      left: 50%;
+      top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       font-size: clamp(24px, 6vw, 48px);
       font-weight: 900;
@@ -169,9 +168,9 @@
       white-space: nowrap;
     }
     @keyframes level-pop {
-      0% { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
-      20% { opacity: 1; transform: translate(-50%,-50%) scale(1.2); }
-      60% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+      0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
+      20%  { opacity: 1; transform: translate(-50%,-50%) scale(1.2); }
+      60%  { opacity: 1; transform: translate(-50%,-50%) scale(1);   }
       100% { opacity: 0; transform: translate(-50%,-50%) scale(1.1); }
     }
   </style>
@@ -189,13 +188,13 @@
       { fill: '#00ff88', shadow: 'rgba(0,255,136,0.7)',   dark: 'rgba(0,255,136,0.15)'  },
     ];
 
-    const NODE_RADIUS = 22;
-    const BASE_LIFETIME = 8000;
-    const MAX_LIVES = 3;
-    const INITIAL_SPAWN_INTERVAL = 2200;
-    const STORAGE_KEY = 'circuitBlazeHighScore';
+    const NODE_RADIUS          = 22;
+    const BASE_LIFETIME        = 10000;  // 10 seconds base lifetime
+    const MAX_LIVES            = 3;
+    const INITIAL_SPAWN_INTERVAL = 2400;
+    const STORAGE_KEY          = 'circuitBlazeHighScore';
 
-    // Line-segment intersection helper for crossing visuals
+    // ── Line-segment intersection ────────────────────────────
     function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
       const denom = (dx - cx) * (ay - by) - (dy - cy) * (ax - bx);
       if (Math.abs(denom) < 1e-10) return null;
@@ -205,6 +204,78 @@
         return { x: ax + t * (bx - ax), y: ay + t * (by - ay) };
       }
       return null;
+    }
+
+    // ── Lightning helpers ────────────────────────────────────
+    // Generate fixed midpoint offsets for a lightning bolt path
+    function generateLightningPts(x1, y1, x2, y2, n) {
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      const pts = [];
+      for (let i = 1; i < n; i++) {
+        pts.push({
+          t: i / n,
+          offset: (Math.random() - 0.5) * Math.max(len * 0.28, 12),
+        });
+      }
+      return pts;
+    }
+
+    // Draw a multi-pass glowing lightning bolt
+    function drawLightningLine(ctx, x1, y1, x2, y2, color, alpha, pts) {
+      const dx = x2 - x1, dy = y2 - y1;
+      const len = Math.hypot(dx, dy);
+      if (len < 2) return;
+      const perpX = -dy / len, perpY = dx / len;
+
+      // Build path: fixed base + tiny per-frame jitter for flicker
+      const px = [x1], py = [y1];
+      pts.forEach(p => {
+        const jitter = (Math.random() - 0.5) * len * 0.06;
+        px.push(x1 + dx * p.t + perpX * (p.offset + jitter));
+        py.push(y1 + dy * p.t + perpY * (p.offset + jitter));
+      });
+      px.push(x2); py.push(y2);
+
+      const strokePath = () => {
+        ctx.beginPath();
+        ctx.moveTo(px[0], py[0]);
+        for (let i = 1; i < px.length; i++) ctx.lineTo(px[i], py[i]);
+        ctx.stroke();
+      };
+
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap  = 'round';
+
+      // Outer glow
+      ctx.globalAlpha = alpha * 0.14;
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 24;
+      ctx.shadowColor = color;
+      ctx.shadowBlur  = 45;
+      strokePath();
+
+      // Mid glow
+      ctx.globalAlpha = alpha * 0.45;
+      ctx.lineWidth   = 8;
+      ctx.shadowBlur  = 20;
+      strokePath();
+
+      // Bright core (colored)
+      ctx.globalAlpha = alpha * 0.85;
+      ctx.lineWidth   = 2.5;
+      ctx.shadowBlur  = 10;
+      strokePath();
+
+      // White-hot inner core
+      ctx.globalAlpha = alpha * 0.95;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth   = 1;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur  = 6;
+      strokePath();
+
+      ctx.restore();
     }
 
     function Heart({ filled }) {
@@ -217,8 +288,8 @@
 
     const CircuitBlaze = () => {
       const canvasRef = useRef(null);
-      const stateRef = useRef(null);
-      const rafRef = useRef(null);
+      const stateRef  = useRef(null);
+      const rafRef    = useRef(null);
       const [ui, setUi] = useState({
         phase: 'intro',
         score: 0,
@@ -227,17 +298,16 @@
         highScore: parseInt(localStorage.getItem(STORAGE_KEY) || '0'),
         level: 1,
       });
-      const [comboFlashes, setComboFlashes] = useState([]);
+      const [comboFlashes,   setComboFlashes]   = useState([]);
       const [showLevelFlash, setShowLevelFlash] = useState(null);
 
-      // Initialize state ref once
       if (!stateRef.current) {
         stateRef.current = {
           phase: 'intro',
           nodes: [],
           particles: [],
-          connections: [],    // animating completed connections
-          crossSparks: [],    // crossing spark effects
+          connections: [],   // fading completed connections
+          crossSparks: [],   // crossing spark effects
           score: 0,
           combo: 0,
           lives: MAX_LIVES,
@@ -260,7 +330,7 @@
 
       const S = stateRef.current;
 
-      // ── Audio ───────────────────────────────────────────────
+      // ── Audio ────────────────────────────────────────────────
       const initAudio = useCallback(() => {
         if (!S.audioCtx) {
           S.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -271,7 +341,7 @@
       const playTone = useCallback((freq, type, dur, vol, freqEnd) => {
         if (!S.audioCtx) return;
         try {
-          const osc = S.audioCtx.createOscillator();
+          const osc  = S.audioCtx.createOscillator();
           const gain = S.audioCtx.createGain();
           osc.connect(gain);
           gain.connect(S.audioCtx.destination);
@@ -287,9 +357,9 @@
 
       const playConnect = useCallback((combo) => {
         const base = 440 + Math.min(combo - 1, 10) * 60;
-        playTone(base, 'sine', 0.12, 0.4, base * 1.5);
-        setTimeout(() => playTone(base * 1.5, 'sine', 0.1, 0.25, base * 2), 90);
-        if (combo >= 3) setTimeout(() => playTone(base * 2, 'triangle', 0.15, 0.2), 180);
+        playTone(base,       'sine',     0.12, 0.4, base * 1.5);
+        setTimeout(() => playTone(base * 1.5, 'sine',     0.10, 0.25, base * 2), 90);
+        if (combo >= 3) setTimeout(() => playTone(base * 2,   'triangle', 0.15, 0.2), 180);
       }, [playTone]);
 
       const playExpire = useCallback(() => {
@@ -298,15 +368,15 @@
 
       const playGameOver = useCallback(() => {
         playTone(300, 'sawtooth', 0.3, 0.4, 150);
-        setTimeout(() => playTone(150, 'sawtooth', 0.4, 0.4, 80), 250);
-        setTimeout(() => playTone(80, 'sawtooth', 0.7, 0.35, 40), 550);
+        setTimeout(() => playTone(150, 'sawtooth', 0.4, 0.4, 80),  250);
+        setTimeout(() => playTone(80,  'sawtooth', 0.7, 0.35, 40), 550);
       }, [playTone]);
 
       const playCross = useCallback(() => {
         playTone(600, 'triangle', 0.08, 0.15, 800);
       }, [playTone]);
 
-      // ── Particles ───────────────────────────────────────────
+      // ── Particles ────────────────────────────────────────────
       const spawnParticles = useCallback((x, y, colorIdx, count) => {
         const color = COLORS[colorIdx];
         for (let i = 0; i < count; i++) {
@@ -320,12 +390,11 @@
             decay: 0.6 + Math.random() * 0.5,
             size: 2 + Math.random() * 6,
             color: color.fill,
-            glow: color.shadow,
+            glow:  color.shadow,
           });
         }
       }, []);
 
-      // Spawn crossing sparks at intersection point
       const spawnCrossSpark = useCallback((x, y) => {
         for (let i = 0; i < 8; i++) {
           const angle = (Math.PI * 2 * i) / 8 + Math.random() * 0.5;
@@ -345,27 +414,24 @@
       const spawnNode = useCallback((canvas, forceColorIdx) => {
         const W = canvas.width;
         const H = canvas.height;
-        const margin = 80;
-        const hudHeight = 65; // keep nodes below HUD
+        const margin    = 80;
+        const hudHeight = 65;
 
-        // Pick color: strongly prefer completing an existing unpaired node
         let colorIdx;
         if (forceColorIdx !== undefined) {
           colorIdx = forceColorIdx;
         } else {
-          const counts = Array(COLORS.length).fill(0);
+          const counts  = Array(COLORS.length).fill(0);
           S.nodes.forEach(n => counts[n.colorIdx]++);
-          const oddOnes = COLORS.map((_, i) => i).filter(i => counts[i] % 2 === 1 && counts[i] < 6);
+          // odd = colors with an unpaired node (1, 3, 5)
+          const oddOnes  = COLORS.map((_, i) => i).filter(i => counts[i] % 2 === 1 && counts[i] < 6);
           const evenOnes = COLORS.map((_, i) => i).filter(i => counts[i] % 2 === 0 && counts[i] < 6);
           if (oddOnes.length > 0) {
-            // 85% chance: complete an unpaired node
-            if (Math.random() > 0.15) {
-              colorIdx = oddOnes[Math.floor(Math.random() * oddOnes.length)];
-            } else {
-              colorIdx = evenOnes.length > 0
-                ? evenOnes[Math.floor(Math.random() * evenOnes.length)]
-                : Math.floor(Math.random() * COLORS.length);
-            }
+            colorIdx = Math.random() > 0.15
+              ? oddOnes[Math.floor(Math.random() * oddOnes.length)]
+              : (evenOnes.length > 0
+                  ? evenOnes[Math.floor(Math.random() * evenOnes.length)]
+                  : Math.floor(Math.random() * COLORS.length));
           } else {
             colorIdx = evenOnes.length > 0
               ? evenOnes[Math.floor(Math.random() * evenOnes.length)]
@@ -386,19 +452,17 @@
           x, y,
           colorIdx,
           timeLeft: lifetime,
-          maxTime: lifetime,
-          scale: 0,
+          maxTime:  lifetime,
+          scale:   0,
           opacity: 0,
         });
       }, []);
 
-      // Guarantee at least one connectable pair exists (or will soon)
       const ensurePairExists = useCallback((canvas) => {
         const counts = Array(COLORS.length).fill(0);
         S.nodes.forEach(n => counts[n.colorIdx]++);
         const hasAnyPair = counts.some(c => c >= 2);
         if (!hasAnyPair && S.nodes.length > 0) {
-          // Force-spawn a partner for the most-urgent (lowest timeLeft) node
           const urgentNode = S.nodes.reduce((a, b) => a.timeLeft < b.timeLeft ? a : b);
           spawnNode(canvas, urgentNode.colorIdx);
         }
@@ -409,8 +473,8 @@
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
-        const W = canvas.width;
-        const H = canvas.height;
+        const W   = canvas.width;
+        const H   = canvas.height;
 
         const dt = S.lastTime ? Math.min((timestamp - S.lastTime) / 1000, 0.05) : 0.016;
         S.lastTime = timestamp;
@@ -418,31 +482,43 @@
         // ── Background ──
         S.bgHue = (S.bgHue + dt * 15) % 360;
         const grad = ctx.createRadialGradient(W * 0.5, H * 0.45, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.85);
-        grad.addColorStop(0,   `hsla(${S.bgHue},       70%, 10%, 1)`);
-        grad.addColorStop(0.5, `hsla(${(S.bgHue+100)%360}, 80%, 6%, 1)`);
-        grad.addColorStop(1,   `hsla(${(S.bgHue+220)%360}, 90%, 4%, 1)`);
+        grad.addColorStop(0,   `hsla(${S.bgHue},           70%, 10%, 1)`);
+        grad.addColorStop(0.5, `hsla(${(S.bgHue+100)%360}, 80%,  6%, 1)`);
+        grad.addColorStop(1,   `hsla(${(S.bgHue+220)%360}, 90%,  4%, 1)`);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, W, H);
 
         // Grid dots
         ctx.fillStyle = 'rgba(255,255,255,0.04)';
         const gs = 50;
-        for (let gx = gs; gx < W; gx += gs) {
+        for (let gx = gs; gx < W; gx += gs)
           for (let gy = gs; gy < H; gy += gs) {
             ctx.beginPath();
             ctx.arc(gx, gy, 1, 0, Math.PI * 2);
             ctx.fill();
           }
-        }
 
         if (S.phase === 'playing') {
           // ── Spawn nodes ──
           S.spawnTimer += dt * 1000;
           if (S.spawnTimer >= S.spawnInterval) {
             S.spawnTimer = 0;
-            spawnNode(canvas);
-            if (Math.random() < 0.25 + S.level * 0.05) spawnNode(canvas);
-            // After each spawn, verify a pair exists
+
+            // 20% chance: spawn a QUAD (4 of same color) for multi-link chain combos
+            const spawnCts = Array(COLORS.length).fill(0);
+            S.nodes.forEach(n => spawnCts[n.colorIdx]++);
+            const pairColors = COLORS.map((_, i) => i).filter(i => spawnCts[i] === 2);
+
+            if (pairColors.length > 0 && Math.random() < 0.2) {
+              // Extend an existing pair to a quad
+              const ci = pairColors[Math.floor(Math.random() * pairColors.length)];
+              spawnNode(canvas, ci);
+              spawnNode(canvas, ci);
+            } else {
+              spawnNode(canvas);
+              if (Math.random() < 0.25 + S.level * 0.05) spawnNode(canvas);
+            }
+
             ensurePairExists(canvas);
           }
 
@@ -450,7 +526,7 @@
           const expiredNodes = [];
           S.nodes = S.nodes.filter(node => {
             node.timeLeft -= dt * 1000;
-            node.scale = Math.min(1, node.scale + dt * 6);
+            node.scale   = Math.min(1, node.scale   + dt * 6);
             node.opacity = Math.min(1, node.opacity + dt * 6);
             if (node.timeLeft <= 0) {
               expiredNodes.push(node);
@@ -459,16 +535,21 @@
             return true;
           });
 
-          // After expiry, ensure a pair still exists
+          // ── Handle expiry: 1 life lost per COLOR GROUP, not per node ──
           if (expiredNodes.length > 0) {
-            ensurePairExists(canvas);
-          }
+            // Particles for each expired node
+            expiredNodes.forEach(node => {
+              spawnParticles(node.x, node.y, node.colorIdx, 12);
+            });
 
-          for (const node of expiredNodes) {
-            spawnParticles(node.x, node.y, node.colorIdx, 10);
-            playExpire();
-            S.lives = Math.max(0, S.lives - 1);
-            S.combo = 0;
+            // Sound: once per unique color that burned out
+            const expiredColors = new Set(expiredNodes.map(n => n.colorIdx));
+            expiredColors.forEach(() => playExpire());
+
+            // Lives lost = number of UNIQUE colors (pairs treated as one failure)
+            const livesLost = expiredColors.size;
+            S.lives = Math.max(0, S.lives - livesLost);
+            // NOTE: combo does NOT reset on expiry — only on wrong connections
 
             if (S.lives <= 0) {
               S.phase = 'gameover';
@@ -477,122 +558,88 @@
                 localStorage.setItem(STORAGE_KEY, S.score);
               }
               playGameOver();
-              setUi(u => ({ ...u, phase: 'gameover', score: S.score, highScore: S.highScore, combo: 0, lives: 0 }));
+              setUi(u => ({ ...u, phase: 'gameover', score: S.score, highScore: S.highScore, lives: 0 }));
             } else {
-              setUi(u => ({ ...u, lives: S.lives, combo: 0 }));
+              setUi(u => ({ ...u, lives: S.lives }));
             }
+
+            ensurePairExists(canvas);
           }
 
           // ── Level up ──
           const newLevel = 1 + Math.floor(S.score / 500);
           if (newLevel > S.level) {
             S.level = newLevel;
-            S.spawnInterval = Math.max(700, INITIAL_SPAWN_INTERVAL - (S.level - 1) * 180);
-            S.lifetimeMultiplier = Math.max(0.45, 1.0 - (S.level - 1) * 0.07);
+            S.spawnInterval        = Math.max(700, INITIAL_SPAWN_INTERVAL - (S.level - 1) * 180);
+            S.lifetimeMultiplier   = Math.max(0.45, 1.0 - (S.level - 1) * 0.07);
             setShowLevelFlash(`LEVEL ${S.level}`);
             setTimeout(() => setShowLevelFlash(null), 1200);
             setUi(u => ({ ...u, level: S.level }));
           }
         }
 
-        // ── Update & draw connections (flash lines) ──
+        // ── Draw connections as lightning bolts (persist ~2 seconds) ──
         S.connections = S.connections.filter(c => {
-          c.life -= dt * 3;
+          c.life -= dt * 0.5;   // slow fade: ~2 seconds visible
           if (c.life <= 0) return false;
           const col = COLORS[c.colorIdx];
-          ctx.globalAlpha = c.life * 0.8;
-          ctx.strokeStyle = col.fill;
-          ctx.lineWidth = 4 * c.life;
-          ctx.shadowColor = col.fill;
-          ctx.shadowBlur = 20;
-          ctx.beginPath();
-          ctx.moveTo(c.x1, c.y1);
-          ctx.lineTo(c.x2, c.y2);
-          ctx.stroke();
-          ctx.shadowBlur = 0;
+          drawLightningLine(ctx, c.x1, c.y1, c.x2, c.y2, col.fill, c.life, c.pts);
           ctx.globalAlpha = 1;
+          ctx.shadowBlur  = 0;
           return true;
         });
 
-        // ── Drag line + crossing visuals ──
+        // ── Drag line ──
         if (S.dragFrom && S.phase === 'playing') {
           const col = COLORS[S.dragFrom.node.colorIdx];
-          const mx = S.mouseX;
-          const my = S.mouseY;
-          const nx = S.dragFrom.node.x;
-          const ny = S.dragFrom.node.y;
+          const mx  = S.mouseX, my = S.mouseY;
+          const nx  = S.dragFrom.node.x, ny = S.dragFrom.node.y;
 
-          // Check if drag line passes near a same-color node (potential target highlight)
+          // Detect hover over a valid target
           let hoverTarget = null;
           S.nodes.forEach(node => {
             if (node.id === S.dragFrom.node.id) return;
             if (node.colorIdx === S.dragFrom.node.colorIdx) {
-              const dist = Math.hypot(node.x - mx, node.y - my);
-              if (dist < NODE_RADIUS * 2.5) {
+              if (Math.hypot(node.x - mx, node.y - my) < NODE_RADIUS * 2.5)
                 hoverTarget = node;
-              }
             }
           });
 
-          // Check if drag line crosses existing connection flashes → spawn sparks
+          // Spawn cross-sparks where drag line crosses existing connections
           S.connections.forEach(c => {
             const pt = segmentsIntersect(nx, ny, mx, my, c.x1, c.y1, c.x2, c.y2);
-            if (pt && Math.random() < 0.3) {
-              spawnCrossSpark(pt.x, pt.y);
-            }
+            if (pt && Math.random() < 0.3) spawnCrossSpark(pt.x, pt.y);
           });
 
-          // Draw drag line - brighter/wider when near a target
-          ctx.save();
-          if (hoverTarget) {
-            ctx.strokeStyle = col.fill;
-            ctx.lineWidth = 5;
-            ctx.shadowColor = col.fill;
-            ctx.shadowBlur = 24;
-            ctx.globalAlpha = 0.95;
-          } else {
-            ctx.strokeStyle = col.fill;
-            ctx.lineWidth = 3;
-            ctx.shadowColor = col.fill;
-            ctx.shadowBlur = 12;
-            ctx.globalAlpha = 0.75;
-          }
-          ctx.setLineDash([8, 5]);
-          ctx.lineDashOffset = -(timestamp * 0.06) % 13;
-          ctx.beginPath();
-          ctx.moveTo(nx, ny);
-          ctx.lineTo(mx, my);
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-          ctx.setLineDash([]);
-          ctx.restore();
+          // Draw drag line as a live flickering lightning bolt
+          const livePts   = generateLightningPts(nx, ny, mx, my, 8);
+          const dragAlpha = hoverTarget ? 0.95 : 0.75;
+          drawLightningLine(ctx, nx, ny, mx, my, col.fill, dragAlpha, livePts);
 
-          // Draw "snap" ring on hover target
+          // Snap ring on hover target
           if (hoverTarget) {
             ctx.save();
             ctx.globalAlpha = 0.6 + 0.4 * Math.sin(timestamp * 0.015);
             ctx.strokeStyle = col.fill;
-            ctx.lineWidth = 3;
+            ctx.lineWidth   = 3;
             ctx.shadowColor = col.fill;
-            ctx.shadowBlur = 20;
+            ctx.shadowBlur  = 20;
             ctx.beginPath();
             ctx.arc(hoverTarget.x, hoverTarget.y, NODE_RADIUS * 1.8, 0, Math.PI * 2);
             ctx.stroke();
-            ctx.shadowBlur = 0;
+            ctx.shadowBlur  = 0;
             ctx.restore();
           }
         }
 
         // ── Draw nodes ──
         S.nodes.forEach(node => {
-          const col = COLORS[node.colorIdx];
-          const ratio = node.timeLeft / node.maxTime;
+          const col     = COLORS[node.colorIdx];
+          const ratio   = node.timeLeft / node.maxTime;
           const urgency = ratio < 0.3 ? 1 + (0.3 - ratio) * 4 : 1;
-          const pulse = 1 + 0.08 * Math.sin(timestamp * 0.006 + node.id * 1.5);
-          const r = NODE_RADIUS * node.scale * pulse;
-          const selected = S.dragFrom && S.dragFrom.node.id === node.id;
-
-          // Highlight if it's a valid hover target during drag
+          const pulse   = 1 + 0.08 * Math.sin(timestamp * 0.006 + node.id * 1.5);
+          const r       = NODE_RADIUS * node.scale * pulse;
+          const selected     = S.dragFrom && S.dragFrom.node.id === node.id;
           const isHoverTarget = S.dragFrom && !selected
             && node.colorIdx === S.dragFrom.node.colorIdx
             && Math.hypot(node.x - S.mouseX, node.y - S.mouseY) < NODE_RADIUS * 2.5;
@@ -601,15 +648,15 @@
           ctx.translate(node.x, node.y);
           ctx.globalAlpha = node.opacity;
 
-          // Outer glow ring (countdown arc)
+          // Countdown arc
           ctx.beginPath();
           ctx.arc(0, 0, r + 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
           ctx.strokeStyle = col.fill;
-          ctx.lineWidth = 3;
+          ctx.lineWidth   = 3;
           ctx.shadowColor = col.fill;
-          ctx.shadowBlur = 10 * urgency;
+          ctx.shadowBlur  = 10 * urgency;
           ctx.stroke();
-          ctx.shadowBlur = 0;
+          ctx.shadowBlur  = 0;
 
           // Ambient glow halo
           const glowR = ctx.createRadialGradient(0, 0, r * 0.5, 0, 0, r * 2.5);
@@ -623,34 +670,34 @@
           // Node body
           ctx.beginPath();
           ctx.arc(0, 0, r, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(0,0,0,0.85)';
+          ctx.fillStyle   = 'rgba(0,0,0,0.85)';
           ctx.fill();
           ctx.strokeStyle = col.fill;
-          ctx.lineWidth = (selected || isHoverTarget) ? 4 : 2.5;
+          ctx.lineWidth   = (selected || isHoverTarget) ? 4 : 2.5;
           ctx.shadowColor = col.fill;
-          ctx.shadowBlur = (selected || isHoverTarget) ? 28 * urgency : 15 * urgency;
+          ctx.shadowBlur  = (selected || isHoverTarget) ? 28 * urgency : 15 * urgency;
           ctx.stroke();
-          ctx.shadowBlur = 0;
+          ctx.shadowBlur  = 0;
 
           // Inner core dot
           ctx.beginPath();
           ctx.arc(0, 0, r * 0.38, 0, Math.PI * 2);
-          ctx.fillStyle = col.fill;
+          ctx.fillStyle   = col.fill;
           ctx.shadowColor = col.fill;
-          ctx.shadowBlur = 12;
+          ctx.shadowBlur  = 12;
           ctx.fill();
-          ctx.shadowBlur = 0;
+          ctx.shadowBlur  = 0;
 
-          // Selected or hover-target ring pulse
+          // Pulse ring when selected or hovered
           if (selected || isHoverTarget) {
             const ringR = isHoverTarget
               ? r + 18 + 6 * Math.abs(Math.sin(timestamp * 0.015))
               : r + 14 + 4 * Math.sin(timestamp * 0.012);
             ctx.beginPath();
             ctx.arc(0, 0, ringR, 0, Math.PI * 2);
-            ctx.strokeStyle = col.fill;
-            ctx.lineWidth = isHoverTarget ? 2.5 : 1.5;
-            ctx.globalAlpha = node.opacity * (isHoverTarget ? 0.7 : 0.5);
+            ctx.strokeStyle  = col.fill;
+            ctx.lineWidth    = isHoverTarget ? 2.5 : 1.5;
+            ctx.globalAlpha  = node.opacity * (isHoverTarget ? 0.7 : 0.5);
             ctx.stroke();
           }
 
@@ -666,9 +713,9 @@
           p.life -= dt * p.decay;
           if (p.life <= 0) return false;
           ctx.globalAlpha = p.life;
-          ctx.fillStyle = p.color;
+          ctx.fillStyle   = p.color;
           ctx.shadowColor = p.glow;
-          ctx.shadowBlur = 8;
+          ctx.shadowBlur  = 8;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
           ctx.fill();
@@ -684,9 +731,9 @@
           s.life -= dt * s.decay;
           if (s.life <= 0) return false;
           ctx.globalAlpha = s.life;
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle   = '#ffffff';
           ctx.shadowColor = '#ffffff';
-          ctx.shadowBlur = 6;
+          ctx.shadowBlur  = 6;
           ctx.beginPath();
           ctx.arc(s.x, s.y, s.size * s.life, 0, Math.PI * 2);
           ctx.fill();
@@ -694,17 +741,17 @@
         });
 
         ctx.globalAlpha = 1;
-        ctx.shadowBlur = 0;
+        ctx.shadowBlur  = 0;
 
         rafRef.current = requestAnimationFrame(drawFrame);
-      }, [spawnNode, ensurePairExists, spawnParticles, spawnCrossSpark, playConnect, playExpire, playGameOver]);
+      }, [spawnNode, ensurePairExists, spawnParticles, spawnCrossSpark, playExpire, playGameOver]);
 
-      // ── Resize ──────────────────────────────────────────────
+      // ── Resize ───────────────────────────────────────────────
       useEffect(() => {
         const resize = () => {
           const canvas = canvasRef.current;
           if (!canvas) return;
-          canvas.width = window.innerWidth;
+          canvas.width  = window.innerWidth;
           canvas.height = window.innerHeight;
         };
         resize();
@@ -712,96 +759,82 @@
         return () => window.removeEventListener('resize', resize);
       }, []);
 
-      // ── Start animation loop ─────────────────────────────────
+      // ── Animation loop ───────────────────────────────────────
       useEffect(() => {
         rafRef.current = requestAnimationFrame(drawFrame);
-        return () => {
-          if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        };
+        return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
       }, [drawFrame]);
 
-      // ── Game actions ─────────────────────────────────────────
+      // ── Game start ───────────────────────────────────────────
       const startGame = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        S.phase = 'playing';
-        S.nodes = [];
-        S.particles = [];
-        S.connections = [];
-        S.crossSparks = [];
-        S.score = 0;
-        S.combo = 0;
-        S.lives = MAX_LIVES;
-        S.level = 1;
-        S.spawnTimer = 0;
-        S.spawnInterval = INITIAL_SPAWN_INTERVAL;
+        S.phase              = 'playing';
+        S.nodes              = [];
+        S.particles          = [];
+        S.connections        = [];
+        S.crossSparks        = [];
+        S.score              = 0;
+        S.combo              = 0;
+        S.lives              = MAX_LIVES;
+        S.level              = 1;
+        S.spawnTimer         = 0;
+        S.spawnInterval      = INITIAL_SPAWN_INTERVAL;
         S.lifetimeMultiplier = 1.0;
-        S.dragFrom = null;
-        S.isDragging = false;
-        S.lastTime = null;
-        S.nodeId = 0;
+        S.dragFrom           = null;
+        S.isDragging         = false;
+        S.lastTime           = null;
+        S.nodeId             = 0;
 
-        // Seed with guaranteed pairs: 2 pairs of random colors
+        // Seed with 2 guaranteed pairs
         const c1 = Math.floor(Math.random() * COLORS.length);
-        let c2 = (c1 + 1 + Math.floor(Math.random() * (COLORS.length - 1))) % COLORS.length;
+        const c2 = (c1 + 1 + Math.floor(Math.random() * (COLORS.length - 1))) % COLORS.length;
         spawnNode(canvas, c1);
         spawnNode(canvas, c2);
         spawnNode(canvas, c1);
         spawnNode(canvas, c2);
 
-        setUi({
-          phase: 'playing',
-          score: 0, combo: 0, lives: MAX_LIVES,
-          highScore: S.highScore, level: 1,
+        // Stagger initial lifetimes so they don't all expire simultaneously
+        S.nodes.forEach(n => {
+          const stagger = Math.random() * 3500;   // 0–3.5 s offset
+          n.timeLeft = Math.max(4000, n.timeLeft - stagger);
+          n.maxTime  = n.timeLeft;
         });
+
+        setUi({ phase: 'playing', score: 0, combo: 0, lives: MAX_LIVES, highScore: S.highScore, level: 1 });
         setComboFlashes([]);
         setShowLevelFlash(null);
       }, [spawnNode]);
 
-      // ── Node hit test ─────────────────────────────────────────
+      // ── Node hit test ────────────────────────────────────────
       const getNodeAt = useCallback((x, y) => {
-        // Sort by distance, pick closest within hit radius
-        let closest = null;
-        let closestDist = NODE_RADIUS * 2.0; // generous hit radius
+        let closest = null, closestDist = NODE_RADIUS * 2.0;
         S.nodes.forEach(n => {
           const d = Math.hypot(n.x - x, n.y - y);
-          if (d < closestDist) {
-            closestDist = d;
-            closest = n;
-          }
+          if (d < closestDist) { closestDist = d; closest = n; }
         });
         return closest;
       }, []);
 
-      // ── Robust pointer position ─────────────────────────────
+      // ── Pointer position ─────────────────────────────────────
       const getPos = useCallback((e) => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-        const sx = canvas.width / rect.width;
+        const sx = canvas.width  / rect.width;
         const sy = canvas.height / rect.height;
-
-        // For touchend, e.touches is empty — use changedTouches
         let src;
-        if (e.changedTouches && e.changedTouches.length > 0) {
-          src = e.changedTouches[0];
-        } else if (e.touches && e.touches.length > 0) {
-          src = e.touches[0];
-        } else {
-          src = e;
-        }
-
-        return {
-          x: (src.clientX - rect.left) * sx,
-          y: (src.clientY - rect.top) * sy,
-        };
+        if (e.changedTouches && e.changedTouches.length > 0) src = e.changedTouches[0];
+        else if (e.touches   && e.touches.length   > 0) src = e.touches[0];
+        else src = e;
+        return { x: (src.clientX - rect.left) * sx, y: (src.clientY - rect.top) * sy };
       }, []);
 
-      // ── Connection logic (shared by mouse and global window handler) ──
+      // ── Connection logic ─────────────────────────────────────
       const tryConnect = useCallback((x, y) => {
         if (!S.dragFrom || S.phase !== 'playing') {
-          S.dragFrom = null;
+          S.dragFrom  = null;
           S.isDragging = false;
           return;
         }
@@ -809,20 +842,21 @@
         const target = getNodeAt(x, y);
 
         if (target && target.id !== S.dragFrom.node.id && target.colorIdx === S.dragFrom.node.colorIdx) {
-          // Successful connection!
+          // ── Successful connection! ──
           S.combo++;
           const points = 100 * S.combo;
           S.score += points;
 
-          // Record connection flash
+          // Store connection flash as lightning with persistent path points
           S.connections.push({
             x1: S.dragFrom.node.x, y1: S.dragFrom.node.y,
-            x2: target.x, y2: target.y,
+            x2: target.x,          y2: target.y,
             colorIdx: target.colorIdx,
             life: 1,
+            pts: generateLightningPts(S.dragFrom.node.x, S.dragFrom.node.y, target.x, target.y, 10),
           });
 
-          // Check if new connection crosses existing connections → crossing bonus
+          // Check crossings with existing connections → bonus sparks
           S.connections.forEach(c => {
             if (c.life >= 1) return; // skip the just-added one
             const pt = segmentsIntersect(
@@ -836,34 +870,42 @@
             }
           });
 
+          // Burst particles at both endpoints
           spawnParticles(S.dragFrom.node.x, S.dragFrom.node.y, S.dragFrom.node.colorIdx, 22);
           spawnParticles(target.x, target.y, target.colorIdx, 22);
+
+          // Sparkle particles along the connection path
+          for (let t = 0.2; t < 0.95; t += 0.2) {
+            const px = S.dragFrom.node.x + (target.x - S.dragFrom.node.x) * t;
+            const py = S.dragFrom.node.y + (target.y - S.dragFrom.node.y) * t;
+            spawnParticles(px, py, target.colorIdx, 8);
+          }
+
+          // Remove connected nodes
           S.nodes = S.nodes.filter(n => n.id !== S.dragFrom.node.id && n.id !== target.id);
 
           playConnect(S.combo);
 
           if (S.combo >= 2) {
             const flashId = Date.now() + Math.random();
-            const midX = (S.dragFrom.node.x + target.x) / 2;
-            const midY = (S.dragFrom.node.y + target.y) / 2;
+            const midX    = (S.dragFrom.node.x + target.x) / 2;
+            const midY    = (S.dragFrom.node.y + target.y) / 2;
             setComboFlashes(prev => [...prev, { id: flashId, x: midX, y: midY, combo: S.combo }]);
-            setTimeout(() => setComboFlashes(prev => prev.filter(f => f.id !== flashId)), 700);
+            setTimeout(() => setComboFlashes(prev => prev.filter(f => f.id !== flashId)), 800);
           }
 
           setUi(u => ({ ...u, score: S.score, combo: S.combo }));
 
-          // After connecting, ensure a pair still exists
           const canvas = canvasRef.current;
-          if (canvas) {
-            setTimeout(() => ensurePairExists(canvas), 100);
-          }
+          if (canvas) setTimeout(() => ensurePairExists(canvas), 100);
+
         } else if (target && target.id !== S.dragFrom.node.id) {
-          // Wrong color - break combo
+          // Wrong color — break combo
           S.combo = 0;
           setUi(u => ({ ...u, combo: 0 }));
         }
 
-        S.dragFrom = null;
+        S.dragFrom   = null;
         S.isDragging = false;
       }, [getNodeAt, spawnParticles, spawnCrossSpark, playConnect, playCross, ensurePairExists]);
 
@@ -874,14 +916,11 @@
         const { x, y } = getPos(e);
         S.mouseX = x; S.mouseY = y;
 
-        if (S.phase !== 'playing') {
-          startGame();
-          return;
-        }
+        if (S.phase !== 'playing') { startGame(); return; }
 
         const node = getNodeAt(x, y);
         if (node) {
-          S.dragFrom = { node, startX: x, startY: y };
+          S.dragFrom   = { node, startX: x, startY: y };
           S.isDragging = true;
         }
       }, [initAudio, getPos, startGame, getNodeAt]);
@@ -898,30 +937,23 @@
         tryConnect(x, y);
       }, [getPos, tryConnect]);
 
-      // ── Global window listeners for reliable drag-release ────
+      // ── Global drag-release fallback ─────────────────────────
       useEffect(() => {
-        const onWindowMouseUp = (e) => {
-          if (S.isDragging) handlePointerUp(e);
-        };
-        const onWindowTouchEnd = (e) => {
-          if (S.isDragging) handlePointerUp(e);
-        };
-        window.addEventListener('mouseup', onWindowMouseUp);
-        window.addEventListener('touchend', onWindowTouchEnd, { passive: false });
+        const onMouseUp  = (e) => { if (S.isDragging) handlePointerUp(e); };
+        const onTouchEnd = (e) => { if (S.isDragging) handlePointerUp(e); };
+        window.addEventListener('mouseup',  onMouseUp);
+        window.addEventListener('touchend', onTouchEnd, { passive: false });
         return () => {
-          window.removeEventListener('mouseup', onWindowMouseUp);
-          window.removeEventListener('touchend', onWindowTouchEnd);
+          window.removeEventListener('mouseup',  onMouseUp);
+          window.removeEventListener('touchend', onTouchEnd);
         };
       }, [handlePointerUp]);
 
-      // ── Keyboard shortcut ────────────────────────────────────
+      // ── Keyboard ─────────────────────────────────────────────
       useEffect(() => {
         const onKey = (e) => {
-          if (e.code === 'Space' || e.code === 'Enter') {
-            if (S.phase !== 'playing') {
-              initAudio();
-              startGame();
-            }
+          if ((e.code === 'Space' || e.code === 'Enter') && S.phase !== 'playing') {
+            initAudio(); startGame();
           }
         };
         window.addEventListener('keydown', onKey);
@@ -944,12 +976,12 @@
             onTouchEnd={handlePointerUp}
           />
 
-          {/* HUD - pointer-events: none so it never blocks drag interactions */}
+          {/* HUD */}
           {ui.phase === 'playing' && (
             <div className="hud">
               <div className="hud-block">
                 <div className="hud-label">Score</div>
-                <div className={`hud-value hud-score`}>{ui.score}</div>
+                <div className="hud-value hud-score">{ui.score}</div>
               </div>
               <div className="hud-block">
                 <div className="hud-label">Lives</div>
@@ -959,11 +991,11 @@
               </div>
               <div className="hud-block">
                 <div className="hud-label">Combo</div>
-                <div className={`hud-value hud-combo`}>x{ui.combo}</div>
+                <div className="hud-value hud-combo">x{ui.combo}</div>
               </div>
               <div className="hud-block">
                 <div className="hud-label">Best</div>
-                <div className={`hud-value hud-best`}>{ui.highScore}</div>
+                <div className="hud-value hud-best">{ui.highScore}</div>
               </div>
             </div>
           )}
@@ -980,24 +1012,18 @@
           ))}
 
           {/* Level flash */}
-          {showLevelFlash && (
-            <div className="level-flash">{showLevelFlash}</div>
-          )}
+          {showLevelFlash && <div className="level-flash">{showLevelFlash}</div>}
 
-          {/* Intro screen */}
+          {/* Intro */}
           {ui.phase === 'intro' && (
-            <div
-              className="screen"
-              onMouseDown={handlePointerDown}
-              onTouchStart={handlePointerDown}
-            >
+            <div className="screen" onMouseDown={handlePointerDown} onTouchStart={handlePointerDown}>
               <div className="title">CIRCUIT BLAZE</div>
               <div className="subtitle">Connect matching nodes before they expire</div>
               <div className="instructions">
                 <div className="inst-row"><span>DRAG</span> from one node to a same-color node</div>
-                <div className="inst-row">Build <span>COMBOS</span> for massive point multipliers</div>
-                <div className="inst-row">Nodes expire if left too long — <span>3 LIVES</span></div>
-                <div className="inst-row">Cross connection sparks for <span>extra flair!</span></div>
+                <div className="inst-row">Build <span>COMBOS</span> — connect chains of 4 for big multipliers</div>
+                <div className="inst-row">A <span>PAIR</span> burning out costs only <span>1 LIFE</span></div>
+                <div className="inst-row">Cross connections for <span>LIGHTNING SPARKS!</span></div>
               </div>
               <button className="start-btn" onMouseDown={e => { e.stopPropagation(); handlePointerDown(e); }}>
                 IGNITE
@@ -1010,13 +1036,9 @@
             </div>
           )}
 
-          {/* Game Over screen */}
+          {/* Game Over */}
           {ui.phase === 'gameover' && (
-            <div
-              className="screen"
-              onMouseDown={handlePointerDown}
-              onTouchStart={handlePointerDown}
-            >
+            <div className="screen" onMouseDown={handlePointerDown} onTouchStart={handlePointerDown}>
               <div style={{ fontSize: 'clamp(16px,4vw,28px)', color: '#ff4488', letterSpacing: 4, textShadow: '0 0 15px #ff4488' }}>
                 CIRCUIT BROKEN
               </div>
@@ -1026,8 +1048,11 @@
               ) : (
                 <div className="final-best">BEST: {ui.highScore}</div>
               )}
-              <button className="start-btn" style={{ marginTop: 30, borderColor: '#ff00ff', color: '#ff00ff', boxShadow: '0 0 20px rgba(255,0,255,0.3)' }}
-                onMouseDown={e => { e.stopPropagation(); handlePointerDown(e); }}>
+              <button
+                className="start-btn"
+                style={{ marginTop: 30, borderColor: '#ff00ff', color: '#ff00ff', boxShadow: '0 0 20px rgba(255,0,255,0.3)' }}
+                onMouseDown={e => { e.stopPropagation(); handlePointerDown(e); }}
+              >
                 RETRY
               </button>
             </div>
