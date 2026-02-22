@@ -20,7 +20,7 @@ Generate ONE new addictive, flashy, beautiful web-based game every day. Each gam
 - **High score persistence**: localStorage to save best score across sessions
 
 ### Technical Standards
-- **Single-file React JSX**: Complete game in one .jsx file, no external dependencies beyond React
+- **Single-file HTML**: Complete game in one `index.html` file, no external dependencies beyond React/Babel CDN
 - **Synthesizer sounds**: Web Audio API for bleeps, bloops, and satisfying audio feedback
 - **Smooth performance**: Optimized rendering, efficient state management
 - **Clean code**: Well-structured, commented where game logic is complex
@@ -68,7 +68,7 @@ After ensuring uniqueness:
 - Identify what makes it addictive
 - Note how it differs from recent games
 
-### 2. Game Development
+### 3. Game Development
 Create a complete **HTML file** with React and JSX support:
 
 **File format**: Single HTML file with:
@@ -136,7 +136,7 @@ games/2026-02-16/
   └── preview.png      (1200x630px screenshot)
 ```
 
-### 3. Preview Image Generation
+### 4. Preview Image Generation
 Create a 1200x630px PNG screenshot showing:
 - Game in an exciting mid-action state
 - Visible score and visual effects
@@ -145,7 +145,7 @@ Create a 1200x630px PNG screenshot showing:
 
 Example: `games/2026-02-15/preview.png`
 
-### 4. Game Registry Update
+### 5. Game Registry Update
 Update `games-registry.json` with new entry:
 ```json
 {
@@ -164,7 +164,7 @@ Update `games-registry.json` with new entry:
 }
 ```
 
-### 5. Automated Testing
+### 6. Automated Testing
 **CRITICAL: Create test file for every game**
 
 Create `games/YYYY-MM-DD/game.test.js` with automated tests:
@@ -258,7 +258,7 @@ test.describe('YYYY-MM-DD Game Name', () => {
 - localStorage must work for high scores
 - Must be responsive on mobile (375px width)
 
-### 6. Gallery UI Update
+### 7. Gallery UI Update
 The `index.html` serves as the main entry page. Ensure it:
 - Reads `games-registry.json` and displays all games
 - Shows preview images in a responsive grid
@@ -271,7 +271,7 @@ The `index.html` serves as the main entry page. Ensure it:
 ## File Structure
 ```
 /
-├── Claude.md                    # This file
+├── CLAUDE.md                    # This file
 ├── index.html                   # Main gallery/launcher UI
 ├── games-registry.json          # Metadata for all games
 ├── games/
@@ -301,16 +301,23 @@ The `index.html` serves as the main entry page. Ensure it:
 3. ✅ Create date folder: `games/YYYY-MM-DD/`
 4. ✅ Write the complete game HTML to `games/YYYY-MM-DD/index.html` (complete standalone HTML file with React from CDN)
 5. ✅ Write automated test file `games/YYYY-MM-DD/game.test.js` with all 6 required tests (loading index.html)
-6. ✅ Test that the game runs properly
-7. ✅ Generate preview image to `games/YYYY-MM-DD/preview.png` (screenshot mid-gameplay)
-8. ✅ Update games-registry.json with new entry
-9. ✅ Verify index.html correctly loads the new game
-10. ✅ Commit all files with message: "🎮 Daily Game: [Game Name] - [Date]"
+6. ✅ Run new game tests: `npx playwright test games/YYYY-MM-DD/game.test.js` — fix ANY failures before continuing
+7. ✅ Run the FULL test suite: `npx playwright test`
+   - Read the output carefully — ALL games (new and existing) must pass
+   - If any test fails, diagnose the failure, fix the game or test file, and re-run
+   - Repeat the fix-and-rerun cycle until `npx playwright test` exits with **0 failures**
+   - Do NOT proceed to the next step while any test is failing
+   - Do NOT assume tests pass without actually running them and reading the result
+8. ✅ Generate preview image to `games/YYYY-MM-DD/preview.png` (screenshot mid-gameplay)
+9. ✅ Update games-registry.json with new entry
+10. ✅ Verify index.html correctly loads the new game
+11. ✅ Commit all files with message: "🎮 Daily Game: [Game Name] - [Date]"
 
 ### Quality Checklist (verify before committing):
 - [ ] Game is unique - checked registry and confirmed no duplicates
 - [ ] Core mechanic is different from last 7 games
-- [ ] All 6 automated tests written and will pass
+- [ ] All 6 automated tests written and passing
+- [ ] Full test suite (`npx playwright test`) exits with 0 failures — confirmed by reading output
 - [ ] Visual aesthetics match neon/flashy standard
 - [ ] Particle effects present and visually satisfying
 - [ ] Sound effects work (test Web Audio API)
@@ -350,13 +357,16 @@ The `index.html` must provide:
 ### Game Launcher
 - Clicking card opens game in fullscreen overlay
 - Close button to return to gallery
-- Game iframe or direct JSX mounting
+- Game iframe or direct mounting
 - Escape key to close
 
 ## Important Notes
 
 ### Testing is Mandatory
 - **Every game MUST have passing tests**
+- **Always run the full suite** — `npx playwright test` must exit with 0 failures before committing
+- **Fix-then-retry loop**: If any test fails (new or existing), diagnose the failure, fix the game or test, re-run. Repeat until all pass. Never stop at "the new tests pass" — all games must pass.
+- **Never assume tests pass** — always run them and read the output before proceeding
 - GitHub Pages deployment ONLY happens if tests pass
 - Tests protect against broken games
 - Use the example test file as a template
@@ -370,7 +380,7 @@ The `index.html` must provide:
 - Reference modern mobile game patterns (Flappy Bird, 2048, Crossy Road style mechanics)
 
 ### Technical Constraints
-- Single JSX file per game (no multi-file games)
+- Single HTML file per game (no multi-file games, no .jsx files)
 - No external asset dependencies (generate all visuals with code)
 - Pure CSS + Canvas animations (no video files)
 - Web Audio API only (no audio file dependencies)
@@ -403,6 +413,7 @@ Files:
 - Progressive difficulty with combo scoring
 - Smooth 60fps particle effects
 - All 6 tests passing
+- Full test suite passing (npx playwright test: 0 failures)
 ```
 
 ## Failure Cases to Avoid
@@ -414,6 +425,10 @@ Files:
 - ❌ Registry JSON has syntax errors
 - ❌ Incomplete one-shot (game works but preview missing)
 - ❌ Low visual polish (looks bland or unfinished)
+- ❌ Stopping after only the new game's tests pass without running the full suite
+- ❌ Committing when `npx playwright test` has any non-zero exit code
+- ❌ Skipping the test run because "the code looks right"
+- ❌ Using .jsx file extensions instead of .html
 
 ## Success Criteria
 Each daily game should make someone say: "Whoa, this is beautiful! One more try..."
