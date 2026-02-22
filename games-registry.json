@@ -68,5 +68,19 @@
     "folder": "games/2026-02-21",
     "file": "games/2026-02-21/index.html",
     "preview": "games/2026-02-21/preview.png"
+  },
+  {
+    "id": "2026-02-22",
+    "name": "Plasma Break",
+    "date": "2026-02-22",
+    "description": "Guide a neon paddle to bounce a plasma ball through waves of glowing bricks — chain combo hits for multiplied scores, catch WIDE and MULTIBALL power-ups, and clear every brick to advance!",
+    "tagline": "Smash bricks, chain combos, break free!",
+    "tags": ["action", "reflex", "casual", "arcade"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Move mouse or touch to control the paddle",
+    "folder": "games/2026-02-22",
+    "file": "games/2026-02-22/index.html",
+    "preview": "games/2026-02-22/preview.png"
   }
 ]
