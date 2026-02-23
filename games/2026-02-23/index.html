@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Dash</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+    #root { width: 100%; height: 100%; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+    @keyframes comboGrow { 0%{transform:translate(-50%,-50%) scale(0.8)} 100%{transform:translate(-50%,-50%) scale(1)} }
+    @keyframes newRecord { 0%,100%{opacity:1;text-shadow:0 0 20px #ffd700,0 0 40px #ffd700} 50%{opacity:0.7;text-shadow:0 0 8px #ffd700} }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // ─── Constants ───────────────────────────────────────────────────────────────
+    const CELL = 20;
+    const NODE_COLORS = ['#00ffff', '#ff00ff', '#ffff00', '#00ff88', '#ff6600'];
+    const COLOR_NAMES = ['CYAN', 'MAGENTA', 'YELLOW', 'GREEN', 'ORANGE'];
+
+    // ─── Audio ───────────────────────────────────────────────────────────────────
+    let _actx = null;
+    const actx = () => {
+      if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+      return _actx;
+    };
+    const tone = (freq, dur, type = 'sine', vol = 0.25) => {
+      try {
+        const ctx = actx();
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.frequency.value = freq; osc.type = type;
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch (e) {}
+    };
+    const playCollect = (combo) => {
+      const f = 260 + combo * 70;
+      tone(f, 0.12, 'square', 0.18);
+      setTimeout(() => tone(f * 1.5, 0.09, 'sine', 0.12), 75);
+    };
+    const playCombo = (combo) => {
+      // Chord sweep for high combos
+      const base = 300 + combo * 50;
+      tone(base, 0.2, 'sine', 0.15);
+      setTimeout(() => tone(base * 1.25, 0.15, 'sine', 0.12), 50);
+      setTimeout(() => tone(base * 1.5, 0.12, 'sine', 0.10), 100);
+    };
+    const playDeath = () => {
+      tone(160, 0.25, 'sawtooth', 0.35);
+      setTimeout(() => tone(110, 0.4, 'sawtooth', 0.25), 140);
+      setTimeout(() => tone(80, 0.5, 'sawtooth', 0.2), 300);
+    };
+
+    // ─── Pure helpers ─────────────────────────────────────────────────────────────
+    const makeNode = (snake, cols, rows) => {
+      const used = new Set(snake.map(s => `${s.x},${s.y}`));
+      let pos;
+      let tries = 0;
+      do {
+        pos = {
+          x: 1 + Math.floor(Math.random() * (cols - 2)),
+          y: 1 + Math.floor(Math.random() * (rows - 2))
+        };
+        tries++;
+      } while (used.has(`${pos.x},${pos.y}`) && tries < 200);
+      const gold = Math.random() < 0.08;
+      const ci = Math.floor(Math.random() * NODE_COLORS.length);
+      return { x: pos.x, y: pos.y, ci, color: gold ? '#ffd700' : NODE_COLORS[ci], gold, id: Math.random() };
+    };
+
+    const burst = (gx, gy, color, n = 12) =>
+      Array.from({ length: n }, (_, i) => {
+        const a = (i / n) * Math.PI * 2 + Math.random() * 0.3;
+        const spd = 1.5 + Math.random() * 3.5;
+        return {
+          x: gx * CELL + CELL / 2, y: gy * CELL + CELL / 2,
+          vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+          life: 1, color, r: 1.5 + Math.random() * 2.5
+        };
+      });
+
+    // Rounded rectangle helper (polyfill for older browsers)
+    const roundRect = (ctx, x, y, w, h, r) => {
+      if (ctx.roundRect) {
+        ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
+      }
+    };
+
+    // ─── Main Component ───────────────────────────────────────────────────────────
+    function DataDash() {
+      const canvasRef = useRef(null);
+      const gsRef = useRef(null);      // game state object (mutated directly, not React state)
+      const lastMoveRef = useRef(0);
+      const touchRef = useRef(null);
+      const frameFnRef = useRef(null); // updated each render — avoids stale closures
+      const rafRef = useRef(null);
+
+      const [ui, setUi] = useState({
+        score: 0,
+        best: parseInt(localStorage.getItem('dataDash_highScore') || '0'),
+        combo: 0,
+        phase: 'idle', // idle | playing | dead
+        lvl: 1,
+        isNewBest: false,
+      });
+
+      // ── Init / Restart ──────────────────────────────────────────────────────────
+      const startGame = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const cols = Math.floor(canvas.width / CELL);
+        const rows = Math.floor(canvas.height / CELL);
+        const sx = Math.floor(cols / 2);
+        const sy = Math.floor(rows / 2);
+        const snake = [{ x: sx, y: sy }, { x: sx - 1, y: sy }, { x: sx - 2, y: sy }];
+        const nodes = Array.from({ length: 3 }, () => makeNode(snake, cols, rows));
+
+        // Ensure highScore key exists in localStorage
+        if (!localStorage.getItem('dataDash_highScore')) {
+          localStorage.setItem('dataDash_highScore', '0');
+        }
+
+        gsRef.current = {
+          snake,
+          dir: { x: 1, y: 0 },
+          next: { x: 1, y: 0 },
+          nodes,
+          pts: [],          // particles
+          score: 0,
+          combo: 0,
+          lastCi: -1,
+          speed: 145,       // ms per step
+          cols, rows,
+          dead: false,
+          alive: false,     // becomes true on first input
+          lvl: 1,
+          bgHue: 220,
+          comboFlash: 0,    // timer for combo display flash
+        };
+        lastMoveRef.current = 0;
+        setUi(prev => ({
+          ...prev, score: 0, combo: 0, phase: 'idle', lvl: 1, isNewBest: false
+        }));
+      };
+
+      // ── Game logic: one snake step ──────────────────────────────────────────────
+      const tick = (gs) => {
+        gs.dir = { ...gs.next };
+        const hd = gs.snake[0];
+        const nh = { x: hd.x + gs.dir.x, y: hd.y + gs.dir.y };
+
+        // Wall / self collision
+        const wallHit = nh.x < 0 || nh.x >= gs.cols || nh.y < 0 || nh.y >= gs.rows;
+        const selfHit = gs.snake.slice(0, -1).some(s => s.x === nh.x && s.y === nh.y);
+
+        if (wallHit || selfHit) {
+          gs.dead = true;
+          playDeath();
+          // Explode the snake
+          gs.snake.forEach((s, i) => {
+            if (i % 3 === 0) {
+              const col = NODE_COLORS[i % NODE_COLORS.length];
+              gs.pts.push(...burst(s.x, s.y, col, 5));
+            }
+          });
+          gs.snake = [];
+          // Save high score
+          const prev = parseInt(localStorage.getItem('dataDash_highScore') || '0');
+          const isNew = gs.score > prev;
+          if (isNew) localStorage.setItem('dataDash_highScore', gs.score.toString());
+          setUi(p => ({
+            ...p, phase: 'dead', isNewBest: isNew,
+            best: Math.max(p.best, gs.score)
+          }));
+          return;
+        }
+
+        gs.snake.unshift(nh);
+
+        // Check node collision
+        const ni = gs.nodes.findIndex(n => n.x === nh.x && n.y === nh.y);
+        if (ni !== -1) {
+          const node = gs.nodes[ni];
+          // Combo: same color as previous?
+          const sameColor = node.ci === gs.lastCi;
+          gs.combo = sameColor ? Math.min(gs.combo + 1, 12) : 0;
+          gs.lastCi = node.ci;
+          gs.comboFlash = 30; // frames to show combo popup
+
+          const basePoints = node.gold ? 50 : 10;
+          const pts = basePoints + gs.combo * 5;
+          gs.score += pts;
+
+          // Speed up as score grows
+          gs.speed = Math.max(70, 145 - Math.floor(gs.score / 80) * 5);
+          gs.lvl = Math.floor(gs.score / 80) + 1;
+
+          // Audio
+          if (gs.combo >= 3) playCombo(gs.combo);
+          else playCollect(gs.combo);
+
+          // Particles
+          gs.pts.push(...burst(nh.x, nh.y, node.color, node.gold ? 24 : 14));
+
+          // Replace eaten node
+          gs.nodes.splice(ni, 1);
+          while (gs.nodes.length < 3) gs.nodes.push(makeNode(gs.snake, gs.cols, gs.rows));
+
+          // Persist high score
+          const prev = parseInt(localStorage.getItem('dataDash_highScore') || '0');
+          if (gs.score > prev) localStorage.setItem('dataDash_highScore', gs.score.toString());
+
+          setUi(p => ({
+            ...p, score: gs.score, combo: gs.combo,
+            lvl: gs.lvl, best: Math.max(p.best, gs.score)
+          }));
+        } else {
+          gs.snake.pop();
+        }
+
+        if (gs.comboFlash > 0) gs.comboFlash--;
+      };
+
+      // ── Render ──────────────────────────────────────────────────────────────────
+      const render = (ctx, W, H, gs, ts) => {
+        // Animated dark gradient background
+        gs.bgHue = (gs.bgHue + 0.06) % 360;
+        const bg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) / 1.3);
+        bg.addColorStop(0, `hsl(${gs.bgHue}, 55%, 6%)`);
+        bg.addColorStop(0.6, `hsl(${(gs.bgHue + 40) % 360}, 45%, 3%)`);
+        bg.addColorStop(1, `hsl(${(gs.bgHue + 110) % 360}, 60%, 2%)`);
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        // Grid lines
+        ctx.strokeStyle = 'rgba(80, 180, 255, 0.045)';
+        ctx.lineWidth = 0.5;
+        for (let x = 0; x <= gs.cols; x++) {
+          ctx.beginPath(); ctx.moveTo(x * CELL, 0); ctx.lineTo(x * CELL, H); ctx.stroke();
+        }
+        for (let y = 0; y <= gs.rows; y++) {
+          ctx.beginPath(); ctx.moveTo(0, y * CELL); ctx.lineTo(W, y * CELL); ctx.stroke();
+        }
+
+        // Particles
+        gs.pts = gs.pts.filter(p => p.life > 0.01);
+        for (const p of gs.pts) {
+          p.x += p.vx; p.y += p.vy;
+          p.vx *= 0.91; p.vy *= 0.91;
+          p.life -= 0.024;
+          ctx.save();
+          ctx.globalAlpha = p.life * 0.9;
+          ctx.shadowColor = p.color; ctx.shadowBlur = 10;
+          ctx.fillStyle = p.color;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r * Math.sqrt(p.life), 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+
+        // Data nodes (food)
+        const pulse = Math.sin(ts / 380);
+        for (const n of gs.nodes) {
+          const px = n.x * CELL + CELL / 2;
+          const py = n.y * CELL + CELL / 2;
+          const r = (CELL / 3.2) * (1 + pulse * 0.1);
+
+          ctx.save();
+          ctx.shadowColor = n.color; ctx.shadowBlur = 18 + pulse * 7;
+
+          // Outer glow ring
+          ctx.strokeStyle = n.color; ctx.lineWidth = 1.5;
+          ctx.globalAlpha = 0.35 + pulse * 0.2;
+          ctx.beginPath(); ctx.arc(px, py, r + 6, 0, Math.PI * 2); ctx.stroke();
+
+          // Mid ring
+          ctx.globalAlpha = 0.55 + pulse * 0.2;
+          ctx.beginPath(); ctx.arc(px, py, r + 2, 0, Math.PI * 2); ctx.stroke();
+
+          // Core
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = n.color;
+          ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+
+          // Bright center
+          ctx.globalAlpha = 0.6;
+          ctx.fillStyle = '#fff';
+          ctx.beginPath(); ctx.arc(px, py, r * 0.35, 0, Math.PI * 2); ctx.fill();
+
+          // Gold sparkle rays
+          if (n.gold) {
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.75;
+            for (let i = 0; i < 6; i++) {
+              const a = (i / 6) * Math.PI * 2 + ts / 550;
+              ctx.beginPath();
+              ctx.moveTo(px + Math.cos(a) * (r + 3), py + Math.sin(a) * (r + 3));
+              ctx.lineTo(px + Math.cos(a) * (r + 9), py + Math.sin(a) * (r + 9));
+              ctx.stroke();
+            }
+          }
+          ctx.restore();
+        }
+
+        // Snake body
+        for (let i = 0; i < gs.snake.length; i++) {
+          const seg = gs.snake[i];
+          const t = i / Math.max(gs.snake.length - 1, 1);
+          // Gradient: cyan head → magenta → orange tail
+          const hue = (185 + t * 140) % 360;
+          const light = 55 + (1 - t) * 10;
+          const col = `hsl(${hue}, 100%, ${light}%)`;
+          const alpha = Math.max(0.25, 1 - t * 0.5);
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.shadowColor = col;
+          ctx.shadowBlur = i === 0 ? 22 : (i < 4 ? 12 : 6);
+          ctx.fillStyle = col;
+
+          const margin = i === 0 ? 2 : 3;
+          const sz = CELL - margin * 2;
+          const rx = i === 0 ? 7 : 5;
+          const bx = seg.x * CELL + margin;
+          const by = seg.y * CELL + margin;
+
+          roundRect(ctx, bx, by, sz, sz, rx);
+          ctx.fill();
+
+          // Scale/segment pattern (every 4th segment)
+          if (i > 0 && i % 4 === 0) {
+            ctx.globalAlpha = alpha * 0.3;
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(seg.x * CELL + CELL / 2, seg.y * CELL + CELL / 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Eyes on head
+          if (i === 0) {
+            ctx.shadowBlur = 0; ctx.globalAlpha = 1; ctx.fillStyle = '#fff';
+            const d = gs.dir;
+            const ex = seg.x * CELL, ey = seg.y * CELL;
+            const es = 2.5;
+            if (d.x === 1) {
+              ctx.fillRect(ex + CELL - 6, ey + 4, es, es);
+              ctx.fillRect(ex + CELL - 6, ey + CELL - 7, es, es);
+            } else if (d.x === -1) {
+              ctx.fillRect(ex + 3, ey + 4, es, es);
+              ctx.fillRect(ex + 3, ey + CELL - 7, es, es);
+            } else if (d.y === -1) {
+              ctx.fillRect(ex + 4, ey + 3, es, es);
+              ctx.fillRect(ex + CELL - 7, ey + 3, es, es);
+            } else {
+              ctx.fillRect(ex + 4, ey + CELL - 5, es, es);
+              ctx.fillRect(ex + CELL - 7, ey + CELL - 5, es, es);
+            }
+            // Eye shine
+            ctx.fillStyle = '#000';
+            if (d.x === 1) {
+              ctx.fillRect(ex + CELL - 5.5, ey + 4.5, 1, 1);
+              ctx.fillRect(ex + CELL - 5.5, ey + CELL - 6.5, 1, 1);
+            }
+          }
+          ctx.restore();
+        }
+
+        // Dim overlay when not playing
+        if (!gs.alive || gs.dead) {
+          ctx.fillStyle = 'rgba(0,0,0,0.58)';
+          ctx.fillRect(0, 0, W, H);
+        }
+      };
+
+      // ── Frame function (updated each render, called from stable RAF loop) ───────
+      frameFnRef.current = (ts) => {
+        const canvas = canvasRef.current;
+        const gs = gsRef.current;
+        if (!canvas || !gs) return;
+
+        if (gs.alive && !gs.dead && ts - lastMoveRef.current >= gs.speed) {
+          lastMoveRef.current = ts;
+          tick(gs);
+        }
+
+        const ctx = canvas.getContext('2d');
+        render(ctx, canvas.width, canvas.height, gs, ts);
+      };
+
+      // ── Canvas resize + init ────────────────────────────────────────────────────
+      useEffect(() => {
+        const resize = () => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          startGame();
+        };
+        resize();
+        window.addEventListener('resize', resize);
+        return () => window.removeEventListener('resize', resize);
+      }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+      // ── RAF loop (stable, never re-created) ────────────────────────────────────
+      useEffect(() => {
+        let id;
+        const loop = (ts) => { frameFnRef.current(ts); id = requestAnimationFrame(loop); };
+        id = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(id);
+      }, []);
+
+      // ── Keyboard controls ───────────────────────────────────────────────────────
+      useEffect(() => {
+        const onKey = (e) => {
+          const gs = gsRef.current;
+          if (!gs) return;
+
+          // Restart
+          if (gs.dead && e.key === ' ') { startGame(); return; }
+
+          // Start on first key press
+          if (!gs.alive) {
+            const startKeys = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','a','s','d',' '];
+            if (startKeys.includes(e.key)) {
+              gs.alive = true;
+              setUi(p => ({ ...p, phase: 'playing' }));
+            }
+          }
+          if (!gs.alive || gs.dead) return;
+
+          const d = gs.dir;
+          if ((e.key === 'ArrowUp' || e.key === 'w') && d.y !== 1) gs.next = { x: 0, y: -1 };
+          else if ((e.key === 'ArrowDown' || e.key === 's') && d.y !== -1) gs.next = { x: 0, y: 1 };
+          else if ((e.key === 'ArrowLeft' || e.key === 'a') && d.x !== 1) gs.next = { x: -1, y: 0 };
+          else if ((e.key === 'ArrowRight' || e.key === 'd') && d.x !== -1) gs.next = { x: 1, y: 0 };
+
+          // Prevent page scroll
+          if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+      // ── Touch / click controls ──────────────────────────────────────────────────
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onTouchStart = (e) => {
+          e.preventDefault();
+          const gs = gsRef.current; if (!gs) return;
+          touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+          if (gs.dead) { startGame(); return; }
+          if (!gs.alive) {
+            gs.alive = true;
+            setUi(p => ({ ...p, phase: 'playing' }));
+          }
+        };
+
+        const onTouchEnd = (e) => {
+          e.preventDefault();
+          if (!touchRef.current) return;
+          const gs = gsRef.current;
+          if (!gs || !gs.alive || gs.dead) return;
+          const dx = e.changedTouches[0].clientX - touchRef.current.x;
+          const dy = e.changedTouches[0].clientY - touchRef.current.y;
+          if (Math.abs(dx) < 8 && Math.abs(dy) < 8) { touchRef.current = null; return; }
+          const d = gs.dir;
+          if (Math.abs(dx) > Math.abs(dy)) {
+            if (dx > 0 && d.x !== -1) gs.next = { x: 1, y: 0 };
+            else if (dx < 0 && d.x !== 1) gs.next = { x: -1, y: 0 };
+          } else {
+            if (dy > 0 && d.y !== -1) gs.next = { x: 0, y: 1 };
+            else if (dy < 0 && d.y !== 1) gs.next = { x: 0, y: -1 };
+          }
+          touchRef.current = null;
+        };
+
+        canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+        canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+        return () => {
+          canvas.removeEventListener('touchstart', onTouchStart);
+          canvas.removeEventListener('touchend', onTouchEnd);
+        };
+      }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+      const onClick = () => {
+        const gs = gsRef.current; if (!gs) return;
+        if (gs.dead) { startGame(); return; }
+        if (!gs.alive) {
+          gs.alive = true;
+          setUi(p => ({ ...p, phase: 'playing' }));
+        }
+      };
+
+      const { score, best, combo, phase, lvl, isNewBest } = ui;
+
+      return (
+        <div id="game-root" style={{ width: '100%', height: '100vh', position: 'relative', overflow: 'hidden' }}>
+          <canvas
+            ref={canvasRef}
+            onClick={onClick}
+            style={{ display: 'block', cursor: 'crosshair' }}
+          />
+
+          {/* ── HUD ── */}
+          <div style={{
+            position: 'absolute', top: 14, left: 16, right: 16,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+            pointerEvents: 'none',
+          }}>
+            {/* Score */}
+            <div>
+              <div style={{
+                color: '#00ffff', fontSize: 'clamp(20px,4vw,30px)', fontWeight: 'bold',
+                fontFamily: 'Courier New, monospace',
+                textShadow: '0 0 10px #00ffff, 0 0 22px #00ffff',
+                letterSpacing: 2,
+              }}>
+                {String(score).padStart(6, '0')}
+              </div>
+              <div style={{ color: '#445', fontSize: 10, fontFamily: 'Courier New, monospace', letterSpacing: 2 }}>SCORE</div>
+            </div>
+
+            {/* Title / Level */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                color: '#ff00ff', fontSize: 'clamp(14px,2.5vw,20px)', fontWeight: 'bold',
+                fontFamily: 'Courier New, monospace',
+                textShadow: '0 0 10px #ff00ff, 0 0 20px #ff00ff',
+                letterSpacing: 3,
+              }}>DATA DASH</div>
+              <div style={{ color: '#445', fontSize: 10, fontFamily: 'Courier New, monospace', letterSpacing: 2 }}>
+                LVL {lvl}
+              </div>
+            </div>
+
+            {/* Best */}
+            <div style={{ textAlign: 'right' }}>
+              <div style={{
+                color: '#ffff00', fontSize: 'clamp(20px,4vw,30px)', fontWeight: 'bold',
+                fontFamily: 'Courier New, monospace',
+                textShadow: '0 0 10px #ffff00, 0 0 22px #ffff00',
+                letterSpacing: 2,
+              }}>
+                {String(best).padStart(6, '0')}
+              </div>
+              <div style={{ color: '#445', fontSize: 10, fontFamily: 'Courier New, monospace', letterSpacing: 2 }}>BEST</div>
+            </div>
+          </div>
+
+          {/* ── Combo popup ── */}
+          {combo > 0 && phase === 'playing' && (
+            <div style={{
+              position: 'absolute', bottom: '15%', left: '50%',
+              transform: 'translateX(-50%)',
+              color: combo >= 5 ? '#ffd700' : '#ff8800',
+              fontSize: `clamp(16px, ${16 + combo * 2.5}px, 44px)`,
+              fontWeight: 'bold', fontFamily: 'Courier New, monospace',
+              textShadow: `0 0 ${combo * 5 + 8}px ${combo >= 5 ? '#ffd700' : '#ff8800'}`,
+              letterSpacing: 3, pointerEvents: 'none', whiteSpace: 'nowrap',
+              animation: 'comboGrow 0.15s ease-out',
+            }}>
+              {combo >= 5 ? '★ ' : ''}{combo}× COMBO!{combo >= 5 ? ' ★' : ''}
+            </div>
+          )}
+
+          {/* ── Idle screen ── */}
+          {phase === 'idle' && (
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center', pointerEvents: 'none',
+            }}>
+              <div style={{
+                color: '#00ffff',
+                fontSize: 'clamp(30px, 7vw, 68px)',
+                fontWeight: 'bold', fontFamily: 'Courier New, monospace',
+                textShadow: '0 0 20px #00ffff, 0 0 50px #00ffff, 0 0 80px #00ffff',
+                letterSpacing: 4, marginBottom: 10,
+              }}>DATA DASH</div>
+
+              <div style={{
+                color: '#ff00ff', fontSize: 'clamp(11px, 2vw, 15px)',
+                fontFamily: 'Courier New, monospace',
+                textShadow: '0 0 8px #ff00ff', letterSpacing: 2, marginBottom: 6,
+              }}>Navigate the data stream. Grow. Survive.</div>
+
+              <div style={{
+                color: '#888', fontSize: 'clamp(10px,1.6vw,13px)',
+                fontFamily: 'Courier New, monospace', marginBottom: 4,
+              }}>
+                Collect <span style={{ color: '#00ff88' }}>data nodes</span> to grow your stream
+              </div>
+              <div style={{
+                color: '#888', fontSize: 'clamp(10px,1.6vw,13px)',
+                fontFamily: 'Courier New, monospace', marginBottom: 4,
+              }}>
+                Match <span style={{ color: '#ffff00' }}>same colors</span> in a row for COMBO bonus!
+              </div>
+              <div style={{
+                color: '#888', fontSize: 'clamp(10px,1.6vw,13px)',
+                fontFamily: 'Courier New, monospace', marginBottom: 24,
+              }}>
+                <span style={{ color: '#ffd700' }}>★ Gold nodes</span> = 50 pts
+              </div>
+
+              <div style={{
+                color: '#ffff00', fontSize: 'clamp(13px, 2.2vw, 18px)',
+                fontFamily: 'Courier New, monospace',
+                textShadow: '0 0 12px #ffff00',
+                letterSpacing: 3, animation: 'blink 1.1s infinite',
+              }}>▶ ARROW KEYS / WASD</div>
+              <div style={{
+                color: '#555', fontSize: 'clamp(10px,1.5vw,12px)',
+                fontFamily: 'Courier New, monospace', marginTop: 6,
+              }}>or tap &amp; swipe on mobile</div>
+            </div>
+          )}
+
+          {/* ── Game Over screen ── */}
+          {phase === 'dead' && (
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center', pointerEvents: 'none',
+            }}>
+              <div style={{
+                color: '#ff3333',
+                fontSize: 'clamp(26px, 5.5vw, 58px)',
+                fontWeight: 'bold', fontFamily: 'Courier New, monospace',
+                textShadow: '0 0 18px #ff3333, 0 0 40px #ff3333',
+                letterSpacing: 4, marginBottom: 14,
+              }}>DISCONNECTED</div>
+
+              <div style={{
+                color: '#fff', fontSize: 'clamp(14px, 2.5vw, 22px)',
+                fontFamily: 'Courier New, monospace', marginBottom: 4,
+              }}>
+                Score: <span style={{ color: '#00ffff', textShadow: '0 0 10px #00ffff' }}>{score}</span>
+              </div>
+
+              {isNewBest && score > 0 && (
+                <div style={{
+                  color: '#ffd700', fontSize: 'clamp(13px,2.2vw,18px)',
+                  fontFamily: 'Courier New, monospace',
+                  animation: 'newRecord 0.8s infinite', marginBottom: 4,
+                }}>★ NEW HIGH SCORE! ★</div>
+              )}
+
+              <div style={{
+                color: '#ffff00', fontSize: 'clamp(12px, 2vw, 16px)',
+                fontFamily: 'Courier New, monospace',
+                textShadow: '0 0 8px #ffff00',
+                letterSpacing: 2, marginTop: 18,
+                animation: 'blink 1.1s infinite',
+              }}>[ SPACE / TAP TO RECONNECT ]</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.render(<DataDash />, document.getElementById('root'));
+  </script>
+</body>
+</html>
