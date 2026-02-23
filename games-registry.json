@@ -82,5 +82,19 @@
     "folder": "games/2026-02-22",
     "file": "games/2026-02-22/index.html",
     "preview": "games/2026-02-22/preview.png"
+  },
+  {
+    "id": "2026-02-23",
+    "name": "Data Dash",
+    "date": "2026-02-23",
+    "description": "Navigate a glowing data stream through a cyberpunk grid — collect color-coded data nodes to grow, chain same-color nodes for explosive combo multipliers, and survive as the stream accelerates!",
+    "tagline": "Grow the stream, chain the combos, don't disconnect!",
+    "tags": ["arcade", "reflex", "action", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow keys / WASD to steer, swipe on mobile",
+    "folder": "games/2026-02-23",
+    "file": "games/2026-02-23/index.html",
+    "preview": "games/2026-02-23/preview.png"
   }
 ]
