@@ -96,5 +96,19 @@
     "folder": "games/2026-02-23",
     "file": "games/2026-02-23/index.html",
     "preview": "games/2026-02-23/preview.png"
+  },
+  {
+    "id": "2026-02-24",
+    "name": "Echo Pulse",
+    "date": "2026-02-24",
+    "description": "A sonar detection game — expanding pulse waves sweep the dark screen revealing hidden neon targets for a brief moment. Click them before they fade back into darkness and chain hits for massive combos!",
+    "tagline": "Listen to the pulse. Strike before the silence returns.",
+    "tags": ["reflex", "precision", "timing", "casual", "action"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap to hit revealed targets",
+    "folder": "games/2026-02-24",
+    "file": "games/2026-02-24/index.html",
+    "preview": "games/2026-02-24/preview.png"
   }
 ]
