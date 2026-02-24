@@ -16,7 +16,6 @@
 </head>
 <body>
   <div id="root"></div>
-  <!-- Initialize localStorage synchronously before Babel transpiles the game -->
   <script>
     if (localStorage.getItem('echoPulse_highScore') === null) {
       localStorage.setItem('echoPulse_highScore', '0');
@@ -79,7 +78,8 @@
     // ─── Constants ───────────────────────────────────────────────────────────
     const REVEAL_DURATION = 1300;   // ms window to click target
     const BASE_PULSE_INTERVAL = 2600; // ms between pulses
-    const TARGET_RADIUS = 22;
+    // Shapes for target nodes — no plain circles!
+    const SHAPES = ['diamond', 'star4', 'star5', 'hex', 'cross', 'triangle'];
 
     // ─── Main Component ───────────────────────────────────────────────────────
     function EchoPulse() {
@@ -89,7 +89,7 @@
 
       // All mutable game state lives here (no re-renders during gameplay)
       const G = useRef({
-        phase: 'menu',   // 'menu' | 'playing' | 'gameover'
+        phase: 'menu',
         score: 0,
         highScore: 0,
         lives: 3,
@@ -98,16 +98,15 @@
         targets: [],
         pulses: [],
         particles: [],
-        labels: [],       // floating score labels
+        labels: [],
         nextPulse: 0,
         pulseInterval: BASE_PULSE_INTERVAL,
-        levelBanner: null, // { startTime, level }
+        levelBanner: null,
         lastTime: 0,
         W: 0, H: 0, cx: 0, cy: 0, maxR: 0,
         raf: null,
       });
 
-      // UI state (rendered by React)
       const [ui, setUi] = useState({
         phase: 'menu', score: 0, highScore: 0, lives: 3, combo: 0, level: 1,
       });
@@ -118,7 +117,7 @@
                 lives: g.lives, combo: g.combo, level: g.level });
       }, []);
 
-      // Spawn targets for current level
+      // Spawn targets with varied neon shapes and sizes
       const spawnTargets = useCallback(() => {
         const g = G.current;
         const count = Math.min(2 + Math.floor(g.level * 1.2), 10);
@@ -134,12 +133,17 @@
             if (Math.sqrt(dx*dx + dy*dy) > 90 || tries > 60) break;
           } while (true);
           const hue = (i * 65 + g.level * 37) % 360;
+          const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+          const size = 11 + Math.floor(Math.random() * 8); // 11–18 px — smaller, varied
           g.targets.push({
             id: idRef.current++,
             x, y,
+            shape, size, hue,
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() > 0.5 ? 1 : -1) * (0.001 + Math.random() * 0.0028),
             revealed: false, revealTime: 0,
             clicked: false, missed: false,
-            color: `hsl(${hue},100%,60%)`,
+            color: `hsl(${hue},100%,62%)`,
             colorDim: `hsl(${hue},80%,30%)`,
             phase: Math.random() * Math.PI * 2,
           });
@@ -175,7 +179,8 @@
           if (!t.revealed || t.clicked || t.missed) continue;
           const dx = px - t.x, dy = py - t.y;
           const d = Math.sqrt(dx*dx + dy*dy);
-          if (d < TARGET_RADIUS * 2.8 && d < minD) { minD = d; hit = t; }
+          // Hit radius scales with shape size
+          if (d < t.size * 2.8 && d < minD) { minD = d; hit = t; }
         }
 
         if (hit) {
@@ -198,7 +203,7 @@
           }
           // Ring burst
           g.particles.push({ type:'ring', x: hit.x, y: hit.y,
-            r: TARGET_RADIUS, maxR: TARGET_RADIUS * 4,
+            r: hit.size, maxR: hit.size * 5,
             life: 1, decay: 0.025, color: hit.color });
 
           g.labels.push({
@@ -210,13 +215,13 @@
 
           playSound(audioRef.current, 'hit', 280 + g.combo * 45, 0.18);
 
-          // Check level clear
+          // Check level clear — all targets done (clicked or missed)
           const allDone = g.targets.every(t => t.clicked || t.missed);
           if (allDone) {
             g.level++;
             g.pulseInterval = Math.max(1100, BASE_PULSE_INTERVAL - g.level * 90);
             g.levelBanner = { startTime: performance.now(), level: g.level };
-            g.nextPulse = performance.now() + 2000; // pause pulses during banner
+            g.nextPulse = performance.now() + 2000;
             playSound(audioRef.current, 'levelup', 440, 0.5);
             spawnTargets();
           }
@@ -250,12 +255,11 @@
 
         const ctx = canvas.getContext('2d');
 
-        // ── Render helpers ──────────────────────────────────────────────────
+        // ── Background ───────────────────────────────────────────────────────
         const drawBg = () => {
           const g = G.current;
           ctx.fillStyle = '#010d18';
           ctx.fillRect(0, 0, g.W, g.H);
-          // Subtle grid
           ctx.save();
           ctx.strokeStyle = 'rgba(0,80,120,0.12)';
           ctx.lineWidth = 0.5;
@@ -269,26 +273,80 @@
           ctx.restore();
         };
 
+        // ── Shape path helper — 6 neon node types ────────────────────────────
+        const tracePath = (shape, x, y, r, rot) => {
+          ctx.beginPath();
+          if (shape === 'diamond') {
+            ctx.moveTo(x, y - r * 1.35);
+            ctx.lineTo(x + r * 0.85, y);
+            ctx.lineTo(x, y + r * 1.35);
+            ctx.lineTo(x - r * 0.85, y);
+            ctx.closePath();
+          } else if (shape === 'star4') {
+            const ir = r * 0.38;
+            for (let i = 0; i < 8; i++) {
+              const rad = i % 2 === 0 ? r : ir;
+              const a = rot + i * Math.PI / 4;
+              if (i === 0) ctx.moveTo(x + Math.cos(a)*rad, y + Math.sin(a)*rad);
+              else ctx.lineTo(x + Math.cos(a)*rad, y + Math.sin(a)*rad);
+            }
+            ctx.closePath();
+          } else if (shape === 'star5') {
+            const ir = r * 0.42;
+            for (let i = 0; i < 10; i++) {
+              const rad = i % 2 === 0 ? r : ir;
+              const a = rot - Math.PI/2 + i * Math.PI / 5;
+              if (i === 0) ctx.moveTo(x + Math.cos(a)*rad, y + Math.sin(a)*rad);
+              else ctx.lineTo(x + Math.cos(a)*rad, y + Math.sin(a)*rad);
+            }
+            ctx.closePath();
+          } else if (shape === 'hex') {
+            for (let i = 0; i < 6; i++) {
+              const a = rot + i * Math.PI / 3;
+              if (i === 0) ctx.moveTo(x + Math.cos(a)*r, y + Math.sin(a)*r);
+              else ctx.lineTo(x + Math.cos(a)*r, y + Math.sin(a)*r);
+            }
+            ctx.closePath();
+          } else if (shape === 'cross') {
+            const w = r * 0.3;
+            const pts = [
+              [-w,-r],[w,-r],[w,-w],[r,-w],[r,w],
+              [w,w],[w,r],[-w,r],[-w,w],[-r,w],[-r,-w],[-w,-w]
+            ];
+            const cs = Math.cos(rot), sn = Math.sin(rot);
+            ctx.moveTo(x + pts[0][0]*cs - pts[0][1]*sn, y + pts[0][0]*sn + pts[0][1]*cs);
+            for (let i = 1; i < pts.length; i++) {
+              ctx.lineTo(x + pts[i][0]*cs - pts[i][1]*sn, y + pts[i][0]*sn + pts[i][1]*cs);
+            }
+            ctx.closePath();
+          } else { // triangle
+            for (let i = 0; i < 3; i++) {
+              const a = rot - Math.PI/2 + i * (Math.PI*2/3);
+              if (i === 0) ctx.moveTo(x + Math.cos(a)*r, y + Math.sin(a)*r);
+              else ctx.lineTo(x + Math.cos(a)*r, y + Math.sin(a)*r);
+            }
+            ctx.closePath();
+          }
+        };
+
+        // ── Center emitter ───────────────────────────────────────────────────
         const drawCenter = (t) => {
           const g = G.current;
           const pulse = (Math.sin(t * 0.0025) + 1) * 0.5;
           const r = 12 + pulse * 6;
           ctx.save();
-          // Crosshair lines
           ctx.setLineDash([6, 12]);
           ctx.strokeStyle = `rgba(0,200,240,${0.15 + pulse * 0.1})`;
           ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(0, g.cy); ctx.lineTo(g.W, g.cy); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(g.cx, 0); ctx.lineTo(g.cx, g.H); ctx.stroke();
           ctx.setLineDash([]);
-          // Outer glow
           const gr = ctx.createRadialGradient(g.cx, g.cy, 0, g.cx, g.cy, 42 + pulse * 12);
           gr.addColorStop(0, `rgba(0,220,255,${0.9 + pulse * 0.1})`);
           gr.addColorStop(0.4, 'rgba(0,120,220,0.35)');
           gr.addColorStop(1, 'rgba(0,0,80,0)');
           ctx.beginPath(); ctx.arc(g.cx, g.cy, 42 + pulse * 12, 0, Math.PI * 2);
           ctx.fillStyle = gr; ctx.fill();
-          // Core dot
           ctx.beginPath(); ctx.arc(g.cx, g.cy, r, 0, Math.PI * 2);
           ctx.fillStyle = '#00ffff';
           ctx.shadowBlur = 20; ctx.shadowColor = '#00ffff';
@@ -296,6 +354,7 @@
           ctx.restore();
         };
 
+        // ── Sonar pulses ─────────────────────────────────────────────────────
         const drawPulses = (t) => {
           const g = G.current;
           for (const p of g.pulses) {
@@ -312,7 +371,6 @@
             ctx.strokeStyle = `rgba(0,210,255,${alpha})`;
             ctx.lineWidth = 2.5 - prog * 1.5;
             ctx.stroke();
-            // Inner ring
             if (r > 8) {
               ctx.beginPath();
               ctx.arc(g.cx, g.cy, r - 4, 0, Math.PI * 2);
@@ -324,6 +382,7 @@
           }
         };
 
+        // ── Targets — neon shapes with glow ──────────────────────────────────
         const drawTargets = (t) => {
           const g = G.current;
           for (const tgt of g.targets) {
@@ -334,57 +393,73 @@
               const prog = age / REVEAL_DURATION;
               if (prog >= 1) { tgt.missed = true; }
               else {
-                // Fade out last 40%
                 const bright = prog < 0.6 ? 1 : 1 - (prog - 0.6) / 0.4;
-                const ringScale = 1 + Math.sin(t * 0.012 + tgt.phase) * 0.15;
+                const rot = tgt.rotation + tgt.rotSpeed * age;
+                const r = tgt.size;
+                const pulse = 1 + Math.sin(t * 0.01 + tgt.phase) * 0.11;
+                const rp = r * pulse;
 
-                // Outer glow halo
-                const gr = ctx.createRadialGradient(tgt.x, tgt.y, 0, tgt.x, tgt.y, TARGET_RADIUS * 3.2);
-                gr.addColorStop(0, tgt.color);
-                gr.addColorStop(0.35, tgt.colorDim);
+                // 1. Outer glow halo (radial gradient)
+                const glowR = rp * 3.8;
+                const gr = ctx.createRadialGradient(tgt.x, tgt.y, 0, tgt.x, tgt.y, glowR);
+                gr.addColorStop(0, `hsla(${tgt.hue},100%,62%,0.55)`);
+                gr.addColorStop(0.45, `hsla(${tgt.hue},80%,30%,0.2)`);
                 gr.addColorStop(1, 'rgba(0,0,0,0)');
-                ctx.globalAlpha = bright * 0.7;
+                ctx.globalAlpha = bright * 0.85;
                 ctx.beginPath();
-                ctx.arc(tgt.x, tgt.y, TARGET_RADIUS * 3.2, 0, Math.PI * 2);
+                ctx.arc(tgt.x, tgt.y, glowR, 0, Math.PI * 2);
                 ctx.fillStyle = gr; ctx.fill();
 
-                // Core
-                ctx.globalAlpha = bright;
-                ctx.shadowBlur = 18;
-                ctx.shadowColor = tgt.color;
-                ctx.beginPath();
-                ctx.arc(tgt.x, tgt.y, TARGET_RADIUS, 0, Math.PI * 2);
-                ctx.fillStyle = tgt.color; ctx.fill();
+                // 2. Shape fill (semi-transparent interior)
+                ctx.globalAlpha = bright * 0.22;
+                ctx.shadowBlur = 0;
+                tracePath(tgt.shape, tgt.x, tgt.y, rp, rot);
+                ctx.fillStyle = tgt.color;
+                ctx.fill();
 
-                // Pulsing ring
-                ctx.beginPath();
-                ctx.arc(tgt.x, tgt.y, TARGET_RADIUS * ringScale + 7, 0, Math.PI * 2);
+                // 3. Shape outer glow stroke
+                ctx.globalAlpha = bright;
+                ctx.shadowBlur = 24;
+                ctx.shadowColor = tgt.color;
+                tracePath(tgt.shape, tgt.x, tgt.y, rp, rot);
                 ctx.strokeStyle = tgt.color;
-                ctx.lineWidth = 2;
-                ctx.globalAlpha = bright * 0.5;
+                ctx.lineWidth = 2.5;
                 ctx.stroke();
 
-                // Countdown arc (shrinks as time runs out)
-                const arcFrac = 1 - prog;
-                ctx.beginPath();
-                ctx.arc(tgt.x, tgt.y, TARGET_RADIUS + 14,
-                  -Math.PI / 2, -Math.PI / 2 + arcFrac * Math.PI * 2);
-                ctx.strokeStyle = bright > 0.5 ? '#00ffff' : '#ff4444';
-                ctx.lineWidth = 3;
+                // 4. White hot inner stroke (neon tube core)
                 ctx.globalAlpha = bright * 0.8;
+                ctx.shadowBlur = 6;
+                ctx.shadowColor = '#ffffff';
+                tracePath(tgt.shape, tgt.x, tgt.y, rp * 0.58, rot);
+                ctx.strokeStyle = 'rgba(255,255,255,0.88)';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+
+                // 5. Countdown arc ring
+                const arcFrac = 1 - prog;
+                const arcColor = bright > 0.5 ? '#00ffff' : '#ff4444';
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = arcColor;
+                ctx.beginPath();
+                ctx.arc(tgt.x, tgt.y, rp + 11,
+                  -Math.PI/2, -Math.PI/2 + arcFrac * Math.PI * 2);
+                ctx.strokeStyle = arcColor;
+                ctx.lineWidth = 2.5;
+                ctx.globalAlpha = bright * 0.92;
                 ctx.stroke();
               }
             } else if (!tgt.missed) {
-              // Hidden — very faint dot
+              // Hidden — ultra-faint radar blip
               ctx.beginPath();
-              ctx.arc(tgt.x, tgt.y, 3.5, 0, Math.PI * 2);
-              ctx.fillStyle = 'rgba(0,100,140,0.28)';
+              ctx.arc(tgt.x, tgt.y, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(0,100,140,0.18)';
               ctx.fill();
             }
             ctx.restore();
           }
         };
 
+        // ── Particles ────────────────────────────────────────────────────────
         const drawParticles = () => {
           const g = G.current;
           for (const p of g.particles) {
@@ -409,7 +484,6 @@
               ctx.lineWidth = 2;
               ctx.globalAlpha = p.life * 0.9;
               ctx.stroke();
-              // X mark
               ctx.globalAlpha = p.life;
               ctx.strokeStyle = '#ff5555';
               ctx.lineWidth = 2.5;
@@ -431,6 +505,7 @@
           }
         };
 
+        // ── Score labels ─────────────────────────────────────────────────────
         const drawLabels = () => {
           const g = G.current;
           for (const lb of g.labels) {
@@ -446,6 +521,7 @@
           }
         };
 
+        // ── Level banner ─────────────────────────────────────────────────────
         const drawLevelBanner = (t) => {
           const g = G.current;
           if (!g.levelBanner) return;
@@ -470,10 +546,10 @@
           ctx.restore();
         };
 
+        // ── Menu screen ──────────────────────────────────────────────────────
         const drawMenu = (t) => {
           const g = G.current;
           drawBg();
-          // Ambient sweeping pulses
           for (let i = 0; i < 4; i++) {
             const r = ((t * 0.18 + i * 280) % (g.maxR + 20));
             const a = (1 - r / g.maxR) * 0.22;
@@ -518,6 +594,7 @@
           ctx.restore();
         };
 
+        // ── Game over screen ─────────────────────────────────────────────────
         const drawGameOver = (t) => {
           const g = G.current;
           ctx.save();
@@ -554,7 +631,7 @@
 
           // Spawn new pulse
           if (!g.levelBanner && t >= g.nextPulse) {
-            const dur = g.maxR / 0.28; // speed: 0.28 px/ms
+            const dur = g.maxR / 0.28;
             g.pulses.push({ startTime: t, duration: dur });
             g.nextPulse = t + g.pulseInterval;
             playSound(audioRef.current, 'pulse', 80, 0.45);
@@ -578,7 +655,7 @@
             }
           }
 
-          // Check missed targets (reveal window expired)
+          // Mark expired targets as missed
           let didMiss = false;
           for (const tgt of g.targets) {
             if (tgt.revealed && !tgt.clicked && !tgt.missed) {
@@ -588,7 +665,6 @@
                 g.combo = 0;
                 didMiss = true;
                 playSound(audioRef.current, 'miss', 180, 0.28);
-                // Miss particles at target location
                 g.particles.push({ type:'miss', x: tgt.x, y: tgt.y, life: 1, decay: 0.025 });
                 if (g.lives <= 0) {
                   g.phase = 'gameover';
@@ -598,6 +674,22 @@
                   }
                 }
               }
+            }
+          }
+
+          // ── FIX: level-clear check after misses ───────────────────────────
+          // Without this, a level where you miss every target would get stuck forever
+          // because the allDone check only ran on click (handleInput).
+          if (g.phase === 'playing' && !g.levelBanner && g.targets.length > 0) {
+            const allDone = g.targets.every(tgt => tgt.clicked || tgt.missed);
+            if (allDone) {
+              g.level++;
+              g.pulseInterval = Math.max(1100, BASE_PULSE_INTERVAL - g.level * 90);
+              g.levelBanner = { startTime: t, level: g.level };
+              g.nextPulse = t + 2000;
+              playSound(audioRef.current, 'levelup', 440, 0.5);
+              spawnTargets();
+              sync();
             }
           }
 
