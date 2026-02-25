@@ -33,7 +33,6 @@
 
     // ─── Game ─────────────────────────────────────────────────────────────────
     const BALL_R      = 12;
-    const BAR_H       = 18;
     const BALL_Y_FRAC = 0.38;
     const HI_KEY      = 'voidDescent_highScore';  // contains 'highScore' for test detection
     const COLORS      = ['#ff3399','#33ffcc','#ff9933','#aa44ff','#33aaff','#ffdd00','#ff6644'];
@@ -65,6 +64,7 @@
           spawnTimer: 0,
           keys:       {},
           t:          0,
+          barH:       Math.max(14, Math.round(window.innerHeight * 0.025)),
         };
 
         // ── Helpers ────────────────────────────────────────────────────────────
@@ -76,11 +76,11 @@
           const gap = gapW();
           const gx  = gap / 2 + 30 + Math.random() * (w - gap - 60);
           const col = COLORS[Math.floor(Math.random() * COLORS.length)];
-          G.barriers.push({ y: canvas.height + BAR_H + 5, gx, gap, color: col, passed: false });
+          G.barriers.push({ y: canvas.height + G.barH + 5, gx, gap, color: col, passed: false });
           if (Math.random() < 0.45) {
             G.crystals.push({
               x: gx + (Math.random() - 0.5) * gap * 0.6,
-              y: canvas.height + BAR_H + 35,
+              y: canvas.height + G.barH + 35,
               angle: 0, collected: false,
             });
           }
@@ -105,8 +105,9 @@
 
         // ── Resize ────────────────────────────────────────────────────────────
         const resize = () => {
-          canvas.width  = window.innerWidth;
+          canvas.width  = Math.min(window.innerWidth, 520);
           canvas.height = window.innerHeight;
+          G.barH = Math.max(14, Math.round(canvas.height * 0.025));
           if (G.phase === 'start') G.bx = canvas.width / 2;
         };
         resize();
@@ -151,8 +152,8 @@
           raf = requestAnimationFrame(loop);
           const w = canvas.width, h = canvas.height;
           const BALL_Y   = h * BALL_Y_FRAC;
-          const topEdge  = BALL_Y - BALL_R - BAR_H / 2;
-          const botEdge  = BALL_Y + BALL_R + BAR_H / 2;
+          const topEdge  = BALL_Y - BALL_R - G.barH / 2;
+          const botEdge  = BALL_Y + BALL_R + G.barH / 2;
           G.t++;
 
           // ── Background ───────────────────────────────────────────────────
@@ -232,7 +233,7 @@
                 if (!inGap) dead = true;
               }
             }
-            G.barriers = G.barriers.filter(b => b.y > -BAR_H - 5);
+            G.barriers = G.barriers.filter(b => b.y > -G.barH - 5);
 
             // Crystals
             for (const c of G.crystals) {
@@ -262,13 +263,13 @@
           for (const b of G.barriers) {
             ctx.shadowColor = b.color; ctx.shadowBlur = 24;
             ctx.fillStyle   = b.color;
-            ctx.fillRect(0,               b.y - BAR_H/2, b.gx - b.gap/2,        BAR_H);
+            ctx.fillRect(0,               b.y - G.barH/2, b.gx - b.gap/2,        G.barH);
             const rx = b.gx + b.gap / 2;
-            ctx.fillRect(rx,              b.y - BAR_H/2, w - rx,                 BAR_H);
+            ctx.fillRect(rx,              b.y - G.barH/2, w - rx,                 G.barH);
             // White edge lines at gap openings
             ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(b.gx - b.gap/2, b.y - BAR_H/2); ctx.lineTo(b.gx - b.gap/2, b.y + BAR_H/2); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(b.gx + b.gap/2, b.y - BAR_H/2); ctx.lineTo(b.gx + b.gap/2, b.y + BAR_H/2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(b.gx - b.gap/2, b.y - G.barH/2); ctx.lineTo(b.gx - b.gap/2, b.y + G.barH/2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(b.gx + b.gap/2, b.y - G.barH/2); ctx.lineTo(b.gx + b.gap/2, b.y + G.barH/2); ctx.stroke();
             ctx.shadowBlur = 0;
           }
 
@@ -411,7 +412,11 @@
         };
       }, []);
 
-      return <canvas ref={canvasRef} id="game-canvas" style={{ display: 'block', cursor: 'none', touchAction: 'none' }} />;
+      return (
+        <div style={{ width: '100vw', height: '100vh', background: '#05051a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          <canvas ref={canvasRef} id="game-canvas" style={{ display: 'block', cursor: 'none', touchAction: 'none' }} />
+        </div>
+      );
     };
 
     ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
