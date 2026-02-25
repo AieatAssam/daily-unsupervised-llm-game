@@ -64,8 +64,6 @@
           speed:      2.5,
           spawnTimer: 0,
           keys:       {},
-          tLeft:      false,
-          tRight:     false,
           t:          0,
         };
 
@@ -123,22 +121,29 @@
         window.addEventListener('keydown', kd);
         window.addEventListener('keyup',   ku);
 
-        canvas.addEventListener('click', e => {
-          if (G.phase !== 'playing') { startGame(); return; }
-          if (e.clientX < canvas.width / 2) G.tLeft = true; else G.tRight = true;
-          setTimeout(() => { G.tLeft = false; G.tRight = false; }, 220);
-        });
+        // ── Unified Pointer / Touch controls ──────────────────────────────
+        // Uses Pointer Events (handles mouse + touch with no double-firing).
+        // _pointerX tracks where the finger/cursor is while held; the ball
+        // steers toward that X each frame (left of ball → go left, right → go right).
+        let _pointerX = null;
 
-        canvas.addEventListener('touchstart', e => {
-          e.preventDefault();
-          if (G.phase !== 'playing') { startGame(); return; }
-          for (const t of e.changedTouches)
-            t.clientX < canvas.width / 2 ? (G.tLeft = true) : (G.tRight = true);
-        }, { passive: false });
+        const onPointerDown = e => {
+          if (G.phase !== 'playing') startGame();
+          try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+          const rect = canvas.getBoundingClientRect();
+          _pointerX = e.clientX - rect.left;
+        };
+        const onPointerMove = e => {
+          if (_pointerX === null || G.phase !== 'playing') return;
+          const rect = canvas.getBoundingClientRect();
+          _pointerX = e.clientX - rect.left;
+        };
+        const onPointerUp = () => { _pointerX = null; };
 
-        const endTouch = e => { e.preventDefault(); G.tLeft = false; G.tRight = false; };
-        canvas.addEventListener('touchend',   endTouch, { passive: false });
-        canvas.addEventListener('touchcancel',endTouch, { passive: false });
+        canvas.addEventListener('pointerdown',   onPointerDown);
+        canvas.addEventListener('pointermove',   onPointerMove);
+        canvas.addEventListener('pointerup',     onPointerUp);
+        canvas.addEventListener('pointercancel', onPointerUp);
 
         // ── Main loop ─────────────────────────────────────────────────────────
         let raf;
@@ -190,8 +195,10 @@
 
           // ── Physics / game logic ──────────────────────────────────────────
           if (G.phase === 'playing') {
-            const left  = G.keys['ArrowLeft']  || G.keys['a'] || G.keys['A'] || G.tLeft;
-            const right = G.keys['ArrowRight'] || G.keys['d'] || G.keys['D'] || G.tRight;
+            const pLeft  = _pointerX !== null && _pointerX < G.bx - 6;
+            const pRight = _pointerX !== null && _pointerX > G.bx + 6;
+            const left  = G.keys['ArrowLeft']  || G.keys['a'] || G.keys['A'] || pLeft;
+            const right = G.keys['ArrowRight'] || G.keys['d'] || G.keys['D'] || pRight;
             if (left)  G.bvx -= 0.55;
             if (right) G.bvx += 0.55;
             G.bvx *= 0.84;
@@ -350,7 +357,7 @@
               ctx.font      = '18px monospace';
               ctx.fillStyle = '#6688ff'; ctx.shadowColor = '#3355ff'; ctx.shadowBlur = 12;
               ctx.fillText('← → or A / D to steer', w/2, h/2 + 45);
-              ctx.fillText('Tap left or right side on mobile', w/2, h/2 + 73);
+              ctx.fillText('Tap or drag to steer on mobile', w/2, h/2 + 73);
               ctx.fillText('Dodge the rising barriers!', w/2, h/2 + 101);
               ctx.fillText('Collect cyan crystals for bonus points!', w/2, h/2 + 129);
 
@@ -397,10 +404,14 @@
           window.removeEventListener('resize', resize);
           window.removeEventListener('keydown', kd);
           window.removeEventListener('keyup',   ku);
+          canvas.removeEventListener('pointerdown',   onPointerDown);
+          canvas.removeEventListener('pointermove',   onPointerMove);
+          canvas.removeEventListener('pointerup',     onPointerUp);
+          canvas.removeEventListener('pointercancel', onPointerUp);
         };
       }, []);
 
-      return <canvas ref={canvasRef} id="game-canvas" style={{ display: 'block', cursor: 'none' }} />;
+      return <canvas ref={canvasRef} id="game-canvas" style={{ display: 'block', cursor: 'none', touchAction: 'none' }} />;
     };
 
     ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
