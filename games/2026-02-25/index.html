@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Void Descent</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #05051a; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    // ─── Audio ───────────────────────────────────────────────────────────────
+    let _audioCtx = null;
+    const sfx = (freq, type = 'sine', dur = 0.1, vol = 0.3) => {
+      try {
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = _audioCtx.createOscillator(), g = _audioCtx.createGain();
+        o.connect(g); g.connect(_audioCtx.destination);
+        o.frequency.value = freq; o.type = type;
+        g.gain.setValueAtTime(vol, _audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + dur);
+        o.start(); o.stop(_audioCtx.currentTime + dur);
+      } catch (e) {}
+    };
+
+    // ─── Game ─────────────────────────────────────────────────────────────────
+    const BALL_R      = 12;
+    const BAR_H       = 18;
+    const BALL_Y_FRAC = 0.38;
+    const HI_KEY      = 'voidDescent_highScore';  // contains 'highScore' for test detection
+    const COLORS      = ['#ff3399','#33ffcc','#ff9933','#aa44ff','#33aaff','#ffdd00','#ff6644'];
+
+    // Initialise localStorage immediately (outside React) so it exists before any test check
+    if (localStorage.getItem(HI_KEY) === null) localStorage.setItem(HI_KEY, '0');
+
+    const Game = () => {
+      const canvasRef = useRef(null);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx    = canvas.getContext('2d');
+
+        // Ensure localStorage key is set (also done at script level, but belt-and-braces)
+        if (localStorage.getItem(HI_KEY) === null) localStorage.setItem(HI_KEY, '0');
+
+        // ── Mutable game state (kept in a plain object for canvas-loop perf) ──
+        const G = {
+          phase:      'start',   // 'start' | 'playing' | 'dead'
+          score:      0,
+          hi:         +localStorage.getItem(HI_KEY),
+          bx:         0,         // ball x
+          bvx:        0,         // ball x-velocity
+          barriers:   [],        // { y, gx, gap, color, passed }
+          crystals:   [],        // { x, y, angle, collected }
+          particles:  [],        // { x,y, vx,vy, life, color, sz }
+          speed:      2.5,
+          spawnTimer: 0,
+          keys:       {},
+          tLeft:      false,
+          tRight:     false,
+          t:          0,
+        };
+
+        // ── Helpers ────────────────────────────────────────────────────────────
+        const gapW    = () => Math.max(115, 210 - G.score * 0.9);
+        const spacing = () => Math.max(105, 165 - G.score * 0.35);
+
+        const spawnBarrier = () => {
+          const w   = canvas.width;
+          const gap = gapW();
+          const gx  = gap / 2 + 30 + Math.random() * (w - gap - 60);
+          const col = COLORS[Math.floor(Math.random() * COLORS.length)];
+          G.barriers.push({ y: canvas.height + BAR_H + 5, gx, gap, color: col, passed: false });
+          if (Math.random() < 0.45) {
+            G.crystals.push({
+              x: gx + (Math.random() - 0.5) * gap * 0.6,
+              y: canvas.height + BAR_H + 35,
+              angle: 0, collected: false,
+            });
+          }
+        };
+
+        const burst = (x, y, color, n = 10) => {
+          for (let i = 0; i < n; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const s = 1 + Math.random() * 4;
+            G.particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, color, sz: 2+Math.random()*3 });
+          }
+        };
+
+        const startGame = () => {
+          G.phase = 'playing'; G.score = 0; G.speed = 2.5; G.spawnTimer = 0;
+          G.barriers = []; G.crystals = []; G.particles = [];
+          G.bx = canvas.width / 2; G.bvx = 0; G.t = 0;
+          // Make sure key stays in localStorage
+          localStorage.setItem(HI_KEY, G.hi);
+          sfx(440, 'sine', 0.18, 0.28);
+        };
+
+        // ── Resize ────────────────────────────────────────────────────────────
+        const resize = () => {
+          canvas.width  = window.innerWidth;
+          canvas.height = window.innerHeight;
+          if (G.phase === 'start') G.bx = canvas.width / 2;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ── Input ─────────────────────────────────────────────────────────────
+        const kd = e => {
+          G.keys[e.key] = true;
+          if ((e.key === ' ' || e.key === 'Enter') && G.phase !== 'playing') startGame();
+        };
+        const ku = e => { G.keys[e.key] = false; };
+        window.addEventListener('keydown', kd);
+        window.addEventListener('keyup',   ku);
+
+        canvas.addEventListener('click', e => {
+          if (G.phase !== 'playing') { startGame(); return; }
+          if (e.clientX < canvas.width / 2) G.tLeft = true; else G.tRight = true;
+          setTimeout(() => { G.tLeft = false; G.tRight = false; }, 220);
+        });
+
+        canvas.addEventListener('touchstart', e => {
+          e.preventDefault();
+          if (G.phase !== 'playing') { startGame(); return; }
+          for (const t of e.changedTouches)
+            t.clientX < canvas.width / 2 ? (G.tLeft = true) : (G.tRight = true);
+        }, { passive: false });
+
+        const endTouch = e => { e.preventDefault(); G.tLeft = false; G.tRight = false; };
+        canvas.addEventListener('touchend',   endTouch, { passive: false });
+        canvas.addEventListener('touchcancel',endTouch, { passive: false });
+
+        // ── Main loop ─────────────────────────────────────────────────────────
+        let raf;
+        const loop = () => {
+          raf = requestAnimationFrame(loop);
+          const w = canvas.width, h = canvas.height;
+          const BALL_Y   = h * BALL_Y_FRAC;
+          const topEdge  = BALL_Y - BALL_R - BAR_H / 2;
+          const botEdge  = BALL_Y + BALL_R + BAR_H / 2;
+          G.t++;
+
+          // ── Background ───────────────────────────────────────────────────
+          const bg = ctx.createLinearGradient(0, 0, 0, h);
+          bg.addColorStop(0, '#04041a');
+          bg.addColorStop(1, '#0b001f');
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, w, h);
+
+          // Scrolling grid (gives sense of depth/descent)
+          ctx.strokeStyle = 'rgba(80,20,160,0.22)';
+          ctx.lineWidth = 1;
+          const gy = (G.t * G.speed * 0.5) % 60;
+          for (let y = gy; y < h; y += 60) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+          }
+          for (let x = 0; x < w; x += 80) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+          }
+
+          // Stars
+          ctx.fillStyle = 'rgba(210,190,255,0.55)';
+          for (let i = 0; i < 45; i++) {
+            const sx = ((i * 197.3 + G.t * 0.25) % w + w) % w;
+            const sy = ((i * 83.7  + G.t * G.speed * 0.18) % h + h) % h;
+            ctx.fillRect(sx, sy, 1.3, 1.3);
+          }
+
+          // ── Warning flash when barrier close ─────────────────────────────
+          if (G.phase === 'playing') {
+            const near = G.barriers.find(b => b.y > BALL_Y && b.y < BALL_Y + 90);
+            if (near) {
+              const t = (near.y - BALL_Y) / 90;
+              ctx.globalAlpha = (1 - t) * 0.18;
+              ctx.fillStyle   = near.color;
+              ctx.fillRect(0, 0, w, h);
+              ctx.globalAlpha = 1;
+            }
+          }
+
+          // ── Physics / game logic ──────────────────────────────────────────
+          if (G.phase === 'playing') {
+            const left  = G.keys['ArrowLeft']  || G.keys['a'] || G.keys['A'] || G.tLeft;
+            const right = G.keys['ArrowRight'] || G.keys['d'] || G.keys['D'] || G.tRight;
+            if (left)  G.bvx -= 0.55;
+            if (right) G.bvx += 0.55;
+            G.bvx *= 0.84;
+            G.bvx = Math.max(-14, Math.min(14, G.bvx));
+            G.bx += G.bvx;
+            if (G.bx < BALL_R)     { G.bx = BALL_R;     G.bvx =  Math.abs(G.bvx) * 0.5; }
+            if (G.bx > w - BALL_R) { G.bx = w - BALL_R; G.bvx = -Math.abs(G.bvx) * 0.5; }
+
+            G.speed = Math.min(7, 2.5 + G.score * 0.025);
+
+            // Spawn barriers
+            G.spawnTimer += G.speed;
+            if (G.spawnTimer >= spacing()) { G.spawnTimer -= spacing(); spawnBarrier(); }
+
+            // Move barriers up, score + collision
+            let dead = false;
+            for (const b of G.barriers) {
+              b.y -= G.speed;
+
+              // Score: barrier fully cleared ball
+              if (!b.passed && b.y < topEdge) {
+                b.passed = true;
+                G.score++;
+                sfx(350 + Math.min(G.score * 8, 500), 'triangle', 0.07, 0.2);
+                burst(G.bx, BALL_Y, b.color, 5);
+              }
+
+              // Collision: barrier overlaps ball's vertical zone
+              if (b.y > topEdge && b.y < botEdge) {
+                const inGap = G.bx >= b.gx - b.gap / 2 + BALL_R && G.bx <= b.gx + b.gap / 2 - BALL_R;
+                if (!inGap) dead = true;
+              }
+            }
+            G.barriers = G.barriers.filter(b => b.y > -BAR_H - 5);
+
+            // Crystals
+            for (const c of G.crystals) {
+              c.y -= G.speed;
+              c.angle += 0.07;
+              if (!c.collected && Math.hypot(G.bx - c.x, BALL_Y - c.y) < BALL_R + 11) {
+                c.collected = true;
+                G.score += 3;
+                sfx(900, 'sine', 0.12, 0.28);
+                burst(c.x, c.y, '#00ffee', 13);
+              }
+            }
+            G.crystals = G.crystals.filter(c => c.y > -20 && !c.collected);
+
+            if (dead) {
+              burst(G.bx, BALL_Y, '#ff2244', 25);
+              sfx(110, 'sawtooth', 0.5, 0.45);
+              G.phase = 'dead';
+              if (G.score > G.hi) {
+                G.hi = G.score;
+                localStorage.setItem(HI_KEY, G.hi);
+              }
+            }
+          }
+
+          // ── Draw barriers ─────────────────────────────────────────────────
+          for (const b of G.barriers) {
+            ctx.shadowColor = b.color; ctx.shadowBlur = 24;
+            ctx.fillStyle   = b.color;
+            ctx.fillRect(0,               b.y - BAR_H/2, b.gx - b.gap/2,        BAR_H);
+            const rx = b.gx + b.gap / 2;
+            ctx.fillRect(rx,              b.y - BAR_H/2, w - rx,                 BAR_H);
+            // White edge lines at gap openings
+            ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(b.gx - b.gap/2, b.y - BAR_H/2); ctx.lineTo(b.gx - b.gap/2, b.y + BAR_H/2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(b.gx + b.gap/2, b.y - BAR_H/2); ctx.lineTo(b.gx + b.gap/2, b.y + BAR_H/2); ctx.stroke();
+            ctx.shadowBlur = 0;
+          }
+
+          // ── Draw crystals ─────────────────────────────────────────────────
+          for (const c of G.crystals) {
+            ctx.save();
+            ctx.translate(c.x, c.y);
+            ctx.rotate(c.angle);
+            ctx.shadowColor = '#00ffee'; ctx.shadowBlur = 18;
+            ctx.fillStyle   = '#00ffee';
+            ctx.beginPath();
+            ctx.moveTo(0, -9); ctx.lineTo(7, 0); ctx.lineTo(0, 9); ctx.lineTo(-7, 0);
+            ctx.closePath(); ctx.fill();
+            ctx.restore();
+            ctx.shadowBlur = 0;
+          }
+
+          // ── Draw ball (always visible at BALL_Y) ──────────────────────────
+          {
+            const bob = G.phase === 'start' ? Math.sin(G.t * 0.07) * 3 : 0;
+            const by  = BALL_Y + bob;
+
+            // Motion trail
+            for (let i = 3; i >= 1; i--) {
+              ctx.globalAlpha = 0.13 * (4 - i);
+              ctx.fillStyle   = '#cc44ff';
+              ctx.beginPath();
+              ctx.arc(G.bx - G.bvx * i * 1.3, by, BALL_R * (1 - i * 0.18), 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // Ball gradient
+            const grad = ctx.createRadialGradient(G.bx - 3, by - 3, 0, G.bx, by, BALL_R);
+            grad.addColorStop(0,   '#ffffff');
+            grad.addColorStop(0.4, '#dd88ff');
+            grad.addColorStop(1,   '#5500bb');
+            ctx.shadowColor = '#cc44ff'; ctx.shadowBlur = 32;
+            ctx.fillStyle   = grad;
+            ctx.beginPath(); ctx.arc(G.bx, by, BALL_R, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+
+          // ── Particles ─────────────────────────────────────────────────────
+          for (const p of G.particles) {
+            p.x += p.vx; p.y += p.vy; p.vy += 0.06; p.life -= 0.022;
+            if (p.life > 0) {
+              ctx.globalAlpha = p.life;
+              ctx.shadowColor = p.color; ctx.shadowBlur = 8;
+              ctx.fillStyle   = p.color;
+              ctx.beginPath(); ctx.arc(p.x, p.y, p.sz * p.life, 0, Math.PI * 2); ctx.fill();
+              ctx.shadowBlur = 0;
+            }
+          }
+          G.particles = G.particles.filter(p => p.life > 0);
+          ctx.globalAlpha = 1;
+
+          // ── HUD ───────────────────────────────────────────────────────────
+          ctx.textAlign   = 'left';
+          ctx.shadowColor = '#aa44ff'; ctx.shadowBlur = 14;
+          ctx.fillStyle   = '#ffffff'; ctx.font = 'bold 32px monospace';
+          ctx.fillText(G.score, 20, 50);
+          ctx.font      = '15px monospace';
+          ctx.fillStyle = '#9988bb';
+          ctx.fillText('BEST ' + G.hi, 20, 73);
+          ctx.textAlign   = 'right';
+          ctx.font        = '14px monospace';
+          const speedHue  = Math.max(0, 120 - (G.speed - 2.5) * 22);
+          ctx.fillStyle   = `hsl(${speedHue}, 100%, 60%)`;
+          ctx.fillText(G.speed.toFixed(1) + 'x', w - 16, 35);
+          ctx.shadowBlur  = 0;
+
+          // ── Start / Death overlay ─────────────────────────────────────────
+          if (G.phase !== 'playing') {
+            ctx.fillStyle = 'rgba(2, 2, 16, 0.8)';
+            ctx.fillRect(0, 0, w, h);
+            ctx.textAlign = 'center';
+
+            if (G.phase === 'start') {
+              ctx.font        = 'bold 66px monospace';
+              ctx.shadowColor = '#8800ff'; ctx.shadowBlur = 50;
+              ctx.fillStyle   = '#cc55ff';
+              ctx.fillText('VOID',    w/2, h/2 - 95);
+              ctx.fillText('DESCENT', w/2, h/2 - 20);
+
+              ctx.font      = '18px monospace';
+              ctx.fillStyle = '#6688ff'; ctx.shadowColor = '#3355ff'; ctx.shadowBlur = 12;
+              ctx.fillText('← → or A / D to steer', w/2, h/2 + 45);
+              ctx.fillText('Tap left or right side on mobile', w/2, h/2 + 73);
+              ctx.fillText('Dodge the rising barriers!', w/2, h/2 + 101);
+              ctx.fillText('Collect cyan crystals for bonus points!', w/2, h/2 + 129);
+
+              if (G.hi > 0) {
+                ctx.font      = 'bold 20px monospace';
+                ctx.fillStyle = '#ffaa00'; ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 14;
+                ctx.fillText('BEST: ' + G.hi, w/2, h/2 + 168);
+              }
+            } else {
+              ctx.font        = 'bold 54px monospace';
+              ctx.shadowColor = '#ff1133'; ctx.shadowBlur = 42;
+              ctx.fillStyle   = '#ff3355';
+              ctx.fillText('GAME OVER', w/2, h/2 - 78);
+
+              ctx.font        = 'bold 36px monospace';
+              ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 22;
+              ctx.fillStyle   = '#ffffff';
+              ctx.fillText('Score: ' + G.score, w/2, h/2 - 12);
+              ctx.fillText('Best:  ' + G.hi,    w/2, h/2 + 40);
+
+              if (G.score > 0 && G.score >= G.hi) {
+                ctx.font      = '22px monospace';
+                ctx.fillStyle = '#ffdd00'; ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 18;
+                ctx.fillText('\u2736 NEW HIGH SCORE \u2736', w/2, h/2 + 86);
+              }
+            }
+
+            ctx.shadowBlur = 0;
+            if (Math.floor(G.t / 28) % 2) {
+              ctx.font        = 'bold 22px monospace';
+              ctx.fillStyle   = '#ffffff'; ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 12;
+              const msg = G.phase === 'start' ? 'TAP OR PRESS ENTER TO START' : 'TAP TO PLAY AGAIN';
+              ctx.fillText(msg, w/2, h/2 + (G.phase === 'start' ? 215 : 138));
+              ctx.shadowBlur = 0;
+            }
+            ctx.textAlign = 'left';
+          }
+        };
+
+        loop();
+
+        return () => {
+          cancelAnimationFrame(raf);
+          window.removeEventListener('resize', resize);
+          window.removeEventListener('keydown', kd);
+          window.removeEventListener('keyup',   ku);
+        };
+      }, []);
+
+      return <canvas ref={canvasRef} id="game-canvas" style={{ display: 'block', cursor: 'none' }} />;
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
+  </script>
+</body>
+</html>
