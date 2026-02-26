@@ -73,10 +73,11 @@
     ];
 
     // ── Dynamic dimension calculation ──────────────────────────────────────────
-    // On mobile (<768px wide) we reserve 148px for the D-pad below the canvas.
+    // On mobile (<768px wide) we reserve space for the 3-row D-pad below the canvas.
+    // D-pad = 3 rows × 68px = 204px + 8px flex gap = 212px total.
     function calcDims() {
       const isMobile = window.innerWidth < 768;
-      const dpadH    = isMobile ? 148 : 0;
+      const dpadH    = isMobile ? 212 : 0;
       const pad      = 12;
       const availW   = window.innerWidth  - pad;
       const availH   = window.innerHeight - pad - dpadH;
@@ -109,19 +110,24 @@
     }
 
     // Build traffic for a given level. Accepts CELL and W so it works with
-    // dynamically sized grids.
-    function mkTraffic(lvl, CELL, W) {
+    // dynamically sized grids. On mobile, fewer/narrower cars to keep it fair.
+    function mkTraffic(lvl, CELL, W, isMobile = false) {
       const arr = [];
       ROW_CFG.forEach((r, ri) => {
         if (r.type !== 'lane') return;
-        const cnt   = 3 + Math.floor(Math.random() * 3);
+        // Mobile: 2–3 cars per lane; Desktop: 3–5 cars per lane
+        const cnt   = isMobile
+          ? 2 + Math.floor(Math.random() * 2)
+          : 3 + Math.floor(Math.random() * 3);
         const color = LANE_COLORS[ri % LANE_COLORS.length];
         const spacing = W / cnt;
+        // Mobile: cars are slightly narrower to leave bigger gaps
+        const wMul = isMobile ? (1.1 + Math.random() * 0.7) : (1.4 + Math.random() * 0.9);
         for (let i = 0; i < cnt; i++) {
           arr.push({
             row: ri,
             x: spacing * i + Math.random() * spacing * 0.4,
-            w: CELL * (1.4 + Math.random() * 0.9),
+            w: CELL * wMul,
             spd: r.spd * (1 + (lvl - 1) * 0.18),
             dir: r.dir,
             color,
@@ -211,7 +217,7 @@
         g.row        = 12;
         g.col        = 5;
         g.score      = 0;
-        g.traffic    = mkTraffic(g.level, CELL, W);
+        g.traffic    = mkTraffic(g.level, CELL, W, dimsRef.current.isMobile);
         g.particles  = [];
         g.deathTimer = 0;
         g.winTimer   = 0;
@@ -676,7 +682,7 @@
               display: 'grid',
               gridTemplateAreas: '". up ." "left . right" ". down ."',
               gridTemplateColumns: '68px 68px 68px',
-              gridTemplateRows: '68px 16px 68px',
+              gridTemplateRows: '68px 68px 68px',
               gap: '0px',
             }}>
               <div style={{ ...dpadBtnBase, gridArea: 'up' }}
