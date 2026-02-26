@@ -124,5 +124,19 @@
     "folder": "games/2026-02-25",
     "file": "games/2026-02-25/index.html",
     "preview": "games/2026-02-25/preview.png"
+  },
+  {
+    "id": "2026-02-26",
+    "name": "Neon Hopper",
+    "date": "2026-02-26",
+    "description": "Hop a glowing diamond across 12 lanes of neon traffic in this frogger-style arcade game — time each move to thread the gaps, reach the goal for a level bonus, and survive as cars grow faster each round!",
+    "tagline": "Cross the neon lanes. Don't get flattened!",
+    "tags": ["arcade", "reflex", "timing", "action", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow keys / WASD to hop | Swipe or Tap on mobile",
+    "folder": "games/2026-02-26",
+    "file": "games/2026-02-26/index.html",
+    "preview": "games/2026-02-26/preview.png"
   }
 ]
