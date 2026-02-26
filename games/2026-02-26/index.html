@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Neon Hopper</title>
   <!-- Synchronously seed localStorage before any CDN scripts load -->
   <script>
@@ -17,14 +17,22 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    html, body {
       background: #05000f;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    #root {
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      overflow: hidden;
-      font-family: 'Courier New', monospace;
     }
   </style>
 </head>
@@ -33,16 +41,13 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
-    // ── Seed localStorage immediately (top-level, before React mounts) ───────
+    // ── Seed localStorage ──────────────────────────────────────────────────────
     const LS_KEY = 'neonHopper_highScore';
     if (localStorage.getItem(LS_KEY) === null) localStorage.setItem(LS_KEY, '0');
 
-    // ── Constants ────────────────────────────────────────────────────────────
+    // ── Fixed layout constants ─────────────────────────────────────────────────
     const COLS = 10;
     const ROWS = 13;   // rows 0..12  (0=goal, 12=start)
-    const CELL = 48;
-    const W = COLS * CELL;  // 480
-    const H = ROWS * CELL;  // 624
 
     // Neon palette for traffic lanes
     const LANE_COLORS = [
@@ -67,7 +72,21 @@
       { type: 'start' },
     ];
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // ── Dynamic dimension calculation ──────────────────────────────────────────
+    // On mobile (<768px wide) we reserve 148px for the D-pad below the canvas.
+    function calcDims() {
+      const isMobile = window.innerWidth < 768;
+      const dpadH    = isMobile ? 148 : 0;
+      const pad      = 12;
+      const availW   = window.innerWidth  - pad;
+      const availH   = window.innerHeight - pad - dpadH;
+      const byW      = Math.floor(availW / COLS);
+      const byH      = Math.floor(availH / ROWS);
+      const CELL     = Math.max(28, Math.min(byW, byH, 54)); // 28–54 px
+      return { CELL, W: CELL * COLS, H: CELL * ROWS, isMobile };
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
     function hexAlpha(hex, a) {
       const r = parseInt(hex.slice(1, 3), 16);
       const g = parseInt(hex.slice(3, 5), 16);
@@ -89,8 +108,9 @@
       ctx.closePath();
     }
 
-    // Build traffic for a given level (speed scales with level)
-    function mkTraffic(lvl) {
+    // Build traffic for a given level. Accepts CELL and W so it works with
+    // dynamically sized grids.
+    function mkTraffic(lvl, CELL, W) {
       const arr = [];
       ROW_CFG.forEach((r, ri) => {
         if (r.type !== 'lane') return;
@@ -111,7 +131,7 @@
       return arr;
     }
 
-    // ── Audio helpers ────────────────────────────────────────────────────────
+    // ── Audio helpers ──────────────────────────────────────────────────────────
     let audioCtx = null;
     function getAudio() {
       if (!audioCtx) {
@@ -153,14 +173,19 @@
     }
     function playSafe() { playNote(660, 0.18, 'sine', 0.08, 880); }
 
-    // ── Component ────────────────────────────────────────────────────────────
+    // ── Component ──────────────────────────────────────────────────────────────
     const NeonHopper = () => {
       const canvasRef = useRef(null);
       const touchRef  = useRef(null);
 
+      // Reactive dims (triggers re-render → updates canvas width/height attrs)
+      const [dims, setDims] = useState(() => calcDims());
+      // Sync ref for the render loop (avoids stale closure)
+      const dimsRef = useRef(dims);
+
       // All mutable game state lives here (no React re-renders needed for canvas)
       const gs = useRef({
-        phase:      'start',   // 'start' | 'playing' | 'dead' | 'win'
+        phase:      'start',
         row:        12,
         col:        5,
         score:      0,
@@ -178,14 +203,15 @@
         gs.current.highScore = hs;
       }, []);
 
-      // ── Game actions ──────────────────────────────────────────────────────
+      // ── Game actions ────────────────────────────────────────────────────────
       const startGame = useCallback(() => {
         const g = gs.current;
+        const { CELL, W } = dimsRef.current;
         g.phase      = 'playing';
         g.row        = 12;
         g.col        = 5;
         g.score      = 0;
-        g.traffic    = mkTraffic(g.level);
+        g.traffic    = mkTraffic(g.level, CELL, W);
         g.particles  = [];
         g.deathTimer = 0;
         g.winTimer   = 0;
@@ -211,6 +237,7 @@
       const killPlayer = useCallback(() => {
         const g = gs.current;
         if (g.phase !== 'playing') return;
+        const { CELL } = dimsRef.current;
         g.phase      = 'dead';
         g.deathTimer = 130;
         playDie();
@@ -223,6 +250,7 @@
 
       const movePlayer = useCallback((dr, dc) => {
         const g = gs.current;
+        const { CELL, W, H } = dimsRef.current;
         if (g.phase !== 'playing') return;
         const nr = g.row + dr;
         const nc = Math.max(0, Math.min(COLS - 1, g.col + dc));
@@ -232,7 +260,6 @@
         g.row = nr;
         g.col = nc;
 
-        // Reached goal row
         if (nr === 0) {
           const bonus = 100 * g.level;
           g.score += bonus;
@@ -248,7 +275,6 @@
           return;
         }
 
-        // Score: +10 per row moved forward (toward goal)
         if (dr < 0) {
           g.score += 10;
           const rowType = ROW_CFG[nr].type;
@@ -256,7 +282,23 @@
         }
       }, []);
 
-      // ── Input handling ────────────────────────────────────────────────────
+      // ── Resize handling ─────────────────────────────────────────────────────
+      useEffect(() => {
+        const onResize = () => {
+          const newDims = calcDims();
+          const oldW    = dimsRef.current.W;
+          const ratio   = newDims.W / oldW;
+          // Scale traffic and particle positions proportionally
+          gs.current.traffic.forEach(v => { v.x *= ratio; v.w *= ratio; });
+          gs.current.particles.forEach(p => { p.x *= ratio; p.y *= ratio; });
+          dimsRef.current = newDims;
+          setDims(newDims);
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+      }, []);
+
+      // ── Keyboard input ──────────────────────────────────────────────────────
       useEffect(() => {
         const onKey = (e) => {
           const g = gs.current;
@@ -283,6 +325,7 @@
         return () => window.removeEventListener('keydown', onKey);
       }, [movePlayer, startGame]);
 
+      // ── Touch/swipe on canvas ───────────────────────────────────────────────
       const onTouchStart = useCallback((e) => {
         e.preventDefault();
         touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -302,7 +345,8 @@
           startGame();
           return;
         }
-        if (Math.abs(dx) < 12 && Math.abs(dy) < 12) { movePlayer(-1, 0); return; }
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 16) { movePlayer(-1, 0); return; } // tap → hop forward
         if (Math.abs(dx) > Math.abs(dy)) movePlayer(0, dx > 0 ? 1 : -1);
         else                              movePlayer(dy > 0 ? 1 : -1, 0);
       }, [movePlayer, startGame]);
@@ -316,22 +360,37 @@
         }
       }, [startGame]);
 
-      // ── Main render loop ──────────────────────────────────────────────────
+      // ── D-pad handlers ──────────────────────────────────────────────────────
+      const makeDpadHandler = (dr, dc) => (e) => {
+        e.preventDefault();
+        const g = gs.current;
+        if (g.phase !== 'playing') {
+          if (g.phase === 'win')  g.level++;
+          else                   g.level = 1;
+          startGame();
+          return;
+        }
+        movePlayer(dr, dc);
+      };
+      const dpadUp    = useCallback(makeDpadHandler(-1,  0), [movePlayer, startGame]);
+      const dpadDown  = useCallback(makeDpadHandler( 1,  0), [movePlayer, startGame]);
+      const dpadLeft  = useCallback(makeDpadHandler( 0, -1), [movePlayer, startGame]);
+      const dpadRight = useCallback(makeDpadHandler( 0,  1), [movePlayer, startGame]);
+
+      // ── Main render loop ────────────────────────────────────────────────────
       useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         let raf;
-        let t0 = performance.now();
 
         const loop = (now) => {
           raf = requestAnimationFrame(loop);
-          t0  = now;
           const t = now / 1000;
           const g = gs.current;
+          const { CELL, W, H } = dimsRef.current;
 
-          // ── Update ────────────────────────────────────────────────────────
-          // Move traffic every frame
+          // ── Update ──────────────────────────────────────────────────────────
           if (g.phase === 'playing' || g.phase === 'dead') {
             g.traffic.forEach(v => {
               v.x += v.spd * v.dir;
@@ -340,7 +399,6 @@
             });
           }
 
-          // Collision detection (only while playing)
           if (g.phase === 'playing') {
             const rowType = ROW_CFG[g.row].type;
             if (rowType === 'lane') {
@@ -348,27 +406,23 @@
               const cw = CELL * 0.6;
               for (const v of g.traffic) {
                 if (v.row !== g.row) continue;
-                if (cx < v.x + v.w && cx + cw > v.x) {
-                  killPlayer();
-                  break;
-                }
+                if (cx < v.x + v.w && cx + cw > v.x) { killPlayer(); break; }
               }
             }
           }
 
-          // Particles
           g.particles = g.particles.filter(p => p.life > 0);
           g.particles.forEach(p => {
             p.x  += p.vx;
             p.y  += p.vy;
-            p.vy += 0.12;   // gravity
+            p.vy += 0.12;
             p.life -= p.decay;
           });
 
           if (g.deathTimer > 0) g.deathTimer--;
           if (g.winTimer   > 0) g.winTimer--;
 
-          // ── Draw ──────────────────────────────────────────────────────────
+          // ── Draw ────────────────────────────────────────────────────────────
           ctx.fillStyle = '#05000f';
           ctx.fillRect(0, 0, W, H);
 
@@ -383,36 +437,31 @@
               ctx.lineWidth = 2;
               ctx.strokeRect(1, ry + 1, W - 2, CELL - 2);
               ctx.fillStyle = `rgba(0,255,170,${0.55 + pulse * 0.45})`;
-              ctx.font = 'bold 13px Courier New';
+              ctx.font = `bold ${Math.max(9, Math.round(CELL * 0.27))}px Courier New`;
               ctx.textAlign = 'center';
-              ctx.fillText('▲  G O A L  ▲', W / 2, ry + CELL / 2 + 5);
+              ctx.fillText('▲  G O A L  ▲', W / 2, ry + CELL / 2 + Math.round(CELL * 0.12));
             } else if (r.type === 'safe' || r.type === 'start') {
               ctx.fillStyle = 'rgba(0,40,70,0.5)';
               ctx.fillRect(0, ry, W, CELL);
-              // Grid cells
               ctx.strokeStyle = 'rgba(0,120,180,0.22)';
               ctx.lineWidth = 0.5;
-              for (let c = 0; c < COLS; c++) {
-                ctx.strokeRect(c * CELL, ry, CELL, CELL);
-              }
+              for (let c = 0; c < COLS; c++) ctx.strokeRect(c * CELL, ry, CELL, CELL);
               if (r.type === 'safe') {
                 ctx.fillStyle = 'rgba(0,180,255,0.07)';
                 ctx.fillRect(2, ry + 2, W - 4, CELL - 4);
               }
             } else {
-              // Traffic lane
               const color = LANE_COLORS[ri % LANE_COLORS.length];
               ctx.fillStyle = 'rgba(12,0,22,0.85)';
               ctx.fillRect(0, ry, W, CELL);
               ctx.fillStyle = hexAlpha(color, 0.05);
               ctx.fillRect(0, ry, W, CELL);
-              // Direction arrows
               ctx.fillStyle = hexAlpha(color, 0.14);
-              ctx.font = '16px sans-serif';
+              ctx.font = `${Math.max(10, Math.round(CELL * 0.33))}px sans-serif`;
               ctx.textAlign = 'center';
               const arrow = r.dir > 0 ? '→' : '←';
               for (let i = 1; i < COLS; i += 2) {
-                ctx.fillText(arrow, i * CELL + CELL / 2, ry + CELL / 2 + 6);
+                ctx.fillText(arrow, i * CELL + CELL / 2, ry + CELL / 2 + Math.round(CELL * 0.13));
               }
             }
           });
@@ -421,10 +470,7 @@
           ctx.strokeStyle = 'rgba(40,40,90,0.4)';
           ctx.lineWidth = 0.5;
           for (let ri = 0; ri <= ROWS; ri++) {
-            ctx.beginPath();
-            ctx.moveTo(0, ri * CELL);
-            ctx.lineTo(W, ri * CELL);
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, ri * CELL); ctx.lineTo(W, ri * CELL); ctx.stroke();
           }
 
           // Traffic vehicles
@@ -436,7 +482,6 @@
             ctx.fillStyle   = v.color;
             roundRect(ctx, v.x, vy, v.w, vh, 5);
             ctx.fill();
-            // Highlight stripe
             ctx.fillStyle = 'rgba(255,255,255,0.22)';
             roundRect(ctx, v.x + 3, vy + 3, v.w - 6, vh * 0.28, 3);
             ctx.fill();
@@ -480,43 +525,46 @@
           for (let y = 0; y < H; y += 2) ctx.fillRect(0, y, W, 1);
 
           // HUD
+          const hudFS = Math.max(11, Math.round(CELL * 0.36));
+          const hudFS2 = Math.max(9,  Math.round(CELL * 0.27));
           ctx.shadowColor = '#00ffff';
           ctx.shadowBlur  = 6;
           ctx.fillStyle   = '#00ffff';
-          ctx.font        = 'bold 17px Courier New';
+          ctx.font        = `bold ${hudFS}px Courier New`;
           ctx.textAlign   = 'left';
-          ctx.fillText(`Score: ${g.score}`, 10, 22);
+          ctx.fillText(`Score: ${g.score}`, 8, hudFS + 4);
           ctx.shadowBlur  = 0;
           ctx.fillStyle   = '#ff88ff';
-          ctx.font        = '13px Courier New';
+          ctx.font        = `${hudFS2}px Courier New`;
           ctx.textAlign   = 'right';
-          ctx.fillText(`Best: ${g.highScore}`, W - 10, 22);
+          ctx.fillText(`Best: ${g.highScore}`, W - 8, hudFS2 + 4);
           ctx.fillStyle   = '#ffff44';
-          ctx.fillText(`Lv ${g.level}`, W - 10, 39);
+          ctx.fillText(`Lv ${g.level}`, W - 8, hudFS2 * 2 + 5);
 
-          // ── Phase overlays ─────────────────────────────────────────────────
+          // ── Phase overlays ──────────────────────────────────────────────────
           if (g.phase === 'start') {
             ctx.fillStyle = 'rgba(2,0,18,0.84)';
             ctx.fillRect(0, 0, W, H);
             const p = (Math.sin(t * 2.5) + 1) * 0.5;
+            const titleFS = Math.max(24, Math.round(CELL * 1.05));
+            const subFS   = Math.max(10, Math.round(CELL * 0.26));
             ctx.shadowColor = '#00ffff';
             ctx.shadowBlur  = 14 + p * 26;
             ctx.fillStyle   = '#00e5ff';
-            ctx.font        = 'bold 54px Courier New';
+            ctx.font        = `bold ${titleFS}px Courier New`;
             ctx.textAlign   = 'center';
-            ctx.fillText('NEON', W / 2, H / 2 - 58);
+            ctx.fillText('NEON', W / 2, H / 2 - titleFS * 1.15);
             ctx.fillStyle   = '#ff44ff';
             ctx.shadowColor = '#ff44ff';
-            ctx.shadowBlur  = 14 + p * 26;
-            ctx.fillText('HOPPER', W / 2, H / 2 - 3);
+            ctx.fillText('HOPPER', W / 2, H / 2 - titleFS * 0.05);
             ctx.shadowBlur  = 0;
             ctx.fillStyle   = '#bbbbbb';
-            ctx.font        = '13px Courier New';
-            ctx.fillText('Cross all lanes to reach the GOAL', W / 2, H / 2 + 40);
-            ctx.fillText('Arrow keys / WASD   |   Swipe / Tap', W / 2, H / 2 + 60);
+            ctx.font        = `${subFS}px Courier New`;
+            ctx.fillText('Cross all lanes to reach the GOAL', W / 2, H / 2 + titleFS * 0.85);
+            ctx.fillText('Arrow keys / WASD  |  D-pad / Swipe', W / 2, H / 2 + titleFS * 1.15);
             ctx.fillStyle = `rgba(0,255,200,${0.45 + p * 0.55})`;
-            ctx.font      = 'bold 15px Courier New';
-            ctx.fillText('PRESS ANY KEY  or  TAP TO START', W / 2, H / 2 + 96);
+            ctx.font      = `bold ${Math.round(subFS * 1.1)}px Courier New`;
+            ctx.fillText('TAP  or  PRESS ANY KEY  TO START', W / 2, H / 2 + titleFS * 1.6);
           }
 
           if (g.phase === 'dead') {
@@ -526,20 +574,22 @@
               ctx.fillRect(0, 0, W, H);
             }
             if (alpha > 0.35) {
+              const bigFS = Math.max(22, Math.round(CELL * 0.92));
+              const smFS  = Math.max(11, Math.round(CELL * 0.32));
               ctx.shadowColor = '#ff1133';
               ctx.shadowBlur  = 22;
               ctx.fillStyle   = '#ff2244';
-              ctx.font        = 'bold 46px Courier New';
+              ctx.font        = `bold ${bigFS}px Courier New`;
               ctx.textAlign   = 'center';
-              ctx.fillText('BUSTED!', W / 2, H / 2 - 25);
+              ctx.fillText('BUSTED!', W / 2, H / 2 - bigFS * 0.4);
               ctx.shadowBlur  = 0;
               ctx.fillStyle   = '#ffffff';
-              ctx.font        = '16px Courier New';
-              ctx.fillText(`Score: ${g.score}`, W / 2, H / 2 + 16);
+              ctx.font        = `${smFS}px Courier New`;
+              ctx.fillText(`Score: ${g.score}`, W / 2, H / 2 + smFS * 0.7);
               const p2 = (Math.sin(t * 4) + 1) * 0.5;
               ctx.fillStyle = `rgba(0,200,255,${0.45 + p2 * 0.55})`;
-              ctx.font      = 'bold 14px Courier New';
-              ctx.fillText('TAP or press key to RETRY', W / 2, H / 2 + 56);
+              ctx.font      = `bold ${smFS}px Courier New`;
+              ctx.fillText('TAP or press key to RETRY', W / 2, H / 2 + smFS * 2.2);
             }
           }
 
@@ -550,20 +600,22 @@
               ctx.fillRect(0, 0, W, H);
             }
             if (alpha > 0.35) {
+              const bigFS = Math.max(18, Math.round(CELL * 0.76));
+              const smFS  = Math.max(11, Math.round(CELL * 0.30));
               const p3 = (Math.sin(t * 5) + 1) * 0.5;
               ctx.shadowColor = '#00ff88';
               ctx.shadowBlur  = 20 + p3 * 22;
               ctx.fillStyle   = `hsl(${140 + p3 * 30},100%,58%)`;
-              ctx.font        = 'bold 38px Courier New';
+              ctx.font        = `bold ${bigFS}px Courier New`;
               ctx.textAlign   = 'center';
-              ctx.fillText('LEVEL CLEAR!', W / 2, H / 2 - 25);
+              ctx.fillText('LEVEL CLEAR!', W / 2, H / 2 - bigFS * 0.4);
               ctx.shadowBlur  = 0;
               ctx.fillStyle   = '#ffffff';
-              ctx.font        = '15px Courier New';
-              ctx.fillText(`+${100 * g.level} BONUS!   Score: ${g.score}`, W / 2, H / 2 + 15);
+              ctx.font        = `${smFS}px Courier New`;
+              ctx.fillText(`+${100 * g.level} BONUS!   Score: ${g.score}`, W / 2, H / 2 + smFS * 0.7);
               ctx.fillStyle   = `rgba(255,255,0,${0.5 + p3 * 0.5})`;
-              ctx.font        = 'bold 14px Courier New';
-              ctx.fillText('TAP or press key for NEXT LEVEL', W / 2, H / 2 + 55);
+              ctx.font        = `bold ${smFS}px Courier New`;
+              ctx.fillText('TAP or press key for NEXT LEVEL', W / 2, H / 2 + smFS * 2.2);
             }
           }
         };
@@ -572,38 +624,46 @@
         return () => cancelAnimationFrame(raf);
       }, [killPlayer]);
 
-      // Responsive scale
-      const [scale, setScale] = useState(1);
-      useEffect(() => {
-        const resize = () => {
-          const sw = (window.innerWidth  - 20) / W;
-          const sh = (window.innerHeight - 20) / H;
-          setScale(Math.min(1, sw, sh));
-        };
-        resize();
-        window.addEventListener('resize', resize);
-        return () => window.removeEventListener('resize', resize);
-      }, []);
+      // ── Render ──────────────────────────────────────────────────────────────
+      const { W, H, isMobile } = dims;
+
+      const dpadBtnBase = {
+        background: 'rgba(0,180,255,0.12)',
+        border: '2px solid rgba(0,180,255,0.45)',
+        borderRadius: '14px',
+        color: '#00ccff',
+        fontSize: '22px',
+        lineHeight: 1,
+        width: '60px',
+        height: '60px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        touchAction: 'manipulation',
+        boxShadow: '0 0 10px rgba(0,180,255,0.25)',
+        WebkitTapHighlightColor: 'transparent',
+      };
 
       return (
         <div style={{
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           width: '100vw',
           height: '100vh',
+          gap: '8px',
         }}>
           <canvas
             ref={canvasRef}
-            id="game-canvas"
             width={W}
             height={H}
             onClick={onClick}
             onTouchStart={onTouchStart}
             onTouchEnd={onTouchEnd}
             style={{
-              transform: `scale(${scale})`,
-              transformOrigin: 'center center',
+              display: 'block',
               cursor: 'pointer',
               touchAction: 'none',
               border: '2px solid #00aaff',
@@ -611,6 +671,24 @@
               borderRadius: '4px',
             }}
           />
+          {isMobile && (
+            <div style={{
+              display: 'grid',
+              gridTemplateAreas: '". up ." "left . right" ". down ."',
+              gridTemplateColumns: '68px 68px 68px',
+              gridTemplateRows: '68px 16px 68px',
+              gap: '0px',
+            }}>
+              <div style={{ ...dpadBtnBase, gridArea: 'up' }}
+                   onPointerDown={dpadUp}>▲</div>
+              <div style={{ ...dpadBtnBase, gridArea: 'left' }}
+                   onPointerDown={dpadLeft}>◄</div>
+              <div style={{ ...dpadBtnBase, gridArea: 'right' }}
+                   onPointerDown={dpadRight}>►</div>
+              <div style={{ ...dpadBtnBase, gridArea: 'down' }}
+                   onPointerDown={dpadDown}>▼</div>
+            </div>
+          )}
         </div>
       );
     };
