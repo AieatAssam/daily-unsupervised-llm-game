@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chain Burst</title>
+  <!-- Seed localStorage synchronously before any CDN scripts load -->
+  <script>
+    try {
+      if (localStorage.getItem('chainBurst_highScore') === null) {
+        localStorage.setItem('chainBurst_highScore', '0');
+      }
+    } catch(e) {}
+  </script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // Neon color palette for bubbles
+    const COLORS = [
+      { fill: '#ff006e', glow: '#ff006e' },
+      { fill: '#3a86ff', glow: '#3a86ff' },
+      { fill: '#8338ec', glow: '#8338ec' },
+      { fill: '#fb5607', glow: '#fb5607' },
+      { fill: '#06d6a0', glow: '#06d6a0' },
+      { fill: '#ffbe0b', glow: '#ffbe0b' },
+    ];
+
+    const BASE_BUBBLE_R = 20;
+    const EXPLOSION_SPEED = 130; // px per second
+    const CHAIN_DELAY = 160;     // ms before a chained bubble explodes
+
+    function makeBubbles(count, W, H) {
+      return Array.from({ length: count }, (_, i) => ({
+        id: i,
+        x: BASE_BUBBLE_R * 2 + Math.random() * (W - BASE_BUBBLE_R * 4),
+        y: BASE_BUBBLE_R * 2 + Math.random() * (H - BASE_BUBBLE_R * 4),
+        vx: (Math.random() - 0.5) * 1.4,
+        vy: (Math.random() - 0.5) * 1.4,
+        r: BASE_BUBBLE_R + Math.random() * 10,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        state: 'alive',       // 'alive' | 'exploding' | 'dead'
+        explodeStartTime: 0,
+        explodeR: 0,
+        chained: false,
+      }));
+    }
+
+    // ── Audio ──────────────────────────────────────────────────────────────────
+    let audioCtx = null;
+    function getCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+    function playPop(chainIdx) {
+      try {
+        const ctx = getCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        const f = Math.min(180 + chainIdx * 18, 900);
+        osc.frequency.setValueAtTime(f, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(f * 1.6, ctx.currentTime + 0.08);
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.28, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+        osc.start(); osc.stop(ctx.currentTime + 0.18);
+      } catch (_) {}
+    }
+    function playSuccess() {
+      try {
+        const ctx = getCtx();
+        [523, 659, 784, 1047].forEach((f, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.frequency.value = f; osc.type = 'triangle';
+          const t = ctx.currentTime + i * 0.1;
+          gain.gain.setValueAtTime(0.2, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+          osc.start(t); osc.stop(t + 0.3);
+        });
+      } catch (_) {}
+    }
+    function playFail() {
+      try {
+        const ctx = getCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(380, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.4);
+        osc.type = 'sawtooth';
+        gain.gain.setValueAtTime(0.25, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+        osc.start(); osc.stop(ctx.currentTime + 0.4);
+      } catch (_) {}
+    }
+
+    // ── Main Component ─────────────────────────────────────────────────────────
+    const ChainBurst = () => {
+      const canvasRef = useRef(null);
+
+      // All mutable game state lives in a ref to avoid stale closures
+      const G = useRef({
+        phase: 'start',   // 'start' | 'playing' | 'result' | void
+        bubbles: [],
+        particles: [],
+        pendingChains: 0, // pending setTimeout chain explosions
+        clickEnabled: true,
+        chainCount: 0,
+        chainOrder: 0,
+        target: 5,
+        level: 1,
+        score: 0,
+        highScore: parseInt(localStorage.getItem('chainBurst_highScore') || '0'),
+        raf: null,
+        lastTime: 0,
+        quietTimer: 0,    // seconds since last explosion
+        resultShown: false,
+      });
+
+      const [ui, setUi] = useState({
+        phase: 'start', score: 0, highScore: parseInt(localStorage.getItem('chainBurst_highScore') || '0'),
+        level: 1, chainCount: 0, target: 5,
+      });
+
+      const syncUi = useCallback(() => {
+        const g = G.current;
+        setUi({ phase: g.phase, score: g.score, highScore: g.highScore, level: g.level, chainCount: g.chainCount, target: g.target });
+      }, []);
+
+      // ── Trigger explosion on one bubble ─────────────────────────────────────
+      const explodeBubble = useCallback((idx, order) => {
+        const g = G.current;
+        const b = g.bubbles[idx];
+        if (!b || b.state !== 'alive') return;
+        b.state = 'exploding';
+        b.explodeStartTime = performance.now();
+        b.explodeR = 0;
+        g.chainCount++;
+        g.chainOrder = order;
+        playPop(order);
+        // Emit particles
+        for (let i = 0; i < 12; i++) {
+          const ang = (Math.PI * 2 * i) / 12;
+          g.particles.push({
+            x: b.x, y: b.y,
+            vx: Math.cos(ang) * (2 + Math.random() * 4),
+            vy: Math.sin(ang) * (2 + Math.random() * 4),
+            life: 1,
+            decay: 0.018 + Math.random() * 0.018,
+            color: b.color.fill,
+            r: 3 + Math.random() * 3,
+          });
+        }
+      }, []);
+
+      // ── Start a level ────────────────────────────────────────────────────────
+      const startLevel = useCallback((level, currentScore) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const g = G.current;
+        // Cancel any pending chain timeouts
+        g.pendingChains = 0;
+        const count = 12 + level * 3;
+        const target = Math.min(4 + level * 2, Math.floor(count * 0.55));
+        g.bubbles = makeBubbles(count, canvas.width, canvas.height);
+        g.particles = [];
+        g.chainCount = 0;
+        g.chainOrder = 0;
+        g.target = target;
+        g.level = level;
+        g.score = currentScore !== undefined ? currentScore : g.score;
+        g.phase = 'playing';
+        g.clickEnabled = true;
+        g.quietTimer = 0;
+        g.resultShown = false;
+        syncUi();
+      }, [syncUi]);
+
+      // ── Start game ───────────────────────────────────────────────────────────
+      const startGame = useCallback(() => {
+        const g = G.current;
+        g.score = 0;
+        startLevel(1, 0);
+      }, [startLevel]);
+
+      // ── Handle click/tap ─────────────────────────────────────────────────────
+      const handlePointer = useCallback((clientX, clientY) => {
+        const g = G.current;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        if (g.phase === 'start') { startGame(); return; }
+
+        if (g.phase === 'result') {
+          const passed = g.chainCount >= g.target;
+          if (passed) {
+            startLevel(g.level + 1, g.score);
+          } else {
+            g.score = 0;
+            startLevel(1, 0);
+          }
+          return;
+        }
+
+        if (g.phase === 'playing' && g.clickEnabled) {
+          const rect = canvas.getBoundingClientRect();
+          const mx = (clientX - rect.left) * (canvas.width / rect.width);
+          const my = (clientY - rect.top) * (canvas.height / rect.height);
+          // Find nearest alive bubble within 90px
+          let nearest = -1, nearestD = Infinity;
+          g.bubbles.forEach((b, i) => {
+            if (b.state !== 'alive') return;
+            const d = Math.hypot(b.x - mx, b.y - my);
+            if (d < nearestD) { nearestD = d; nearest = i; }
+          });
+          if (nearest >= 0 && nearestD < 90) {
+            g.clickEnabled = false;
+            g.chainCount = 0;
+            g.chainOrder = 0;
+            g.quietTimer = 0;
+            g.bubbles.forEach(b => { b.chained = false; });
+            explodeBubble(nearest, 0);
+            syncUi();
+          }
+        }
+      }, [startGame, startLevel, explodeBubble, syncUi]);
+
+      // ── Game loop ────────────────────────────────────────────────────────────
+      const loop = useCallback((now) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const g = G.current;
+        const dt = Math.min((now - g.lastTime) / 1000, 0.05);
+        g.lastTime = now;
+
+        // Background fade
+        ctx.fillStyle = 'rgba(0,0,8,0.82)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (g.phase === 'playing') {
+          let anyExploding = false;
+
+          // Update & draw bubbles
+          g.bubbles.forEach((b, idx) => {
+            if (b.state === 'alive') {
+              b.x += b.vx; b.y += b.vy;
+              if (b.x - b.r < 0) { b.x = b.r; b.vx = Math.abs(b.vx); }
+              if (b.x + b.r > canvas.width) { b.x = canvas.width - b.r; b.vx = -Math.abs(b.vx); }
+              if (b.y - b.r < 0) { b.y = b.r; b.vy = Math.abs(b.vy); }
+              if (b.y + b.r > canvas.height) { b.y = canvas.height - b.r; b.vy = -Math.abs(b.vy); }
+
+              // Draw bubble
+              ctx.save();
+              ctx.shadowColor = b.color.glow;
+              ctx.shadowBlur = 18;
+              ctx.beginPath();
+              ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+              ctx.fillStyle = b.color.fill + '55';
+              ctx.fill();
+              ctx.strokeStyle = b.color.fill;
+              ctx.lineWidth = 2.5;
+              ctx.stroke();
+              ctx.restore();
+              // Highlight
+              const gr = ctx.createRadialGradient(b.x - b.r * 0.32, b.y - b.r * 0.32, 0, b.x, b.y, b.r);
+              gr.addColorStop(0, 'rgba(255,255,255,0.38)');
+              gr.addColorStop(1, 'rgba(255,255,255,0)');
+              ctx.beginPath();
+              ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+              ctx.fillStyle = gr;
+              ctx.fill();
+
+            } else if (b.state === 'exploding') {
+              anyExploding = true;
+              const elapsed = (now - b.explodeStartTime) / 1000;
+              b.explodeR = elapsed * EXPLOSION_SPEED * (1.3 + g.level * 0.08);
+              const maxR = b.r * 3.5;
+
+              // Check chain collisions with alive bubbles
+              g.bubbles.forEach((ob, oi) => {
+                if (oi === idx || ob.state !== 'alive' || ob.chained) return;
+                const d = Math.hypot(ob.x - b.x, ob.y - b.y);
+                if (d < b.explodeR + ob.r * 0.6) {
+                  ob.chained = true;
+                  const co = g.chainOrder + 1;
+                  g.pendingChains++;
+                  setTimeout(() => {
+                    g.pendingChains = Math.max(0, g.pendingChains - 1);
+                    explodeBubble(oi, co);
+                    syncUi();
+                  }, CHAIN_DELAY);
+                }
+              });
+
+              // Draw explosion ring (guard against negative/zero radius)
+              const safeExplodeR = Math.max(0.1, b.explodeR);
+              const alpha = Math.max(0, 1 - safeExplodeR / maxR);
+              ctx.save();
+              ctx.shadowColor = b.color.glow;
+              ctx.shadowBlur = 35;
+              ctx.beginPath();
+              ctx.arc(b.x, b.y, safeExplodeR, 0, Math.PI * 2);
+              const hex = Math.floor(alpha * 220).toString(16).padStart(2, '0');
+              ctx.strokeStyle = b.color.fill + hex;
+              ctx.lineWidth = 4 + (1 - alpha) * 6;
+              ctx.stroke();
+              // Second inner ring
+              if (safeExplodeR > b.r) {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, safeExplodeR * 0.6, 0, Math.PI * 2);
+                ctx.strokeStyle = b.color.fill + Math.floor(alpha * 100).toString(16).padStart(2, '0');
+                ctx.lineWidth = 2;
+                ctx.stroke();
+              }
+              ctx.restore();
+
+              if (b.explodeR >= maxR) { b.state = 'dead'; }
+            }
+          });
+
+          // Particles
+          g.particles = g.particles.filter(p => p.life > 0.06);
+          g.particles.forEach(p => {
+            p.x += p.vx; p.y += p.vy;
+            p.vx *= 0.94; p.vy *= 0.94;
+            p.life -= p.decay;
+            const pr = Math.max(0.5, Math.abs(p.r) * Math.max(0, p.life));
+            if (!(pr > 0)) return; // guard against NaN and negatives
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
+            ctx.shadowColor = p.color;
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, pr, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+            ctx.restore();
+          });
+
+          // Chain done detection
+          if (!g.clickEnabled && !anyExploding && g.pendingChains === 0) {
+            g.quietTimer += dt;
+            if (g.quietTimer > 0.35 && !g.resultShown) {
+              g.resultShown = true;
+              const passed = g.chainCount >= g.target;
+              if (passed) {
+                const bonus = (g.chainCount - g.target) * 80;
+                g.score += g.chainCount * 120 + bonus + g.level * 250;
+                if (g.score > g.highScore) {
+                  g.highScore = g.score;
+                  localStorage.setItem('chainBurst_highScore', String(g.highScore));
+                }
+                playSuccess();
+              } else {
+                playFail();
+              }
+              g.phase = 'result';
+              syncUi();
+            }
+          } else if (anyExploding || g.pendingChains > 0) {
+            g.quietTimer = 0;
+          }
+
+          // HUD
+          drawHUD(ctx, canvas.width, canvas.height, g);
+        }
+
+        if (g.phase === 'start') drawStart(ctx, canvas.width, canvas.height, g);
+        if (g.phase === 'result') {
+          // Still draw bubbles/particles underneath
+          drawHUD(ctx, canvas.width, canvas.height, g);
+          drawResult(ctx, canvas.width, canvas.height, g);
+        }
+
+        g.raf = requestAnimationFrame(loop);
+      }, [explodeBubble, syncUi]);
+
+      // ── Drawing helpers ──────────────────────────────────────────────────────
+      function drawHUD(ctx, W, H, g) {
+        ctx.save();
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 17px Courier New';
+
+        ctx.shadowColor = '#06d6a0'; ctx.shadowBlur = 12;
+        ctx.fillStyle = '#06d6a0';
+        ctx.fillText(`SCORE: ${g.score}`, 14, 30);
+
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#3a86ff';
+        ctx.fillStyle = '#3a86ff';
+        ctx.fillText(`LEVEL ${g.level}`, W / 2, 30);
+
+        ctx.textAlign = 'right';
+        ctx.shadowColor = '#ffbe0b';
+        ctx.fillStyle = '#ffbe0b';
+        ctx.fillText(`BEST: ${g.highScore}`, W - 14, 30);
+
+        // Chain progress bar
+        if (!g.clickEnabled || g.phase === 'result') {
+          const ratio = Math.min(g.chainCount / g.target, 1);
+          const barW = W * 0.6;
+          const barX = W * 0.2;
+          const barY = H - 38;
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+          ctx.fillRect(barX, barY, barW, 14);
+          const barColor = ratio >= 1 ? '#06d6a0' : '#ff006e';
+          ctx.shadowColor = barColor; ctx.shadowBlur = 10;
+          ctx.fillStyle = barColor;
+          ctx.fillRect(barX, barY, barW * ratio, 14);
+          ctx.strokeStyle = barColor;
+          ctx.strokeRect(barX, barY, barW, 14);
+          ctx.textAlign = 'center';
+          ctx.shadowBlur = 8;
+          ctx.font = '13px Courier New';
+          ctx.fillStyle = '#fff';
+          ctx.fillText(`CHAIN: ${g.chainCount} / ${g.target}`, W / 2, barY - 6);
+        } else if (g.clickEnabled) {
+          ctx.textAlign = 'center';
+          ctx.shadowBlur = 0;
+          ctx.font = '14px Courier New';
+          ctx.fillStyle = 'rgba(200,200,255,0.6)';
+          ctx.fillText(`Click a bubble to start the chain!  Need: ${g.target}`, W / 2, H - 18);
+        }
+        ctx.restore();
+      }
+
+      function drawStart(ctx, W, H, g) {
+        ctx.save();
+        ctx.textAlign = 'center';
+
+        // Title
+        ctx.font = 'bold 72px Courier New';
+        ctx.shadowColor = '#ff006e'; ctx.shadowBlur = 40;
+        ctx.fillStyle = '#ff006e';
+        ctx.fillText('CHAIN', W / 2, H / 2 - 50);
+        ctx.shadowColor = '#3a86ff'; ctx.shadowBlur = 40;
+        ctx.fillStyle = '#3a86ff';
+        ctx.fillText('BURST', W / 2, H / 2 + 32);
+
+        ctx.shadowBlur = 0;
+        ctx.font = '18px Courier New';
+        ctx.fillStyle = '#aaa';
+        ctx.fillText('Click one bubble — trigger a chain reaction!', W / 2, H / 2 + 90);
+        ctx.fillText('Pop enough bubbles to advance each level.', W / 2, H / 2 + 116);
+
+        ctx.shadowColor = '#06d6a0'; ctx.shadowBlur = 20;
+        ctx.fillStyle = '#06d6a0';
+        ctx.font = 'bold 26px Courier New';
+        ctx.fillText('TAP TO PLAY', W / 2, H / 2 + 168);
+
+        if (g.highScore > 0) {
+          ctx.shadowColor = '#ffbe0b'; ctx.shadowBlur = 10;
+          ctx.fillStyle = '#ffbe0b';
+          ctx.font = '18px Courier New';
+          ctx.fillText(`BEST: ${g.highScore}`, W / 2, H / 2 + 210);
+        }
+        ctx.restore();
+      }
+
+      function drawResult(ctx, W, H, g) {
+        const passed = g.chainCount >= g.target;
+        ctx.save();
+        ctx.globalAlpha = 0.72;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+        ctx.textAlign = 'center';
+
+        if (passed) {
+          ctx.shadowColor = '#06d6a0'; ctx.shadowBlur = 35;
+          ctx.fillStyle = '#06d6a0';
+          ctx.font = 'bold 52px Courier New';
+          ctx.fillText('CHAIN COMPLETE!', W / 2, H / 2 - 70);
+
+          ctx.shadowBlur = 0;
+          ctx.font = '22px Courier New';
+          ctx.fillStyle = '#fff';
+          ctx.fillText(`${g.chainCount} bubbles blasted!`, W / 2, H / 2 - 12);
+
+          ctx.shadowColor = '#ffbe0b'; ctx.shadowBlur = 20;
+          ctx.fillStyle = '#ffbe0b';
+          ctx.font = 'bold 36px Courier New';
+          ctx.fillText(`SCORE: ${g.score}`, W / 2, H / 2 + 44);
+
+          ctx.shadowColor = '#3a86ff'; ctx.shadowBlur = 15;
+          ctx.fillStyle = '#3a86ff';
+          ctx.font = 'bold 22px Courier New';
+          ctx.fillText('TAP TO CONTINUE →', W / 2, H / 2 + 108);
+        } else {
+          ctx.shadowColor = '#ff006e'; ctx.shadowBlur = 35;
+          ctx.fillStyle = '#ff006e';
+          ctx.font = 'bold 52px Courier New';
+          ctx.fillText('CHAIN FAILED!', W / 2, H / 2 - 70);
+
+          ctx.shadowBlur = 0;
+          ctx.font = '22px Courier New';
+          ctx.fillStyle = '#fff';
+          ctx.fillText(`Only ${g.chainCount} of ${g.target} needed`, W / 2, H / 2 - 12);
+
+          ctx.shadowColor = '#ffbe0b'; ctx.shadowBlur = 15;
+          ctx.fillStyle = '#ffbe0b';
+          ctx.font = '20px Courier New';
+          ctx.fillText(`Final Score: ${g.score}`, W / 2, H / 2 + 44);
+
+          ctx.shadowColor = '#aaa'; ctx.shadowBlur = 0;
+          ctx.fillStyle = '#aaa';
+          ctx.font = '20px Courier New';
+          ctx.fillText('TAP TO TRY AGAIN', W / 2, H / 2 + 100);
+        }
+        ctx.restore();
+      }
+
+      // ── Setup ────────────────────────────────────────────────────────────────
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const resize = () => {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        const g = G.current;
+        g.lastTime = performance.now();
+        // Decorative bubbles on start screen
+        g.bubbles = makeBubbles(18, canvas.width, canvas.height);
+        g.raf = requestAnimationFrame(loop);
+
+        return () => {
+          window.removeEventListener('resize', resize);
+          if (g.raf) cancelAnimationFrame(g.raf);
+        };
+      }, [loop]);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onClick = (e) => handlePointer(e.clientX, e.clientY);
+        const onTouch = (e) => {
+          e.preventDefault();
+          const t = e.changedTouches[0];
+          handlePointer(t.clientX, t.clientY);
+        };
+
+        canvas.addEventListener('click', onClick);
+        canvas.addEventListener('touchstart', onTouch, { passive: false });
+        return () => {
+          canvas.removeEventListener('click', onClick);
+          canvas.removeEventListener('touchstart', onTouch);
+        };
+      }, [handlePointer]);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          style={{ display: 'block', cursor: 'crosshair' }}
+          id="game-canvas"
+        />
+      );
+    };
+
+    ReactDOM.render(<ChainBurst />, document.getElementById('root'));
+  </script>
+</body>
+</html>

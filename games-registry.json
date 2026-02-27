@@ -138,5 +138,19 @@
     "folder": "games/2026-02-26",
     "file": "games/2026-02-26/index.html",
     "preview": "games/2026-02-26/preview.png"
+  },
+  {
+    "id": "2026-02-27",
+    "name": "Chain Burst",
+    "date": "2026-02-27",
+    "description": "Click one floating neon bubble to trigger an explosive chain reaction — the shockwave cascades outward, popping nearby bubbles which then detonate too. Pop enough in one click to advance each level!",
+    "tagline": "One click. One chain. Pure neon chaos.",
+    "tags": ["strategy", "chain-reaction", "action", "casual", "reflex"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a bubble to start the chain reaction",
+    "folder": "games/2026-02-27",
+    "file": "games/2026-02-27/index.html",
+    "preview": "games/2026-02-27/preview.png"
   }
 ]
