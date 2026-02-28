@@ -152,5 +152,19 @@
     "folder": "games/2026-02-27",
     "file": "games/2026-02-27/index.html",
     "preview": "games/2026-02-27/preview.png"
+  },
+  {
+    "id": "2026-02-28",
+    "name": "Beat Drop",
+    "date": "2026-02-28",
+    "description": "A 3-lane rhythm game — neon notes fall down cyan, magenta, and orange lanes in sync with a driving beat. Hit them at the perfect moment using A/S/D keys or tap left/center/right to rack up PERFECT combos!",
+    "tagline": "Hit the notes. Feel the beat. Don't miss.",
+    "tags": ["rhythm", "timing", "music", "reflex", "arcade"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "A / ← · S / Space · D / → to hit lanes | Tap left, center, right on mobile",
+    "folder": "games/2026-02-28",
+    "file": "games/2026-02-28/index.html",
+    "preview": "games/2026-02-28/preview.png"
   }
 ]
