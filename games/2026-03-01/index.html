@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Neon Flood</title>
+  <!-- Seed localStorage before CDN loads -->
+  <script>
+    if (localStorage.getItem('neonFlood_highScore') === null) {
+      localStorage.setItem('neonFlood_highScore', '0');
+    }
+  </script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #030008;
+      overflow: hidden;
+      font-family: 'Arial Black', Arial, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    #root { width: 100vw; height: 100vh; }
+
+    @keyframes territoryPulse {
+      0%   { opacity: 0.85; }
+      50%  { opacity: 1;    }
+      100% { opacity: 0.85; }
+    }
+    .cell-territory { animation: territoryPulse 1.6s ease-in-out infinite; }
+
+    @keyframes comboFlash {
+      0%   { transform: scale(1);    opacity: 1; }
+      50%  { transform: scale(1.12); opacity: 1; }
+      100% { transform: scale(1);    opacity: 1; }
+    }
+    .combo-pop { animation: comboFlash 0.3s ease; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+    /* ── Constants ─────────────────────────────────────────────────── */
+    const COLORS     = ['#ff006e','#00f5ff','#7fff00','#ff9500','#bf00ff','#ffff00'];
+    const GRID_SIZE  = 14;
+    const NUM_COLORS = 6;
+    const WIN_PCT    = 0.60;   // capture 60% to win
+    const BASE_MOVES = 22;
+    const LS_KEY     = 'neonFlood_highScore';
+
+    /* ── Grid helpers ───────────────────────────────────────────────── */
+    function makeGrid(size) {
+      return Array.from({ length: size }, () =>
+        Array.from({ length: size }, () => Math.floor(Math.random() * NUM_COLORS))
+      );
+    }
+
+    // BFS: find all cells connected to (0,0) with the same color
+    function bfsTerritory(grid, size) {
+      const color = grid[0][0];
+      const visited = new Set(['0,0']);
+      const queue = [[0, 0]];
+      while (queue.length) {
+        const [r, c] = queue.shift();
+        for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+          const nr = r + dr, nc = c + dc;
+          const key = `${nr},${nc}`;
+          if (nr >= 0 && nr < size && nc >= 0 && nc < size
+              && !visited.has(key) && grid[nr][nc] === color) {
+            visited.add(key);
+            queue.push([nr, nc]);
+          }
+        }
+      }
+      return visited; // Set of "r,c" strings
+    }
+
+    // Apply a color flood move; returns {grid, captured}
+    function applyFlood(grid, territory, newColor, size) {
+      if (newColor === grid[0][0]) return { grid, captured: 0 };
+      const ng = grid.map(row => [...row]);
+
+      // 1. Paint all territory cells to newColor
+      for (const key of territory) {
+        const [r, c] = key.split(',').map(Number);
+        ng[r][c] = newColor;
+      }
+
+      // 2. Expand outward: absorb adjacent cells already having newColor
+      let captured = 0;
+      const frontier = [...territory].map(k => k.split(',').map(Number));
+      const absorbed = new Set(territory);
+
+      while (frontier.length) {
+        const [r, c] = frontier.shift();
+        for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+          const nr = r + dr, nc = c + dc;
+          const key = `${nr},${nc}`;
+          if (nr >= 0 && nr < size && nc >= 0 && nc < size
+              && !absorbed.has(key) && ng[nr][nc] === newColor) {
+            absorbed.add(key);
+            frontier.push([nr, nc]);
+            captured++;
+          }
+        }
+      }
+      return { grid: ng, captured };
+    }
+
+    /* ── Responsive cell size ───────────────────────────────────────── */
+    function computeCellSize() {
+      return Math.min(
+        Math.floor((window.innerWidth  * 0.86) / GRID_SIZE),
+        Math.floor((window.innerHeight * 0.52) / GRID_SIZE),
+        34
+      );
+    }
+
+    /* ── Audio ─────────────────────────────────────────────────────── */
+    let _audioCtx = null;
+    function getACtx() {
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return _audioCtx;
+    }
+    function beep(freq, dur, type = 'sine', vol = 0.22) {
+      try {
+        const ctx = getACtx();
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.start(); o.stop(ctx.currentTime + dur);
+      } catch (_) {}
+    }
+    function sfxFlood(big) {
+      if (big) {
+        beep(330, 0.07, 'sawtooth', 0.12);
+        setTimeout(() => beep(440, 0.07, 'sawtooth', 0.12), 55);
+        setTimeout(() => beep(550, 0.07, 'sawtooth', 0.14), 110);
+        setTimeout(() => beep(660, 0.12, 'sine',     0.22), 170);
+        setTimeout(() => beep(880, 0.18, 'sine',     0.28), 250);
+      } else {
+        beep(440, 0.07, 'sine', 0.18);
+        setTimeout(() => beep(550, 0.10, 'sine', 0.18), 65);
+      }
+    }
+    function sfxWin()  {
+      [440,550,660,880,1100].forEach((f,i) => setTimeout(() => beep(f, 0.22, 'sine', 0.28), i * 75));
+    }
+    function sfxLose() {
+      beep(200, 0.22, 'sawtooth', 0.22);
+      setTimeout(() => beep(160, 0.28, 'sawtooth', 0.22), 190);
+      setTimeout(() => beep(120, 0.38, 'sawtooth', 0.22), 380);
+    }
+
+    /* ── Main Game Component ────────────────────────────────────────── */
+    function NeonFlood() {
+      const [grid,        setGrid]        = useState(() => makeGrid(GRID_SIZE));
+      const [moves,       setMoves]       = useState(0);
+      const [score,       setScore]       = useState(0);
+      const [highScore,   setHighScore]   = useState(() => parseInt(localStorage.getItem(LS_KEY) || '0'));
+      const [gameOver,    setGameOver]    = useState(false);
+      const [won,         setWon]         = useState(false);
+      const [level,       setLevel]       = useState(1);
+      const [combo,       setCombo]       = useState(0);
+      const [flashColor,  setFlashColor]  = useState(null);
+      const [cellSize,    setCellSize]    = useState(computeCellSize);
+      const [comboAnim,   setComboAnim]   = useState(false);
+
+      const canvasRef  = useRef(null);
+      const animRef    = useRef(null);
+      const pRef       = useRef([]);   // particles
+
+      const maxMoves   = Math.max(14, BASE_MOVES - (level - 1) * 2);
+      const movesLeft  = maxMoves - moves;
+
+      // Derived state
+      const territory  = useMemo(() => bfsTerritory(grid, GRID_SIZE), [grid]);
+      const pct        = territory.size / (GRID_SIZE * GRID_SIZE);
+      const playerColor = grid[0][0];
+
+      /* resize */
+      useEffect(() => {
+        const fn = () => setCellSize(computeCellSize());
+        window.addEventListener('resize', fn);
+        return () => window.removeEventListener('resize', fn);
+      }, []);
+
+      /* canvas particle animation */
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        function tick() {
+          canvas.width  = window.innerWidth;
+          canvas.height = window.innerHeight;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          pRef.current = pRef.current.filter(p => p.life > 0);
+          for (const p of pRef.current) {
+            p.x  += p.vx;
+            p.y  += p.vy;
+            p.vy += 0.18;
+            p.vx *= 0.96;
+            p.life -= 0.024;
+            ctx.globalAlpha = p.life;
+            ctx.shadowBlur  = 18;
+            ctx.shadowColor = p.color;
+            ctx.fillStyle   = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.max(1, p.r * p.life), 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+          ctx.shadowBlur  = 0;
+          animRef.current = requestAnimationFrame(tick);
+        }
+        tick();
+        return () => cancelAnimationFrame(animRef.current);
+      }, []);
+
+      function spawnParticles(count, color) {
+        const cx = window.innerWidth  / 2;
+        const cy = window.innerHeight / 2;
+        const ps = Array.from({ length: count }, (_, i) => ({
+          id:    Date.now() + i + Math.random(),
+          x:     cx + (Math.random() - 0.5) * 220,
+          y:     cy + (Math.random() - 0.5) * 120,
+          vx:    (Math.random() - 0.5) * 9,
+          vy:    (Math.random() - 0.5) * 9 - 2,
+          life:  0.85 + Math.random() * 0.15,
+          color,
+          r:     3 + Math.random() * 5,
+        }));
+        pRef.current = [...pRef.current, ...ps];
+      }
+
+      /* ── Color pick handler ─────────────────────────────────────── */
+      function handleColorPick(colorIdx) {
+        if (gameOver || won) return;
+        if (colorIdx === playerColor) return;
+
+        const { grid: ng, captured } = applyFlood(grid, territory, colorIdx, GRID_SIZE);
+        const newMoves = moves + 1;
+
+        // combo: any successful capture continues the chain
+        const newCombo = captured > 0 ? combo + 1 : 0;
+        const mult     = 1 + combo * 0.5;
+        const pts      = Math.floor(captured * 100 * mult) + (captured > 0 ? 50 : 0);
+        const newScore = score + pts;
+
+        // particles
+        if (captured > 0) {
+          spawnParticles(Math.min(captured * 3, 70), COLORS[colorIdx]);
+        }
+
+        // combo pop animation
+        if (newCombo > 1) {
+          setComboAnim(false);
+          requestAnimationFrame(() => setComboAnim(true));
+        }
+
+        // button flash
+        setFlashColor(colorIdx);
+        setTimeout(() => setFlashColor(null), 175);
+
+        sfxFlood(captured > 8);
+
+        // compute new territory for win check
+        const newTerritory = bfsTerritory(ng, GRID_SIZE);
+        const newPct = newTerritory.size / (GRID_SIZE * GRID_SIZE);
+
+        if (newPct >= WIN_PCT) {
+          const bonus      = (movesLeft - 1) * 500;
+          const finalScore = newScore + bonus;
+          setGrid(ng);
+          setMoves(newMoves);
+          setScore(finalScore);
+          setCombo(newCombo);
+          setWon(true);
+          if (finalScore > highScore) {
+            setHighScore(finalScore);
+            localStorage.setItem(LS_KEY, String(finalScore));
+          }
+          spawnParticles(90, COLORS[colorIdx]);
+          sfxWin();
+        } else if (newMoves >= maxMoves) {
+          setGrid(ng);
+          setMoves(newMoves);
+          setScore(newScore);
+          setCombo(newCombo);
+          setGameOver(true);
+          if (newScore > highScore) {
+            setHighScore(newScore);
+            localStorage.setItem(LS_KEY, String(newScore));
+          }
+          sfxLose();
+        } else {
+          setGrid(ng);
+          setMoves(newMoves);
+          setScore(newScore);
+          setCombo(newCombo);
+        }
+      }
+
+      function nextLevel() {
+        setLevel(l => l + 1);
+        setGrid(makeGrid(GRID_SIZE));
+        setMoves(0);
+        setWon(false);
+        setCombo(0);
+        setComboAnim(false);
+        pRef.current = [];
+      }
+
+      function restart() {
+        setGrid(makeGrid(GRID_SIZE));
+        setMoves(0);
+        setScore(0);
+        setGameOver(false);
+        setWon(false);
+        setLevel(1);
+        setCombo(0);
+        setComboAnim(false);
+        pRef.current = [];
+      }
+
+      const gridWidth = cellSize * GRID_SIZE + (GRID_SIZE - 1);
+      const btnSize   = Math.max(32, Math.min(44, Math.floor((gridWidth - 40) / NUM_COLORS)));
+
+      /* ── Render ─────────────────────────────────────────────────── */
+      return (
+        <div style={{
+          width: '100vw', height: '100vh',
+          background: 'radial-gradient(ellipse at 20% 30%, #1a0035 0%, transparent 52%), radial-gradient(ellipse at 80% 70%, #001a35 0%, transparent 52%), #030008',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden', position: 'relative',
+        }}>
+
+          {/* Particle canvas */}
+          <canvas ref={canvasRef} style={{
+            position: 'absolute', inset: 0,
+            pointerEvents: 'none', zIndex: 10,
+          }} />
+
+          {/* Title */}
+          <div style={{ textAlign: 'center', marginBottom: 10, zIndex: 20 }}>
+            <div style={{
+              fontSize: 'clamp(20px, 5.5vw, 34px)',
+              fontWeight: 900, letterSpacing: '0.22em',
+              color: '#fff',
+              textShadow: '0 0 18px #00f5ff, 0 0 45px #00f5ff88',
+            }}>NEON FLOOD</div>
+            <div style={{
+              color: '#444', fontSize: 'clamp(8px, 1.8vw, 11px)',
+              letterSpacing: '0.2em', marginTop: 3,
+            }}>
+              LEVEL {level} · CAPTURE {Math.floor(WIN_PCT * 100)}% OF THE GRID
+            </div>
+          </div>
+
+          {/* Stats row */}
+          <div style={{ display: 'flex', gap: 'clamp(10px, 3vw, 26px)', marginBottom: 10, zIndex: 20 }}>
+            {[
+              { label: 'SCORE',   val: score.toLocaleString(),     glow: '#00f5ff', color: '#fff'    },
+              { label: 'BEST',    val: highScore.toLocaleString(),  glow: '#ffff00', color: '#ffff00' },
+              { label: 'MOVES',   val: movesLeft,                   glow: movesLeft <= 5 ? '#ff006e' : '#00f5ff', color: movesLeft <= 5 ? '#ff006e' : '#fff' },
+              { label: 'FLOODED', val: `${Math.floor(pct * 100)}%`, glow: '#7fff00', color: '#7fff00' },
+            ].map(({ label, val, glow, color }) => (
+              <div key={label} style={{ textAlign: 'center' }}>
+                <div style={{ color: '#3a3a3a', fontSize: 'clamp(8px, 1.4vw, 10px)', letterSpacing: '0.15em' }}>{label}</div>
+                <div style={{
+                  color, fontSize: 'clamp(14px, 3.5vw, 22px)',
+                  fontWeight: 900, textShadow: `0 0 10px ${glow}`,
+                }}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Progress bar */}
+          <div style={{
+            width: gridWidth, height: 5,
+            background: '#0c0c0c', borderRadius: 3,
+            marginBottom: 7, overflow: 'hidden',
+            border: '1px solid #1a1a30', zIndex: 20,
+          }}>
+            <div style={{
+              width: `${pct * 100}%`, height: '100%',
+              background: `linear-gradient(90deg, ${COLORS[playerColor]}, #fff)`,
+              boxShadow: `0 0 10px ${COLORS[playerColor]}`,
+              borderRadius: 3,
+              transition: 'width 0.32s cubic-bezier(0.4,0,0.2,1)',
+            }} />
+          </div>
+
+          {/* Grid */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${GRID_SIZE}, ${cellSize}px)`,
+            gap: 1, zIndex: 20,
+            background: '#050505',
+            border: '1px solid #181828',
+            borderRadius: 4, padding: 1,
+          }}>
+            {grid.map((row, r) =>
+              row.map((ci, c) => {
+                const inT = territory.has(`${r},${c}`);
+                return (
+                  <div
+                    key={`${r}-${c}`}
+                    className={inT ? 'cell-territory' : ''}
+                    style={{
+                      width: cellSize, height: cellSize,
+                      background: COLORS[ci],
+                      borderRadius: 1,
+                      boxShadow: inT
+                        ? `0 0 ${Math.ceil(cellSize * 0.55)}px ${COLORS[ci]}, inset 0 0 ${Math.ceil(cellSize * 0.3)}px #ffffff50`
+                        : `0 0 ${Math.ceil(cellSize * 0.2)}px ${COLORS[ci]}55`,
+                      transition: 'background 0.18s ease, box-shadow 0.18s ease',
+                    }}
+                  />
+                );
+              })
+            )}
+          </div>
+
+          {/* Combo display */}
+          <div style={{ height: 22, display: 'flex', alignItems: 'center', marginTop: 5, zIndex: 20 }}>
+            {combo > 1 && (
+              <div
+                className={comboAnim ? 'combo-pop' : ''}
+                style={{
+                  color: '#ff9500', fontSize: 'clamp(11px, 2.2vw, 14px)',
+                  fontWeight: 900, letterSpacing: '0.15em',
+                  textShadow: '0 0 14px #ff9500',
+                }}
+              >
+                COMBO ×{combo} · +{Math.round(combo * 50)}% BONUS
+              </div>
+            )}
+          </div>
+
+          {/* Color picker */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 4, zIndex: 20 }}>
+            {COLORS.map((color, i) => {
+              const isActive = i === playerColor;
+              const isFlash  = flashColor === i;
+              return (
+                <button
+                  key={i}
+                  onClick={() => handleColorPick(i)}
+                  style={{
+                    width: btnSize, height: btnSize,
+                    background:   isFlash ? '#fff' : color,
+                    border:       isActive ? '3px solid #fff' : '3px solid transparent',
+                    borderRadius: 8,
+                    cursor:       isActive ? 'not-allowed' : 'pointer',
+                    opacity:      isActive ? 0.42 : 1,
+                    transform:    `scale(${isFlash ? 1.28 : isActive ? 1.1 : 1})`,
+                    transition:   isFlash ? 'none' : 'all 0.12s ease',
+                    boxShadow:    isActive
+                      ? `0 0 22px ${color}, 0 0 44px ${color}55`
+                      : `0 0 8px ${color}88`,
+                  }}
+                />
+              );
+            })}
+          </div>
+
+          <div style={{
+            color: '#2a2a2a', fontSize: 'clamp(9px, 1.6vw, 11px)',
+            marginTop: 8, letterSpacing: '0.1em', zIndex: 20,
+          }}>
+            PICK A COLOR · FLOOD YOUR TERRITORY FROM THE CORNER
+          </div>
+
+          {/* Win / Game Over overlay */}
+          {(gameOver || won) && (
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 50,
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,0,0.90)',
+              backdropFilter: 'blur(6px)',
+            }}>
+              <div style={{
+                fontSize: 'clamp(38px, 10vw, 58px)',
+                fontWeight: 900, letterSpacing: '0.1em',
+                color:      won ? '#7fff00' : '#ff006e',
+                textShadow: won ? '0 0 40px #7fff00' : '0 0 40px #ff006e',
+                marginBottom: 14,
+              }}>
+                {won ? 'FLOODED!' : 'BLOCKED!'}
+              </div>
+
+              <div style={{ color: '#fff', fontSize: 'clamp(15px, 4vw, 22px)', marginBottom: 6 }}>
+                Score:{' '}
+                <span style={{ color: '#00f5ff', textShadow: '0 0 10px #00f5ff' }}>
+                  {score.toLocaleString()}
+                </span>
+              </div>
+              <div style={{ color: '#555', fontSize: 'clamp(12px, 2.8vw, 16px)', marginBottom: 16 }}>
+                Flooded {Math.floor(pct * 100)}% in {moves} move{moves !== 1 ? 's' : ''}
+                {won && ` · ${(movesLeft - 1)} move${movesLeft - 1 !== 1 ? 's' : ''} saved`}
+              </div>
+
+              {score > 0 && score >= highScore && (
+                <div style={{
+                  color: '#ffff00', fontSize: 'clamp(13px, 3vw, 17px)',
+                  textShadow: '0 0 14px #ffff00',
+                  marginBottom: 16, letterSpacing: '0.12em',
+                }}>
+                  ★ NEW HIGH SCORE ★
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                {won && (
+                  <button onClick={nextLevel} style={{
+                    padding: 'clamp(10px,2.5vw,14px) clamp(20px,5vw,32px)',
+                    fontSize: 'clamp(14px,3.2vw,18px)', fontWeight: 900,
+                    background: '#7fff00', color: '#000',
+                    border: 'none', borderRadius: 10,
+                    cursor: 'pointer',
+                    boxShadow: '0 0 28px #7fff00',
+                  }}>
+                    NEXT LEVEL →
+                  </button>
+                )}
+                <button onClick={restart} style={{
+                  padding: 'clamp(10px,2.5vw,14px) clamp(20px,5vw,32px)',
+                  fontSize: 'clamp(14px,3.2vw,18px)', fontWeight: 900,
+                  background: won ? 'transparent' : '#ff006e',
+                  color:      won ? '#555' : '#fff',
+                  border:     won ? '2px solid #333' : 'none',
+                  borderRadius: 10, cursor: 'pointer',
+                  boxShadow: won ? 'none' : '0 0 28px #ff006e',
+                }}>
+                  {won ? 'NEW GAME' : 'TRY AGAIN'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<NeonFlood />);
+  </script>
+</body>
+</html>

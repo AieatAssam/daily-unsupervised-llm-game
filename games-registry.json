@@ -166,5 +166,19 @@
     "folder": "games/2026-02-28",
     "file": "games/2026-02-28/index.html",
     "preview": "games/2026-02-28/preview.png"
+  },
+  {
+    "id": "2026-03-01",
+    "name": "Neon Flood",
+    "date": "2026-03-01",
+    "description": "A color flood-fill strategy game — pick neon colors to flood your territory outward from the corner, absorbing adjacent matching tiles. Capture 60% of the grid before your moves run out!",
+    "tagline": "Pick a color. Flood the grid. Claim the neon.",
+    "tags": ["strategy", "puzzle", "casual", "color"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap color buttons to flood your territory",
+    "folder": "games/2026-03-01",
+    "file": "games/2026-03-01/index.html",
+    "preview": "games/2026-03-01/preview.png"
   }
 ]
