@@ -180,5 +180,19 @@
     "folder": "games/2026-03-01",
     "file": "games/2026-03-01/index.html",
     "preview": "games/2026-03-01/preview.png"
+  },
+  {
+    "id": "2026-03-02",
+    "name": "Gravity Draw",
+    "date": "2026-03-02",
+    "description": "Draw glowing neon lines to deflect falling physics balls into pulsing targets — guide multiple balls simultaneously, chain target hits for massive combo multipliers, and race against fading lines!",
+    "tagline": "Draw lines. Bend gravity. Chain the chaos.",
+    "tags": ["physics", "drawing", "action", "reflex", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click and drag to draw deflection lines — guide falling balls into targets",
+    "folder": "games/2026-03-02",
+    "file": "games/2026-03-02/index.html",
+    "preview": "games/2026-03-02/preview.png"
   }
 ]

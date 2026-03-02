@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gravity Draw</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #050010; font-family: monospace; user-select: none; }
+    canvas { display: block; touch-action: none; cursor: crosshair; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+  // Gravity Draw — draw neon lines to deflect glowing balls into targets!
+  const { useState, useEffect, useRef, useCallback } = React;
+
+  const HIGH_SCORE_KEY = 'gravityDraw_highScore';
+
+  // ─── Audio helpers ─────────────────────────────────────────────────────────
+  function makeAudio() {
+    try { return new (window.AudioContext || window.webkitAudioContext)(); }
+    catch(e) { return null; }
+  }
+
+  function playTone(ctx, type) {
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+
+      if (type === 'bounce') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(350, now);
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.09);
+        gain.gain.setValueAtTime(0.07, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+        osc.start(now); osc.stop(now + 0.1);
+      } else if (type === 'score') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(550, now);
+        osc.frequency.exponentialRampToValueAtTime(1100, now + 0.18);
+        gain.gain.setValueAtTime(0.22, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+      } else if (type === 'miss') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(190, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.4);
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+        osc.start(now); osc.stop(now + 0.4);
+      } else if (type === 'draw') {
+        osc.type = 'sine';
+        osc.frequency.value = 900;
+        gain.gain.setValueAtTime(0.04, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+        osc.start(now); osc.stop(now + 0.06);
+      } else if (type === 'gameover') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(280, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.9);
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+        osc.start(now); osc.stop(now + 0.9);
+      } else if (type === 'combo') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(800, now);
+        osc.frequency.exponentialRampToValueAtTime(1600, now + 0.2);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        osc.start(now); osc.stop(now + 0.25);
+      }
+    } catch(e) {}
+  }
+
+  // ─── Game helpers (module-level, hoisted) ──────────────────────────────────
+  function spawnBall(g) {
+    g.balls.push({
+      id: Math.random(),
+      x: 70 + Math.random() * (g.W - 140),
+      y: -18,
+      vx: (Math.random() - 0.5) * (100 + g.level * 15),
+      vy: 70 + g.level * 25,
+      r: 11,
+      hue: Math.random() * 360,
+      trail: [],
+      cooldown: {}, // per-line bounce cooldowns
+    });
+  }
+
+  function spawnTarget(g) {
+    // Targets live in the bottom 40% of the screen
+    const zoneTop = g.H * 0.58;
+    const zoneH   = g.H * 0.32;
+    g.targets.push({
+      id: Math.random(),
+      x: 55 + Math.random() * (g.W - 110),
+      y: zoneTop + Math.random() * zoneH,
+      r: 24,
+      hue: Math.random() * 360,
+      pulse: Math.random() * Math.PI * 2,
+      dying: false,
+      alpha: 1,
+    });
+  }
+
+  function explode(g, x, y, hue, count) {
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.6;
+      const spd   = 60 + Math.random() * 200;
+      g.particles.push({
+        x, y,
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd,
+        life: 1,
+        decay: 0.022 + Math.random() * 0.028,
+        hue: hue + (Math.random() - 0.5) * 80,
+        size: 2 + Math.random() * 5,
+      });
+    }
+  }
+
+  function segClosest(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1) return { x: ax, y: ay };
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+    return { x: ax + t * dx, y: ay + t * dy };
+  }
+
+  function lineHit(ball, line) {
+    const c = segClosest(ball.x, ball.y, line.x1, line.y1, line.x2, line.y2);
+    const dx = ball.x - c.x, dy = ball.y - c.y;
+    return (dx * dx + dy * dy) < (ball.r + 5) * (ball.r + 5);
+  }
+
+  function reflect(ball, line) {
+    const dx = line.x2 - line.x1, dy = line.y2 - line.y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return;
+    const nx = -dy / len, ny = dx / len;
+    const dot = ball.vx * nx + ball.vy * ny;
+    ball.vx -= 2 * dot * nx;
+    ball.vy -= 2 * dot * ny;
+    // Slight speed boost so lines feel energising
+    const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    const boost = Math.max(160, spd * 1.08);
+    if (spd > 0) { ball.vx *= boost / spd; ball.vy *= boost / spd; }
+  }
+
+  // ─── Main render loop ──────────────────────────────────────────────────────
+  function loop(ts, canvas, gsRef, audioRef, syncUi, onGameOver, rafRef) {
+    const g = gsRef.current;
+    if (!g || !g.running) return;
+
+    const ctx = canvas.getContext('2d');
+    const dt  = Math.min((ts - (g.lastTs || ts)) / 1000, 0.05);
+    g.lastTs  = ts;
+    const { W, H } = g;
+
+    // Background
+    g.bgHue = (g.bgHue + 12 * dt) % 360;
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0,   `hsl(${g.bgHue}, 90%, 4%)`);
+    bg.addColorStop(0.5, `hsl(${(g.bgHue + 55) % 360}, 80%, 3%)`);
+    bg.addColorStop(1,   `hsl(${(g.bgHue + 110) % 360}, 90%, 4%)`);
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(90, 0, 180, 0.07)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 50) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += 50) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Divider hint
+    ctx.save();
+    ctx.strokeStyle = 'rgba(120, 60, 255, 0.18)';
+    ctx.setLineDash([10, 14]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, H * 0.55); ctx.lineTo(W, H * 0.55); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // ── Targets ──────────────────────────────────────────────────────────────
+    g.targets = g.targets.filter(t => t.alpha > 0.01);
+    g.targets.forEach(t => {
+      if (t.dying) { t.alpha -= dt * 3.5; return; }
+      t.pulse += dt * 2.8;
+      const p = Math.sin(t.pulse) * 4;
+
+      // Glow halo
+      const tg = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, t.r + 22 + p);
+      tg.addColorStop(0,   `hsla(${t.hue}, 100%, 70%, ${0.65 * t.alpha})`);
+      tg.addColorStop(0.4, `hsla(${t.hue}, 100%, 50%, ${0.28 * t.alpha})`);
+      tg.addColorStop(1,   'transparent');
+      ctx.fillStyle = tg;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.r + 22 + p, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Body
+      ctx.shadowColor = `hsl(${t.hue}, 100%, 60%)`;
+      ctx.shadowBlur  = 18;
+      ctx.fillStyle   = `hsla(${t.hue}, 100%, 60%, ${0.9 * t.alpha})`;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.r + p * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Crosshair
+      ctx.strokeStyle = `rgba(255,255,255,${0.75 * t.alpha})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(t.x - 9, t.y); ctx.lineTo(t.x + 9, t.y);
+      ctx.moveTo(t.x, t.y - 9); ctx.lineTo(t.x, t.y + 9);
+      ctx.stroke();
+    });
+
+    // ── Drawn lines ───────────────────────────────────────────────────────────
+    const lineLife = Math.max(2.5, 6.0 - g.level * 0.4);
+    g.lines = g.lines.filter(l => l.age < lineLife);
+    g.lines.forEach(l => {
+      l.age += dt;
+      const frac  = l.age / lineLife;
+      const alpha = Math.pow(1 - frac, 0.45);
+      const hue   = (270 + frac * 60) % 360;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = `hsl(${hue}, 100%, 65%)`;
+      ctx.shadowBlur  = 14;
+      ctx.strokeStyle = `hsl(${hue}, 100%, 68%)`;
+      ctx.lineWidth   = 5;
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(l.x1, l.y1);
+      ctx.lineTo(l.x2, l.y2);
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // Current line being drawn
+    if (g.currentLine) {
+      ctx.save();
+      ctx.shadowColor = '#00ffff';
+      ctx.shadowBlur  = 20;
+      ctx.strokeStyle = '#00ffff';
+      ctx.lineWidth   = 5;
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(g.currentLine.x1, g.currentLine.y1);
+      ctx.lineTo(g.currentLine.x2, g.currentLine.y2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ── Balls ─────────────────────────────────────────────────────────────────
+    const gravity = 210 + g.level * 18;
+    let   gameEnded = false;
+    const toRemove  = new Set();
+
+    g.balls.forEach((ball, bi) => {
+      // Physics
+      ball.vy += gravity * dt;
+      ball.x  += ball.vx * dt;
+      ball.y  += ball.vy * dt;
+
+      // Speed cap
+      const spd    = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+      const maxSpd = 720;
+      if (spd > maxSpd) { ball.vx *= maxSpd / spd; ball.vy *= maxSpd / spd; }
+
+      // Wall bounce
+      if (ball.x < ball.r)     { ball.x = ball.r;     ball.vx =  Math.abs(ball.vx); }
+      if (ball.x > W - ball.r) { ball.x = W - ball.r; ball.vx = -Math.abs(ball.vx); }
+
+      // Trail
+      ball.trail.push({ x: ball.x, y: ball.y });
+      if (ball.trail.length > 15) ball.trail.shift();
+
+      // Line collisions
+      g.lines.forEach((line, li) => {
+        const key = `l${li}`;
+        if (ball.cooldown[key]) {
+          ball.cooldown[key] -= dt;
+          if (ball.cooldown[key] <= 0) delete ball.cooldown[key];
+          return;
+        }
+        if (lineHit(ball, line)) {
+          reflect(ball, line);
+          ball.cooldown[key] = 0.18;
+          playTone(audioRef.current, 'bounce');
+          explode(g, ball.x, ball.y, ball.hue, 7);
+        }
+      });
+
+      // Target hit
+      for (let ti = 0; ti < g.targets.length; ti++) {
+        const t = g.targets[ti];
+        if (t.dying) continue;
+        const dx = ball.x - t.x, dy = ball.y - t.y;
+        if (dx * dx + dy * dy < (ball.r + t.r) * (ball.r + t.r)) {
+          g.combo++;
+          const pts = 10 * g.combo * g.level;
+          g.score  += pts;
+
+          // Level up threshold
+          if (g.score >= g.level * 180) {
+            g.level = Math.min(10, g.level + 1);
+          }
+
+          t.dying = true;
+          if (g.combo >= 3) {
+            playTone(audioRef.current, 'combo');
+          } else {
+            playTone(audioRef.current, 'score');
+          }
+          explode(g, t.x, t.y, t.hue, 22);
+          explode(g, ball.x, ball.y, ball.hue, 10);
+          toRemove.add(bi);
+
+          // Replenish target pool
+          setTimeout(() => {
+            const gsNow = gsRef.current;
+            if (gsNow && gsNow.running) {
+              const live = gsNow.targets.filter(tt => !tt.dying).length;
+              if (live < 2) spawnTarget(gsNow);
+            }
+          }, 450);
+
+          syncUi();
+          break;
+        }
+      }
+
+      // Ball fell off bottom
+      if (ball.y > H + 60 && !toRemove.has(bi)) {
+        g.combo = 0;
+        g.lives--;
+        playTone(audioRef.current, 'miss');
+        explode(g, ball.x, H - 5, 0, 10);
+        toRemove.add(bi);
+        if (g.lives <= 0) {
+          gameEnded = true;
+        } else {
+          syncUi();
+        }
+      }
+    });
+
+    // Remove dead balls
+    if (toRemove.size > 0) {
+      g.balls = g.balls.filter((_, i) => !toRemove.has(i));
+    }
+
+    if (gameEnded) {
+      onGameOver();
+      return; // Don't schedule next frame
+    }
+
+    // Draw balls
+    g.balls.forEach(ball => {
+      // Trail
+      ball.trail.forEach((p, i) => {
+        const frac = i / ball.trail.length;
+        ctx.globalAlpha = frac * 0.45;
+        ctx.fillStyle   = `hsl(${ball.hue}, 100%, 60%)`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, ball.r * frac * 0.75, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+
+      // Glow
+      const bg2 = ctx.createRadialGradient(ball.x, ball.y, 0, ball.x, ball.y, ball.r * 3);
+      bg2.addColorStop(0,   `hsla(${ball.hue}, 100%, 85%, 0.9)`);
+      bg2.addColorStop(0.45,`hsla(${ball.hue}, 100%, 60%, 0.4)`);
+      bg2.addColorStop(1,   'transparent');
+      ctx.fillStyle = bg2;
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r * 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core
+      ctx.shadowColor = `hsl(${ball.hue}, 100%, 60%)`;
+      ctx.shadowBlur  = 14;
+      ctx.fillStyle   = `hsl(${ball.hue}, 100%, 82%)`;
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+    // ── Particles ─────────────────────────────────────────────────────────────
+    g.particles = g.particles.filter(p => {
+      p.x  += p.vx * dt;
+      p.y  += p.vy * dt;
+      p.vy += 110 * dt;
+      p.life -= p.decay;
+      if (p.life <= 0) return false;
+
+      ctx.save();
+      ctx.globalAlpha  = p.life;
+      ctx.fillStyle    = `hsl(${p.hue}, 100%, 65%)`;
+      ctx.shadowColor  = `hsl(${p.hue}, 100%, 65%)`;
+      ctx.shadowBlur   = 7;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return true;
+    });
+
+    // ── Spawn schedule ────────────────────────────────────────────────────────
+    g.spawnTimer += dt;
+    const spawnEvery = Math.max(1.1, 3.5 - g.level * 0.28);
+    if (g.spawnTimer >= spawnEvery) {
+      g.spawnTimer = 0;
+      const maxBalls = 1 + Math.floor(g.level / 2);
+      if (g.balls.length < maxBalls) spawnBall(g);
+    }
+
+    // Keep targets populated
+    const liveTargets = g.targets.filter(t => !t.dying).length;
+    if (liveTargets < 2) spawnTarget(g);
+
+    rafRef.current = requestAnimationFrame(ts2 =>
+      loop(ts2, canvas, gsRef, audioRef, syncUi, onGameOver, rafRef)
+    );
+  }
+
+  // ─── React component ───────────────────────────────────────────────────────
+  function App() {
+    const canvasRef = useRef(null);
+    const gsRef     = useRef(null);
+    const rafRef    = useRef(null);
+    const audioRef  = useRef(null);
+
+    const [ui, setUi] = useState({
+      phase: 'start',
+      score: 0,
+      combo: 0,
+      lives: 3,
+      level: 1,
+      highScore: parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0'),
+    });
+
+    const syncUi = useCallback(() => {
+      const g = gsRef.current;
+      if (!g) return;
+      setUi(prev => ({ ...prev, score: g.score, combo: g.combo, lives: g.lives, level: g.level }));
+    }, []);
+
+    const onGameOver = useCallback(() => {
+      const g = gsRef.current;
+      if (!g) return;
+      g.running = false;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      const hs = Math.max(g.score, parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0'));
+      localStorage.setItem(HIGH_SCORE_KEY, String(hs));
+      playTone(audioRef.current, 'gameover');
+      setUi(prev => ({ ...prev, phase: 'gameover', score: g.score, combo: 0, lives: 0, highScore: hs }));
+    }, []);
+
+    const startGame = useCallback(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const W = canvas.width, H = canvas.height;
+
+      if (!audioRef.current) audioRef.current = makeAudio();
+
+      // Ensure localStorage key exists (required by tests)
+      if (!localStorage.getItem(HIGH_SCORE_KEY)) {
+        localStorage.setItem(HIGH_SCORE_KEY, '0');
+      }
+
+      gsRef.current = {
+        running: true,
+        score: 0, combo: 0, lives: 3, level: 1,
+        balls: [], lines: [], targets: [], particles: [],
+        isDrawing: false, currentLine: null,
+        spawnTimer: 0, bgHue: 0, lastTs: 0, W, H,
+      };
+
+      // Initial entities
+      spawnBall(gsRef.current);
+      spawnTarget(gsRef.current);
+      spawnTarget(gsRef.current);
+
+      setUi(prev => ({
+        ...prev,
+        phase: 'playing',
+        score: 0, combo: 0, lives: 3, level: 1,
+        highScore: parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0'),
+      }));
+
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(ts =>
+        loop(ts, canvas, gsRef, audioRef, syncUi, onGameOver, rafRef)
+      );
+    }, [syncUi, onGameOver]);
+
+    // Canvas resize
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      function resize() {
+        canvas.width  = window.innerWidth;
+        canvas.height = window.innerHeight;
+        // Update game dimensions if running
+        const g = gsRef.current;
+        if (g) { g.W = canvas.width; g.H = canvas.height; }
+      }
+      resize();
+      window.addEventListener('resize', resize);
+      return () => window.removeEventListener('resize', resize);
+    }, []);
+
+    // Input events
+    useEffect(() => {
+      const canvas = canvasRef.current;
+
+      function getXY(e) {
+        const rect = canvas.getBoundingClientRect();
+        const src  = e.touches ? e.touches[0] : e;
+        return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+      }
+
+      function onStart(e) {
+        const g = gsRef.current;
+        if (!g || !g.running) return;
+        e.preventDefault();
+        const { x, y } = getXY(e);
+        g.isDrawing = true;
+        g.currentLine = { x1: x, y1: y, x2: x, y2: y, age: 0, cooldown: {} };
+      }
+
+      function onMove(e) {
+        const g = gsRef.current;
+        if (!g || !g.running || !g.isDrawing) return;
+        e.preventDefault();
+        const { x, y } = getXY(e);
+        g.currentLine.x2 = x;
+        g.currentLine.y2 = y;
+      }
+
+      function onEnd(e) {
+        const g = gsRef.current;
+        if (!g || !g.running || !g.isDrawing) return;
+        e.preventDefault();
+        g.isDrawing = false;
+        if (g.currentLine) {
+          const dx = g.currentLine.x2 - g.currentLine.x1;
+          const dy = g.currentLine.y2 - g.currentLine.y1;
+          if (Math.sqrt(dx * dx + dy * dy) > 18) {
+            if (g.lines.length >= 9) g.lines.shift();
+            g.lines.push({ ...g.currentLine });
+            playTone(audioRef.current, 'draw');
+          }
+          g.currentLine = null;
+        }
+      }
+
+      canvas.addEventListener('mousedown',  onStart);
+      canvas.addEventListener('mousemove',  onMove);
+      canvas.addEventListener('mouseup',    onEnd);
+      canvas.addEventListener('touchstart', onStart, { passive: false });
+      canvas.addEventListener('touchmove',  onMove,  { passive: false });
+      canvas.addEventListener('touchend',   onEnd,   { passive: false });
+
+      return () => {
+        canvas.removeEventListener('mousedown',  onStart);
+        canvas.removeEventListener('mousemove',  onMove);
+        canvas.removeEventListener('mouseup',    onEnd);
+        canvas.removeEventListener('touchstart', onStart);
+        canvas.removeEventListener('touchmove',  onMove);
+        canvas.removeEventListener('touchend',   onEnd);
+      };
+    }, []);
+
+    // Cleanup on unmount
+    useEffect(() => {
+      return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+    }, []);
+
+    // Heart display
+    const hearts = '❤️'.repeat(Math.max(0, ui.lives));
+
+    return (
+      <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+        <canvas ref={canvasRef} />
+
+        {/* ── HUD ── */}
+        {ui.phase === 'playing' && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '10px 18px', pointerEvents: 'none',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.55), transparent)',
+          }}>
+            <div style={{ color: '#00ffff', fontSize: 15, textShadow: '0 0 8px #00ffff' }}>
+              {hearts}&nbsp; LVL {ui.level}
+            </div>
+            <div style={{ color: '#ffff00', fontSize: 26, textShadow: '0 0 14px #ffff00', fontWeight: 'bold' }}>
+              {ui.score.toLocaleString()}
+            </div>
+            <div style={{ color: '#ff00ff', fontSize: 15, textShadow: '0 0 8px #ff00ff', minWidth: 90, textAlign: 'right' }}>
+              {ui.combo > 1 ? `×${ui.combo} COMBO` : ''}
+            </div>
+          </div>
+        )}
+
+        {/* ── Start screen ── */}
+        {ui.phase === 'start' && (
+          <div
+            onClick={startGame}
+            style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(5,0,18,0.91)', cursor: 'pointer',
+            }}
+          >
+            <div style={{
+              fontSize: 'clamp(34px, 9vw, 82px)', fontWeight: 'bold', letterSpacing: 4,
+              background: 'linear-gradient(90deg, #00ffff, #ff00ff, #ffff00, #00ffcc)',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              marginBottom: 10, textAlign: 'center',
+            }}>GRAVITY DRAW</div>
+
+            <div style={{ color: '#9966dd', fontSize: 'clamp(12px, 2.5vw, 18px)', marginBottom: 30, textAlign: 'center', padding: '0 16px' }}>
+              Draw neon lines to deflect glowing balls into targets
+            </div>
+
+            <div style={{
+              color: '#664499', fontSize: 'clamp(11px, 1.8vw, 14px)',
+              marginBottom: 34, textAlign: 'center', lineHeight: 2.1,
+            }}>
+              🖱 Drag to draw a deflection line&nbsp;&nbsp;🎯 Guide balls into glowing targets<br/>
+              ⚡ Chain hits for massive combos&nbsp;&nbsp;⚠️ Lines fade — keep drawing!
+            </div>
+
+            {ui.highScore > 0 && (
+              <div style={{ color: '#ffaa00', fontSize: 16, marginBottom: 22, textShadow: '0 0 8px #ffaa00' }}>
+                BEST: {ui.highScore.toLocaleString()}
+              </div>
+            )}
+
+            <div style={{
+              padding: '14px 52px', fontSize: 20, fontWeight: 'bold', letterSpacing: 3,
+              background: 'linear-gradient(135deg, #7700ff, #00ccff)',
+              color: '#fff', borderRadius: 8,
+              boxShadow: '0 0 32px rgba(119,0,255,0.65)',
+            }}>▶ PLAY</div>
+          </div>
+        )}
+
+        {/* ── Game Over screen ── */}
+        {ui.phase === 'gameover' && (
+          <div
+            onClick={startGame}
+            style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(5,0,18,0.92)', cursor: 'pointer',
+            }}
+          >
+            <div style={{
+              fontSize: 'clamp(30px, 8vw, 64px)', fontWeight: 'bold',
+              color: '#ff3355', textShadow: '0 0 22px #ff3355',
+              marginBottom: 18, letterSpacing: 2,
+            }}>GAME OVER</div>
+
+            <div style={{ fontSize: 30, color: '#ffff00', textShadow: '0 0 12px #ffff00', marginBottom: 8 }}>
+              {ui.score.toLocaleString()}
+            </div>
+            <div style={{ fontSize: 16, color: '#ffaa00', marginBottom: 10 }}>
+              BEST: {ui.highScore.toLocaleString()}
+            </div>
+
+            {ui.score >= ui.highScore && ui.score > 0 && (
+              <div style={{ fontSize: 14, color: '#00ffcc', textShadow: '0 0 10px #00ffcc', marginBottom: 28 }}>
+                🏆 NEW HIGH SCORE!
+              </div>
+            )}
+            {!(ui.score >= ui.highScore && ui.score > 0) && <div style={{ marginBottom: 28 }} />}
+
+            <div style={{
+              padding: '14px 52px', fontSize: 20, fontWeight: 'bold', letterSpacing: 3,
+              background: 'linear-gradient(135deg, #ff0066, #7700ff)',
+              color: '#fff', borderRadius: 8,
+              boxShadow: '0 0 30px rgba(255,0,102,0.6)',
+            }}>↩ RETRY</div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<App />);
+  </script>
+</body>
+</html>
