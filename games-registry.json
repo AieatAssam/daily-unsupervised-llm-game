@@ -194,5 +194,19 @@
     "folder": "games/2026-03-02",
     "file": "games/2026-03-02/index.html",
     "preview": "games/2026-03-02/preview.png"
+  },
+  {
+    "id": "2026-03-03",
+    "name": "Radial Blast",
+    "date": "2026-03-03",
+    "description": "Defend a glowing central core from every direction — aim a rotating neon turret with your mouse and blast incoming polygon enemies before they breach the core. Chain kills for massive combo multipliers!",
+    "tagline": "Aim. Shoot. Defend the core from all angles.",
+    "tags": ["shooter", "action", "reflex", "arcade", "turret"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse to aim turret · Click to shoot · Touch to aim and fire on mobile",
+    "folder": "games/2026-03-03",
+    "file": "games/2026-03-03/index.html",
+    "preview": "games/2026-03-03/preview.png"
   }
 ]
