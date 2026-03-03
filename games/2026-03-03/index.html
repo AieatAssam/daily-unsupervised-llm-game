@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radial Blast</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ── Audio helpers ───────────────────────────────────────────────────────
+    const makeAudio = () => {
+      try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+    };
+    const beep = (ctx, type, freq, dur, vol = 0.25) => {
+      if (!ctx) return;
+      try {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = type;
+        o.frequency.setValueAtTime(freq, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(freq * 0.4, ctx.currentTime + dur);
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.start(ctx.currentTime); o.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    };
+
+    // ── Enemy colours ────────────────────────────────────────────────────────
+    const COLS = ['#ff2d6a','#ff7c2d','#ffd700','#39ff14','#00cfff','#bf5fff'];
+
+    // ── Polygon draw helper ──────────────────────────────────────────────────
+    const poly = (ctx, n, r, rot) => {
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const a = rot + (i / n) * Math.PI * 2;
+        i === 0 ? ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r)
+                : ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+      }
+      ctx.closePath();
+    };
+
+    // ══════════════════════════════════════════════════════════════════════════
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const audio = useRef(null);
+      const raf   = useRef(null);
+
+      // All mutable game state lives in a single ref to avoid stale closures
+      const G = useRef({
+        phase: 'start',
+        score: 0, combo: 0, comboTimer: 0,
+        lives: 3, wave: 1,
+        angle: 0,          // turret angle (radians)
+        bullets: [],
+        enemies: [],
+        particles: [],
+        floats: [],        // floating score texts
+        spawnT: 0, spawnI: 110,
+        frame: 0,
+        shakeT: 0,
+        invT: 0,           // invincibility frames after hit
+        autoT: 0,          // mobile auto-fire timer
+        best: parseInt(localStorage.getItem('radialBlast_best') || '0'),
+      });
+
+      const [ui, setUi] = useState({
+        phase: 'start', score: 0, combo: 0, lives: 3, wave: 1,
+        best: parseInt(localStorage.getItem('radialBlast_best') || '0'),
+      });
+
+      // Push reactive UI update (only when game-relevant values change)
+      const pushUi = useCallback(() => {
+        const g = G.current;
+        setUi({ phase: g.phase, score: g.score, combo: g.combo,
+                lives: g.lives, wave: g.wave, best: g.best });
+      }, []);
+
+      // ── Reset to new game ──────────────────────────────────────────────────
+      const reset = useCallback(() => {
+        const g = G.current;
+        Object.assign(g, {
+          phase: 'playing', score: 0, combo: 0, comboTimer: 0,
+          lives: 3, wave: 1, angle: 0,
+          bullets: [], enemies: [], particles: [], floats: [],
+          spawnT: 0, spawnI: 110, frame: 0, shakeT: 0, invT: 0, autoT: 0,
+        });
+        // Ensure localStorage key exists for test detection
+        if (!localStorage.getItem('radialBlast_best'))
+          localStorage.setItem('radialBlast_best', '0');
+        pushUi();
+      }, [pushUi]);
+
+      // ── Spawn one enemy ────────────────────────────────────────────────────
+      const spawnEnemy = useCallback((cx, cy, W, H) => {
+        const g = G.current;
+        const edge = Math.random() * 4;
+        let x, y;
+        const m = 25;
+        if      (edge < 1) { x = Math.random()*W;   y = -m; }
+        else if (edge < 2) { x = W+m;               y = Math.random()*H; }
+        else if (edge < 3) { x = Math.random()*W;   y = H+m; }
+        else               { x = -m;                y = Math.random()*H; }
+
+        const spd   = 0.9 + Math.random()*0.5 + g.wave * 0.1;
+        const size  = 13 + Math.random()*12;
+        const armored = Math.random() < 0.18 + g.wave * 0.02;
+        const ci    = Math.floor(Math.random() * COLS.length);
+        g.enemies.push({
+          x, y,
+          tx: cx, ty: cy,      // target (core centre) — updated each frame
+          spd, size,
+          ci, col: COLS[ci],
+          hp: armored ? 2 : 1, maxHp: armored ? 2 : 1,
+          sides: 3 + Math.floor(Math.random()*4),
+          rot: Math.random()*Math.PI*2,
+          rotSpd: (Math.random()-0.5)*0.07,
+          pulse: Math.random()*Math.PI*2,
+        });
+      }, []);
+
+      // ── Fire a bullet ──────────────────────────────────────────────────────
+      const fire = useCallback((cx, cy) => {
+        const g = G.current;
+        if (g.phase !== 'playing') return;
+        const spd = 13;
+        g.bullets.push({
+          x: cx + Math.cos(g.angle)*32,
+          y: cy + Math.sin(g.angle)*32,
+          vx: Math.cos(g.angle)*spd,
+          vy: Math.sin(g.angle)*spd,
+          ang: g.angle,
+        });
+        beep(audio.current, 'square', 700, 0.07, 0.15);
+      }, []);
+
+      // ── Explode an enemy ───────────────────────────────────────────────────
+      const explode = useCallback((e) => {
+        const g = G.current;
+        // Particles
+        for (let i = 0; i < 20; i++) {
+          const a = (i/20)*Math.PI*2 + Math.random()*0.4;
+          const s = 2.5 + Math.random()*4;
+          g.particles.push({ x:e.x, y:e.y, vx:Math.cos(a)*s, vy:Math.sin(a)*s,
+            life:1, size:3+Math.random()*4, col:e.col });
+        }
+        // Score
+        g.combo++;
+        g.comboTimer = 100;
+        const pts = 10 * g.combo;
+        g.score += pts;
+        g.floats.push({ x:e.x, y:e.y-10, text: g.combo>1 ? `×${g.combo} +${pts}` : `+${pts}`,
+          life:1, col:e.col });
+        if (g.score > g.best) {
+          g.best = g.score;
+          localStorage.setItem('radialBlast_best', String(g.best));
+        }
+        beep(audio.current, 'sawtooth', 180+Math.random()*160, 0.18, 0.2);
+      }, []);
+
+      // ══════════════════════════════════════════════════════════════════════
+      // Main effect: set up canvas, events, game loop
+      // ══════════════════════════════════════════════════════════════════════
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ── Input handlers ─────────────────────────────────────────────────
+        const updateAngle = (mx, my) => {
+          const g = G.current;
+          const cx = canvas.width/2, cy = canvas.height/2;
+          g.angle = Math.atan2(my - cy, mx - cx);
+        };
+
+        const onMove = (e) => updateAngle(e.clientX, e.clientY);
+
+        const onClick = (e) => {
+          const g = G.current;
+          if (!audio.current) audio.current = makeAudio();
+          if (g.phase === 'start' || g.phase === 'gameover') { reset(); return; }
+          if (g.phase === 'playing') {
+            updateAngle(e.clientX, e.clientY);
+            fire(canvas.width/2, canvas.height/2);
+          }
+        };
+
+        const onTouchStart = (e) => {
+          e.preventDefault();
+          const g = G.current;
+          if (!audio.current) audio.current = makeAudio();
+          const t = e.touches[0];
+          updateAngle(t.clientX, t.clientY);
+          if (g.phase === 'start' || g.phase === 'gameover') { reset(); return; }
+          if (g.phase === 'playing') fire(canvas.width/2, canvas.height/2);
+        };
+
+        const onTouchMove = (e) => {
+          e.preventDefault();
+          const g = G.current;
+          if (g.phase !== 'playing') return;
+          const t = e.touches[0];
+          updateAngle(t.clientX, t.clientY);
+          g.autoT--;
+          if (g.autoT <= 0) { fire(canvas.width/2, canvas.height/2); g.autoT = 7; }
+        };
+
+        canvas.addEventListener('mousemove', onMove);
+        canvas.addEventListener('click', onClick);
+        canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+
+        // ── Game loop ──────────────────────────────────────────────────────
+        const loop = (ts) => {
+          const g = G.current;
+          g.frame++;
+
+          const ctx   = canvas.getContext('2d');
+          const W     = canvas.width;
+          const H     = canvas.height;
+          const cx    = W / 2;
+          const cy    = H / 2;
+          const CORE  = 58;  // danger-zone radius
+
+          // Screen shake offset
+          let sx = 0, sy = 0;
+          if (g.shakeT > 0) { g.shakeT--; sx=(Math.random()-.5)*9; sy=(Math.random()-.5)*9; }
+
+          ctx.save();
+          ctx.translate(sx, sy);
+
+          // ── Background ──────────────────────────────────────────────────
+          ctx.fillStyle = 'rgba(0,0,12,0.82)';
+          ctx.fillRect(-20,-20,W+40,H+40);
+
+          // Grid
+          ctx.strokeStyle = 'rgba(0,80,140,0.14)';
+          ctx.lineWidth = 1;
+          for (let gx=0; gx<W; gx+=64) { ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke(); }
+          for (let gy=0; gy<H; gy+=64) { ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke(); }
+
+          // Danger zone glow ring
+          const dp = 0.35 + Math.sin(g.frame*0.045)*0.18;
+          ctx.beginPath(); ctx.arc(cx,cy,CORE,0,Math.PI*2);
+          ctx.strokeStyle = `rgba(255,50,50,${dp})`;  ctx.lineWidth = 2;  ctx.stroke();
+          ctx.strokeStyle = `rgba(255,50,50,${dp*0.3})`; ctx.lineWidth = 28; ctx.stroke();
+
+          // ── Update + draw if playing ─────────────────────────────────────
+          if (g.phase === 'playing') {
+
+            // Wave progression every 540 frames (~9 s)
+            if (g.frame > 0 && g.frame % 540 === 0) {
+              g.wave++;
+              g.spawnI = Math.max(38, 110 - g.wave * 8);
+              pushUi();
+            }
+
+            // Combo timer
+            if (g.comboTimer > 0) { g.comboTimer--; if (g.comboTimer===0) g.combo=0; }
+            if (g.invT > 0) g.invT--;
+
+            // ── Spawn ──────────────────────────────────────────────────────
+            g.spawnT++;
+            if (g.spawnT >= g.spawnI) {
+              g.spawnT = 0;
+              const burst = Math.min(1 + Math.floor(g.wave/3), 5);
+              for (let b=0; b<burst; b++) spawnEnemy(cx,cy,W,H);
+            }
+
+            // ── Bullets ────────────────────────────────────────────────────
+            g.bullets = g.bullets.filter(b => {
+              b.x += b.vx; b.y += b.vy;
+              return b.x > -20 && b.x < W+20 && b.y > -20 && b.y < H+20;
+            });
+
+            // ── Enemies ────────────────────────────────────────────────────
+            for (let i = g.enemies.length-1; i >= 0; i--) {
+              const e = g.enemies[i];
+              const dx = cx - e.x, dy = cy - e.y;
+              const d  = Math.hypot(dx, dy);
+              if (d > 0) { e.x += dx/d*e.spd; e.y += dy/d*e.spd; }
+              e.rot += e.rotSpd;
+              e.pulse += 0.055;
+
+              // Hit core?
+              if (Math.hypot(e.x-cx, e.y-cy) < CORE + e.size*0.5) {
+                if (g.invT === 0) {
+                  g.lives--;
+                  g.shakeT = 22;
+                  g.combo = 0; g.comboTimer = 0;
+                  g.invT = 110;
+                  beep(audio.current, 'sawtooth', 70, 0.35, 0.3);
+                  for (let p=0; p<28; p++) {
+                    const a=Math.random()*Math.PI*2, s=2+Math.random()*5;
+                    g.particles.push({ x:cx,y:cy, vx:Math.cos(a)*s, vy:Math.sin(a)*s,
+                      life:1, size:4+Math.random()*5, col:'#ff3355' });
+                  }
+                  if (g.lives <= 0) { g.phase='gameover'; pushUi(); }
+                  else pushUi();
+                }
+                g.enemies.splice(i, 1);
+                continue;
+              }
+
+              // Bullet collision
+              let destroyed = false;
+              for (let j=g.bullets.length-1; j>=0; j--) {
+                const b = g.bullets[j];
+                if (Math.hypot(b.x-e.x, b.y-e.y) < e.size*1.05) {
+                  e.hp--;
+                  g.bullets.splice(j,1);
+                  // hit sparks
+                  for (let p=0;p<7;p++) {
+                    const a=Math.random()*Math.PI*2;
+                    g.particles.push({ x:b.x,y:b.y, vx:Math.cos(a)*3.5, vy:Math.sin(a)*3.5,
+                      life:0.55, size:2.5, col:e.col });
+                  }
+                  if (e.hp <= 0) { explode(e); g.enemies.splice(i,1); destroyed=true; pushUi(); }
+                  break;
+                }
+              }
+              if (destroyed) continue;
+
+              // Draw enemy
+              const pr = 0.86 + Math.sin(e.pulse)*0.14;
+              ctx.save();
+              ctx.translate(e.x, e.y); ctx.rotate(e.rot);
+              poly(ctx, e.sides, e.size*pr, 0);
+              ctx.fillStyle   = e.col + '40';
+              ctx.shadowColor = e.col; ctx.shadowBlur = 18;
+              ctx.fill();
+              ctx.strokeStyle = e.col; ctx.lineWidth = 2; ctx.stroke();
+              if (e.maxHp > 1) {
+                poly(ctx, e.sides, e.size*pr*0.55, 0.3);
+                ctx.strokeStyle='#ffffff88'; ctx.lineWidth=1.5; ctx.shadowBlur=6; ctx.stroke();
+              }
+              ctx.restore();
+            }
+
+            // ── Particles ──────────────────────────────────────────────────
+            g.particles = g.particles.filter(p => {
+              p.x+=p.vx; p.y+=p.vy; p.vx*=0.93; p.vy*=0.93; p.life-=0.028;
+              return p.life > 0;
+            });
+            g.particles.forEach(p => {
+              ctx.save();
+              ctx.globalAlpha = p.life;
+              ctx.fillStyle   = p.col;
+              ctx.shadowColor = p.col; ctx.shadowBlur = 10;
+              ctx.beginPath(); ctx.arc(p.x, p.y, p.size*p.life, 0, Math.PI*2); ctx.fill();
+              ctx.restore();
+            });
+
+            // ── Bullets ────────────────────────────────────────────────────
+            g.bullets.forEach(b => {
+              ctx.save();
+              ctx.strokeStyle = '#e0f8ff';
+              ctx.shadowColor = '#66eeff'; ctx.shadowBlur = 14;
+              ctx.lineWidth = 3.5;
+              ctx.beginPath();
+              ctx.moveTo(b.x - Math.cos(b.ang)*14, b.y - Math.sin(b.ang)*14);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+              ctx.restore();
+            });
+
+            // ── Float texts ────────────────────────────────────────────────
+            g.floats = g.floats.filter(f => { f.y-=1.6; f.life-=0.03; return f.life>0; });
+            g.floats.forEach(f => {
+              ctx.save();
+              ctx.globalAlpha = f.life;
+              ctx.fillStyle   = f.col;
+              ctx.shadowColor = f.col; ctx.shadowBlur = 12;
+              ctx.font        = 'bold 17px Courier New';
+              ctx.textAlign   = 'center';
+              ctx.fillText(f.text, f.x, f.y);
+              ctx.restore();
+            });
+          }
+
+          // ── Turret ───────────────────────────────────────────────────────
+          if (g.phase === 'playing') {
+            const inv = g.invT > 0;
+            const tc  = inv ? '#ff4455' : '#00cfff';
+            ctx.save();
+            ctx.translate(cx, cy);
+
+            // Aura
+            const aura = ctx.createRadialGradient(0,0,6,0,0,34);
+            aura.addColorStop(0, inv ? 'rgba(255,50,50,0.45)' : 'rgba(0,200,255,0.4)');
+            aura.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = aura;
+            ctx.beginPath(); ctx.arc(0,0,34,0,Math.PI*2); ctx.fill();
+
+            // Base circle
+            ctx.beginPath(); ctx.arc(0,0,19,0,Math.PI*2);
+            ctx.fillStyle='rgba(0,20,45,0.92)'; ctx.fill();
+            ctx.strokeStyle=tc; ctx.lineWidth=3; ctx.shadowColor=tc; ctx.shadowBlur=22; ctx.stroke();
+
+            // Barrel
+            ctx.rotate(g.angle);
+            ctx.fillStyle=tc; ctx.shadowBlur=16;
+            ctx.beginPath();
+            ctx.roundRect(11, -5, 28, 10, 3);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // ── Start screen ─────────────────────────────────────────────────
+          if (g.phase === 'start') {
+            ctx.fillStyle='rgba(0,0,18,0.72)'; ctx.fillRect(0,0,W,H);
+            const t1 = ctx.createLinearGradient(cx-160,0,cx+160,0);
+            t1.addColorStop(0,'#ff2d6a'); t1.addColorStop(0.5,'#00cfff'); t1.addColorStop(1,'#bf5fff');
+            ctx.font='bold 70px Courier New'; ctx.textAlign='center';
+            ctx.fillStyle=t1; ctx.shadowColor='#00cfff'; ctx.shadowBlur=36;
+            ctx.fillText('RADIAL', cx, cy-85);
+            ctx.fillText('BLAST',  cx, cy-8);
+
+            ctx.fillStyle='#88ddff'; ctx.font='19px Courier New'; ctx.shadowBlur=10;
+            ctx.fillText('Defend the glowing core from all directions!', cx, cy+50);
+            ctx.fillStyle='#aaaacc'; ctx.font='15px Courier New';
+            ctx.fillText('Move mouse to aim · Click to shoot', cx, cy+84);
+            ctx.fillText('Mobile: touch to aim and fire', cx, cy+108);
+
+            const p2=Math.sin(g.frame*0.055)*0.28+0.72;
+            ctx.fillStyle=`rgba(0,207,255,${p2})`; ctx.shadowColor='#00cfff'; ctx.shadowBlur=22;
+            ctx.font='bold 25px Courier New';
+            ctx.fillText('[ CLICK / TAP TO START ]', cx, cy+175);
+
+            if (g.best > 0) {
+              ctx.fillStyle='#ffd700'; ctx.font='17px Courier New'; ctx.shadowColor='#ffd700';
+              ctx.fillText(`Best: ${g.best}`, cx, cy+222);
+            }
+          }
+
+          // ── Game-over screen ──────────────────────────────────────────────
+          if (g.phase === 'gameover') {
+            ctx.fillStyle='rgba(0,0,12,0.82)'; ctx.fillRect(0,0,W,H);
+            ctx.fillStyle='#ff2d6a'; ctx.font='bold 58px Courier New';
+            ctx.textAlign='center'; ctx.shadowColor='#ff2d6a'; ctx.shadowBlur=32;
+            ctx.fillText('GAME OVER', cx, cy-65);
+
+            ctx.fillStyle='#ffffff'; ctx.font='30px Courier New'; ctx.shadowBlur=18;
+            ctx.fillText(`Score: ${g.score}`, cx, cy);
+
+            ctx.fillStyle='#ffd700'; ctx.font='22px Courier New'; ctx.shadowColor='#ffd700';
+            ctx.fillText(`Best: ${g.best}`, cx, cy+46);
+
+            ctx.fillStyle='#aaaaaa'; ctx.font='16px Courier New'; ctx.shadowBlur=0;
+            ctx.fillText(`Wave reached: ${g.wave}`, cx, cy+82);
+
+            const p3=Math.sin(g.frame*0.055)*0.28+0.72;
+            ctx.fillStyle=`rgba(0,207,255,${p3})`; ctx.shadowColor='#00cfff'; ctx.shadowBlur=22;
+            ctx.font='bold 24px Courier New';
+            ctx.fillText('[ CLICK / TAP TO RETRY ]', cx, cy+136);
+          }
+
+          ctx.restore(); // shake
+          raf.current = requestAnimationFrame(loop);
+        };
+
+        raf.current = requestAnimationFrame(loop);
+
+        return () => {
+          cancelAnimationFrame(raf.current);
+          window.removeEventListener('resize', resize);
+          canvas.removeEventListener('mousemove', onMove);
+          canvas.removeEventListener('click', onClick);
+          canvas.removeEventListener('touchstart', onTouchStart);
+          canvas.removeEventListener('touchmove', onTouchMove);
+        };
+      }, [reset, fire, spawnEnemy, explode, pushUi]);
+
+      return (
+        <div style={{ width:'100vw', height:'100vh', position:'relative', background:'#000' }}>
+          <canvas ref={canvasRef} style={{ display:'block' }} />
+
+          {/* HUD overlay (React) */}
+          {ui.phase === 'playing' && (
+            <div style={{
+              position:'absolute', top:0, left:0, right:0,
+              display:'flex', justifyContent:'space-between', alignItems:'flex-start',
+              padding:'14px 20px', pointerEvents:'none',
+            }}>
+              {/* Score + combo */}
+              <div>
+                <div style={{ color:'#00cfff', fontSize:'32px', fontWeight:'bold',
+                              fontFamily:'Courier New', textShadow:'0 0 18px #00cfff', lineHeight:1 }}>
+                  {ui.score}
+                </div>
+                {ui.combo > 1 && (
+                  <div style={{ color:'#ffd700', fontSize:'15px', fontFamily:'Courier New',
+                                textShadow:'0 0 12px #ffd700', marginTop:'2px' }}>
+                    COMBO ×{ui.combo}
+                  </div>
+                )}
+              </div>
+
+              {/* Wave */}
+              <div style={{ textAlign:'center' }}>
+                <div style={{ color:'#bf5fff', fontSize:'14px', fontFamily:'Courier New',
+                              textShadow:'0 0 12px #bf5fff' }}>
+                  WAVE {ui.wave}
+                </div>
+              </div>
+
+              {/* Lives + best */}
+              <div style={{ textAlign:'right' }}>
+                <div style={{ display:'flex', gap:'7px', justifyContent:'flex-end', marginBottom:'4px' }}>
+                  {[0,1,2].map(i => (
+                    <div key={i} style={{
+                      width:'13px', height:'13px', borderRadius:'50%',
+                      background: i < ui.lives ? '#ff2d6a' : 'rgba(255,45,106,0.18)',
+                      boxShadow: i < ui.lives ? '0 0 10px #ff2d6a' : 'none',
+                    }} />
+                  ))}
+                </div>
+                <div style={{ color:'#666', fontSize:'12px', fontFamily:'Courier New' }}>
+                  Best: {ui.best}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Game />);
+  </script>
+</body>
+</html>
