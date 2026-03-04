@@ -124,6 +124,10 @@
         if (!g || g.phase !== 'playing' || g.locked) return;
 
         var m = g.mov;
+        // Don't allow drop while platform is still entirely off-screen —
+        // prevents instant game-over when clicking too quickly after start/respawn
+        if (m.wx + m.w <= 0 || m.wx >= GW) return;
+
         var top = g.stack[g.stack.length - 1];
         var oL = Math.max(m.wx, top.wx);
         var oR = Math.min(m.wx + m.w, top.wx + top.w);
