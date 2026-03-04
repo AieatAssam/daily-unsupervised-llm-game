@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Phase Stack</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    #root { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    // ── Constants ──────────────────────────────────────────────────────────
+    const GW = 400, GH = 600;
+    const PLAT_H = 28;
+    const INIT_W = 260;
+    const SLIDE_ABOVE = 200;      // world-px above stack top for moving platform
+    const SNAP_SY = GH * 0.55;   // target screen-Y for stack top
+    const PERFECT_PX = 9;        // px threshold for "perfect"
+    const BASE_SPD = 2.8;
+    const HS_KEY = 'phaseStack_highScore';
+
+    const COLORS = [
+      '#ff00ff','#00ffff','#ff6600','#00ff88',
+      '#ff0044','#ffff00','#8844ff','#ff44aa',
+      '#44ffee','#ff8800','#22ff44','#ee44ff',
+    ];
+
+    // ── Audio ──────────────────────────────────────────────────────────────
+    let _ac = null;
+    function getAC() {
+      if (!_ac) try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+      return _ac;
+    }
+    function beep(freq, type, dur, vol) {
+      try {
+        const ctx = getAC(); if (!ctx) return;
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = freq; o.type = type || 'sine';
+        g.gain.setValueAtTime(vol || 0.3, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (dur || 0.15));
+        o.start(); o.stop(ctx.currentTime + (dur || 0.15));
+      } catch(e) {}
+    }
+    function sndPlace(perfect) {
+      if (perfect) {
+        beep(880, 'sine', 0.15, 0.5);
+        setTimeout(function() { beep(1320, 'sine', 0.15, 0.4); }, 80);
+        setTimeout(function() { beep(1760, 'sine', 0.2, 0.3); }, 160);
+      } else {
+        beep(550, 'triangle', 0.12, 0.35);
+      }
+    }
+    function sndOver() {
+      beep(220, 'sawtooth', 0.2, 0.4);
+      setTimeout(function() { beep(180, 'sawtooth', 0.2, 0.35); }, 150);
+      setTimeout(function() { beep(140, 'sawtooth', 0.25, 0.3); }, 300);
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function mkParticles(wx, wy, color, n) {
+      n = n || 14;
+      var out = [];
+      for (var i = 0; i < n; i++) {
+        var a = Math.random() * Math.PI * 2;
+        var s = 1.5 + Math.random() * 4.5;
+        out.push({ wx: wx, wy: wy, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 2.5,
+                   color: color, alpha: 1, sz: 2 + Math.random() * 3.5 });
+      }
+      return out;
+    }
+    function mkFalling(wx, wy, w, color, side) {
+      return {
+        wx: wx, wy: wy, w: w, color: color,
+        vx: side * (1 + Math.random() * 2),
+        vy: -1 - Math.random() * 2,
+        rot: 0, rotV: side * (0.05 + Math.random() * 0.08),
+        alpha: 1
+      };
+    }
+
+    // ── Main Game Component ────────────────────────────────────────────────
+    function Game() {
+      var canvasRef = useRef(null);
+      var G = useRef(null);   // mutable game state (null = showing menu)
+      var rafRef = useRef(null);
+
+      // Initialize a fresh game
+      function newGame() {
+        var hs = parseInt(localStorage.getItem(HS_KEY) || '0', 10) || 0;
+        // Ensure key exists for tests immediately
+        localStorage.setItem(HS_KEY, String(hs));
+        var baseY = 5000;
+        G.current = {
+          phase: 'playing',
+          score: 0, hs: hs,
+          combo: 0, level: 1,
+          stack: [{ wx: (GW - INIT_W) / 2, wy: baseY - PLAT_H, w: INIT_W, color: COLORS[0] }],
+          mov: {
+            wx: -INIT_W, wy: baseY - PLAT_H - SLIDE_ABOVE,
+            w: INIT_W, color: COLORS[1], dir: 1, spd: BASE_SPD
+          },
+          camY:  (baseY - PLAT_H) - SNAP_SY,
+          tCamY: (baseY - PLAT_H) - SNAP_SY,
+          pts: [],   // particles
+          fl: [],    // falling pieces
+          flash: null,
+          locked: false,
+        };
+      }
+
+      // Drop / place the moving platform
+      function drop() {
+        var g = G.current;
+        if (!g || g.phase !== 'playing' || g.locked) return;
+
+        var m = g.mov;
+        var top = g.stack[g.stack.length - 1];
+        var oL = Math.max(m.wx, top.wx);
+        var oR = Math.min(m.wx + m.w, top.wx + top.w);
+        var ov = oR - oL;
+
+        if (ov <= 0) {
+          // Missed — animate full platform falling
+          g.fl.push(mkFalling(m.wx, m.wy, m.w, m.color, m.dir));
+          g.phase = 'gameover';
+          var hs = Math.max(g.hs, g.score);
+          g.hs = hs;
+          localStorage.setItem(HS_KEY, String(hs));
+          sndOver();
+          return;
+        }
+
+        var perfect = (ov >= m.w - PERFECT_PX) && (Math.abs(m.wx - top.wx) < PERFECT_PX);
+        var nW = perfect ? top.w : ov;
+        var nL = perfect ? top.wx : oL;
+        var nY = top.wy - PLAT_H;
+
+        // Cut-off particles + falling pieces
+        if (!perfect) {
+          if (oL > m.wx) {
+            var pts1 = mkParticles(m.wx + (oL - m.wx) / 2, m.wy + PLAT_H / 2, m.color, 9);
+            for (var i = 0; i < pts1.length; i++) g.pts.push(pts1[i]);
+            g.fl.push(mkFalling(m.wx, m.wy, oL - m.wx, m.color, -1));
+          }
+          if (oR < m.wx + m.w) {
+            var pts2 = mkParticles(oR + (m.wx + m.w - oR) / 2, m.wy + PLAT_H / 2, m.color, 9);
+            for (var j = 0; j < pts2.length; j++) g.pts.push(pts2[j]);
+            g.fl.push(mkFalling(oR, m.wy, m.wx + m.w - oR, m.color, 1));
+          }
+        } else {
+          // Perfect sparkles
+          var pts3 = mkParticles(nL + nW / 2, nY + PLAT_H / 2, m.color, 22);
+          for (var k = 0; k < pts3.length; k++) g.pts.push(pts3[k]);
+        }
+
+        // Add new platform to stack
+        g.stack.push({ wx: nL, wy: nY, w: nW, color: m.color });
+
+        // Score calculation
+        var prec = perfect ? 1 : ov / top.w;
+        g.combo = perfect ? g.combo + 1 : (prec > 0.7 ? g.combo : 0);
+        var pts = Math.floor((perfect ? 100 : Math.round(prec * 60)) * (1 + g.combo * 0.5));
+        g.score += pts;
+        g.level = Math.floor(g.stack.length / 8) + 1;
+        var spd = BASE_SPD + (g.level - 1) * 0.6 + (g.stack.length % 8) * 0.08;
+
+        // Flash message
+        if (perfect) {
+          g.flash = { text: '✦ PERFECT ✦', color: '#ffff00', pts: '+' + pts, t: 72 };
+        } else if (g.combo >= 2) {
+          g.flash = { text: '× ' + g.combo + ' COMBO', color: '#ff44ff', pts: '+' + pts, t: 58 };
+        } else {
+          g.flash = { text: '+' + pts, color: '#00ffff', t: 42 };
+        }
+
+        // Update high score
+        if (g.score > g.hs) {
+          g.hs = g.score;
+          localStorage.setItem(HS_KEY, String(g.score));
+        }
+
+        // Next moving platform
+        var ni = (g.stack.length + 1) % COLORS.length;
+        var d = Math.random() < 0.5 ? 1 : -1;
+        g.mov = {
+          wx: d === 1 ? -nW : GW,
+          wy: nY - SLIDE_ABOVE,
+          w: nW, color: COLORS[ni],
+          dir: d, spd: spd
+        };
+
+        // Camera target: keep new stack top at SNAP_SY
+        g.tCamY = nY - SNAP_SY;
+
+        // Brief input lock to prevent double-drops
+        g.locked = true;
+        setTimeout(function() { if (G.current) G.current.locked = false; }, 80);
+      }
+
+      // Handle any input (click, tap, keyboard)
+      function handleInput(e) {
+        if (e && e.type === 'touchstart') e.preventDefault();
+        var g = G.current;
+        if (!g || g.phase === 'gameover') { newGame(); return; }
+        if (g.phase === 'playing') { drop(); }
+      }
+
+      // ── RAF Loop ────────────────────────────────────────────────────────
+      useEffect(function() {
+        var canvas = canvasRef.current;
+        var ctx = canvas.getContext('2d');
+        var last = 0;
+
+        function loop(ts) {
+          var dt = Math.min((ts - last) / 16.667, 3);
+          last = ts;
+          update(dt);
+          draw(ctx);
+          rafRef.current = requestAnimationFrame(loop);
+        }
+        rafRef.current = requestAnimationFrame(loop);
+        return function() { cancelAnimationFrame(rafRef.current); };
+      }, []);
+
+      // ── Update ──────────────────────────────────────────────────────────
+      function update(dt) {
+        var g = G.current;
+        if (!g) return;
+
+        // Smooth camera follow
+        g.camY += (g.tCamY - g.camY) * 0.08 * dt;
+
+        if (g.phase === 'playing' && !g.locked) {
+          // Slide moving platform
+          g.mov.wx += g.mov.dir * g.mov.spd * dt;
+          if (g.mov.wx <= 0) {
+            g.mov.wx = 0; g.mov.dir = 1;
+          } else if (g.mov.wx + g.mov.w >= GW) {
+            g.mov.wx = GW - g.mov.w; g.mov.dir = -1;
+          }
+        }
+
+        // Update particles
+        var newPts = [];
+        for (var i = 0; i < g.pts.length; i++) {
+          var p = g.pts[i];
+          p.wx += p.vx * dt; p.wy += p.vy * dt;
+          p.vy += 0.35 * dt; p.alpha -= 0.025 * dt;
+          if (p.alpha > 0.02) newPts.push(p);
+        }
+        g.pts = newPts;
+
+        // Update falling pieces
+        var newFl = [];
+        for (var j = 0; j < g.fl.length; j++) {
+          var f = g.fl[j];
+          f.wx += f.vx * dt * 2; f.wy += f.vy * dt * 2;
+          f.vy += 0.5 * dt; f.rot += f.rotV * dt; f.alpha -= 0.018 * dt;
+          if (f.alpha > 0.02) newFl.push(f);
+        }
+        g.fl = newFl;
+
+        // Flash timer
+        if (g.flash) { g.flash.t -= dt; if (g.flash.t <= 0) g.flash = null; }
+      }
+
+      // ── Draw ────────────────────────────────────────────────────────────
+      function draw(ctx) {
+        var t = Date.now() / 4000;
+
+        // Animated background
+        var bg = ctx.createLinearGradient(0, 0, 0, GH);
+        bg.addColorStop(0, 'hsl(' + (260 + Math.sin(t) * 40) + ',80%,6%)');
+        bg.addColorStop(1, 'hsl(' + (200 + Math.sin(t + 1) * 40) + ',80%,3%)');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, GW, GH);
+
+        // Subtle grid
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+        ctx.lineWidth = 1;
+        for (var x = 0; x <= GW; x += 40) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, GH); ctx.stroke();
+        }
+        for (var y = 0; y <= GH; y += 40) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(GW, y); ctx.stroke();
+        }
+
+        var g = G.current;
+
+        // Menu screen
+        if (!g) {
+          drawMenu(ctx);
+          return;
+        }
+
+        var cam = g.camY;
+
+        // Draw stack platforms (cull off-screen)
+        for (var i = 0; i < g.stack.length; i++) {
+          var plat = g.stack[i];
+          var sy = plat.wy - cam;
+          if (sy > GH + 50 || sy + PLAT_H < -50) continue;
+          drawPlat(ctx, plat.wx, sy, plat.w, plat.color, false);
+        }
+
+        // Draw moving platform
+        if (g.phase === 'playing') {
+          drawPlat(ctx, g.mov.wx, g.mov.wy - cam, g.mov.w, g.mov.color, true);
+        }
+
+        // Draw falling pieces (with rotation)
+        for (var j = 0; j < g.fl.length; j++) {
+          var f = g.fl[j];
+          var fsy = f.wy - cam;
+          ctx.save();
+          ctx.globalAlpha = f.alpha;
+          ctx.translate(f.wx + f.w / 2, fsy + PLAT_H / 2);
+          ctx.rotate(f.rot);
+          ctx.shadowBlur = 10; ctx.shadowColor = f.color;
+          var gr = ctx.createLinearGradient(-f.w/2, -PLAT_H/2, -f.w/2, PLAT_H/2);
+          gr.addColorStop(0, f.color);
+          gr.addColorStop(1, f.color + '88');
+          ctx.fillStyle = gr;
+          ctx.fillRect(-f.w / 2, -PLAT_H / 2, f.w, PLAT_H);
+          ctx.strokeStyle = f.color; ctx.lineWidth = 1.5;
+          ctx.strokeRect(-f.w / 2, -PLAT_H / 2, f.w, PLAT_H);
+          ctx.restore();
+        }
+
+        // Draw particles
+        for (var k = 0; k < g.pts.length; k++) {
+          var p = g.pts[k];
+          var psy = p.wy - cam;
+          ctx.save();
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.shadowBlur = 12; ctx.shadowColor = p.color;
+          ctx.beginPath(); ctx.arc(p.wx, psy, p.sz, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+
+        // Flash message
+        if (g.flash) {
+          var fa = Math.min(1, g.flash.t / 15);
+          ctx.save();
+          ctx.globalAlpha = fa;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.shadowBlur = 25; ctx.shadowColor = g.flash.color;
+          ctx.fillStyle = g.flash.color;
+          ctx.font = 'bold 38px "Courier New",monospace';
+          ctx.fillText(g.flash.text, GW / 2, GH * 0.42);
+          if (g.flash.pts) {
+            ctx.font = 'bold 22px "Courier New",monospace';
+            ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 12;
+            ctx.fillText(g.flash.pts, GW / 2, GH * 0.42 + 46);
+          }
+          ctx.restore();
+        }
+
+        // HUD: score, best, level
+        ctx.save();
+        ctx.textBaseline = 'top';
+        ctx.font = 'bold 22px "Courier New",monospace';
+        ctx.fillStyle = '#00ffff'; ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff';
+        ctx.textAlign = 'left';
+        ctx.fillText(String(g.score), 16, 16);
+        ctx.font = '13px "Courier New",monospace';
+        ctx.fillStyle = '#ff88ff'; ctx.shadowColor = '#ff88ff'; ctx.shadowBlur = 10;
+        ctx.fillText('BEST ' + g.hs, 16, 44);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#ffff00'; ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 10;
+        ctx.font = '13px "Courier New",monospace';
+        ctx.fillText('LVL ' + g.level, GW - 16, 16);
+        if (g.combo >= 2) {
+          ctx.fillStyle = '#ff44ff'; ctx.shadowColor = '#ff44ff';
+          ctx.fillText('× ' + g.combo, GW - 16, 34);
+        }
+        ctx.restore();
+
+        // Draw "aim guide" — faint vertical line showing platform center
+        if (g.phase === 'playing') {
+          var platCX = g.mov.wx + g.mov.w / 2;
+          var topPlatSY = g.stack[g.stack.length - 1].wy - cam;
+          var movSY = g.mov.wy - cam;
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 8]);
+          ctx.beginPath();
+          ctx.moveTo(platCX, movSY + PLAT_H);
+          ctx.lineTo(platCX, topPlatSY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+
+        // Game over overlay
+        if (g.phase === 'gameover') {
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.8)';
+          ctx.fillRect(0, 0, GW, GH);
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.font = 'bold 46px "Courier New",monospace';
+          ctx.fillStyle = '#ff0044'; ctx.shadowBlur = 30; ctx.shadowColor = '#ff0044';
+          ctx.fillText('GAME OVER', GW / 2, GH * 0.33);
+          ctx.font = 'bold 24px "Courier New",monospace';
+          ctx.fillStyle = '#fff'; ctx.shadowBlur = 10; ctx.shadowColor = '#fff';
+          ctx.fillText('Score: ' + g.score, GW / 2, GH * 0.46);
+          ctx.fillText('Best: ' + g.hs, GW / 2, GH * 0.54);
+          // Stacked height stat
+          ctx.font = '16px "Courier New",monospace';
+          ctx.fillStyle = '#88ffff'; ctx.shadowColor = '#88ffff';
+          ctx.fillText('Platforms: ' + (g.stack.length - 1), GW / 2, GH * 0.62);
+          // Pulsing restart prompt
+          var pulse = 0.65 + 0.35 * Math.sin(Date.now() / 300);
+          ctx.globalAlpha = pulse;
+          ctx.font = 'bold 20px "Courier New",monospace';
+          ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 18;
+          ctx.fillText('TAP TO PLAY AGAIN', GW / 2, GH * 0.74);
+          ctx.restore();
+        }
+      }
+
+      // ── Draw Menu Screen ────────────────────────────────────────────────
+      function drawMenu(ctx) {
+        var t = Date.now() / 1000;
+        ctx.save();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+        // Animated neon title
+        var h1 = (t * 40) % 360;
+        var h2 = (t * 40 + 140) % 360;
+        var c1 = 'hsl(' + h1 + ',100%,65%)';
+        var c2 = 'hsl(' + h2 + ',100%,65%)';
+
+        ctx.font = 'bold 72px "Courier New",monospace';
+        ctx.fillStyle = c1; ctx.shadowBlur = 35; ctx.shadowColor = c1;
+        ctx.fillText('PHASE', GW / 2, GH * 0.3);
+        ctx.fillStyle = c2; ctx.shadowColor = c2;
+        ctx.fillText('STACK', GW / 2, GH * 0.3 + 86);
+
+        ctx.font = '15px "Courier New",monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.shadowBlur = 0;
+        ctx.fillText('Drop blocks. Stack them perfectly.', GW / 2, GH * 0.585);
+
+        ctx.font = '13px "Courier New",monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.fillText('Space · Click · Tap to drop', GW / 2, GH * 0.64);
+
+        var pulse = 0.65 + 0.35 * Math.sin(t * 3);
+        ctx.globalAlpha = pulse;
+        ctx.font = 'bold 21px "Courier New",monospace';
+        ctx.fillStyle = '#00ffff'; ctx.shadowBlur = 18; ctx.shadowColor = '#00ffff';
+        ctx.fillText('TAP TO PLAY', GW / 2, GH * 0.76);
+
+        var hs = parseInt(localStorage.getItem(HS_KEY) || '0', 10) || 0;
+        if (hs > 0) {
+          ctx.globalAlpha = 0.7;
+          ctx.font = '13px "Courier New",monospace';
+          ctx.fillStyle = '#ff88ff'; ctx.shadowColor = '#ff88ff'; ctx.shadowBlur = 8;
+          ctx.fillText('BEST: ' + hs, GW / 2, GH * 0.85);
+        }
+        ctx.restore();
+      }
+
+      // ── Draw Platform ───────────────────────────────────────────────────
+      function drawPlat(ctx, x, y, w, color, active) {
+        ctx.save();
+        ctx.shadowBlur = active ? 28 : 14;
+        ctx.shadowColor = color;
+        var gr = ctx.createLinearGradient(x, y, x, y + PLAT_H);
+        gr.addColorStop(0, color);
+        gr.addColorStop(1, color + '88');
+        ctx.fillStyle = gr;
+        ctx.fillRect(x, y, w, PLAT_H);
+        // Top highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillRect(x, y, w, 4);
+        // Border
+        ctx.strokeStyle = active ? '#fff' : color;
+        ctx.lineWidth = active ? 2.5 : 1.5;
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, PLAT_H - 1);
+        ctx.restore();
+      }
+
+      // ── Keyboard Input ──────────────────────────────────────────────────
+      useEffect(function() {
+        function onKey(e) {
+          if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'Enter') {
+            e.preventDefault();
+            handleInput(e);
+          }
+        }
+        window.addEventListener('keydown', onKey);
+        return function() { window.removeEventListener('keydown', onKey); };
+      }, []);
+
+      // ── Responsive Canvas Sizing ────────────────────────────────────────
+      useEffect(function() {
+        function fit() {
+          var c = canvasRef.current; if (!c) return;
+          var sc = Math.min(window.innerWidth / GW, window.innerHeight / GH);
+          c.style.width = (GW * sc) + 'px';
+          c.style.height = (GH * sc) + 'px';
+        }
+        fit();
+        window.addEventListener('resize', fit);
+        return function() { window.removeEventListener('resize', fit); };
+      }, []);
+
+      return (
+        <div
+          id="game-container"
+          onClick={handleInput}
+          onTouchStart={handleInput}
+          style={{
+            width: '100vw', height: '100vh',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: '#000', cursor: 'pointer',
+            userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none',
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            width={GW}
+            height={GH}
+            id="game-canvas"
+            style={{ display: 'block' }}
+          />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
+  </script>
+</body>
+</html>

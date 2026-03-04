@@ -208,5 +208,19 @@
     "folder": "games/2026-03-03",
     "file": "games/2026-03-03/index.html",
     "preview": "games/2026-03-03/preview.png"
+  },
+  {
+    "id": "2026-03-04",
+    "name": "Phase Stack",
+    "date": "2026-03-04",
+    "description": "A neon platform slides back and forth — click or tap to drop it onto the stack below. Misaligned portions explode into particles as your tower grows. PERFECT drops keep full width while speed escalates!",
+    "tagline": "Drop it. Stack it. Don't miss.",
+    "tags": ["timing", "precision", "casual", "arcade", "stacking"],
+    "difficulty": "easy",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click · Tap · Space · Enter to drop the sliding platform",
+    "folder": "games/2026-03-04",
+    "file": "games/2026-03-04/index.html",
+    "preview": "games/2026-03-04/preview.png"
   }
 ]
