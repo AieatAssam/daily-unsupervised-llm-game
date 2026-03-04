@@ -93,6 +93,7 @@
       var canvasRef = useRef(null);
       var G = useRef(null);   // mutable game state (null = showing menu)
       var rafRef = useRef(null);
+      var lastTouchRef = useRef(0);  // timestamp of last touchstart, used to swallow ghost clicks
 
       // Initialize a fresh game
       function newGame() {
@@ -213,7 +214,13 @@
 
       // Handle any input (click, tap, keyboard)
       function handleInput(e) {
-        if (e && e.type === 'touchstart') e.preventDefault();
+        if (e && e.type === 'touchstart') {
+          e.preventDefault();
+          lastTouchRef.current = Date.now();
+        } else if (e && e.type === 'click') {
+          // Suppress ghost click that browsers synthesize ~300ms after touchstart
+          if (Date.now() - lastTouchRef.current < 600) return;
+        }
         var g = G.current;
         if (!g || g.phase === 'gameover') { newGame(); return; }
         if (g.phase === 'playing') { drop(); }
