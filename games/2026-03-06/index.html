@@ -29,10 +29,10 @@
     const ORB_X       = 88;
     const ORB_R       = 13;
     const WALL_W      = 24;
-    const GAP_H       = 148;
-    const WALL_INTERVAL = 240;    // px between consecutive walls
-    const BASE_SPEED  = 3.0;
-    const GRAVITY_STR = 0.44;
+    const GAP_H       = 175;
+    const WALL_INTERVAL = 260;    // px between consecutive walls
+    const BASE_SPEED  = 2.6;
+    const GRAVITY_STR = 0.36;
 
     const WALL_COLORS = [
       '#ff00ff', '#00ffff', '#ff6600', '#00ff88',
@@ -105,7 +105,7 @@
           // Flip gravity
           s.gravDir *= -1;
           // Give a small kick in the new direction
-          s.orbVY = -s.gravDir * 7.5;
+          s.orbVY = -s.gravDir * 6.5;
           beep(s.gravDir === 1 ? 440 : 620, 'square', 0.08, 0.22);
           // Flip burst particles
           for (let i = 0; i < 9; i++) {
@@ -182,8 +182,7 @@
             maxHeight: '100vh',
             touchAction: 'none',
           }}
-          onClick={handleInput}
-          onTouchStart={(e) => { e.preventDefault(); handleInput(); }}
+          onPointerDown={(e) => { e.preventDefault(); handleInput(); }}
         />
       );
     }
@@ -191,7 +190,7 @@
     // ── Game update ────────────────────────────────────────────────────────────
     function updatePlaying(s) {
       s.frame++;
-      s.speed = BASE_SPEED + s.frame * 0.0018;
+      s.speed = BASE_SPEED + s.frame * 0.0012;
 
       // ── Physics ──────────────────────────────────────────────────────────────
       s.orbVY += GRAVITY_STR * s.gravDir;
