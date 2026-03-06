@@ -236,5 +236,19 @@
     "folder": "games/2026-03-05",
     "file": "games/2026-03-05/index.html",
     "preview": "games/2026-03-05/preview.png"
+  },
+  {
+    "id": "2026-03-06",
+    "name": "Flux Dash",
+    "date": "2026-03-06",
+    "description": "A neon orb rockets through a scrolling tunnel — tap to flip gravity up or down and thread through colorful neon walls. Collect glowing crystals, chain gap combos for massive multipliers, and survive as speed escalates!",
+    "tagline": "Flip gravity. Thread the gaps. Never stop.",
+    "tags": ["arcade", "reflex", "action", "casual", "gravity"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap / Space to flip gravity direction",
+    "folder": "games/2026-03-06",
+    "file": "games/2026-03-06/index.html",
+    "preview": "games/2026-03-06/preview.png"
   }
 ]
