@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Flux Dash</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #04000e; }
+    #root { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef, useCallback } = React;
+
+    // ── Constants ─────────────────────────────────────────────────────────────
+    const GW = 400, GH = 600;
+    const HS_KEY = 'fluxDash_highScore';
+
+    const TUNNEL_TOP = 45;
+    const TUNNEL_BOT = GH - 45;
+    const TUNNEL_H   = TUNNEL_BOT - TUNNEL_TOP;   // 510px
+
+    const ORB_X       = 88;
+    const ORB_R       = 13;
+    const WALL_W      = 24;
+    const GAP_H       = 148;
+    const WALL_INTERVAL = 240;    // px between consecutive walls
+    const BASE_SPEED  = 3.0;
+    const GRAVITY_STR = 0.44;
+
+    const WALL_COLORS = [
+      '#ff00ff', '#00ffff', '#ff6600', '#00ff88',
+      '#ffff00', '#ff4488', '#44aaff', '#cc44ff',
+    ];
+
+    // ── Audio ─────────────────────────────────────────────────────────────────
+    let _ac = null;
+    function getAC() {
+      if (!_ac) {
+        try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+      }
+      return _ac;
+    }
+    function beep(freq, type, dur, vol, delay = 0) {
+      try {
+        const ac = getAC(); if (!ac) return;
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol, ac.currentTime + delay);
+        g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + delay + dur);
+        o.start(ac.currentTime + delay);
+        o.stop(ac.currentTime + delay + dur);
+      } catch (e) {}
+    }
+
+    // ── Initial game state factory ─────────────────────────────────────────────
+    function newState(prevHi = 0) {
+      return {
+        phase: 'start',      // 'start' | 'playing' | 'dead'
+        score: 0,
+        hiScore: prevHi,
+        newBest: false,
+        orbY: GH / 2,
+        orbVY: 0,
+        gravDir: 1,          // 1 = pull down, -1 = pull up
+        walls: [],
+        wallColorIdx: 0,
+        particles: [],
+        floatTexts: [],
+        speed: BASE_SPEED,
+        frame: 0,
+        combo: 0,
+        deathFrame: 0,
+      };
+    }
+
+    // ── Main App ──────────────────────────────────────────────────────────────
+    function App() {
+      const canvasRef = useRef(null);
+      const gameRef   = useRef(newState(parseInt(localStorage.getItem(HS_KEY) || '0')));
+
+      // Ensure localStorage key exists immediately (for test detection)
+      if (!localStorage.getItem(HS_KEY)) {
+        localStorage.setItem(HS_KEY, '0');
+      }
+
+      // ── Input handler ────────────────────────────────────────────────────────
+      const handleInput = useCallback(() => {
+        const s = gameRef.current;
+        if (s.phase === 'start' || s.phase === 'dead') {
+          // Restart
+          const hi  = s.hiScore;
+          const next = newState(hi);
+          next.phase = 'playing';
+          Object.assign(s, next);
+          beep(220, 'sine', 0.35, 0.4);
+        } else if (s.phase === 'playing') {
+          // Flip gravity
+          s.gravDir *= -1;
+          // Give a small kick in the new direction
+          s.orbVY = -s.gravDir * 7.5;
+          beep(s.gravDir === 1 ? 440 : 620, 'square', 0.08, 0.22);
+          // Flip burst particles
+          for (let i = 0; i < 9; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const spd   = 1.5 + Math.random() * 4;
+            s.particles.push({
+              x: ORB_X, y: s.orbY,
+              vx: Math.cos(angle) * spd,
+              vy: Math.sin(angle) * spd,
+              life: 1, decay: 0.07 + Math.random() * 0.04,
+              color: s.gravDir === 1 ? '#ff00ff' : '#00ffff',
+              r: 2 + Math.random() * 3.5,
+              grav: false,
+            });
+          }
+        }
+      }, []);
+
+      // ── Keyboard listener ────────────────────────────────────────────────────
+      useEffect(() => {
+        const onKey = (e) => {
+          if (['Space', 'ArrowUp', 'ArrowDown', 'Enter'].includes(e.code)) {
+            e.preventDefault();
+            handleInput();
+          }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [handleInput]);
+
+      // ── Game loop ────────────────────────────────────────────────────────────
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx    = canvas.getContext('2d');
+        let animId;
+
+        function loop() {
+          animId = requestAnimationFrame(loop);
+          const s = gameRef.current;
+
+          // Clear background
+          ctx.fillStyle = '#04000e';
+          ctx.fillRect(0, 0, GW, GH);
+
+          if (s.phase === 'start') {
+            drawStart(ctx, s);
+          } else if (s.phase === 'playing') {
+            updatePlaying(s);
+            render(ctx, s);
+          } else {
+            // dead
+            s.deathFrame++;
+            updateParticles(s);
+            render(ctx, s);
+            drawDeadOverlay(ctx, s);
+          }
+        }
+
+        loop();
+        return () => cancelAnimationFrame(animId);
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          width={GW}
+          height={GH}
+          style={{
+            display: 'block',
+            cursor: 'pointer',
+            borderRadius: '8px',
+            boxShadow: '0 0 50px rgba(255,0,255,0.25), 0 0 100px rgba(0,255,255,0.12)',
+            maxWidth: '100vw',
+            maxHeight: '100vh',
+            touchAction: 'none',
+          }}
+          onClick={handleInput}
+          onTouchStart={(e) => { e.preventDefault(); handleInput(); }}
+        />
+      );
+    }
+
+    // ── Game update ────────────────────────────────────────────────────────────
+    function updatePlaying(s) {
+      s.frame++;
+      s.speed = BASE_SPEED + s.frame * 0.0018;
+
+      // ── Physics ──────────────────────────────────────────────────────────────
+      s.orbVY += GRAVITY_STR * s.gravDir;
+      s.orbVY  = Math.max(-13, Math.min(13, s.orbVY));
+      s.orbY  += s.orbVY;
+
+      // Tunnel boundary collision → instant death
+      if (s.orbY - ORB_R <= TUNNEL_TOP || s.orbY + ORB_R >= TUNNEL_BOT) {
+        s.orbY = Math.max(TUNNEL_TOP + ORB_R, Math.min(TUNNEL_BOT - ORB_R, s.orbY));
+        killPlayer(s);
+        return;
+      }
+
+      // ── Wall generation ──────────────────────────────────────────────────────
+      let safety = 0;
+      while (
+        safety++ < 6 &&
+        (s.walls.length === 0 || s.walls[s.walls.length - 1].x < GW + 220)
+      ) {
+        const lastX = s.walls.length > 0 ? s.walls[s.walls.length - 1].x : GW + 40;
+        const minTop = TUNNEL_TOP + 28;
+        const maxTop = TUNNEL_BOT - GAP_H - 28;
+        const gapTop = minTop + Math.random() * (maxTop - minTop);
+        const color  = WALL_COLORS[s.wallColorIdx++ % WALL_COLORS.length];
+        s.walls.push({
+          x: lastX + WALL_INTERVAL,
+          gapTop,
+          gapBot: gapTop + GAP_H,
+          color,
+          scored: false,
+          crystal: Math.random() < 0.42 ? {
+            y: gapTop + GAP_H * 0.5,
+            collected: false,
+          } : null,
+        });
+      }
+
+      // ── Move walls ───────────────────────────────────────────────────────────
+      for (const w of s.walls) { w.x -= s.speed; }
+
+      // ── Collision & scoring ──────────────────────────────────────────────────
+      for (const w of s.walls) {
+        // Score when orb clears wall's right edge
+        if (!w.scored && w.x + WALL_W < ORB_X - ORB_R) {
+          w.scored = true;
+          s.combo++;
+          const mult = Math.min(s.combo, 6);
+          const pts  = 50 * mult;
+          s.score   += pts;
+          beep(600 + s.combo * 40, 'triangle', 0.14, 0.28);
+          if (s.combo >= 5) beep(1100, 'sine', 0.1, 0.3, 0.06);
+          const label = s.combo >= 3 ? `x${s.combo} COMBO! +${pts}` : `+${pts}`;
+          const col   = s.combo >= 3 ? '#00ff88' : '#ffffff';
+          s.floatTexts.push({ text: label, x: ORB_X + 22, y: s.orbY, alpha: 1, color: col, vy: -0.9 });
+        }
+
+        // Wall collision (orb inside x-range of wall)
+        if (w.x < ORB_X + ORB_R && w.x + WALL_W > ORB_X - ORB_R) {
+          if (s.orbY - ORB_R < w.gapTop || s.orbY + ORB_R > w.gapBot) {
+            killPlayer(s);
+            return;
+          }
+          // Crystal collection
+          if (w.crystal && !w.crystal.collected) {
+            const cx = w.x + WALL_W / 2, cy = w.crystal.y;
+            if (Math.hypot(ORB_X - cx, s.orbY - cy) < ORB_R + 11) {
+              w.crystal.collected = true;
+              s.score += 150;
+              beep(1320, 'sine', 0.18, 0.35);
+              s.floatTexts.push({ text: '+150 ◆', x: ORB_X + 22, y: s.orbY - 10, alpha: 1, color: '#ffff00', vy: -1.1 });
+            }
+          }
+        }
+      }
+
+      // Remove off-screen walls
+      s.walls = s.walls.filter(w => w.x + WALL_W > -8);
+
+      // Passive score (distance)
+      s.score += s.speed * 0.07;
+
+      // ── Orb trail particles ──────────────────────────────────────────────────
+      if (s.frame % 2 === 0) {
+        s.particles.push({
+          x: ORB_X - 6, y: s.orbY + (Math.random() - 0.5) * 6,
+          vx: -(s.speed * 0.35 + Math.random() * 0.8),
+          vy: (Math.random() - 0.5) * 1.4,
+          life: 1, decay: 0.07 + Math.random() * 0.05,
+          color: s.gravDir === 1 ? '#ff00ff' : '#00ffff',
+          r: 3.5 + Math.random() * 3,
+          grav: false,
+        });
+      }
+
+      updateParticles(s);
+
+      // Float texts
+      for (const f of s.floatTexts) { f.y += f.vy; f.alpha -= 0.019; }
+      s.floatTexts = s.floatTexts.filter(f => f.alpha > 0);
+    }
+
+    function killPlayer(s) {
+      if (s.phase !== 'playing') return;
+      s.phase = 'dead';
+      s.deathFrame = 0;
+      s.combo = 0;
+
+      const final = Math.floor(s.score);
+      s.newBest = final > s.hiScore;
+      if (s.newBest) {
+        s.hiScore = final;
+        localStorage.setItem(HS_KEY, String(final));
+      }
+
+      // Death explosion
+      for (let i = 0; i < 38; i++) {
+        const angle = (i / 38) * Math.PI * 2 + Math.random() * 0.3;
+        const spd   = 2 + Math.random() * 7;
+        s.particles.push({
+          x: ORB_X, y: s.orbY,
+          vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+          life: 1, decay: 0.016 + Math.random() * 0.025,
+          color: WALL_COLORS[Math.floor(Math.random() * WALL_COLORS.length)],
+          r: 3 + Math.random() * 6,
+          grav: true,
+        });
+      }
+      beep(120, 'sawtooth', 0.55, 0.5);
+      beep(80,  'sine',     0.75, 0.4, 0.06);
+    }
+
+    function updateParticles(s) {
+      for (const p of s.particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.grav) p.vy += 0.13;
+        p.vx *= 0.97;
+        p.life -= p.decay;
+      }
+      s.particles = s.particles.filter(p => p.life > 0);
+    }
+
+    // ── Render (playing / dead) ────────────────────────────────────────────────
+    function render(ctx, s) {
+      // Tunnel ceiling / floor
+      ctx.fillStyle = '#040012';
+      ctx.fillRect(0, 0, GW, TUNNEL_TOP);
+      ctx.fillRect(0, TUNNEL_BOT, GW, GH - TUNNEL_BOT);
+
+      // Scrolling grid inside tunnel
+      ctx.globalAlpha = 0.07;
+      ctx.strokeStyle = '#5500bb';
+      ctx.lineWidth = 1;
+      const gridSz = 52;
+      const phase  = (s.frame * s.speed) % gridSz;
+      for (let x = gridSz - phase; x < GW + gridSz; x += gridSz) {
+        ctx.beginPath(); ctx.moveTo(x, TUNNEL_TOP); ctx.lineTo(x, TUNNEL_BOT); ctx.stroke();
+      }
+      for (let y = TUNNEL_TOP; y <= TUNNEL_BOT; y += gridSz) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(GW, y); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      // Tunnel border glow lines
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = '#7722ff';
+      ctx.strokeStyle = '#9944ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, TUNNEL_TOP);  ctx.lineTo(GW, TUNNEL_TOP);  ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, TUNNEL_BOT); ctx.lineTo(GW, TUNNEL_BOT); ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Walls
+      for (const w of s.walls) {
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = w.color;
+        ctx.fillStyle = w.color;
+        ctx.globalAlpha = 0.82;
+        ctx.fillRect(w.x, TUNNEL_TOP, WALL_W, w.gapTop - TUNNEL_TOP);
+        ctx.fillRect(w.x, w.gapBot,   WALL_W, TUNNEL_BOT - w.gapBot);
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+
+        // Bright leading edge highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fillRect(w.x + WALL_W - 2, TUNNEL_TOP, 2, w.gapTop - TUNNEL_TOP);
+        ctx.fillRect(w.x + WALL_W - 2, w.gapBot,   2, TUNNEL_BOT - w.gapBot);
+
+        // Crystal diamond
+        if (w.crystal && !w.crystal.collected) {
+          const cx = w.x + WALL_W / 2;
+          const cy = w.crystal.y;
+          const pulse = Math.sin(s.frame * 0.13) * 2.5;
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = '#ffff00';
+          ctx.fillStyle = '#ffff00';
+          ctx.beginPath();
+          ctx.moveTo(cx,       cy - 10 - pulse);
+          ctx.lineTo(cx + 8,   cy);
+          ctx.lineTo(cx,       cy + 10 + pulse);
+          ctx.lineTo(cx - 8,   cy);
+          ctx.closePath();
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
+
+      // Particles
+      for (const p of s.particles) {
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.shadowBlur  = 9;
+        ctx.shadowColor = p.color;
+        ctx.fillStyle   = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(0.2, p.r * p.life), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur  = 0;
+
+      // Orb (only when alive)
+      if (s.phase === 'playing') {
+        const orbColor = s.gravDir === 1 ? '#ff00ff' : '#00ffff';
+        const pulse    = 1 + Math.sin(s.frame * 0.16) * 0.07;
+
+        ctx.shadowBlur  = 30;
+        ctx.shadowColor = orbColor;
+        ctx.fillStyle   = orbColor;
+        ctx.beginPath();
+        ctx.arc(ORB_X, s.orbY, ORB_R * pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Inner specular
+        ctx.shadowBlur = 0;
+        ctx.fillStyle  = 'rgba(255,255,255,0.75)';
+        ctx.beginPath();
+        ctx.arc(ORB_X - 4, s.orbY - 4, ORB_R * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Gravity-direction arrow below/above orb
+        const arrowY  = s.gravDir === 1 ? s.orbY + ORB_R + 10 : s.orbY - ORB_R - 10;
+        ctx.strokeStyle = orbColor;
+        ctx.lineWidth   = 2;
+        ctx.globalAlpha = 0.75;
+        ctx.beginPath();
+        ctx.moveTo(ORB_X - 5, arrowY - s.gravDir * 6);
+        ctx.lineTo(ORB_X, arrowY);
+        ctx.lineTo(ORB_X + 5, arrowY - s.gravDir * 6);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      // Float texts (combo / crystal)
+      ctx.textAlign = 'left';
+      for (const f of s.floatTexts) {
+        ctx.globalAlpha = f.alpha;
+        ctx.shadowBlur  = 9;
+        ctx.shadowColor = f.color;
+        ctx.fillStyle   = f.color;
+        ctx.font = 'bold 15px monospace';
+        ctx.fillText(f.text, f.x, f.y);
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur  = 0;
+
+      // HUD — score
+      ctx.textAlign  = 'center';
+      ctx.font       = 'bold 22px monospace';
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = '#ff00ff';
+      ctx.fillStyle  = '#ffffff';
+      ctx.fillText(Math.floor(s.score), GW / 2, 30);
+      ctx.shadowBlur = 0;
+
+      // Combo streak indicator
+      if (s.combo >= 2 && s.phase === 'playing') {
+        ctx.font      = 'bold 11px monospace';
+        ctx.fillStyle = '#00ff88';
+        ctx.fillText(`COMBO x${s.combo}`, GW / 2, GH - 8);
+      }
+    }
+
+    // ── Start screen ───────────────────────────────────────────────────────────
+    function drawStart(ctx, s) {
+      const t = Date.now() / 1000;
+
+      // Animated background blobs
+      ctx.globalAlpha = 0.1;
+      for (let i = 0; i < 7; i++) {
+        const x = (Math.sin(t * 0.28 + i * 1.05) * 0.5 + 0.5) * GW;
+        const y = (Math.cos(t * 0.22 + i * 1.7)  * 0.5 + 0.5) * GH;
+        const r = 45 + Math.sin(t * 0.5 + i) * 18;
+        ctx.fillStyle = WALL_COLORS[i % WALL_COLORS.length];
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Tunnel preview lines
+      ctx.globalAlpha = 0.25;
+      ctx.strokeStyle = '#9944ff';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#7722ff';
+      ctx.beginPath(); ctx.moveTo(0, TUNNEL_TOP);  ctx.lineTo(GW, TUNNEL_TOP);  ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, TUNNEL_BOT); ctx.lineTo(GW, TUNNEL_BOT); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+
+      // Title
+      ctx.textAlign = 'center';
+      ctx.shadowBlur = 38;
+      ctx.shadowColor = '#ff00ff';
+      ctx.fillStyle = '#ff00ff';
+      ctx.font = 'bold 58px monospace';
+      ctx.fillText('FLUX', GW / 2, GH / 2 - 68);
+      ctx.shadowColor = '#00ffff';
+      ctx.fillStyle = '#00ffff';
+      ctx.fillText('DASH', GW / 2, GH / 2 - 4);
+      ctx.shadowBlur = 0;
+
+      // Tagline
+      ctx.font      = '13px monospace';
+      ctx.fillStyle = '#aaaaaa';
+      ctx.fillText('Flip gravity · Thread the gaps · Survive', GW / 2, GH / 2 + 40);
+
+      // Controls hint
+      ctx.font      = '12px monospace';
+      ctx.fillStyle = '#555';
+      ctx.fillText('Space / Click / Tap to flip gravity', GW / 2, GH / 2 + 62);
+
+      // Tap to play (blinking)
+      const blink = Math.sin(t * 2.6) * 0.32 + 0.68;
+      ctx.globalAlpha = blink;
+      ctx.shadowBlur  = 14;
+      ctx.shadowColor = '#ffffff';
+      ctx.fillStyle   = '#ffffff';
+      ctx.font        = 'bold 18px monospace';
+      ctx.fillText('▶  TAP TO PLAY  ◀', GW / 2, GH / 2 + 97);
+      ctx.shadowBlur  = 0;
+      ctx.globalAlpha = 1;
+
+      // Best score
+      if (s.hiScore > 0) {
+        ctx.font      = '13px monospace';
+        ctx.fillStyle = '#ffff00';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#ffff00';
+        ctx.fillText(`BEST: ${s.hiScore}`, GW / 2, GH / 2 + 128);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // ── Dead overlay ───────────────────────────────────────────────────────────
+    function drawDeadOverlay(ctx, s) {
+      const progress = Math.min(s.deathFrame / 75, 1);
+      ctx.fillStyle = `rgba(4,0,14,${progress * 0.9})`;
+      ctx.fillRect(0, 0, GW, GH);
+
+      if (s.deathFrame < 35) return;
+
+      const textAlpha = Math.min((s.deathFrame - 35) / 40, 1);
+      ctx.globalAlpha = textAlpha;
+      ctx.textAlign   = 'center';
+
+      ctx.font        = 'bold 46px monospace';
+      ctx.shadowBlur  = 28;
+      ctx.shadowColor = '#ff0033';
+      ctx.fillStyle   = '#ff0033';
+      ctx.fillText('CRASHED', GW / 2, GH / 2 - 68);
+      ctx.shadowBlur  = 0;
+
+      ctx.font      = 'bold 32px monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(Math.floor(s.score), GW / 2, GH / 2 - 16);
+
+      if (s.newBest) {
+        ctx.font        = 'bold 15px monospace';
+        ctx.fillStyle   = '#ffff00';
+        ctx.shadowBlur  = 14;
+        ctx.shadowColor = '#ffff00';
+        ctx.fillText('★  NEW BEST  ★', GW / 2, GH / 2 + 22);
+        ctx.shadowBlur  = 0;
+      } else {
+        ctx.font      = '13px monospace';
+        ctx.fillStyle = '#555';
+        ctx.fillText(`Best: ${s.hiScore}`, GW / 2, GH / 2 + 22);
+      }
+
+      if (s.deathFrame > 70) {
+        const t     = Date.now() / 1000;
+        const blink = Math.sin(t * 2.6) * 0.3 + 0.7;
+        ctx.globalAlpha = textAlpha * blink;
+        ctx.font        = 'bold 17px monospace';
+        ctx.fillStyle   = '#ffffff';
+        ctx.fillText('TAP TO RETRY', GW / 2, GH / 2 + 76);
+      }
+
+      ctx.globalAlpha = 1;
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
