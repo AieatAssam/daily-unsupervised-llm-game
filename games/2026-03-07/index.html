@@ -107,11 +107,17 @@
 
       function rndTile() { return Math.floor(Math.random() * N); }
 
+      function freshSeq(len) {
+        const s = [];
+        for (let i = 0; i < len; i++) s.push(rndTile());
+        return s;
+      }
+
       // ── Game actions ───────────────────────────────────────────────────────
       function startGame() {
         const hs = parseInt(localStorage.getItem(HS_KEY) || '0');
         Object.assign(g, {
-          phase: SHOWING, seq: [rndTile()], input: [],
+          phase: SHOWING, seq: freshSeq(1), input: [],
           level: 1, lives: 3, score: 0, hs, combo: 0,
           litTile: -1, wrongTile: -1, okTile: -1, message: 'Watch!',
         });
@@ -119,9 +125,9 @@
       }
 
       function nextLevel() {
-        g.seq = [...g.seq, rndTile()];
+        const newLevel = g.level + 1;
         Object.assign(g, {
-          phase: SHOWING, input: [], level: g.level + 1,
+          phase: SHOWING, seq: freshSeq(newLevel), input: [], level: newLevel,
           litTile: -1, message: 'Watch!',
         });
         timerRef.current = 0;
@@ -330,7 +336,7 @@
           timerRef.current += dt;
           if (timerRef.current > 1300) {
             timerRef.current = 0;
-            Object.assign(g, { phase: SHOWING, input: [], litTile: -1, message: 'Watch again!' });
+            Object.assign(g, { phase: SHOWING, seq: freshSeq(g.seq.length), input: [], litTile: -1, message: 'Watch again!' });
           }
         }
 
