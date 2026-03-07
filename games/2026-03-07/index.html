@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Mind Flash</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #04000e; }
+    #root { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    // ── Constants ─────────────────────────────────────────────────────────────
+    const GW = 400, GH = 600;
+    const HS_KEY = 'mindFlash_highScore';
+
+    const GRID = 3;           // 3×3 grid
+    const N    = GRID * GRID; // 9 tiles
+
+    const COLORS = [
+      '#00ffff', '#ff00ff', '#00ff88',
+      '#ffff00', '#ff6600', '#44aaff',
+      '#ff4488', '#cc44ff', '#ffffff',
+    ];
+
+    const TS = 88, TG = 12;                          // tile size, gap
+    const GSIZE = GRID * TS + (GRID - 1) * TG;
+    const GX0   = (GW - GSIZE) / 2;
+    const GY0   = 155;
+
+    // ── Audio ─────────────────────────────────────────────────────────────────
+    let _ac = null;
+    function getAC() {
+      if (!_ac) try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+      return _ac;
+    }
+    function beep(freq, type = 'sine', dur = 0.15, vol = 0.25, delay = 0) {
+      const ac = getAC(); if (!ac) return;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, ac.currentTime + delay);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + delay + dur);
+      o.connect(g); g.connect(ac.destination);
+      o.start(ac.currentTime + delay);
+      o.stop(ac.currentTime + delay + dur);
+    }
+
+    // ── Rounded rect helper ───────────────────────────────────────────────────
+    function rrect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    // ── Phases ────────────────────────────────────────────────────────────────
+    const MENU = 'menu', SHOWING = 'showing', INPUT = 'input',
+          SUCCESS = 'success', FAIL = 'fail', OVER = 'over';
+
+    // ── Tile position ─────────────────────────────────────────────────────────
+    function tileRect(i) {
+      return {
+        x: GX0 + (i % GRID) * (TS + TG),
+        y: GY0 + Math.floor(i / GRID) * (TS + TG),
+        w: TS, h: TS,
+      };
+    }
+
+    // ── App ───────────────────────────────────────────────────────────────────
+    function App() {
+      const canvasRef = useRef(null);
+      const rafRef    = useRef(null);
+      const lastRef   = useRef(0);
+      const timerRef  = useRef(0); // phase-transition timer
+
+      // All mutable game state lives in a plain ref object
+      const g = useRef({
+        phase: MENU,
+        seq: [], input: [],
+        level: 1, lives: 3, score: 0, hs: 0, combo: 0,
+        litTile: -1, wrongTile: -1, okTile: -1,
+        message: '',
+      }).current;
+
+      // ── Flash timing (speeds up with level) ────────────────────────────────
+      function flashTiming() {
+        const lv = g.level;
+        const fd = lv <= 3 ? 580 : lv <= 6 ? 460 : 360; // flash ms
+        const gd = lv <= 3 ? 210 : lv <= 6 ? 155 : 110; // gap ms
+        return { fd, gd };
+      }
+
+      function rndTile() { return Math.floor(Math.random() * N); }
+
+      // ── Game actions ───────────────────────────────────────────────────────
+      function startGame() {
+        const hs = parseInt(localStorage.getItem(HS_KEY) || '0');
+        Object.assign(g, {
+          phase: SHOWING, seq: [rndTile()], input: [],
+          level: 1, lives: 3, score: 0, hs, combo: 0,
+          litTile: -1, wrongTile: -1, okTile: -1, message: 'Watch!',
+        });
+        timerRef.current = 0;
+      }
+
+      function nextLevel() {
+        g.seq = [...g.seq, rndTile()];
+        Object.assign(g, {
+          phase: SHOWING, input: [], level: g.level + 1,
+          litTile: -1, message: 'Watch!',
+        });
+        timerRef.current = 0;
+      }
+
+      function onTileClick(i) {
+        if (g.phase !== INPUT) return;
+        const pos = g.input.length;
+        g.input.push(i);
+
+        if (i === g.seq[pos]) {
+          beep(280 + i * 65, 'sine', 0.12, 0.2);
+          g.okTile = i;
+          setTimeout(() => { g.okTile = -1; }, 180);
+
+          if (g.input.length === g.seq.length) {
+            g.combo++;
+            const pts = g.level * 100 * g.combo;
+            g.score += pts;
+            g.hs = Math.max(g.hs, g.score);
+            localStorage.setItem(HS_KEY, g.hs);
+            beep(660, 'sine', 0.07, 0.3);
+            beep(880, 'sine', 0.07, 0.3, 0.08);
+            beep(1100, 'sine', 0.1, 0.35, 0.16);
+            g.phase   = SUCCESS;
+            g.message = g.combo > 1 ? `COMBO x${g.combo}!  +${pts}` : `+${pts}`;
+            timerRef.current = 0;
+          }
+        } else {
+          beep(140, 'sawtooth', 0.35, 0.4);
+          g.wrongTile = i; g.combo = 0; g.lives--;
+          setTimeout(() => { g.wrongTile = -1; }, 380);
+          if (g.lives <= 0) {
+            g.phase = OVER; g.message = 'GAME OVER';
+          } else {
+            g.phase = FAIL; g.message = 'Wrong!  Watch again\u2026';
+            timerRef.current = 0;
+          }
+        }
+      }
+
+      // ── Drawing helpers ────────────────────────────────────────────────────
+      function txt(ctx, t, x, y, font, color, glow = 0) {
+        ctx.font = font; ctx.fillStyle = color;
+        ctx.shadowColor = color; ctx.shadowBlur = glow;
+        ctx.fillText(t, x, y);
+        ctx.shadowBlur = 0;
+      }
+
+      function drawBtn(ctx, cx, cy, w, h, label, color) {
+        const x = cx - w / 2, y = cy - h / 2;
+        ctx.shadowColor = color; ctx.shadowBlur = 14;
+        ctx.fillStyle = color + '22';
+        rrect(ctx, x, y, w, h, 10); ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = 2;
+        rrect(ctx, x, y, w, h, 10); ctx.stroke();
+        ctx.shadowBlur = 0;
+        txt(ctx, label, cx, cy + 8, 'bold 20px monospace', color, 6);
+      }
+
+      // ── Draw menu ─────────────────────────────────────────────────────────
+      function drawMenu(ctx) {
+        ctx.textAlign = 'center';
+        txt(ctx, 'MIND',  GW / 2, 195, 'bold 62px monospace', '#00ffff', 28);
+        txt(ctx, 'FLASH', GW / 2, 264, 'bold 62px monospace', '#ff00ff', 28);
+        txt(ctx, 'Watch the sequence. Repeat it.', GW / 2, 312, '15px monospace', '#8888aa');
+        txt(ctx, `Best: ${g.hs}`, GW / 2, 352, 'bold 18px monospace', '#ffff00', 10);
+        drawBtn(ctx, GW / 2, 418, 180, 50, 'PLAY', '#00ffff');
+      }
+
+      // ── Draw game screen ──────────────────────────────────────────────────
+      function drawGameScreen(ctx) {
+        // HUD row
+        ctx.textAlign = 'left';
+        txt(ctx, `LVL ${g.level}`, 18, 33, '15px monospace', '#8888cc');
+        ctx.textAlign = 'right';
+        txt(ctx, `${g.score}`, GW - 18, 33, 'bold 18px monospace', '#00ffff', 8);
+
+        // Lives (circles)
+        for (let i = 0; i < 3; i++) {
+          const alive = i < g.lives;
+          ctx.beginPath();
+          ctx.arc(GW / 2 - 24 + i * 24, 25, 7, 0, Math.PI * 2);
+          ctx.fillStyle    = alive ? '#ff4488' : '#332233';
+          ctx.shadowColor  = alive ? '#ff4488' : 'transparent';
+          ctx.shadowBlur   = alive ? 9 : 0;
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+
+        // Phase message
+        const mc = g.phase === SUCCESS ? '#00ff88'
+                 : (g.phase === FAIL || g.phase === OVER) ? '#ff4444'
+                 : g.phase === SHOWING ? '#ffff00' : '#aaaacc';
+        ctx.textAlign = 'center';
+        txt(ctx, g.message, GW / 2, 76, 'bold 17px monospace', mc, 10);
+
+        // Progress dots (INPUT phase)
+        if (g.phase === INPUT) {
+          const n  = g.seq.length;
+          const sp = Math.min(18, (GW - 80) / Math.max(n - 1, 1));
+          const sx = GW / 2 - sp * (n - 1) / 2;
+          for (let i = 0; i < n; i++) {
+            const filled = i < g.input.length;
+            ctx.beginPath();
+            ctx.arc(sx + i * sp, 110, 5, 0, Math.PI * 2);
+            ctx.fillStyle   = filled ? '#00ffff' : '#1a2233';
+            ctx.shadowColor = filled ? '#00ffff' : 'transparent';
+            ctx.shadowBlur  = filled ? 8 : 0;
+            ctx.fill();
+          }
+          ctx.shadowBlur = 0;
+        }
+
+        // Tiles
+        for (let i = 0; i < N; i++) {
+          const { x, y, w, h } = tileRect(i);
+          const color = COLORS[i];
+          const lit   = g.litTile   === i;
+          const wrong = g.wrongTile === i;
+          const ok    = g.okTile    === i;
+
+          ctx.fillStyle  = wrong ? '#ff2222' : ok ? '#ffffff' : lit ? color : 'rgba(255,255,255,0.04)';
+          ctx.shadowColor = wrong ? '#ff0000' : ok ? '#ffffff' : lit ? color : 'transparent';
+          ctx.shadowBlur  = (lit || wrong || ok) ? 30 : 0;
+          rrect(ctx, x, y, w, h, 12); ctx.fill();
+
+          ctx.strokeStyle = wrong ? '#ff4444' : color;
+          ctx.lineWidth   = (lit || ok) ? 3 : 1.5;
+          ctx.shadowColor = (lit || ok) ? color : 'transparent';
+          ctx.shadowBlur  = (lit || ok) ? 15 : 0;
+          rrect(ctx, x, y, w, h, 12); ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+
+        // Game over overlay
+        if (g.phase === OVER) {
+          ctx.fillStyle = 'rgba(4,0,14,0.88)';
+          ctx.fillRect(0, 0, GW, GH);
+          ctx.textAlign = 'center';
+          txt(ctx, 'GAME OVER',          GW / 2, 215, 'bold 44px monospace', '#ff4444', 22);
+          txt(ctx, `Score: ${g.score}`,  GW / 2, 272, 'bold 26px monospace', '#00ffff', 10);
+          txt(ctx, `Best:  ${g.hs}`,     GW / 2, 310, '20px monospace',      '#ffff00', 8);
+          txt(ctx, `Level reached: ${g.level}`, GW / 2, 345, '15px monospace', '#aaaacc');
+          drawBtn(ctx, GW / 2, 408, 190, 50, 'PLAY AGAIN', '#00ffff');
+        }
+      }
+
+      // ── Master draw ───────────────────────────────────────────────────────
+      function draw() {
+        const canvas = canvasRef.current; if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const cw  = canvas.width / dpr, ch = canvas.height / dpr;
+        const scale = Math.min(cw / GW, ch / GH);
+        const ox = (cw - GW * scale) / 2, oy = (ch - GH * scale) / 2;
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = '#04000e';
+        ctx.fillRect(0, 0, cw, ch);
+
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.scale(scale, scale);
+        if (g.phase === MENU) drawMenu(ctx); else drawGameScreen(ctx);
+        ctx.restore();
+      }
+
+      // ── Game loop ─────────────────────────────────────────────────────────
+      function loop(ts) {
+        rafRef.current = requestAnimationFrame(loop);
+        const dt = Math.min(ts - lastRef.current, 50);
+        lastRef.current = ts;
+
+        const { fd, gd } = flashTiming();
+        const STEP = fd + gd;
+
+        if (g.phase === SHOWING) {
+          timerRef.current += dt;
+          const elapsed = timerRef.current - 400; // 400ms initial delay
+          if (elapsed >= 0) {
+            const stepIdx   = Math.floor(elapsed / STEP);
+            const inStep    = elapsed % STEP;
+            if (stepIdx < g.seq.length) {
+              if (inStep < fd) {
+                if (g.litTile !== g.seq[stepIdx]) {
+                  g.litTile = g.seq[stepIdx];
+                  beep(265 + g.seq[stepIdx] * 72, 'sine', 0.17, 0.22);
+                }
+              } else {
+                g.litTile = -1;
+              }
+            } else {
+              g.litTile = -1;
+              Object.assign(g, { phase: INPUT, input: [], message: 'Your turn!' });
+            }
+          }
+        }
+
+        if (g.phase === SUCCESS) {
+          timerRef.current += dt;
+          if (timerRef.current > 950) nextLevel();
+        }
+
+        if (g.phase === FAIL) {
+          timerRef.current += dt;
+          if (timerRef.current > 1300) {
+            timerRef.current = 0;
+            Object.assign(g, { phase: SHOWING, input: [], litTile: -1, message: 'Watch again!' });
+          }
+        }
+
+        draw();
+      }
+
+      // ── Click / tap handler ───────────────────────────────────────────────
+      function onClick(e) {
+        const canvas = canvasRef.current; if (!canvas) return;
+        const rect  = canvas.getBoundingClientRect();
+        const dpr   = window.devicePixelRatio || 1;
+        const cw    = canvas.width / dpr, ch = canvas.height / dpr;
+        const scale = Math.min(cw / GW, ch / GH);
+        const ox    = (cw - GW * scale) / 2, oy = (ch - GH * scale) / 2;
+        const mx    = (e.clientX - rect.left  - ox) / scale;
+        const my    = (e.clientY - rect.top   - oy) / scale;
+
+        if (g.phase === MENU) {
+          if (Math.abs(mx - GW / 2) < 90 && Math.abs(my - 418) < 25) startGame();
+          return;
+        }
+        if (g.phase === OVER) {
+          if (Math.abs(mx - GW / 2) < 95 && Math.abs(my - 408) < 25) startGame();
+          return;
+        }
+        if (g.phase === INPUT) {
+          for (let i = 0; i < N; i++) {
+            const { x, y, w, h } = tileRect(i);
+            if (mx >= x && mx <= x + w && my >= y && my <= y + h) {
+              onTileClick(i); return;
+            }
+          }
+        }
+      }
+
+      // ── Canvas resize ─────────────────────────────────────────────────────
+      function resize() {
+        const canvas = canvasRef.current; if (!canvas) return;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width  = canvas.offsetWidth  * dpr;
+        canvas.height = canvas.offsetHeight * dpr;
+      }
+
+      // ── Mount ─────────────────────────────────────────────────────────────
+      useEffect(() => {
+        // Ensure localStorage key exists for test detection
+        localStorage.setItem(HS_KEY, localStorage.getItem(HS_KEY) || '0');
+        g.hs = parseInt(localStorage.getItem(HS_KEY) || '0');
+
+        resize();
+        window.addEventListener('resize', resize);
+        const canvas = canvasRef.current;
+        canvas.addEventListener('click', onClick);
+        lastRef.current = performance.now();
+        rafRef.current  = requestAnimationFrame(loop);
+
+        return () => {
+          cancelAnimationFrame(rafRef.current);
+          window.removeEventListener('resize', resize);
+          canvas.removeEventListener('click', onClick);
+        };
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          style={{ width: '100%', height: '100%', display: 'block', cursor: 'pointer' }}
+        />
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

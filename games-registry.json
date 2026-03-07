@@ -250,5 +250,19 @@
     "folder": "games/2026-03-06",
     "file": "games/2026-03-06/index.html",
     "preview": "games/2026-03-06/preview.png"
+  },
+  {
+    "id": "2026-03-07",
+    "name": "Mind Flash",
+    "date": "2026-03-07",
+    "description": "Nine neon tiles flash a growing sequence — watch closely, then tap them back in perfect order. Chain correct rounds for massive combo multipliers as sequences grow longer and flash faster!",
+    "tagline": "Watch the pattern. Repeat it perfectly.",
+    "tags": ["memory", "sequence", "puzzle", "casual", "reflex"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap tiles to repeat the flashing sequence",
+    "folder": "games/2026-03-07",
+    "file": "games/2026-03-07/index.html",
+    "preview": "games/2026-03-07/preview.png"
   }
 ]
