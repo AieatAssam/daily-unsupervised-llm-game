@@ -30,6 +30,20 @@
 
     const MENU = 'menu', PLAYING = 'playing', OVER = 'over';
 
+    // ── Power-up types ────────────────────────────────────────────────────────
+    const PWR_SPEED  = 'speed';   // lime  – player moves faster for 5 s
+    const PWR_FREEZE = 'freeze';  // cyan  – freeze all hunters for 3 s
+    const PWR_SHIELD = 'shield';  // blue  – absorb one hit
+    const PWR_DOUBLE = 'double';  // orange – 2× score for 8 s
+
+    const PWR_CONFIG = {
+      [PWR_SPEED]:  { color: '#88ff00', glow: '#66dd00', label: '⚡SPD' },
+      [PWR_FREEZE]: { color: '#00eeff', glow: '#00aacc', label: '❄FRZ' },
+      [PWR_SHIELD]: { color: '#4488ff', glow: '#2255dd', label: '🛡SHD' },
+      [PWR_DOUBLE]: { color: '#ff8800', glow: '#dd5500', label: '✕2 DBL' },
+    };
+    const PWR_TYPES = [PWR_SPEED, PWR_FREEZE, PWR_SHIELD, PWR_DOUBLE];
+
     // ── Audio ─────────────────────────────────────────────────────────────────
     let _ac = null;
     function getAC() {
@@ -38,18 +52,17 @@
     }
     function beep(freq, type = 'sine', dur = 0.12, vol = 0.22, delay = 0) {
       const ac = getAC(); if (!ac) return;
-      const o = ac.createOscillator(), g = ac.createGain();
+      const o = ac.createOscillator(), gn = ac.createGain();
       o.type = type; o.frequency.value = freq;
-      g.gain.setValueAtTime(vol, ac.currentTime + delay);
-      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + delay + dur);
-      o.connect(g); g.connect(ac.destination);
+      gn.gain.setValueAtTime(vol, ac.currentTime + delay);
+      gn.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + delay + dur);
+      o.connect(gn); gn.connect(ac.destination);
       o.start(ac.currentTime + delay);
       o.stop(ac.currentTime + delay + dur);
     }
 
     // ── Maze generation (recursive backtracking) ──────────────────────────────
     function generateMaze(cols, rows) {
-      // walls[r][c] bitmask: which walls remain
       const walls = Array.from({ length: rows }, () =>
         new Array(cols).fill(N | S | E | W)
       );
@@ -57,12 +70,9 @@
 
       function carve(c, r) {
         vis[r][c] = true;
-        // [dc, dr, myWall, theirWall]
         const dirs = [
-          [0, -1, N, S],
-          [0,  1, S, N],
-          [1,  0, E, W],
-          [-1, 0, W, E],
+          [0, -1, N, S], [0,  1, S, N],
+          [1,  0, E, W], [-1, 0, W, E],
         ];
         for (let i = dirs.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
@@ -77,9 +87,42 @@
           }
         }
       }
-
       carve(0, 0);
       return walls;
+    }
+
+    // ── BFS pathfinding (used by escape mechanism) ────────────────────────────
+    function bfsDistance(maze, fromC, fromR, toC, toR) {
+      const visited = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
+      const queue = [[fromC, fromR, 0]];
+      visited[fromR][fromC] = true;
+      const DIRS = [[0,-1,N],[0,1,S],[1,0,E],[-1,0,W]];
+      while (queue.length) {
+        const [c, r, d] = queue.shift();
+        if (c === toC && r === toR) return d;
+        for (const [dc, dr, wall] of DIRS) {
+          if (maze[r][c] & wall) continue;
+          const nc = c + dc, nr = r + dr;
+          if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+          if (visited[nr][nc]) continue;
+          visited[nr][nc] = true;
+          queue.push([nc, nr, d + 1]);
+        }
+      }
+      return Infinity;
+    }
+
+    // Find a safe spawn cell: farthest from all enemies
+    function findSafeSpawn(maze, enemies) {
+      let bestCell = { col: 0, row: 0 };
+      let bestMin = -1;
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const minDist = Math.min(...enemies.map(e => bfsDistance(maze, c, r, e.col, e.row)));
+          if (minDist > bestMin) { bestMin = minDist; bestCell = { col: c, row: r }; }
+        }
+      }
+      return bestCell;
     }
 
     // ── App ───────────────────────────────────────────────────────────────────
@@ -94,6 +137,14 @@
         player: { col: 0, row: 0, x: 0, y: 0, tx: 0, ty: 0, moving: false },
         enemies: [],
         orbs: [],
+        powerUps: [],            // pickups on the map
+        activePowers: {          // active effect durations (ms remaining)
+          [PWR_SPEED]: 0,
+          [PWR_FREEZE]: 0,
+          [PWR_SHIELD]: 0,
+          [PWR_DOUBLE]: 0,
+        },
+        hunterStunT: 0,          // all hunters stunned (ms remaining)
         particles: [],
         score: 0, hs: 0,
         combo: 0, lastOrbTime: 0,
@@ -127,14 +178,20 @@
         g.player = { col: 0, row: 0, x: s.x, y: s.y, tx: s.x, ty: s.y, moving: false };
 
         const cnt = Math.min(1 + Math.floor((g.level - 1) / 2), 4);
-        const starts = [[COLS-1, ROWS-1], [COLS-1, 0], [0, ROWS-1],
-                        [Math.floor(COLS/2), Math.floor(ROWS/2)]];
+        const starts = [
+          [COLS-1, ROWS-1], [COLS-1, 0],
+          [0, ROWS-1], [Math.floor(COLS/2), Math.floor(ROWS/2)],
+        ];
         g.enemies = starts.slice(0, cnt).map(([ec, er]) => {
           const { x, y } = xy(ec, er);
           return { col: ec, row: er, x, y, tx: x, ty: y, moving: false };
         });
 
-        const blocked = new Set(starts.slice(0, cnt).map(([c, r]) => `${c},${r}`).concat(['0,0']));
+        const blocked = new Set(
+          starts.slice(0, cnt).map(([c, r]) => `${c},${r}`).concat(['0,0'])
+        );
+
+        // Golden orbs
         g.orbs = [];
         for (let r = 0; r < ROWS; r++)
           for (let c = 0; c < COLS; c++)
@@ -147,6 +204,26 @@
           if (!blocked.has(`${c},${r}`) && !g.orbs.find(o => o.col === c && o.row === r))
             g.orbs.push({ col: c, row: r, done: false });
         }
+
+        // Power-ups: spawn 4–6, evenly spread among types
+        g.powerUps = [];
+        const pwrCount = 4 + Math.floor(g.level / 3);
+        const orbSet = new Set(g.orbs.map(o => `${o.col},${o.row}`));
+        let attempts = 0;
+        while (g.powerUps.length < Math.min(pwrCount, 6) && attempts < 200) {
+          attempts++;
+          const c = Math.floor(Math.random() * COLS);
+          const r = Math.floor(Math.random() * ROWS);
+          const key = `${c},${r}`;
+          if (blocked.has(key) || orbSet.has(key) ||
+              g.powerUps.find(p => p.col === c && p.row === r)) continue;
+          const type = PWR_TYPES[g.powerUps.length % PWR_TYPES.length];
+          g.powerUps.push({ col: c, row: r, type, done: false });
+        }
+
+        // Reset active powers
+        for (const k of PWR_TYPES) g.activePowers[k] = 0;
+        g.hunterStunT = 0;
 
         g.enemyInt = Math.max(200, 580 - (g.level - 1) * 40);
         g.enemyT = 0;
@@ -183,20 +260,32 @@
         g.player.tx = x; g.player.ty = y;
         g.player.moving = true;
 
-        // Orb collection
         const now = performance.now();
-        const idx = g.orbs.findIndex(o => o.col === nc && o.row === nr && !o.done);
-        if (idx >= 0) {
-          g.orbs[idx].done = true;
+
+        // Orb collection
+        const orbIdx = g.orbs.findIndex(o => o.col === nc && o.row === nr && !o.done);
+        if (orbIdx >= 0) {
+          g.orbs[orbIdx].done = true;
           g.combo = (now - g.lastOrbTime < 1800) ? Math.min(g.combo + 1, 8) : 1;
           g.lastOrbTime = now;
-          const pts = 10 * g.combo;
+          const multi = g.activePowers[PWR_DOUBLE] > 0 ? 2 : 1;
+          const pts = 10 * g.combo * multi;
           g.score += pts;
           if (g.score > g.hs) { g.hs = g.score; localStorage.setItem(HS_KEY, g.hs); }
           spark(x, y, '#ffee00', 6);
-          g.msg  = g.combo > 1 ? `×${g.combo} COMBO!` : '+10';
+          const comboLabel = g.combo > 1 ? `×${g.combo}` : '';
+          const multiLabel = multi > 1 ? ' ×2!' : '';
+          g.msg  = `+${pts}${comboLabel}${multiLabel}`;
           g.msgT = 700;
           beep(480 + g.combo * 55, 'triangle', 0.08, 0.18);
+        }
+
+        // Power-up collection
+        const pwrIdx = g.powerUps.findIndex(p => p.col === nc && p.row === nr && !p.done);
+        if (pwrIdx >= 0) {
+          const pwr = g.powerUps[pwrIdx];
+          pwr.done = true;
+          applyPowerUp(pwr.type, x, y);
         }
 
         // Level clear
@@ -214,8 +303,33 @@
         }
       };
 
+      // ── Apply power-up ─────────────────────────────────────────────────────
+      const applyPowerUp = (type, px, py) => {
+        const cfg = PWR_CONFIG[type];
+        spark(px, py, cfg.color, 10);
+        beep(660, 'sine', 0.18, 0.3);
+        beep(880, 'sine', 0.12, 0.25, 0.1);
+
+        if (type === PWR_SPEED) {
+          g.activePowers[PWR_SPEED] = 5000;
+          g.msg = '⚡ SPEED BOOST!'; g.msgT = 1000;
+        } else if (type === PWR_FREEZE) {
+          g.activePowers[PWR_FREEZE] = 3000;
+          g.hunterStunT = 3000;
+          g.msg = '❄ HUNTERS FROZEN!'; g.msgT = 1000;
+          for (const e of g.enemies) { e.moving = false; }
+        } else if (type === PWR_SHIELD) {
+          g.activePowers[PWR_SHIELD] = 1; // count-based, not time-based
+          g.msg = '🛡 SHIELD ACTIVE!'; g.msgT = 1000;
+        } else if (type === PWR_DOUBLE) {
+          g.activePowers[PWR_DOUBLE] = 8000;
+          g.msg = '✕2 DOUBLE SCORE!'; g.msgT = 1000;
+        }
+      };
+
       // ── Enemy AI ──────────────────────────────────────────────────────────
       const tickEnemies = () => {
+        if (g.hunterStunT > 0) return; // frozen by power-up
         const DIRS = [[0,-1,N],[0,1,S],[1,0,E],[-1,0,W]];
         for (const e of g.enemies) {
           if (e.moving) continue;
@@ -228,7 +342,7 @@
           if (!avail.length) continue;
 
           let chosen;
-          if (Math.random() < 0.58) {
+          if (Math.random() < 0.62) {
             const { col: pc, row: pr } = g.player;
             let best = Infinity, bi = 0;
             avail.forEach((d, i) => {
@@ -252,18 +366,38 @@
         for (const e of g.enemies) {
           const dx = px - e.x, dy = py - e.y;
           if (dx*dx + dy*dy < (CELL * 0.52) ** 2) {
+            // Shield absorbs the hit
+            if (g.activePowers[PWR_SHIELD] > 0) {
+              g.activePowers[PWR_SHIELD] = 0;
+              g.msg = '🛡 SHIELD ABSORBED HIT!'; g.msgT = 900;
+              g.invT = 1500;
+              spark(px, py, '#4488ff', 12);
+              beep(300, 'sine', 0.2, 0.3);
+              beep(500, 'sine', 0.12, 0.2, 0.1);
+              return;
+            }
+
             g.lives--;
             g.combo = 0;
             spark(px, py, '#ff3333', 10);
             beep(160, 'sawtooth', 0.3, 0.4);
+
             if (g.lives <= 0) {
               g.phase = OVER;
               beep(100, 'sawtooth', 0.5, 0.5, 0.08);
             } else {
-              const { x, y } = xy(0, 0);
-              g.player = { col: 0, row: 0, x, y, tx: x, ty: y, moving: false };
-              g.invT = 2200;
-              g.msg = 'CAUGHT!'; g.msgT = 900;
+              // Smart respawn: find cell farthest from all enemies
+              const safeCell = findSafeSpawn(g.maze, g.enemies);
+              const { x: sx, y: sy } = xy(safeCell.col, safeCell.row);
+              g.player = { col: safeCell.col, row: safeCell.row, x: sx, y: sy, tx: sx, ty: sy, moving: false };
+
+              // Stun all hunters briefly so player can escape
+              g.hunterStunT = 2000;
+              g.invT = 2500;
+              g.msg = 'CAUGHT! Hunters stunned!'; g.msgT = 1200;
+
+              // Clear active powers on death (except shield already used)
+              for (const k of PWR_TYPES) g.activePowers[k] = 0;
             }
             break;
           }
@@ -272,21 +406,25 @@
 
       // ── Update ────────────────────────────────────────────────────────────
       const update = (dt) => {
+        // Speed multiplier
+        const speedMul = g.activePowers[PWR_SPEED] > 0 ? 2.2 : 1;
+
         // Player lerp
         if (g.player.moving) {
           const dx = g.player.tx - g.player.x, dy = g.player.ty - g.player.y;
           const dist = Math.sqrt(dx*dx + dy*dy);
-          const step = CELL * 20 * dt / 1000;
+          const step = CELL * 20 * speedMul * dt / 1000;
           if (dist <= step) { g.player.x = g.player.tx; g.player.y = g.player.ty; g.player.moving = false; }
           else { g.player.x += (dx/dist)*step; g.player.y += (dy/dist)*step; }
         }
 
-        // Enemy lerp
+        // Enemy lerp (also slowed during stun for visual effect)
+        const enemySpeedMul = g.hunterStunT > 0 ? 0.0 : 1;
         for (const e of g.enemies) {
           if (e.moving) {
             const dx = e.tx - e.x, dy = e.ty - e.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
-            const step = CELL * 10 * dt / 1000;
+            const step = CELL * 10 * enemySpeedMul * dt / 1000;
             if (dist <= step) { e.x = e.tx; e.y = e.ty; e.moving = false; }
             else { e.x += (dx/dist)*step; e.y += (dy/dist)*step; }
           }
@@ -298,6 +436,15 @@
 
         if (g.msgT > 0) g.msgT -= dt;
         if (g.invT > 0) g.invT -= dt;
+        if (g.hunterStunT > 0) g.hunterStunT -= dt;
+
+        // Tick active power durations
+        for (const k of [PWR_SPEED, PWR_FREEZE, PWR_DOUBLE]) {
+          if (g.activePowers[k] > 0) g.activePowers[k] -= dt;
+        }
+        // Sync freeze stun
+        if (g.activePowers[PWR_FREEZE] > 0) g.hunterStunT = g.activePowers[PWR_FREEZE];
+
         if (g.phase !== PLAYING) return;
 
         g.enemyT += dt;
@@ -314,9 +461,10 @@
         if (g.phase === MENU) { drawMenu(ctx, t); return; }
         if (g.phase === OVER)  { drawOver(ctx, t);  return; }
 
-        drawHUD(ctx);
+        drawHUD(ctx, t);
         drawMaze(ctx);
         drawOrbs(ctx, t);
+        drawPowerUps(ctx, t);
         drawParticles(ctx);
         drawPlayer(ctx, t);
         drawEnemies(ctx, t);
@@ -335,7 +483,7 @@
         }
       };
 
-      const drawHUD = (ctx) => {
+      const drawHUD = (ctx, t) => {
         ctx.font = 'bold 15px monospace';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#00ffff';
@@ -371,6 +519,35 @@
           ctx.font = 'bold 12px monospace';
           ctx.textAlign = 'right';
           ctx.fillText(`${g.combo}× COMBO`, GW-10, 52);
+        }
+
+        // Active power-up indicators
+        let barX = 10;
+        const barY = 68;
+        for (const type of PWR_TYPES) {
+          const remaining = type === PWR_SHIELD
+            ? g.activePowers[type]
+            : g.activePowers[type];
+          if (!remaining) continue;
+          const cfg = PWR_CONFIG[type];
+          const pulse = 0.7 + 0.3 * Math.sin(t * 0.008);
+          ctx.font = 'bold 9px monospace';
+          ctx.fillStyle = cfg.color;
+          ctx.shadowColor = cfg.glow;
+          ctx.shadowBlur = 6 * pulse;
+          ctx.textAlign = 'left';
+          ctx.fillText(cfg.label, barX, barY);
+          ctx.shadowBlur = 0;
+          barX += ctx.measureText(cfg.label).width + 10;
+        }
+
+        // Hunter stun bar
+        if (g.hunterStunT > 0 && g.activePowers[PWR_FREEZE] <= 0) {
+          const frac = g.hunterStunT / 2000;
+          ctx.fillStyle = '#00eeff';
+          ctx.globalAlpha = 0.6;
+          ctx.fillRect(GW/2 - 40, 62, 80 * frac, 4);
+          ctx.globalAlpha = 1;
         }
       };
 
@@ -410,6 +587,35 @@
         ctx.shadowBlur = 0;
       };
 
+      const drawPowerUps = (ctx, t) => {
+        const spin = t * 0.002;
+        for (const p of g.powerUps) {
+          if (p.done) continue;
+          const { x, y } = xy(p.col, p.row);
+          const cfg = PWR_CONFIG[p.type];
+          const pulse = 0.55 + 0.45 * Math.sin(t * 0.0045 + p.col * 0.7);
+
+          // Draw rotating diamond
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(spin + p.col * 1.2);
+          ctx.beginPath();
+          const r = 6 + pulse * 2;
+          ctx.moveTo(0, -r);
+          ctx.lineTo(r * 0.7, 0);
+          ctx.lineTo(0, r);
+          ctx.lineTo(-r * 0.7, 0);
+          ctx.closePath();
+          ctx.fillStyle = cfg.color;
+          ctx.shadowColor = cfg.glow;
+          ctx.shadowBlur = 10 + pulse * 8;
+          ctx.fill();
+          ctx.restore();
+
+          ctx.shadowBlur = 0;
+        }
+      };
+
       const drawParticles = (ctx) => {
         for (const p of g.particles) {
           const a = p.life / p.max;
@@ -428,6 +634,24 @@
       const drawPlayer = (ctx, t) => {
         if (g.invT > 0 && Math.floor(g.invT / 110) % 2 === 1) return;
         const pulse = 0.88 + 0.12 * Math.sin(t * 0.006);
+        // Shield glow ring
+        if (g.activePowers[PWR_SHIELD] > 0) {
+          ctx.beginPath();
+          ctx.arc(g.player.x, g.player.y, 14 * pulse, 0, Math.PI*2);
+          ctx.strokeStyle = '#4488ff';
+          ctx.shadowColor = '#4488ff';
+          ctx.shadowBlur = 20;
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+        // Speed trail
+        if (g.activePowers[PWR_SPEED] > 0) {
+          ctx.beginPath();
+          ctx.arc(g.player.x, g.player.y, 12 * pulse, 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(136, 255, 0, 0.18)';
+          ctx.fill();
+        }
         ctx.beginPath();
         ctx.arc(g.player.x, g.player.y, 9 * pulse, 0, Math.PI*2);
         ctx.fillStyle = '#00ffff';
@@ -438,12 +662,14 @@
       };
 
       const drawEnemies = (ctx, t) => {
+        const frozen = g.hunterStunT > 0;
         for (const e of g.enemies) {
           const pulse = 0.88 + 0.12 * Math.sin(t * 0.007 + e.col * 0.7);
           ctx.beginPath();
           ctx.arc(e.x, e.y, 9 * pulse, 0, Math.PI*2);
-          ctx.fillStyle = '#ff2222';
-          ctx.shadowColor = '#ff4444';
+          // Show frozen state
+          ctx.fillStyle = frozen ? '#226688' : '#ff2222';
+          ctx.shadowColor = frozen ? '#00aacc' : '#ff4444';
           ctx.shadowBlur = 18;
           ctx.fill();
           ctx.shadowBlur = 0;
@@ -453,6 +679,15 @@
           ctx.arc(e.x - 2.8, e.y - 1.5, 1.8, 0, Math.PI*2);
           ctx.arc(e.x + 2.8, e.y - 1.5, 1.8, 0, Math.PI*2);
           ctx.fill();
+          // Ice crystal overlay when frozen
+          if (frozen) {
+            ctx.globalAlpha = 0.5;
+            ctx.font = '10px monospace';
+            ctx.fillStyle = '#00ffff';
+            ctx.textAlign = 'center';
+            ctx.fillText('❄', e.x, e.y + 4);
+            ctx.globalAlpha = 1;
+          }
         }
       };
 
@@ -463,48 +698,74 @@
         ctx.fillStyle = '#00ffff';
         ctx.shadowColor = '#00ffff';
         ctx.shadowBlur = glo;
-        ctx.fillText('NEON MAZE', GW/2, 165);
+        ctx.fillText('NEON MAZE', GW/2, 155);
         ctx.shadowBlur = 0;
 
         ctx.font = '14px monospace';
         ctx.fillStyle = '#888';
-        ctx.fillText('Navigate the maze', GW/2, 215);
-        ctx.fillText('Collect all glowing orbs', GW/2, 240);
-        ctx.fillText('Avoid the red hunters!', GW/2, 265);
+        ctx.fillText('Navigate the maze', GW/2, 205);
+        ctx.fillText('Collect all glowing orbs', GW/2, 228);
+        ctx.fillText('Avoid the red hunters!', GW/2, 251);
 
         ctx.font = '12px monospace';
         ctx.fillStyle = '#555';
-        ctx.fillText('Arrow keys / WASD to move', GW/2, 305);
-        ctx.fillText('Swipe on mobile', GW/2, 325);
+        ctx.fillText('Arrow keys / WASD to move', GW/2, 283);
+        ctx.fillText('Swipe on mobile', GW/2, 302);
 
-        // Icons
-        ctx.beginPath();
-        ctx.arc(GW/2 - 50, 365, 7, 0, Math.PI*2);
-        ctx.fillStyle = '#ffee00';
-        ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 10;
-        ctx.fill(); ctx.shadowBlur = 0;
-        ctx.font = '11px monospace'; ctx.fillStyle = '#888';
-        ctx.fillText('= orb', GW/2 - 28, 369);
+        // Icons row
+        const iconY = 335;
+        const items = [
+          { color: '#ffee00', glow: '#ffff00', label: '= orb', x: GW/2 - 80 },
+          { color: '#ff2222', glow: '#ff4444', label: '= hunter', x: GW/2 + 20 },
+        ];
+        for (const item of items) {
+          ctx.beginPath();
+          ctx.arc(item.x, iconY, 7, 0, Math.PI*2);
+          ctx.fillStyle = item.color;
+          ctx.shadowColor = item.glow; ctx.shadowBlur = 10;
+          ctx.fill(); ctx.shadowBlur = 0;
+          ctx.font = '11px monospace'; ctx.fillStyle = '#888';
+          ctx.textAlign = 'left';
+          ctx.fillText(item.label, item.x + 12, iconY + 4);
+        }
 
-        ctx.beginPath();
-        ctx.arc(GW/2 + 38, 365, 7, 0, Math.PI*2);
-        ctx.fillStyle = '#ff2222';
-        ctx.shadowColor = '#ff4444'; ctx.shadowBlur = 10;
-        ctx.fill(); ctx.shadowBlur = 0;
-        ctx.fillText('= hunter', GW/2 + 68, 369);
+        // Power-up legend
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#666';
+        ctx.fillText('POWER-UPS:', GW/2, 365);
+        const pwrLegend = [
+          { color: '#88ff00', label: '⚡ Speed' },
+          { color: '#00eeff', label: '❄ Freeze' },
+          { color: '#4488ff', label: '🛡 Shield' },
+          { color: '#ff8800', label: '✕2 Double' },
+        ];
+        let lx = 30;
+        ctx.font = '10px monospace';
+        for (const pl of pwrLegend) {
+          ctx.fillStyle = pl.color;
+          ctx.shadowColor = pl.color;
+          ctx.shadowBlur = 4;
+          ctx.textAlign = 'left';
+          ctx.fillText(pl.label, lx, 382);
+          lx += 90;
+          if (lx > GW - 20) { lx = 30; }
+        }
+        ctx.shadowBlur = 0;
 
         const p = 0.65 + 0.35 * Math.abs(Math.sin(t * 0.0025));
         ctx.font = 'bold 28px monospace';
         ctx.fillStyle = `rgba(0, 255, 136, ${p})`;
         ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 12 * p;
-        ctx.fillText('[ PLAY ]', GW/2, 440);
+        ctx.textAlign = 'center';
+        ctx.fillText('[ PLAY ]', GW/2, 430);
         ctx.shadowBlur = 0;
 
         const hs = parseInt(localStorage.getItem(HS_KEY) || '0');
         if (hs > 0) {
           ctx.font = '14px monospace';
           ctx.fillStyle = '#ff00ff';
-          ctx.fillText(`BEST: ${hs}`, GW/2, 488);
+          ctx.fillText(`BEST: ${hs}`, GW/2, 475);
         }
       };
 
