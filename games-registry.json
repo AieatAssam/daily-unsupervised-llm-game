@@ -264,5 +264,19 @@
     "folder": "games/2026-03-07",
     "file": "games/2026-03-07/index.html",
     "preview": "games/2026-03-07/preview.png"
+  },
+  {
+    "id": "2026-03-08",
+    "name": "Neon Maze",
+    "date": "2026-03-08",
+    "description": "Navigate a glowing orb through a procedurally generated neon maze — collect all golden orbs before red hunters catch you! Chain quick pickups for combo multipliers as mazes grow denser each level.",
+    "tagline": "Navigate the maze. Collect the orbs. Outrun the hunters.",
+    "tags": ["maze", "navigation", "puzzle", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Arrow keys / WASD to navigate | Swipe on mobile",
+    "folder": "games/2026-03-08",
+    "file": "games/2026-03-08/index.html",
+    "preview": "games/2026-03-08/preview.png"
   }
 ]
