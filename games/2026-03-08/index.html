@@ -19,12 +19,12 @@
     const { useEffect, useRef } = React;
 
     // ── Constants ─────────────────────────────────────────────────────────────
-    const GW = 400, GH = 600;
+    const GW = 400, GH = 620;
     const HS_KEY = 'neonMaze_highScore';
 
     const COLS = 10, ROWS = 12, CELL = 36;
     const MX = (GW - COLS * CELL) / 2; // 20
-    const MY = 88;
+    const MY = 100;
 
     const N = 1, S = 2, E = 4, W = 8;
 
@@ -32,17 +32,20 @@
 
     // ── Power-up types ────────────────────────────────────────────────────────
     const PWR_SPEED  = 'speed';   // lime  – player moves faster for 5 s
-    const PWR_FREEZE = 'freeze';  // cyan  – freeze all hunters for 3 s
+    const PWR_FREEZE = 'freeze';  // cyan  – freeze all hunters for 4 s
     const PWR_SHIELD = 'shield';  // blue  – absorb one hit
     const PWR_DOUBLE = 'double';  // orange – 2× score for 8 s
 
     const PWR_CONFIG = {
-      [PWR_SPEED]:  { color: '#88ff00', glow: '#66dd00', label: '⚡SPD' },
-      [PWR_FREEZE]: { color: '#00eeff', glow: '#00aacc', label: '❄FRZ' },
-      [PWR_SHIELD]: { color: '#4488ff', glow: '#2255dd', label: '🛡SHD' },
-      [PWR_DOUBLE]: { color: '#ff8800', glow: '#dd5500', label: '✕2 DBL' },
+      [PWR_SPEED]:  { color: '#88ff00', glow: '#66dd00', label: '⚡SPD', key: '1' },
+      [PWR_FREEZE]: { color: '#00eeff', glow: '#00aacc', label: '❄FRZ', key: '2' },
+      [PWR_SHIELD]: { color: '#4488ff', glow: '#2255dd', label: '🛡SHD', key: '3' },
+      [PWR_DOUBLE]: { color: '#ff8800', glow: '#dd5500', label: '✕2DBL', key: '4' },
     };
     const PWR_TYPES = [PWR_SPEED, PWR_FREEZE, PWR_SHIELD, PWR_DOUBLE];
+
+    // HUD power-up button hitboxes (populated in drawHUD)
+    const pwrButtonRects = {};
 
     // ── Audio ─────────────────────────────────────────────────────────────────
     let _ac = null;
@@ -61,7 +64,7 @@
       o.stop(ac.currentTime + delay + dur);
     }
 
-    // ── Maze generation (recursive backtracking) ──────────────────────────────
+    // ── Maze generation (recursive backtracking + loop passages) ─────────────
     function generateMaze(cols, rows) {
       const walls = Array.from({ length: rows }, () =>
         new Array(cols).fill(N | S | E | W)
@@ -88,10 +91,64 @@
         }
       }
       carve(0, 0);
+
+      // Add loop passages so hunters can never permanently block all routes.
+      // Remove ~18% of remaining walls to create alternate corridors.
+      const wallDirs = [[0,-1,N,S],[0,1,S,N],[1,0,E,W],[-1,0,W,E]];
+      let extra = Math.floor(cols * rows * 0.18);
+      let attempts = 0;
+      while (extra > 0 && attempts < 1500) {
+        attempts++;
+        const c = Math.floor(Math.random() * cols);
+        const r = Math.floor(Math.random() * rows);
+        const [dc, dr, mw, tw] = wallDirs[Math.floor(Math.random() * 4)];
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
+        if (!(walls[r][c] & mw)) continue; // already open
+        walls[r][c]   &= ~mw;
+        walls[nr][nc] &= ~tw;
+        extra--;
+      }
+
       return walls;
     }
 
-    // ── BFS pathfinding (used by escape mechanism) ────────────────────────────
+    // ── BFS pathfinding ───────────────────────────────────────────────────────
+    // Returns [dc, dr] of the first step toward (toC, toR), or null if same/unreachable
+    function bfsNextStep(maze, fromC, fromR, toC, toR) {
+      if (fromC === toC && fromR === toR) return null;
+      const visited = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
+      const prev    = Array.from({ length: ROWS }, () => new Array(COLS).fill(null));
+      const queue   = [[fromC, fromR]];
+      visited[fromR][fromC] = true;
+      const DIRS = [[0,-1,N],[0,1,S],[1,0,E],[-1,0,W]];
+
+      while (queue.length) {
+        const [c, r] = queue.shift();
+        if (c === toC && r === toR) {
+          // Trace back to find the first step from source
+          let step = [c, r];
+          while (true) {
+            const p = prev[step[1]][step[0]];
+            if (!p) break;
+            if (p[0] === fromC && p[1] === fromR) break;
+            step = p;
+          }
+          return [step[0] - fromC, step[1] - fromR];
+        }
+        for (const [dc, dr, wall] of DIRS) {
+          if (maze[r][c] & wall) continue;
+          const nc = c + dc, nr = r + dr;
+          if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+          if (visited[nr][nc]) continue;
+          visited[nr][nc] = true;
+          prev[nr][nc] = [c, r];
+          queue.push([nc, nr]);
+        }
+      }
+      return null;
+    }
+
     function bfsDistance(maze, fromC, fromR, toC, toR) {
       const visited = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
       const queue = [[fromC, fromR, 0]];
@@ -138,6 +195,12 @@
         enemies: [],
         orbs: [],
         powerUps: [],            // pickups on the map
+        inventory: {             // collected, awaiting activation
+          [PWR_SPEED]: 0,
+          [PWR_FREEZE]: 0,
+          [PWR_SHIELD]: 0,
+          [PWR_DOUBLE]: 0,
+        },
         activePowers: {          // active effect durations (ms remaining)
           [PWR_SPEED]: 0,
           [PWR_FREEZE]: 0,
@@ -221,7 +284,7 @@
           g.powerUps.push({ col: c, row: r, type, done: false });
         }
 
-        // Reset active powers
+        // Reset active powers (but keep inventory between levels)
         for (const k of PWR_TYPES) g.activePowers[k] = 0;
         g.hunterStunT = 0;
 
@@ -239,8 +302,38 @@
         g.score = 0;
         g.lives = 3;
         g.level = 1;
+        // Reset inventory on new game
+        for (const k of PWR_TYPES) g.inventory[k] = 0;
         initLevel();
         beep(440, 'sine', 0.18, 0.3);
+      };
+
+      // ── Activate a power-up from inventory ────────────────────────────────
+      const activatePowerUp = (type) => {
+        if (g.phase !== PLAYING) return;
+        if (g.inventory[type] <= 0) return;
+        g.inventory[type]--;
+        const { x, y } = xy(g.player.col, g.player.row);
+        const cfg = PWR_CONFIG[type];
+        spark(x, y, cfg.color, 10);
+        beep(660, 'sine', 0.18, 0.3);
+        beep(880, 'sine', 0.12, 0.25, 0.1);
+
+        if (type === PWR_SPEED) {
+          g.activePowers[PWR_SPEED] = 5000;
+          g.msg = '⚡ SPEED BOOST!'; g.msgT = 1000;
+        } else if (type === PWR_FREEZE) {
+          g.activePowers[PWR_FREEZE] = 4000;
+          g.hunterStunT = 4000;
+          g.msg = '❄ HUNTERS FROZEN!'; g.msgT = 1000;
+          for (const e of g.enemies) { e.moving = false; }
+        } else if (type === PWR_SHIELD) {
+          g.activePowers[PWR_SHIELD] = 1; // count-based
+          g.msg = '🛡 SHIELD ACTIVE!'; g.msgT = 1000;
+        } else if (type === PWR_DOUBLE) {
+          g.activePowers[PWR_DOUBLE] = 8000;
+          g.msg = '✕2 DOUBLE SCORE!'; g.msgT = 1000;
+        }
       };
 
       // ── Player move ───────────────────────────────────────────────────────
@@ -280,12 +373,17 @@
           beep(480 + g.combo * 55, 'triangle', 0.08, 0.18);
         }
 
-        // Power-up collection
+        // Power-up collection → goes to inventory
         const pwrIdx = g.powerUps.findIndex(p => p.col === nc && p.row === nr && !p.done);
         if (pwrIdx >= 0) {
           const pwr = g.powerUps[pwrIdx];
           pwr.done = true;
-          applyPowerUp(pwr.type, x, y);
+          g.inventory[pwr.type]++;
+          const cfg = PWR_CONFIG[pwr.type];
+          spark(x, y, cfg.color, 8);
+          beep(550, 'sine', 0.15, 0.25);
+          g.msg = `${cfg.label} stored! Press [${cfg.key}] to use`;
+          g.msgT = 1400;
         }
 
         // Level clear
@@ -303,34 +401,12 @@
         }
       };
 
-      // ── Apply power-up ─────────────────────────────────────────────────────
-      const applyPowerUp = (type, px, py) => {
-        const cfg = PWR_CONFIG[type];
-        spark(px, py, cfg.color, 10);
-        beep(660, 'sine', 0.18, 0.3);
-        beep(880, 'sine', 0.12, 0.25, 0.1);
-
-        if (type === PWR_SPEED) {
-          g.activePowers[PWR_SPEED] = 5000;
-          g.msg = '⚡ SPEED BOOST!'; g.msgT = 1000;
-        } else if (type === PWR_FREEZE) {
-          g.activePowers[PWR_FREEZE] = 3000;
-          g.hunterStunT = 3000;
-          g.msg = '❄ HUNTERS FROZEN!'; g.msgT = 1000;
-          for (const e of g.enemies) { e.moving = false; }
-        } else if (type === PWR_SHIELD) {
-          g.activePowers[PWR_SHIELD] = 1; // count-based, not time-based
-          g.msg = '🛡 SHIELD ACTIVE!'; g.msgT = 1000;
-        } else if (type === PWR_DOUBLE) {
-          g.activePowers[PWR_DOUBLE] = 8000;
-          g.msg = '✕2 DOUBLE SCORE!'; g.msgT = 1000;
-        }
-      };
-
-      // ── Enemy AI ──────────────────────────────────────────────────────────
+      // ── Enemy AI (BFS pathfinding) ────────────────────────────────────────
       const tickEnemies = () => {
         if (g.hunterStunT > 0) return; // frozen by power-up
+        const { col: pc, row: pr } = g.player;
         const DIRS = [[0,-1,N],[0,1,S],[1,0,E],[-1,0,W]];
+
         for (const e of g.enemies) {
           if (e.moving) continue;
           const w = g.maze[e.row][e.col];
@@ -342,17 +418,20 @@
           if (!avail.length) continue;
 
           let chosen;
-          if (Math.random() < 0.62) {
-            const { col: pc, row: pr } = g.player;
-            let best = Infinity, bi = 0;
-            avail.forEach((d, i) => {
-              const dist = Math.abs(e.col + d[0] - pc) + Math.abs(e.row + d[1] - pr);
-              if (dist < best) { best = dist; bi = i; }
-            });
-            chosen = avail[bi];
+          // 80% chance to use BFS toward player, 20% random (keeps some unpredictability)
+          if (Math.random() < 0.80) {
+            const step = bfsNextStep(g.maze, e.col, e.row, pc, pr);
+            if (step) {
+              const [dc, dr] = step;
+              const matchDir = avail.find(d => d[0] === dc && d[1] === dr);
+              chosen = matchDir || avail[Math.floor(Math.random() * avail.length)];
+            } else {
+              chosen = avail[Math.floor(Math.random() * avail.length)];
+            }
           } else {
             chosen = avail[Math.floor(Math.random() * avail.length)];
           }
+
           e.col += chosen[0]; e.row += chosen[1];
           const { x, y } = xy(e.col, e.row);
           e.tx = x; e.ty = y; e.moving = true;
@@ -396,7 +475,7 @@
               g.invT = 2500;
               g.msg = 'CAUGHT! Hunters stunned!'; g.msgT = 1200;
 
-              // Clear active powers on death (except shield already used)
+              // Clear active powers on death (keep inventory)
               for (const k of PWR_TYPES) g.activePowers[k] = 0;
             }
             break;
@@ -418,7 +497,7 @@
           else { g.player.x += (dx/dist)*step; g.player.y += (dy/dist)*step; }
         }
 
-        // Enemy lerp (also slowed during stun for visual effect)
+        // Enemy lerp (paused during stun)
         const enemySpeedMul = g.hunterStunT > 0 ? 0.0 : 1;
         for (const e of g.enemies) {
           if (e.moving) {
@@ -473,12 +552,12 @@
           const a = Math.min(1, g.msgT / 280);
           ctx.save();
           ctx.globalAlpha = a;
-          ctx.font = 'bold 21px monospace';
+          ctx.font = 'bold 16px monospace';
           ctx.fillStyle = '#ffff44';
           ctx.shadowColor = '#ffee00';
           ctx.shadowBlur = 10;
           ctx.textAlign = 'center';
-          ctx.fillText(g.msg, GW/2, MY - 12);
+          ctx.fillText(g.msg, GW/2, MY - 14);
           ctx.restore();
         }
       };
@@ -487,20 +566,20 @@
         ctx.font = 'bold 15px monospace';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#00ffff';
-        ctx.fillText(`SCORE ${g.score}`, 10, 24);
+        ctx.fillText(`SCORE ${g.score}`, 10, 22);
 
         ctx.textAlign = 'right';
         ctx.fillStyle = '#ff00ff';
-        ctx.fillText(`BEST ${g.hs}`, GW-10, 24);
+        ctx.fillText(`BEST ${g.hs}`, GW-10, 22);
 
         ctx.textAlign = 'center';
         ctx.fillStyle = '#00ff88';
-        ctx.fillText(`LVL ${g.level}`, GW/2, 24);
+        ctx.fillText(`LVL ${g.level}`, GW/2, 22);
 
         // Lives
         for (let i = 0; i < 3; i++) {
           ctx.beginPath();
-          ctx.arc(14 + i*22, 50, 7, 0, Math.PI*2);
+          ctx.arc(14 + i*22, 40, 7, 0, Math.PI*2);
           ctx.fillStyle = i < g.lives ? '#ff3344' : '#200010';
           ctx.shadowColor = i < g.lives ? '#ff3344' : 'transparent';
           ctx.shadowBlur  = i < g.lives ? 8 : 0;
@@ -512,42 +591,92 @@
         ctx.fillStyle = '#aaaa00';
         ctx.font = '11px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`${rem} orbs left`, GW/2, 52);
+        ctx.fillText(`${rem} orbs left`, GW/2, 42);
 
         if (g.combo > 1) {
           ctx.fillStyle = '#ff8800';
           ctx.font = 'bold 12px monospace';
           ctx.textAlign = 'right';
-          ctx.fillText(`${g.combo}× COMBO`, GW-10, 52);
+          ctx.fillText(`${g.combo}× COMBO`, GW-10, 42);
         }
 
-        // Active power-up indicators
-        let barX = 10;
-        const barY = 68;
+        // Active power-up timers (top-right area)
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'left';
+        let timerX = 10;
+        const timerY = 56;
         for (const type of PWR_TYPES) {
-          const remaining = type === PWR_SHIELD
+          const rem = type === PWR_SHIELD
             ? g.activePowers[type]
             : g.activePowers[type];
-          if (!remaining) continue;
+          if (!rem) continue;
           const cfg = PWR_CONFIG[type];
           const pulse = 0.7 + 0.3 * Math.sin(t * 0.008);
-          ctx.font = 'bold 9px monospace';
           ctx.fillStyle = cfg.color;
           ctx.shadowColor = cfg.glow;
-          ctx.shadowBlur = 6 * pulse;
-          ctx.textAlign = 'left';
-          ctx.fillText(cfg.label, barX, barY);
+          ctx.shadowBlur = 5 * pulse;
+          const label = type === PWR_SHIELD ? `${cfg.label}` : `${cfg.label}:${Math.ceil(rem/1000)}s`;
+          ctx.fillText(label, timerX, timerY);
           ctx.shadowBlur = 0;
-          barX += ctx.measureText(cfg.label).width + 10;
+          timerX += ctx.measureText(label).width + 8;
         }
 
-        // Hunter stun bar
+        // Hunter stun bar (post-death stun, not freeze power)
         if (g.hunterStunT > 0 && g.activePowers[PWR_FREEZE] <= 0) {
           const frac = g.hunterStunT / 2000;
           ctx.fillStyle = '#00eeff';
-          ctx.globalAlpha = 0.6;
-          ctx.fillRect(GW/2 - 40, 62, 80 * frac, 4);
+          ctx.globalAlpha = 0.5;
+          ctx.fillRect(GW/2 - 40, 60, 80 * frac, 3);
           ctx.globalAlpha = 1;
+        }
+
+        // ── Inventory power-up buttons ─────────────────────────────────────
+        // Draw 4 small buttons at the bottom of the HUD area
+        const btnY = 72;
+        const btnW = 48, btnH = 18;
+        const totalW = 4 * btnW + 3 * 4;
+        let btnX = (GW - totalW) / 2;
+
+        for (const type of PWR_TYPES) {
+          const cfg = PWR_CONFIG[type];
+          const count = g.inventory[type];
+          const active = g.activePowers[type] > 0 || (type === PWR_SHIELD && g.activePowers[PWR_SHIELD] > 0);
+          const canUse = count > 0 && !active;
+
+          // Store hitbox for click detection
+          pwrButtonRects[type] = { x: btnX, y: btnY, w: btnW, h: btnH };
+
+          // Button background
+          ctx.beginPath();
+          ctx.roundRect ? ctx.roundRect(btnX, btnY, btnW, btnH, 3) : ctx.rect(btnX, btnY, btnW, btnH);
+          if (canUse) {
+            const pulse = 0.5 + 0.5 * Math.abs(Math.sin(t * 0.004));
+            ctx.fillStyle = `rgba(${type === PWR_SPEED ? '136,255,0' : type === PWR_FREEZE ? '0,238,255' : type === PWR_SHIELD ? '68,136,255' : '255,136,0'},${0.15 + pulse * 0.15})`;
+            ctx.strokeStyle = cfg.color;
+            ctx.shadowColor = cfg.glow;
+            ctx.shadowBlur = 6 * pulse;
+          } else {
+            ctx.fillStyle = count > 0 ? 'rgba(80,80,80,0.3)' : 'rgba(20,20,20,0.3)';
+            ctx.strokeStyle = count > 0 ? '#555' : '#2a2a2a';
+            ctx.shadowBlur = 0;
+          }
+          ctx.lineWidth = 1;
+          ctx.fill();
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Label
+          ctx.font = 'bold 7px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = canUse ? cfg.color : count > 0 ? '#666' : '#333';
+          ctx.fillText(`[${cfg.key}]${cfg.label}`, btnX + btnW/2, btnY + 8);
+
+          // Count badge
+          ctx.font = '7px monospace';
+          ctx.fillStyle = canUse ? '#fff' : '#555';
+          ctx.fillText(`×${count}`, btnX + btnW/2, btnY + 15);
+
+          btnX += btnW + 4;
         }
       };
 
@@ -667,7 +796,6 @@
           const pulse = 0.88 + 0.12 * Math.sin(t * 0.007 + e.col * 0.7);
           ctx.beginPath();
           ctx.arc(e.x, e.y, 9 * pulse, 0, Math.PI*2);
-          // Show frozen state
           ctx.fillStyle = frozen ? '#226688' : '#ff2222';
           ctx.shadowColor = frozen ? '#00aacc' : '#ff4444';
           ctx.shadowBlur = 18;
@@ -698,22 +826,22 @@
         ctx.fillStyle = '#00ffff';
         ctx.shadowColor = '#00ffff';
         ctx.shadowBlur = glo;
-        ctx.fillText('NEON MAZE', GW/2, 155);
+        ctx.fillText('NEON MAZE', GW/2, 140);
         ctx.shadowBlur = 0;
 
-        ctx.font = '14px monospace';
+        ctx.font = '13px monospace';
         ctx.fillStyle = '#888';
-        ctx.fillText('Navigate the maze', GW/2, 205);
-        ctx.fillText('Collect all glowing orbs', GW/2, 228);
-        ctx.fillText('Avoid the red hunters!', GW/2, 251);
+        ctx.fillText('Navigate the maze', GW/2, 188);
+        ctx.fillText('Collect all glowing orbs', GW/2, 210);
+        ctx.fillText('Avoid the red hunters!', GW/2, 232);
 
-        ctx.font = '12px monospace';
+        ctx.font = '11px monospace';
         ctx.fillStyle = '#555';
-        ctx.fillText('Arrow keys / WASD to move', GW/2, 283);
-        ctx.fillText('Swipe on mobile', GW/2, 302);
+        ctx.fillText('Arrow keys / WASD to move', GW/2, 258);
+        ctx.fillText('Swipe on mobile', GW/2, 275);
 
         // Icons row
-        const iconY = 335;
+        const iconY = 305;
         const items = [
           { color: '#ffee00', glow: '#ffff00', label: '= orb', x: GW/2 - 80 },
           { color: '#ff2222', glow: '#ff4444', label: '= hunter', x: GW/2 + 20 },
@@ -732,40 +860,40 @@
         // Power-up legend
         ctx.font = 'bold 11px monospace';
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#666';
-        ctx.fillText('POWER-UPS:', GW/2, 365);
+        ctx.fillStyle = '#888';
+        ctx.fillText('POWER-UPS (collect → activate with key):', GW/2, 336);
+
         const pwrLegend = [
-          { color: '#88ff00', label: '⚡ Speed' },
-          { color: '#00eeff', label: '❄ Freeze' },
-          { color: '#4488ff', label: '🛡 Shield' },
-          { color: '#ff8800', label: '✕2 Double' },
+          { color: '#88ff00', label: '[1] ⚡ Speed' },
+          { color: '#00eeff', label: '[2] ❄ Freeze hunters' },
+          { color: '#4488ff', label: '[3] 🛡 Shield' },
+          { color: '#ff8800', label: '[4] ✕2 Double score' },
         ];
-        let lx = 30;
         ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        let ly = 354;
         for (const pl of pwrLegend) {
           ctx.fillStyle = pl.color;
           ctx.shadowColor = pl.color;
-          ctx.shadowBlur = 4;
-          ctx.textAlign = 'left';
-          ctx.fillText(pl.label, lx, 382);
-          lx += 90;
-          if (lx > GW - 20) { lx = 30; }
+          ctx.shadowBlur = 3;
+          ctx.fillText(pl.label, 40, ly);
+          ly += 16;
+          ctx.shadowBlur = 0;
         }
-        ctx.shadowBlur = 0;
 
         const p = 0.65 + 0.35 * Math.abs(Math.sin(t * 0.0025));
         ctx.font = 'bold 28px monospace';
         ctx.fillStyle = `rgba(0, 255, 136, ${p})`;
         ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 12 * p;
         ctx.textAlign = 'center';
-        ctx.fillText('[ PLAY ]', GW/2, 430);
+        ctx.fillText('[ PLAY ]', GW/2, 440);
         ctx.shadowBlur = 0;
 
         const hs = parseInt(localStorage.getItem(HS_KEY) || '0');
         if (hs > 0) {
           ctx.font = '14px monospace';
           ctx.fillStyle = '#ff00ff';
-          ctx.fillText(`BEST: ${hs}`, GW/2, 475);
+          ctx.fillText(`BEST: ${hs}`, GW/2, 485);
         }
       };
 
@@ -774,33 +902,33 @@
         ctx.textAlign = 'center';
         ctx.fillStyle = '#ff3333';
         ctx.shadowColor = '#ff3333'; ctx.shadowBlur = 20;
-        ctx.fillText('GAME OVER', GW/2, 195);
+        ctx.fillText('GAME OVER', GW/2, 200);
         ctx.shadowBlur = 0;
 
         ctx.font = 'bold 24px monospace';
         ctx.fillStyle = '#fff';
-        ctx.fillText(`SCORE: ${g.score}`, GW/2, 258);
+        ctx.fillText(`SCORE: ${g.score}`, GW/2, 262);
 
         if (g.score > 0 && g.score >= g.hs) {
           ctx.font = 'bold 17px monospace';
           ctx.fillStyle = '#ffff00';
           ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 8;
-          ctx.fillText('NEW HIGH SCORE!', GW/2, 295);
+          ctx.fillText('NEW HIGH SCORE!', GW/2, 298);
           ctx.shadowBlur = 0;
         }
 
         ctx.font = '15px monospace';
         ctx.fillStyle = '#888';
-        ctx.fillText(`BEST: ${g.hs}`, GW/2, 330);
+        ctx.fillText(`BEST: ${g.hs}`, GW/2, 335);
         ctx.font = '13px monospace';
         ctx.fillStyle = '#666';
-        ctx.fillText(`Reached level ${g.level}`, GW/2, 358);
+        ctx.fillText(`Reached level ${g.level}`, GW/2, 362);
 
         const p = 0.65 + 0.35 * Math.abs(Math.sin(t * 0.0025));
         ctx.font = 'bold 24px monospace';
         ctx.fillStyle = `rgba(0, 255, 136, ${p})`;
         ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10 * p;
-        ctx.fillText('[ PLAY AGAIN ]', GW/2, 430);
+        ctx.fillText('[ PLAY AGAIN ]', GW/2, 440);
         ctx.shadowBlur = 0;
       };
 
@@ -822,6 +950,12 @@
 
           if (g.phase === MENU || g.phase === OVER) { startGame(); return; }
           if (g.phase !== PLAYING) return;
+
+          // Power-up activation keys
+          if (k === '1') { activatePowerUp(PWR_SPEED); return; }
+          if (k === '2') { activatePowerUp(PWR_FREEZE); return; }
+          if (k === '3') { activatePowerUp(PWR_SHIELD); return; }
+          if (k === '4') { activatePowerUp(PWR_DOUBLE); return; }
 
           const now = performance.now();
           if (now - lastMove < MOVE_DELAY) return;
@@ -850,8 +984,24 @@
           else                              movePlayer(0, dy > 0 ? 1 : -1);
         };
 
-        const onClick = () => {
-          if (g.phase === MENU || g.phase === OVER) startGame();
+        const onClick = (e) => {
+          if (g.phase === MENU || g.phase === OVER) { startGame(); return; }
+          if (g.phase !== PLAYING) return;
+
+          // Check if clicking a power-up inventory button
+          const rect = canvas.getBoundingClientRect();
+          const scaleX = GW / rect.width;
+          const scaleY = GH / rect.height;
+          const cx = (e.clientX - rect.left) * scaleX;
+          const cy = (e.clientY - rect.top)  * scaleY;
+
+          for (const type of PWR_TYPES) {
+            const b = pwrButtonRects[type];
+            if (b && cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+              activatePowerUp(type);
+              return;
+            }
+          }
         };
 
         window.addEventListener('keydown', onKey);
