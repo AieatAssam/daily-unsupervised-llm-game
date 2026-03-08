@@ -382,7 +382,7 @@
           const cfg = PWR_CONFIG[pwr.type];
           spark(x, y, cfg.color, 8);
           beep(550, 'sine', 0.15, 0.25);
-          g.msg = `${cfg.label} stored! Press [${cfg.key}] to use`;
+          g.msg = `${cfg.label} stored! Tap button or [${cfg.key}]`;
           g.msgT = 1400;
         }
 
@@ -631,52 +631,54 @@
         }
 
         // ── Inventory power-up buttons ─────────────────────────────────────
-        // Draw 4 small buttons at the bottom of the HUD area
-        const btnY = 72;
-        const btnW = 48, btnH = 18;
-        const totalW = 4 * btnW + 3 * 4;
-        let btnX = (GW - totalW) / 2;
+        // Draw 4 buttons at the bottom of the HUD area, sized for mobile touch
+        const btnH = 26, btnW = 58;
+        const btnGap = 4;
+        const totalW = 4 * btnW + 3 * btnGap;
+        const btnX0 = (GW - totalW) / 2;
+        const btnY = GH - btnH - 4; // anchor to bottom of canvas
 
-        for (const type of PWR_TYPES) {
+        for (let bi = 0; bi < PWR_TYPES.length; bi++) {
+          const type = PWR_TYPES[bi];
           const cfg = PWR_CONFIG[type];
           const count = g.inventory[type];
           const active = g.activePowers[type] > 0 || (type === PWR_SHIELD && g.activePowers[PWR_SHIELD] > 0);
           const canUse = count > 0 && !active;
+          const btnX = btnX0 + bi * (btnW + btnGap);
 
-          // Store hitbox for click detection
-          pwrButtonRects[type] = { x: btnX, y: btnY, w: btnW, h: btnH };
+          // Store hitbox for tap/click detection (with extra touch padding)
+          pwrButtonRects[type] = { x: btnX - 4, y: btnY - 4, w: btnW + 8, h: btnH + 8 };
 
           // Button background
           ctx.beginPath();
-          ctx.roundRect ? ctx.roundRect(btnX, btnY, btnW, btnH, 3) : ctx.rect(btnX, btnY, btnW, btnH);
+          ctx.roundRect ? ctx.roundRect(btnX, btnY, btnW, btnH, 5) : ctx.rect(btnX, btnY, btnW, btnH);
           if (canUse) {
             const pulse = 0.5 + 0.5 * Math.abs(Math.sin(t * 0.004));
-            ctx.fillStyle = `rgba(${type === PWR_SPEED ? '136,255,0' : type === PWR_FREEZE ? '0,238,255' : type === PWR_SHIELD ? '68,136,255' : '255,136,0'},${0.15 + pulse * 0.15})`;
+            ctx.fillStyle = `rgba(${type === PWR_SPEED ? '136,255,0' : type === PWR_FREEZE ? '0,238,255' : type === PWR_SHIELD ? '68,136,255' : '255,136,0'},${0.18 + pulse * 0.18})`;
             ctx.strokeStyle = cfg.color;
+            ctx.lineWidth = 1.5;
             ctx.shadowColor = cfg.glow;
-            ctx.shadowBlur = 6 * pulse;
+            ctx.shadowBlur = 8 * pulse;
           } else {
-            ctx.fillStyle = count > 0 ? 'rgba(80,80,80,0.3)' : 'rgba(20,20,20,0.3)';
-            ctx.strokeStyle = count > 0 ? '#555' : '#2a2a2a';
+            ctx.fillStyle = count > 0 ? 'rgba(60,60,60,0.4)' : 'rgba(15,15,15,0.4)';
+            ctx.strokeStyle = count > 0 ? '#444' : '#222';
+            ctx.lineWidth = 1;
             ctx.shadowBlur = 0;
           }
-          ctx.lineWidth = 1;
           ctx.fill();
           ctx.stroke();
           ctx.shadowBlur = 0;
 
-          // Label
-          ctx.font = 'bold 7px monospace';
+          // Icon / label row
+          ctx.font = 'bold 9px monospace';
           ctx.textAlign = 'center';
-          ctx.fillStyle = canUse ? cfg.color : count > 0 ? '#666' : '#333';
-          ctx.fillText(`[${cfg.key}]${cfg.label}`, btnX + btnW/2, btnY + 8);
+          ctx.fillStyle = canUse ? cfg.color : count > 0 ? '#555' : '#2a2a2a';
+          ctx.fillText(cfg.label, btnX + btnW/2, btnY + 11);
 
-          // Count badge
-          ctx.font = '7px monospace';
-          ctx.fillStyle = canUse ? '#fff' : '#555';
-          ctx.fillText(`×${count}`, btnX + btnW/2, btnY + 15);
-
-          btnX += btnW + 4;
+          // Key hint + count row
+          ctx.font = '8px monospace';
+          ctx.fillStyle = canUse ? 'rgba(255,255,255,0.7)' : '#3a3a3a';
+          ctx.fillText(`[${cfg.key}] ×${count}`, btnX + btnW/2, btnY + 21);
         }
       };
 
@@ -861,10 +863,10 @@
         ctx.font = 'bold 11px monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = '#888';
-        ctx.fillText('POWER-UPS (collect → activate with key):', GW/2, 336);
+        ctx.fillText('POWER-UPS (collect → tap button or press key):', GW/2, 336);
 
         const pwrLegend = [
-          { color: '#88ff00', label: '[1] ⚡ Speed' },
+          { color: '#88ff00', label: '[1] ⚡ Speed boost' },
           { color: '#00eeff', label: '[2] ❄ Freeze hunters' },
           { color: '#4488ff', label: '[3] 🛡 Shield' },
           { color: '#ff8800', label: '[4] ✕2 Double score' },
@@ -977,9 +979,25 @@
           e.preventDefault();
           if (g.phase === MENU || g.phase === OVER) { startGame(); return; }
           if (g.phase !== PLAYING) return;
-          const dx = e.changedTouches[0].clientX - g.touchX;
-          const dy = e.changedTouches[0].clientY - g.touchY;
-          if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+          const touch = e.changedTouches[0];
+          const dx = touch.clientX - g.touchX;
+          const dy = touch.clientY - g.touchY;
+          // Tap (not a swipe) — check if it hit a power-up button
+          if (Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = GW / rect.width;
+            const scaleY = GH / rect.height;
+            const cx = (touch.clientX - rect.left) * scaleX;
+            const cy = (touch.clientY - rect.top)  * scaleY;
+            for (const type of PWR_TYPES) {
+              const b = pwrButtonRects[type];
+              if (b && cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+                activatePowerUp(type);
+                return;
+              }
+            }
+            return;
+          }
           if (Math.abs(dx) > Math.abs(dy)) movePlayer(dx > 0 ? 1 : -1, 0);
           else                              movePlayer(0, dy > 0 ? 1 : -1);
         };
