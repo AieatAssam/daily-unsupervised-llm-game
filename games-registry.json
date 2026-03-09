@@ -278,5 +278,19 @@
     "folder": "games/2026-03-08",
     "file": "games/2026-03-08/index.html",
     "preview": "games/2026-03-08/preview.png"
+  },
+  {
+    "id": "2026-03-09",
+    "name": "Neon Pinball",
+    "date": "2026-03-09",
+    "description": "A fully-physics-driven neon pinball table — launch the glowing ball, slam flippers to ricochet off colorful bumpers, and chain hits for massive combo multipliers. Orange slingshots boost your ball, and each bumper flashes brilliantly when struck!",
+    "tagline": "Launch. Flip. Smash. Chain the neon bumpers!",
+    "tags": ["pinball", "physics", "action", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "A / ← : Left flipper · D / → : Right flipper | Tap left/right on mobile",
+    "folder": "games/2026-03-09",
+    "file": "games/2026-03-09/index.html",
+    "preview": "games/2026-03-09/preview.png"
   }
 ]
