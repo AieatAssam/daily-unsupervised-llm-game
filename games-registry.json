@@ -292,5 +292,19 @@
     "folder": "games/2026-03-09",
     "file": "games/2026-03-09/index.html",
     "preview": "games/2026-03-09/preview.png"
+  },
+  {
+    "id": "2026-03-10",
+    "name": "Prism Drop",
+    "date": "2026-03-10",
+    "description": "Neon geometric blocks cascade into the void — rotate and place them to complete glowing rows and watch them detonate in particle bursts. Chain multi-line clears for massive combo multipliers as the speed escalates each level!",
+    "tagline": "Stack neon blocks. Clear the rows. Chain the combos.",
+    "tags": ["puzzle", "arcade", "strategy", "casual", "blocks"],
+    "difficulty": "easy",
+    "avgPlayTime": "5 minutes",
+    "controls": "← → to move · ↑ to rotate · ↓ soft drop · Space hard drop | Swipe on mobile",
+    "folder": "games/2026-03-10",
+    "file": "games/2026-03-10/index.html",
+    "preview": "games/2026-03-10/preview.png"
   }
 ]
