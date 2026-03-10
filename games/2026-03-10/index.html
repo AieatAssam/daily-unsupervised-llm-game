@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prism Drop</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #050510;
+      color: #fff;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    #root { width: 100%; display: flex; justify-content: center; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useEffect, useRef, useState, useCallback } = React;
+
+// Board dimensions
+const COLS = 10;
+const ROWS = 20;
+const CELL = 30;
+const BOARD_W = COLS * CELL;
+const BOARD_H = ROWS * CELL;
+
+// Neon colors
+const COLORS = [
+  null,
+  '#00ffff', // cyan   - I
+  '#ff00ff', // magenta - O
+  '#ffff00', // yellow  - T
+  '#00ff88', // green   - S
+  '#ff4444', // red     - Z
+  '#4488ff', // blue    - J
+  '#ff8800', // orange  - L
+];
+
+const GLOWS = [
+  null,
+  'rgba(0,255,255,0.6)',
+  'rgba(255,0,255,0.6)',
+  'rgba(255,255,0,0.6)',
+  'rgba(0,255,136,0.6)',
+  'rgba(255,68,68,0.6)',
+  'rgba(68,136,255,0.6)',
+  'rgba(255,136,0,0.6)',
+];
+
+// Tetromino shapes [rotation0, rotation1, rotation2, rotation3]
+const PIECES = [
+  // I
+  [
+    [[0,0],[1,0],[2,0],[3,0]],
+    [[0,0],[0,1],[0,2],[0,3]],
+    [[0,0],[1,0],[2,0],[3,0]],
+    [[0,0],[0,1],[0,2],[0,3]],
+  ],
+  // O
+  [
+    [[0,0],[1,0],[0,1],[1,1]],
+    [[0,0],[1,0],[0,1],[1,1]],
+    [[0,0],[1,0],[0,1],[1,1]],
+    [[0,0],[1,0],[0,1],[1,1]],
+  ],
+  // T
+  [
+    [[1,0],[0,1],[1,1],[2,1]],
+    [[0,0],[0,1],[1,1],[0,2]],
+    [[0,0],[1,0],[2,0],[1,1]],
+    [[1,0],[0,1],[1,1],[1,2]],
+  ],
+  // S
+  [
+    [[1,0],[2,0],[0,1],[1,1]],
+    [[0,0],[0,1],[1,1],[1,2]],
+    [[1,0],[2,0],[0,1],[1,1]],
+    [[0,0],[0,1],[1,1],[1,2]],
+  ],
+  // Z
+  [
+    [[0,0],[1,0],[1,1],[2,1]],
+    [[1,0],[0,1],[1,1],[0,2]],
+    [[0,0],[1,0],[1,1],[2,1]],
+    [[1,0],[0,1],[1,1],[0,2]],
+  ],
+  // J
+  [
+    [[0,0],[0,1],[1,1],[2,1]],
+    [[0,0],[1,0],[0,1],[0,2]],
+    [[0,0],[1,0],[2,0],[2,1]],
+    [[1,0],[1,1],[0,2],[1,2]],
+  ],
+  // L
+  [
+    [[2,0],[0,1],[1,1],[2,1]],
+    [[0,0],[0,1],[0,2],[1,2]],
+    [[0,0],[1,0],[2,0],[0,1]],
+    [[0,0],[1,0],[1,1],[1,2]],
+  ],
+];
+
+function randomPiece() {
+  const type = Math.floor(Math.random() * 7) + 1;
+  return { type, rot: 0, x: 3, y: 0 };
+}
+
+function getBlocks(piece) {
+  return PIECES[piece.type - 1][piece.rot].map(([bx, by]) => ({
+    x: piece.x + bx,
+    y: piece.y + by,
+  }));
+}
+
+function createBoard() {
+  return Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+}
+
+function isValid(board, piece) {
+  for (const { x, y } of getBlocks(piece)) {
+    if (x < 0 || x >= COLS || y >= ROWS) return false;
+    if (y >= 0 && board[y][x] !== 0) return false;
+  }
+  return true;
+}
+
+function placePiece(board, piece) {
+  const newBoard = board.map(r => [...r]);
+  for (const { x, y } of getBlocks(piece)) {
+    if (y >= 0) newBoard[y][x] = piece.type;
+  }
+  return newBoard;
+}
+
+function clearLines(board) {
+  const kept = board.filter(row => row.some(c => c === 0));
+  const cleared = ROWS - kept.length;
+  const empty = Array.from({ length: cleared }, () => Array(COLS).fill(0));
+  return { board: [...empty, ...kept], linesCleared: cleared };
+}
+
+const LINE_SCORES = [0, 100, 300, 500, 800];
+
+function App() {
+  const canvasRef = useRef(null);
+  const stateRef = useRef(null);
+  const animRef = useRef(null);
+  const lastDropRef = useRef(0);
+  const [displayScore, setDisplayScore] = useState(0);
+  const [displayHigh, setDisplayHigh] = useState(0);
+  const [phase, setPhase] = useState('idle'); // idle | playing | gameover
+
+  const initState = useCallback(() => {
+    const board = createBoard();
+    const current = randomPiece();
+    const next = randomPiece();
+    return { board, current, next, score: 0, level: 1, lines: 0, combo: 0 };
+  }, []);
+
+  // Load high score (initialize key so tests can detect it)
+  useEffect(() => {
+    const h = parseInt(localStorage.getItem('prismDropHighScore') || '0', 10);
+    localStorage.setItem('prismDropHighScore', String(h));
+    setDisplayHigh(h);
+  }, []);
+
+  const saveHigh = useCallback((score) => {
+    const prev = parseInt(localStorage.getItem('prismDropHighScore') || '0', 10);
+    if (score > prev) {
+      localStorage.setItem('prismDropHighScore', String(score));
+      setDisplayHigh(score);
+    }
+  }, []);
+
+  const dropInterval = useCallback((level) => Math.max(100, 800 - (level - 1) * 70), []);
+
+  // Flash particles for line clear
+  const particlesRef = useRef([]);
+  const flashLinesRef = useRef([]);
+
+  const spawnLineParticles = useCallback((rows) => {
+    const ps = [];
+    rows.forEach(row => {
+      for (let c = 0; c < COLS; c++) {
+        for (let i = 0; i < 4; i++) {
+          ps.push({
+            x: c * CELL + CELL / 2,
+            y: row * CELL + CELL / 2,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6,
+            life: 1,
+            color: COLORS[Math.floor(Math.random() * 7) + 1],
+          });
+        }
+      }
+    });
+    particlesRef.current = [...particlesRef.current, ...ps];
+    flashLinesRef.current = rows;
+    setTimeout(() => { flashLinesRef.current = []; }, 200);
+  }, []);
+
+  const lockAndAdvance = useCallback(() => {
+    const s = stateRef.current;
+    if (!s) return;
+    const newBoard = placePiece(s.board, s.current);
+    const { board: cleared, linesCleared } = clearLines(newBoard);
+
+    // Find which rows were cleared
+    if (linesCleared > 0) {
+      const clearedRows = [];
+      for (let r = 0; r < ROWS; r++) {
+        if (newBoard[r].every(c => c !== 0)) clearedRows.push(r);
+      }
+      spawnLineParticles(clearedRows);
+    }
+
+    const combo = linesCleared > 0 ? s.combo + 1 : 0;
+    const baseScore = LINE_SCORES[linesCleared] * s.level;
+    const comboBonus = combo > 1 ? baseScore * (combo - 1) * 0.5 : 0;
+    const score = s.score + baseScore + comboBonus;
+    const lines = s.lines + linesCleared;
+    const level = Math.floor(lines / 10) + 1;
+
+    const next2 = randomPiece();
+    const nextPiece = s.next;
+
+    // Check game over
+    if (!isValid(cleared, nextPiece)) {
+      saveHigh(score);
+      setDisplayScore(Math.round(score));
+      stateRef.current = { ...s, board: cleared, score: Math.round(score), level, lines, combo };
+      setPhase('gameover');
+      return;
+    }
+
+    stateRef.current = {
+      board: cleared,
+      current: nextPiece,
+      next: next2,
+      score: Math.round(score),
+      level,
+      lines,
+      combo,
+    };
+    setDisplayScore(Math.round(score));
+  }, [saveHigh, spawnLineParticles]);
+
+  const hardDrop = useCallback(() => {
+    const s = stateRef.current;
+    if (!s || phase !== 'playing') return;
+    let p = { ...s.current };
+    while (isValid(s.board, { ...p, y: p.y + 1 })) p.y++;
+    stateRef.current = { ...s, current: p };
+    lockAndAdvance();
+  }, [phase, lockAndAdvance]);
+
+  const moveLeft = useCallback(() => {
+    const s = stateRef.current;
+    if (!s || phase !== 'playing') return;
+    const p = { ...s.current, x: s.current.x - 1 };
+    if (isValid(s.board, p)) stateRef.current = { ...s, current: p };
+  }, [phase]);
+
+  const moveRight = useCallback(() => {
+    const s = stateRef.current;
+    if (!s || phase !== 'playing') return;
+    const p = { ...s.current, x: s.current.x + 1 };
+    if (isValid(s.board, p)) stateRef.current = { ...s, current: p };
+  }, [phase]);
+
+  const rotatePiece = useCallback(() => {
+    const s = stateRef.current;
+    if (!s || phase !== 'playing') return;
+    const rot = (s.current.rot + 1) % 4;
+    let p = { ...s.current, rot };
+    // Wall kicks
+    if (!isValid(s.board, p)) p = { ...p, x: p.x - 1 };
+    if (!isValid(s.board, p)) p = { ...p, x: p.x + 2 };
+    if (!isValid(s.board, p)) p = { ...s.current }; // revert
+    stateRef.current = { ...s, current: p };
+  }, [phase]);
+
+  const softDrop = useCallback(() => {
+    const s = stateRef.current;
+    if (!s || phase !== 'playing') return;
+    const p = { ...s.current, y: s.current.y + 1 };
+    if (isValid(s.board, p)) {
+      stateRef.current = { ...s, current: p };
+      lastDropRef.current = performance.now();
+    } else {
+      lockAndAdvance();
+    }
+  }, [phase, lockAndAdvance]);
+
+  // Touch handling
+  const touchRef = useRef(null);
+  const handleTouchStart = useCallback((e) => {
+    const t = e.touches[0];
+    touchRef.current = { x: t.clientX, y: t.clientY, time: Date.now() };
+  }, []);
+
+  const handleTouchEnd = useCallback((e) => {
+    if (!touchRef.current) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchRef.current.x;
+    const dy = t.clientY - touchRef.current.y;
+    const dt = Date.now() - touchRef.current.time;
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+
+    if (phase === 'idle' || phase === 'gameover') {
+      startGame();
+      return;
+    }
+    if (adx < 10 && ady < 10 && dt < 250) { rotatePiece(); return; }
+    if (adx > ady) {
+      if (dx > 20) moveRight(); else moveLeft();
+    } else {
+      if (dy > 20) softDrop(); else hardDrop();
+    }
+    touchRef.current = null;
+  }, [phase, rotatePiece, moveRight, moveLeft, softDrop, hardDrop]);
+
+  // Keyboard
+  useEffect(() => {
+    const down = (e) => {
+      if (phase === 'idle' || phase === 'gameover') {
+        if (['Enter', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+          startGame();
+        }
+        return;
+      }
+      if (phase !== 'playing') return;
+      switch (e.key) {
+        case 'ArrowLeft':  case 'a': case 'A': moveLeft(); break;
+        case 'ArrowRight': case 'd': case 'D': moveRight(); break;
+        case 'ArrowUp':    case 'w': case 'W': rotatePiece(); break;
+        case 'ArrowDown':  case 's': case 'S': softDrop(); break;
+        case ' ': hardDrop(); break;
+        default: break;
+      }
+      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
+    };
+    window.addEventListener('keydown', down);
+    return () => window.removeEventListener('keydown', down);
+  }, [phase, moveLeft, moveRight, rotatePiece, softDrop, hardDrop]);
+
+  const startGame = useCallback(() => {
+    stateRef.current = initState();
+    particlesRef.current = [];
+    flashLinesRef.current = [];
+    lastDropRef.current = performance.now();
+    setDisplayScore(0);
+    setPhase('playing');
+  }, [initState]);
+
+  // Game loop
+  useEffect(() => {
+    if (phase !== 'playing') return;
+    let running = true;
+
+    const loop = (now) => {
+      if (!running) return;
+      const s = stateRef.current;
+      if (!s) return;
+
+      // Auto drop
+      const interval = dropInterval(s.level);
+      if (now - lastDropRef.current > interval) {
+        lastDropRef.current = now;
+        const p = { ...s.current, y: s.current.y + 1 };
+        if (isValid(s.board, p)) {
+          stateRef.current = { ...s, current: p };
+        } else {
+          lockAndAdvance();
+        }
+      }
+
+      // Update particles
+      particlesRef.current = particlesRef.current
+        .map(p => ({ ...p, x: p.x + p.vx, y: p.y + p.vy, life: p.life - 0.04 }))
+        .filter(p => p.life > 0);
+
+      draw();
+      animRef.current = requestAnimationFrame(loop);
+    };
+
+    animRef.current = requestAnimationFrame(loop);
+    return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [phase, dropInterval, lockAndAdvance]);
+
+  // Draw on idle/gameover too
+  useEffect(() => {
+    if (phase !== 'playing') draw();
+  });
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    const offsetX = (W - BOARD_W) / 2;
+    const offsetY = (H - BOARD_H) / 2;
+
+    // Background
+    ctx.fillStyle = '#050510';
+    ctx.fillRect(0, 0, W, H);
+
+    // Board border glow
+    ctx.save();
+    ctx.shadowColor = '#00ffff';
+    ctx.shadowBlur = 20;
+    ctx.strokeStyle = '#00ffff44';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(offsetX - 1, offsetY - 1, BOARD_W + 2, BOARD_H + 2);
+    ctx.restore();
+
+    // Grid lines
+    ctx.strokeStyle = '#0a0a2a';
+    ctx.lineWidth = 0.5;
+    for (let c = 0; c <= COLS; c++) {
+      ctx.beginPath();
+      ctx.moveTo(offsetX + c * CELL, offsetY);
+      ctx.lineTo(offsetX + c * CELL, offsetY + BOARD_H);
+      ctx.stroke();
+    }
+    for (let r = 0; r <= ROWS; r++) {
+      ctx.beginPath();
+      ctx.moveTo(offsetX, offsetY + r * CELL);
+      ctx.lineTo(offsetX + BOARD_W, offsetY + r * CELL);
+      ctx.stroke();
+    }
+
+    const s = stateRef.current;
+
+    // Draw board cells
+    if (s) {
+      for (let r = 0; r < ROWS; r++) {
+        const isFlash = flashLinesRef.current.includes(r);
+        for (let c = 0; c < COLS; c++) {
+          const type = s.board[r][c];
+          if (type) {
+            drawCell(ctx, offsetX + c * CELL, offsetY + r * CELL, COLORS[type], GLOWS[type], isFlash);
+          }
+        }
+      }
+
+      // Ghost piece
+      let ghost = { ...s.current };
+      while (isValid(s.board, { ...ghost, y: ghost.y + 1 })) ghost.y++;
+      for (const { x, y } of getBlocks(ghost)) {
+        if (y >= 0) {
+          ctx.save();
+          ctx.globalAlpha = 0.2;
+          ctx.fillStyle = COLORS[s.current.type];
+          ctx.fillRect(offsetX + x * CELL + 1, offsetY + y * CELL + 1, CELL - 2, CELL - 2);
+          ctx.restore();
+        }
+      }
+
+      // Current piece
+      for (const { x, y } of getBlocks(s.current)) {
+        if (y >= 0) {
+          drawCell(ctx, offsetX + x * CELL, offsetY + y * CELL, COLORS[s.current.type], GLOWS[s.current.type], false);
+        }
+      }
+
+      // Next piece panel (right side)
+      const panelX = offsetX + BOARD_W + 20;
+      const panelY = offsetY;
+
+      ctx.fillStyle = '#0a0a20';
+      ctx.strokeStyle = '#00ffff33';
+      ctx.lineWidth = 1;
+      ctx.fillRect(panelX, panelY, 120, 120);
+      ctx.strokeRect(panelX, panelY, 120, 120);
+
+      ctx.fillStyle = '#00ffff99';
+      ctx.font = '11px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText('NEXT', panelX + 60, panelY + 14);
+
+      // Draw next piece centered
+      const nb = PIECES[s.next.type - 1][0];
+      const minX = Math.min(...nb.map(b => b[0]));
+      const maxX = Math.max(...nb.map(b => b[0]));
+      const minY = Math.min(...nb.map(b => b[1]));
+      const maxY = Math.max(...nb.map(b => b[1]));
+      const pw = (maxX - minX + 1) * CELL;
+      const ph = (maxY - minY + 1) * CELL;
+      const nx = panelX + (120 - pw) / 2 - minX * CELL;
+      const ny = panelY + (120 - ph) / 2 - minY * CELL + 10;
+      for (const [bx, by] of nb) {
+        drawCell(ctx, nx + bx * CELL, ny + by * CELL, COLORS[s.next.type], GLOWS[s.next.type], false);
+      }
+
+      // Score / level panel
+      const sp = panelY + 135;
+      ctx.fillStyle = '#0a0a20';
+      ctx.fillRect(panelX, sp, 120, 110);
+      ctx.strokeStyle = '#00ffff33';
+      ctx.strokeRect(panelX, sp, 120, 110);
+
+      ctx.textAlign = 'left';
+      ctx.font = '10px Courier New';
+      ctx.fillStyle = '#00ffff88';
+      ctx.fillText('SCORE', panelX + 8, sp + 18);
+      ctx.fillStyle = '#ffff00';
+      ctx.font = 'bold 14px Courier New';
+      ctx.fillText(String(s.score), panelX + 8, sp + 36);
+
+      ctx.font = '10px Courier New';
+      ctx.fillStyle = '#00ffff88';
+      ctx.fillText('HIGH', panelX + 8, sp + 56);
+      ctx.fillStyle = '#ff00ff';
+      ctx.font = 'bold 14px Courier New';
+      ctx.fillText(String(displayHigh), panelX + 8, sp + 74);
+
+      ctx.font = '10px Courier New';
+      ctx.fillStyle = '#00ffff88';
+      ctx.fillText('LEVEL', panelX + 8, sp + 94);
+      ctx.fillStyle = '#00ff88';
+      ctx.font = 'bold 14px Courier New';
+      ctx.fillText(String(s.level), panelX + 8, sp + 110);
+
+      // Combo
+      if (s.combo > 1) {
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.font = `bold ${14 + s.combo}px Courier New`;
+        ctx.fillStyle = '#ff8800';
+        ctx.shadowColor = '#ff8800';
+        ctx.shadowBlur = 15;
+        ctx.fillText(`${s.combo}x COMBO!`, offsetX + BOARD_W / 2, offsetY + 40);
+        ctx.restore();
+      }
+    }
+
+    // Particles
+    for (const p of particlesRef.current) {
+      ctx.save();
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8;
+      ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+      ctx.restore();
+    }
+
+    // Overlay screens
+    if (phase === 'idle') {
+      drawOverlay(ctx, W, H, offsetX, offsetY);
+      ctx.fillStyle = '#00ffff';
+      ctx.font = 'bold 32px Courier New';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = '#00ffff';
+      ctx.shadowBlur = 20;
+      ctx.fillText('PRISM DROP', W / 2, H / 2 - 60);
+      ctx.shadowBlur = 0;
+      ctx.font = '14px Courier New';
+      ctx.fillStyle = '#aaaaff';
+      ctx.fillText('← → to move  ↑ to rotate', W / 2, H / 2);
+      ctx.fillText('↓ soft drop  SPACE hard drop', W / 2, H / 2 + 24);
+      ctx.fillText('Clear rows to score!', W / 2, H / 2 + 50);
+      ctx.font = 'bold 16px Courier New';
+      ctx.fillStyle = '#ffff00';
+      ctx.shadowColor = '#ffff00';
+      ctx.shadowBlur = 10;
+      ctx.fillText('Press any key or tap to start', W / 2, H / 2 + 90);
+    } else if (phase === 'gameover') {
+      drawOverlay(ctx, W, H, offsetX, offsetY);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 28px Courier New';
+      ctx.fillStyle = '#ff4444';
+      ctx.shadowColor = '#ff4444';
+      ctx.shadowBlur = 20;
+      ctx.fillText('GAME OVER', W / 2, H / 2 - 50);
+      ctx.shadowBlur = 0;
+      ctx.font = '14px Courier New';
+      ctx.fillStyle = '#ffff00';
+      ctx.fillText(`Score: ${stateRef.current?.score || 0}`, W / 2, H / 2 - 10);
+      ctx.fillStyle = '#ff00ff';
+      ctx.fillText(`High Score: ${displayHigh}`, W / 2, H / 2 + 15);
+      ctx.font = 'bold 15px Courier New';
+      ctx.fillStyle = '#00ffff';
+      ctx.shadowColor = '#00ffff';
+      ctx.shadowBlur = 10;
+      ctx.fillText('Press any key or tap to restart', W / 2, H / 2 + 55);
+    }
+  }, [phase, displayHigh]);
+
+  function drawCell(ctx, x, y, color, glow, flash) {
+    ctx.save();
+    if (flash) {
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 20;
+    } else {
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = 12;
+      // Fill
+      ctx.fillStyle = color;
+    }
+    ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+    // Inner highlight
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(x + 2, y + 2, CELL - 8, 4);
+    ctx.restore();
+  }
+
+  function drawOverlay(ctx, W, H, ox, oy) {
+    ctx.fillStyle = 'rgba(5,5,16,0.82)';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Compute canvas size
+  const [canvasSize, setCanvasSize] = useState({ w: 500, h: 650 });
+  useEffect(() => {
+    const update = () => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      // We need room for the board + side panel (120+20) + margins
+      const maxH = Math.min(vh - 20, 700);
+      const cellSize = Math.floor(maxH / ROWS);
+      const bW = cellSize * COLS;
+      const bH = cellSize * ROWS;
+      const totalW = bW + 160;
+      const totalH = bH + 20;
+      setCanvasSize({ w: Math.min(totalW, vw - 10), h: totalH });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  return (
+    <div
+      style={{ userSelect: 'none', touchAction: 'none', cursor: 'pointer' }}
+      onClick={() => { if (phase === 'idle' || phase === 'gameover') startGame(); }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <canvas
+        ref={canvasRef}
+        width={canvasSize.w}
+        height={canvasSize.h}
+        style={{ display: 'block' }}
+      />
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
