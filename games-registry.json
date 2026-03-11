@@ -294,6 +294,20 @@
     "preview": "games/2026-03-09/preview.png"
   },
   {
+    "id": "2026-03-11",
+    "name": "Void Strike",
+    "date": "2026-03-11",
+    "description": "Pilot a glowing neon spaceship through waves of spinning asteroid shards — rotate, thrust, and blast them apart as they split into smaller fragments. Chain kills for massive combo multipliers and survive as asteroid waves multiply each level!",
+    "tagline": "Rotate. Thrust. Blast. Survive the asteroid storm.",
+    "tags": ["shooter", "action", "arcade", "reflex", "space"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "← → Rotate · ↑ Thrust · Space Shoot | Touch zones on mobile",
+    "folder": "games/2026-03-11",
+    "file": "games/2026-03-11/index.html",
+    "preview": "games/2026-03-11/preview.png"
+  },
+  {
     "id": "2026-03-10",
     "name": "Prism Drop",
     "date": "2026-03-10",
