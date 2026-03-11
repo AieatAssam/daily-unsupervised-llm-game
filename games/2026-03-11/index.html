@@ -538,7 +538,8 @@
         if (G.phase === 'gameover') { G.score=0; G.combo=0; G.level=1; G.lives=3; initLevel(G,1); G.phase='playing'; return; }
         const t = touch.current;
         t.left = false; t.right = false; t.thrust = false; t.shoot = false;
-        if (!active) return;
+        // Always re-evaluate remaining touches (fixes multi-touch: lifting one finger
+        // shouldn't cancel controls from fingers still held down)
         Array.from(e.touches).forEach(pt => {
           const x = pt.clientX, y = pt.clientY;
           const W = window.innerWidth, H = window.innerHeight;
@@ -552,7 +553,7 @@
       return (
         <canvas
           ref={canvasRef}
-          style={{ display: 'block', background: '#050510' }}
+          style={{ display: 'block', background: '#050510', touchAction: 'none' }}
           onTouchStart={e => onTouch(e, true)}
           onTouchMove={e => onTouch(e, true)}
           onTouchEnd={e => onTouch(e, false)}
