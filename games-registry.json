@@ -308,6 +308,20 @@
     "preview": "games/2026-03-11/preview.png"
   },
   {
+    "id": "2026-03-12",
+    "name": "Chroma Hunt",
+    "date": "2026-03-12",
+    "description": "All tiles share the same hue — except one slightly different shade. Find and tap the odd tile before the timer runs out! Grids grow from 2×2 to 5×5 while the color difference shrinks to near-invisible. Chain correct picks for massive combo multipliers!",
+    "tagline": "Spot the odd color. Beat the clock. Chain the combos.",
+    "tags": ["perception", "puzzle", "reflex", "casual", "color"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap the tile with the different color",
+    "folder": "games/2026-03-12",
+    "file": "games/2026-03-12/index.html",
+    "preview": "games/2026-03-12/preview.png"
+  },
+  {
     "id": "2026-03-10",
     "name": "Prism Drop",
     "date": "2026-03-10",

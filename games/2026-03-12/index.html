@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chroma Hunt</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #06060e; }
+    #root { width: 100%; height: 100%; }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-12px) scale(0.9); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes pulseGlow {
+      0%, 100% { text-shadow: 0 0 20px currentColor, 0 0 40px currentColor; }
+      50%       { text-shadow: 0 0 8px currentColor; }
+    }
+    @keyframes tileReveal {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(0.88); }
+      100% { transform: scale(0.92); }
+    }
+    @keyframes tileCorrect {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.18); }
+      100% { transform: scale(1.1); }
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    /* ─────────────────────────────────────────────
+       AUDIO
+    ───────────────────────────────────────────── */
+    let _ac = null;
+    const getAC = () => {
+      if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+      return _ac;
+    };
+    const tone = (freq, type = 'sine', dur = 0.12, vol = 0.22, detune = 0) => {
+      try {
+        const ctx = getAC();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = type;
+        o.frequency.value = freq;
+        o.detune.value = detune;
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.start(); o.stop(ctx.currentTime + dur);
+      } catch (_) {}
+    };
+    const sfxCorrect  = () => { tone(660,'sine',0.08,0.25); setTimeout(()=>tone(990,'sine',0.14,0.2),85); };
+    const sfxWrong    = () => { tone(140,'sawtooth',0.28,0.28); tone(180,'sawtooth',0.2,0.15,50); };
+    const sfxTick     = () => { tone(880,'square',0.04,0.08); };
+    const sfxLevelUp  = () => { [440,550,660,880].forEach((f,i)=>setTimeout(()=>tone(f,'sine',0.13,0.18),i*75)); };
+    const sfxStart    = () => { [330,440,550].forEach((f,i)=>setTimeout(()=>tone(f,'sine',0.12,0.2),i*90)); };
+
+    /* ─────────────────────────────────────────────
+       LEVEL GENERATION
+    ───────────────────────────────────────────── */
+    let _roundId = 0;
+    function makeLevel(lvl) {
+      const size = Math.min(2 + Math.floor((lvl - 1) / 3), 5);
+      const count = size * size;
+      // Cycle through vivid hues
+      const baseHue = (lvl * 57 + 150) % 360;
+      const sat = 70, lig = 55;
+      // Hue delta decreases with level — harder to see
+      const hueDelta = Math.max(4, 44 - (lvl - 1) * 2.4);
+      // Timer gets tighter with level
+      const roundTime = Math.max(3, 9 - Math.floor(lvl / 4));
+      const targetIdx = Math.floor(Math.random() * count);
+      const sign = Math.random() < 0.5 ? 1 : -1;
+      const targetHue = (baseHue + sign * hueDelta + 360) % 360;
+      const tiles = Array.from({ length: count }, (_, i) => ({
+        hue: i === targetIdx ? targetHue : baseHue,
+        sat, lig
+      }));
+      return { id: ++_roundId, size, tiles, targetIdx, baseHue, hueDelta: Math.round(hueDelta), roundTime };
+    }
+
+    /* ─────────────────────────────────────────────
+       PARTICLES
+    ───────────────────────────────────────────── */
+    function useParticles() {
+      const [pts, setPts] = useState([]);
+      const nextId = useRef(0);
+
+      const spawn = useCallback((x, y, hue, count = 14) => {
+        const color = `hsl(${hue},85%,65%)`;
+        const newPts = Array.from({ length: count }, () => ({
+          id: nextId.current++,
+          x, y, color,
+          vx: (Math.random() - 0.5) * 9,
+          vy: (Math.random() - 0.5) * 9,
+          life: 1.0
+        }));
+        setPts(p => [...p, ...newPts]);
+      }, []);
+
+      useEffect(() => {
+        if (pts.length === 0) return;
+        const raf = requestAnimationFrame(() => {
+          setPts(p =>
+            p.map(pt => ({ ...pt, x: pt.x + pt.vx, y: pt.y + pt.vy, vy: pt.vy + 0.28, life: pt.life - 0.055 }))
+             .filter(pt => pt.life > 0)
+          );
+        });
+        return () => cancelAnimationFrame(raf);
+      }, [pts]);
+
+      const els = pts.map(pt => (
+        <div key={pt.id} style={{
+          position: 'fixed', left: pt.x, top: pt.y,
+          width: 8, height: 8, borderRadius: '50%',
+          background: pt.color, opacity: pt.life,
+          transform: 'translate(-50%,-50%)',
+          pointerEvents: 'none', zIndex: 9999,
+          boxShadow: `0 0 6px ${pt.color}, 0 0 12px ${pt.color}`
+        }} />
+      ));
+
+      return { spawn, els };
+    }
+
+    /* ─────────────────────────────────────────────
+       STAT LABEL COMPONENT
+    ───────────────────────────────────────────── */
+    function Stat({ label, value, color = '#fff', big = false }) {
+      return (
+        <div style={{ textAlign: 'center', minWidth: 52 }}>
+          <div style={{
+            color: '#444', fontSize: '0.6rem',
+            textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'Courier New, monospace'
+          }}>{label}</div>
+          <div style={{
+            color, fontSize: big ? '1.6rem' : '1.35rem',
+            fontWeight: 800, fontFamily: 'Courier New, monospace', lineHeight: 1.1
+          }}>{value}</div>
+        </div>
+      );
+    }
+
+    /* ─────────────────────────────────────────────
+       START SCREEN
+    ───────────────────────────────────────────── */
+    function StartScreen({ highScore, onStart }) {
+      return (
+        <div style={{
+          width: '100vw', height: '100vh',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 18, padding: 20,
+          background: 'radial-gradient(ellipse at 50% 35%, #12082a 0%, #07040f 55%, #020208 100%)',
+          fontFamily: 'Courier New, monospace'
+        }}>
+          {/* Title */}
+          <div style={{
+            fontSize: 'clamp(2.4rem,11vw,5rem)', fontWeight: 900,
+            letterSpacing: '0.1em', textAlign: 'center', lineHeight: 1.05,
+            background: 'linear-gradient(135deg, #00ffcc 0%, #cc00ff 50%, #ffcc00 100%)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'
+          }}>
+            CHROMA<br />HUNT
+          </div>
+
+          <div style={{ color: '#888', fontSize: 'clamp(0.85rem,3vw,1rem)', textAlign: 'center' }}>
+            Find the tile with the different color
+          </div>
+
+          {/* Instructions */}
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 7,
+            color: '#555', fontSize: 'clamp(0.75rem,2.5vw,0.88rem)',
+            textAlign: 'center', lineHeight: 1.8
+          }}>
+            <div>🎯 &nbsp;Tap the one tile that looks different</div>
+            <div>⚡ &nbsp;Faster = higher score</div>
+            <div>🔗 &nbsp;Chain combos for big multipliers</div>
+            <div>📈 &nbsp;Grids grow · color gap shrinks</div>
+          </div>
+
+          {highScore > 0 && (
+            <div style={{ color: '#ffcc00', fontSize: '1rem', fontWeight: 700 }}>
+              Best: {highScore.toLocaleString()}
+            </div>
+          )}
+
+          <button
+            id="start-btn"
+            onClick={onStart}
+            style={{
+              marginTop: 6,
+              background: 'linear-gradient(135deg, #00ffcc, #aa00ff)',
+              border: 'none', borderRadius: 50, padding: '14px 56px',
+              fontSize: '1.15rem', fontWeight: 800, color: '#000',
+              cursor: 'pointer', letterSpacing: '0.06em',
+              boxShadow: '0 0 28px rgba(0,255,200,0.45), 0 0 60px rgba(180,0,255,0.2)',
+              transition: 'transform 0.1s, box-shadow 0.1s'
+            }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.96)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            PLAY
+          </button>
+        </div>
+      );
+    }
+
+    /* ─────────────────────────────────────────────
+       GAME OVER SCREEN
+    ───────────────────────────────────────────── */
+    function GameOverScreen({ score, highScore, level, onRestart }) {
+      const isNew = score > 0 && score >= highScore;
+      return (
+        <div style={{
+          width: '100vw', height: '100vh',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 14, padding: 20,
+          background: 'radial-gradient(ellipse at 50% 30%, #1c0a0a 0%, #050508 70%)',
+          fontFamily: 'Courier New, monospace'
+        }}>
+          <div style={{
+            fontSize: 'clamp(2rem,8vw,3.8rem)', fontWeight: 900,
+            color: '#ff3355', letterSpacing: '0.08em',
+            textShadow: '0 0 30px #ff3355'
+          }}>GAME OVER</div>
+
+          <div style={{
+            fontSize: 'clamp(2.8rem,12vw,5.5rem)', fontWeight: 900,
+            color: '#fff', lineHeight: 1, letterSpacing: '0.04em',
+            textShadow: '0 0 20px rgba(255,255,255,0.4)'
+          }}>{score.toLocaleString()}</div>
+
+          {isNew && (
+            <div style={{
+              color: '#ffcc00', fontSize: '1.1rem', fontWeight: 700,
+              textShadow: '0 0 20px #ffcc00',
+              animation: 'pulseGlow 1.5s ease-in-out infinite'
+            }}>
+              🏆 NEW HIGH SCORE!
+            </div>
+          )}
+
+          <div style={{ color: '#555', fontSize: '0.9rem' }}>Reached Level {level}</div>
+          {!isNew && highScore > 0 && (
+            <div style={{ color: '#333', fontSize: '0.8rem' }}>Best: {highScore.toLocaleString()}</div>
+          )}
+
+          <button
+            onClick={onRestart}
+            style={{
+              marginTop: 14,
+              background: 'linear-gradient(135deg, #ff3355, #ff8800)',
+              border: 'none', borderRadius: 50, padding: '14px 50px',
+              fontSize: '1.1rem', fontWeight: 800, color: '#fff',
+              cursor: 'pointer', letterSpacing: '0.06em',
+              boxShadow: '0 0 24px rgba(255,51,85,0.4)'
+            }}
+          >
+            TRY AGAIN
+          </button>
+        </div>
+      );
+    }
+
+    /* ─────────────────────────────────────────────
+       MAIN APP
+    ───────────────────────────────────────────── */
+    function App() {
+      const [screen, setScreen] = useState('start');
+      const [level, setLevel]   = useState(1);
+      const [score, setScore]   = useState(0);
+      const [highScore, setHighScore] = useState(
+        () => parseInt(localStorage.getItem('chromaHunt_hi') || '0', 10)
+      );
+      const [lives, setLives]   = useState(3);
+      const [combo, setCombo]   = useState(0);
+      const [round, setRound]   = useState(null);
+      const [timeLeft, setTimeLeft] = useState(0);
+      const [maxTime, setMaxTime]   = useState(8);
+      // feedback: null | { type:'correct'|'wrong'|'timeout', points:n, revealIdx:n }
+      const [feedback, setFeedback] = useState(null);
+
+      const timerRef     = useRef(null);
+      const processingRef = useRef(false);
+      const { spawn, els: particleEls } = useParticles();
+
+      /* ── persist high score ── */
+      useEffect(() => {
+        if (score > highScore) {
+          setHighScore(score);
+          localStorage.setItem('chromaHunt_hi', String(score));
+        }
+      }, [score]);
+
+      /* ── load a new round ── */
+      const loadRound = useCallback((lvl) => {
+        clearInterval(timerRef.current);
+        processingRef.current = false;
+        const data = makeLevel(lvl);
+        setRound(data);
+        setTimeLeft(data.roundTime);
+        setMaxTime(data.roundTime);
+        setFeedback(null);
+      }, []);
+
+      /* ── countdown timer ── */
+      useEffect(() => {
+        if (screen !== 'playing' || !round || feedback !== null) {
+          clearInterval(timerRef.current);
+          return;
+        }
+        clearInterval(timerRef.current);
+        timerRef.current = setInterval(() => {
+          setTimeLeft(t => Math.max(0, t - 1));
+        }, 1000);
+        return () => clearInterval(timerRef.current);
+      }, [screen, round && round.id, feedback]);
+
+      /* ── tick sound on low time ── */
+      useEffect(() => {
+        if (screen === 'playing' && feedback === null && timeLeft > 0 && timeLeft <= 3) {
+          sfxTick();
+        }
+      }, [timeLeft]);
+
+      /* ── handle timeout when timeLeft reaches 0 ── */
+      useEffect(() => {
+        if (screen !== 'playing' || feedback !== null || timeLeft !== 0 || !round) return;
+        clearInterval(timerRef.current);
+        if (processingRef.current) return;
+        processingRef.current = true;
+
+        sfxWrong();
+        const newLives = lives - 1;
+        setLives(newLives);
+        setCombo(0);
+        setFeedback({ type: 'timeout', points: 0, revealIdx: round.targetIdx });
+
+        if (newLives <= 0) {
+          setTimeout(() => setScreen('gameover'), 1400);
+        } else {
+          setTimeout(() => loadRound(level), 1400);
+        }
+      }, [timeLeft]);
+
+      /* ── tile click handler ── */
+      const onTileClick = useCallback((idx, e) => {
+        if (processingRef.current || screen !== 'playing' || feedback !== null || !round) return;
+        processingRef.current = true;
+        clearInterval(timerRef.current);
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top  + rect.height / 2;
+        const isCorrect = idx === round.targetIdx;
+
+        if (isCorrect) {
+          sfxCorrect();
+          spawn(cx, cy, round.tiles[idx].hue, 18);
+          const newCombo = combo + 1;
+          const mult  = Math.min(newCombo, 8);
+          const tPct  = timeLeft / maxTime;
+          const pts   = Math.round(100 * mult * (0.4 + tPct * 1.2));
+          setScore(s => s + pts);
+          setCombo(newCombo);
+          if (newCombo > 1 && newCombo % 3 === 0) sfxLevelUp();
+          setFeedback({ type: 'correct', points: pts, revealIdx: idx });
+          const nextLvl = level + 1;
+          setLevel(nextLvl);
+          setTimeout(() => loadRound(nextLvl), 620);
+        } else {
+          sfxWrong();
+          spawn(cx, cy, 5, 10);
+          const newLives = lives - 1;
+          setLives(newLives);
+          setCombo(0);
+          setFeedback({ type: 'wrong', points: 0, revealIdx: round.targetIdx });
+          if (newLives <= 0) {
+            setTimeout(() => setScreen('gameover'), 1400);
+          } else {
+            setTimeout(() => loadRound(level), 1400);
+          }
+        }
+      }, [round, combo, lives, level, timeLeft, maxTime, feedback, screen]);
+
+      const startGame = () => {
+        sfxStart();
+        setScreen('playing');
+        setLevel(1);
+        setScore(0);
+        setLives(3);
+        setCombo(0);
+        loadRound(1);
+      };
+
+      /* ── screens ── */
+      if (screen === 'start')    return <StartScreen highScore={highScore} onStart={startGame} />;
+      if (screen === 'gameover') return <GameOverScreen score={score} highScore={highScore} level={level} onRestart={startGame} />;
+      if (!round) return null;
+
+      /* ── layout math ── */
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const hudH  = 80;
+      const barH  = 18;
+      const fbH   = 40;
+      const padV  = 24;
+      const availW = Math.min(vw * 0.88, 500);
+      const availH = vh - hudH - barH - fbH - padV * 2 - 20;
+      const fixedGap = Math.max(5, Math.round(availW * 0.015));
+      const rawTileW = Math.floor((Math.min(availW, availH) - fixedGap * (round.size - 1)) / round.size);
+      const tileW = Math.min(rawTileW, 110);
+      const gap   = fixedGap;
+      const gridW = tileW * round.size + gap * (round.size - 1);
+
+      /* ── timer visuals ── */
+      const timerPct   = maxTime > 0 ? timeLeft / maxTime : 0;
+      const timerColor = timerPct > 0.5 ? '#00ff88' : timerPct > 0.25 ? '#ffee00' : '#ff3355';
+
+      /* ── background hue ── */
+      const bgHue = round.baseHue;
+
+      return (
+        <div
+          id="game-root"
+          style={{
+            width: '100vw', height: '100vh',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            gap: 10, padding: `${padV}px 12px`,
+            background: `radial-gradient(ellipse at 50% 40%, hsl(${bgHue},52%,12%) 0%, hsl(${(bgHue+90)%360},38%,6%) 58%, #040408 100%)`,
+            transition: 'background 0.7s ease',
+            position: 'relative', overflow: 'hidden',
+            fontFamily: 'Courier New, monospace'
+          }}
+        >
+          {particleEls}
+
+          {/* ── HUD ── */}
+          <div style={{ display: 'flex', gap: 26, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <Stat label="SCORE" value={score.toLocaleString()} color="#fff" />
+            <Stat label="LEVEL" value={level}                 color="#00eeff" />
+            <Stat label="LIVES" value={'♥'.repeat(lives)}     color="#ff4488" />
+            {combo > 1 && (
+              <Stat label="COMBO" value={`×${Math.min(combo,8)}`} color="#ffaa00" />
+            )}
+          </div>
+
+          {/* ── Timer bar ── */}
+          <div style={{
+            width: Math.min(gridW + 4, availW), height: 6,
+            background: '#111', borderRadius: 3, overflow: 'hidden'
+          }}>
+            <div style={{
+              height: '100%', borderRadius: 3,
+              width: `${timerPct * 100}%`,
+              background: timerColor,
+              boxShadow: `0 0 8px ${timerColor}`,
+              transition: 'width 0.88s linear, background 0.3s'
+            }} />
+          </div>
+
+          {/* ── Timer number ── */}
+          <div style={{
+            color: timerColor, fontSize: '0.75rem', fontWeight: 700,
+            textShadow: `0 0 8px ${timerColor}`, letterSpacing: '0.1em',
+            marginTop: -4
+          }}>
+            {timeLeft}s
+          </div>
+
+          {/* ── Tile grid ── */}
+          <div
+            className="game-grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${round.size}, ${tileW}px)`,
+              gap: `${gap}px`,
+              padding: 4,
+              borderRadius: 12,
+              boxShadow: `0 0 40px hsla(${bgHue},70%,40%,0.15)`
+            }}
+          >
+            {round.tiles.map((tile, idx) => {
+              const isFail    = feedback && feedback.type !== 'correct' && idx === feedback.revealIdx;
+              const isWon     = feedback && feedback.type === 'correct' && idx === feedback.revealIdx;
+
+              return (
+                <div
+                  key={idx}
+                  onClick={e => onTileClick(idx, e)}
+                  style={{
+                    width: tileW, height: tileW,
+                    borderRadius: Math.max(8, tileW * 0.12),
+                    background: `hsl(${tile.hue}, ${tile.sat}%, ${tile.lig}%)`,
+                    cursor: feedback ? 'default' : 'pointer',
+                    boxShadow: isFail
+                      ? `0 0 24px hsl(${tile.hue},85%,60%), 0 0 48px hsl(${tile.hue},85%,60%)`
+                      : `0 0 ${Math.round(tileW * 0.14)}px hsl(${tile.hue},55%,30%)`,
+                    border: `2px solid hsl(${tile.hue},75%,${isFail ? 72 : 42}%)`,
+                    transform: isFail ? 'scale(0.9)' : isWon ? 'scale(1.1)' : 'scale(1)',
+                    transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+                    animation: isFail ? 'tileReveal 0.18s ease' : isWon ? 'tileCorrect 0.18s ease' : 'none',
+                    WebkitTapHighlightColor: 'transparent',
+                    userSelect: 'none', touchAction: 'manipulation'
+                  }}
+                />
+              );
+            })}
+          </div>
+
+          {/* ── Feedback text ── */}
+          <div style={{ height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {feedback && (
+              <div style={{
+                fontSize: 'clamp(1rem,5vw,1.5rem)', fontWeight: 800,
+                color: feedback.type === 'correct' ? '#00ff88' : '#ff3355',
+                textShadow: `0 0 18px ${feedback.type === 'correct' ? '#00ff88' : '#ff3355'}`,
+                letterSpacing: '0.06em',
+                animation: 'fadeSlideIn 0.2s ease'
+              }}>
+                {feedback.type === 'correct'
+                  ? `+${feedback.points.toLocaleString()} ✓`
+                  : feedback.type === 'timeout' ? 'TIME OUT!' : 'WRONG!'}
+              </div>
+            )}
+          </div>
+
+          {/* Subtle diff indicator (for accessibility) */}
+          <div style={{
+            position: 'absolute', bottom: 6, right: 10,
+            color: '#1a1a22', fontSize: '0.5rem', userSelect: 'none'
+          }}>
+            Δ{round.hueDelta}°
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
