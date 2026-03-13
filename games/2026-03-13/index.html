@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Flip</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #06060e; }
+    #root { width: 100%; height: 100%; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.92) translateY(8px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    @keyframes floatY {
+      0%, 100% { transform: translateY(0px); }
+      50%       { transform: translateY(-10px); }
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.6; }
+      50%       { opacity: 1; }
+    }
+    @keyframes solveFlash {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.15); }
+      100% { transform: scale(1); }
+    }
+    @keyframes tileFlipAnim {
+      0%   { transform: scaleX(1) scaleY(1); }
+      50%  { transform: scaleX(0.1) scaleY(0.9); }
+      100% { transform: scaleX(1) scaleY(1); }
+    }
+    @keyframes particleFade {
+      0%   { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    @keyframes timerPulse {
+      0%, 100% { transform: scale(1); }
+      50%       { transform: scale(1.08); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ─────────────────────────────────────────────
+       AUDIO
+    ───────────────────────────────────────────── */
+    let _ac = null;
+    const getAC = () => {
+      if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+      return _ac;
+    };
+
+    const playTone = (freq, type = 'sine', duration = 0.12, vol = 0.15) => {
+      try {
+        const ac = getAC();
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.connect(gain);
+        gain.connect(ac.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ac.currentTime);
+        gain.gain.setValueAtTime(vol, ac.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + duration);
+        osc.start(ac.currentTime);
+        osc.stop(ac.currentTime + duration);
+      } catch (e) {}
+    };
+
+    const playFlip = (val) => {
+      playTone(val === 1 ? 440 : 330, 'square', 0.07, 0.09);
+    };
+    const playSolve = () => {
+      [523, 659, 784, 1047].forEach((f, i) =>
+        setTimeout(() => playTone(f, 'sine', 0.25, 0.22), i * 75)
+      );
+    };
+    const playFail = () => {
+      [220, 185, 150].forEach((f, i) =>
+        setTimeout(() => playTone(f, 'sawtooth', 0.22, 0.22), i * 90)
+      );
+    };
+    const playTick = () => playTone(880, 'sine', 0.05, 0.06);
+
+    /* ─────────────────────────────────────────────
+       PUZZLE LOGIC
+    ───────────────────────────────────────────── */
+    const getNeighbors = (idx, size) => {
+      const row = Math.floor(idx / size);
+      const col = idx % size;
+      const n = [idx];
+      if (row > 0)       n.push((row - 1) * size + col);
+      if (row < size-1)  n.push((row + 1) * size + col);
+      if (col > 0)       n.push(row * size + (col - 1));
+      if (col < size-1)  n.push(row * size + (col + 1));
+      return n;
+    };
+
+    const generatePuzzle = (size) => {
+      // Start from solved (all 0) and apply random flips to guarantee solvable
+      const grid = new Array(size * size).fill(0);
+      const numMoves = size * size + Math.floor(Math.random() * size * 2) + 2;
+      for (let m = 0; m < numMoves; m++) {
+        const idx = Math.floor(Math.random() * size * size);
+        getNeighbors(idx, size).forEach(i => { grid[i] ^= 1; });
+      }
+      // Reject trivially solved puzzles
+      if (grid.every(v => v === grid[0])) return generatePuzzle(size);
+      return grid;
+    };
+
+    const isSolved = (grid) => {
+      const first = grid[0];
+      return grid.every(v => v === first);
+    };
+
+    /* ─────────────────────────────────────────────
+       LEVEL CONFIG
+    ───────────────────────────────────────────── */
+    const LEVELS = [
+      { size: 3, time: 45, label: 'Level 1' },
+      { size: 4, time: 60, label: 'Level 2' },
+      { size: 4, time: 50, label: 'Level 3' },
+      { size: 5, time: 70, label: 'Level 4' },
+      { size: 5, time: 55, label: 'Level 5' },
+      { size: 6, time: 80, label: 'Level 6' },
+      { size: 6, time: 65, label: 'Level 7' },
+      { size: 6, time: 50, label: 'Level 8+' },
+    ];
+    const getLevelCfg = (lvl) => LEVELS[Math.min(lvl, LEVELS.length - 1)];
+
+    /* Color scheme: 0 = cyan, 1 = magenta */
+    const TILE_COLORS = ['#00f5ff', '#ff00ff'];
+    const TILE_BG     = ['#00f5ff16', '#ff00ff16'];
+
+    const STORAGE_KEY = 'neonFlip_highScore';
+
+    /* ─────────────────────────────────────────────
+       PARTICLES
+    ───────────────────────────────────────────── */
+    let _pid = 0;
+    const makeParticles = (x, y, color, count = 10) =>
+      Array.from({ length: count }, () => ({
+        id: _pid++,
+        x, y,
+        vx: (Math.random() - 0.5) * 180,
+        vy: (Math.random() - 0.5) * 180,
+        size: 3 + Math.random() * 6,
+        color,
+        born: Date.now(),
+        life: 600 + Math.random() * 300,
+      }));
+
+    const ParticleLayer = ({ particles }) => (
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+        {particles.map(p => {
+          const age = Date.now() - p.born;
+          const progress = Math.min(age / p.life, 1);
+          const opacity = 1 - progress;
+          return (
+            <div key={p.id} style={{
+              position: 'absolute',
+              left: p.x + p.vx * (age / 1000),
+              top:  p.y + p.vy * (age / 1000),
+              width: p.size,
+              height: p.size,
+              borderRadius: '50%',
+              background: p.color,
+              boxShadow: `0 0 ${p.size * 2}px ${p.color}`,
+              opacity,
+              transform: `scale(${1 - progress * 0.5})`,
+              transition: 'none',
+            }} />
+          );
+        })}
+      </div>
+    );
+
+    /* ─────────────────────────────────────────────
+       STARFIELD BACKGROUND
+    ───────────────────────────────────────────── */
+    const STARS = Array.from({ length: 55 }, (_, i) => ({
+      x: (i * 73 + 11) % 97,
+      y: (i * 53 + 7)  % 93,
+      r: 1 + (i % 3),
+      delay: (i * 0.18) % 3,
+      dur: 2 + (i % 3),
+      color: i % 3 === 0 ? '#00f5ff' : i % 3 === 1 ? '#ff00ff' : '#ffffff',
+    }));
+
+    /* ─────────────────────────────────────────────
+       MAIN APP
+    ───────────────────────────────────────────── */
+    const App = () => {
+      const [screen, setScreen]       = useState('start'); // start | game | over
+      const [level,  setLevel]        = useState(0);
+      const [grid,   setGrid]         = useState([]);
+      const [moves,  setMoves]        = useState(0);
+      const [timeLeft, setTimeLeft]   = useState(45);
+      const [score,  setScore]        = useState(0);
+      const [combo,  setCombo]        = useState(0);
+      const [highScore, setHighScore] = useState(() => {
+        try { return parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10); } catch { return 0; }
+      });
+      const [particles,  setParticles]  = useState([]);
+      const [flipping,   setFlipping]   = useState(new Set());
+      const [solving,    setSolving]    = useState(false);
+      const [solveMsg,   setSolveMsg]   = useState('');
+
+      // Mutable refs to avoid stale closures
+      const scoreRef    = useRef(0);
+      const comboRef    = useRef(0);
+      const timeRef     = useRef(45);
+      const levelRef    = useRef(0);
+      const solvingRef  = useRef(false);
+      const screenRef   = useRef('start');
+      const timerRef    = useRef(null);
+      const particleRaf = useRef(null);
+
+      // Sync refs
+      scoreRef.current   = score;
+      comboRef.current   = combo;
+      timeRef.current    = timeLeft;
+      levelRef.current   = level;
+      solvingRef.current = solving;
+      screenRef.current  = screen;
+
+      /* ── Particle animation loop ── */
+      useEffect(() => {
+        const tick = () => {
+          const now = Date.now();
+          setParticles(ps => ps.filter(p => now - p.born < p.life + 100));
+          particleRaf.current = requestAnimationFrame(tick);
+        };
+        particleRaf.current = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(particleRaf.current);
+      }, []);
+
+      const spawnParticles = useCallback((x, y, color, count = 12) => {
+        setParticles(ps => [...ps, ...makeParticles(x, y, color, count)]);
+      }, []);
+
+      /* ── Save high score ── */
+      const saveScore = useCallback((s) => {
+        const hs = Math.max(s, 0);
+        try { localStorage.setItem(STORAGE_KEY, hs.toString()); } catch {}
+        setHighScore(prev => Math.max(prev, hs));
+      }, []);
+
+      /* ── Start a level ── */
+      const startLevel = useCallback((lvlIdx) => {
+        const cfg = getLevelCfg(lvlIdx);
+        setGrid(generatePuzzle(cfg.size));
+        setMoves(0);
+        setTimeLeft(cfg.time);
+        timeRef.current = cfg.time;
+        setSolving(false);
+        solvingRef.current = false;
+        setFlipping(new Set());
+        setSolveMsg('');
+      }, []);
+
+      /* ── Start game ── */
+      const startGame = useCallback(() => {
+        setLevel(0);
+        setScore(0);
+        setCombo(0);
+        scoreRef.current = 0;
+        comboRef.current = 0;
+        setScreen('game');
+        screenRef.current = 'game';
+        startLevel(0);
+      }, [startLevel]);
+
+      /* ── Timer ── */
+      useEffect(() => {
+        if (screen !== 'game') return;
+        clearInterval(timerRef.current);
+
+        const tick = () => {
+          if (solvingRef.current) return; // pause during solve
+          timeRef.current -= 1;
+          setTimeLeft(timeRef.current);
+          if (timeRef.current <= 3 && timeRef.current > 0) playTick();
+          if (timeRef.current <= 0) {
+            clearInterval(timerRef.current);
+            playFail();
+            saveScore(scoreRef.current);
+            setScreen('over');
+            screenRef.current = 'over';
+          }
+        };
+        timerRef.current = setInterval(tick, 1000);
+        return () => clearInterval(timerRef.current);
+      }, [screen, level, saveScore]);
+
+      /* ── Tile click handler ── */
+      const handleTileClick = useCallback((idx, evt) => {
+        if (screenRef.current !== 'game' || solvingRef.current) return;
+
+        const cfg = getLevelCfg(levelRef.current);
+        const size = cfg.size;
+        const neighbors = getNeighbors(idx, size);
+
+        // Animate flips
+        setFlipping(new Set(neighbors));
+        setTimeout(() => setFlipping(new Set()), 220);
+
+        // Get tile element position for particles
+        let px = evt ? evt.clientX : window.innerWidth / 2;
+        let py = evt ? evt.clientY : window.innerHeight / 2;
+
+        setGrid(prevGrid => {
+          const ng = [...prevGrid];
+          neighbors.forEach(i => { ng[i] ^= 1; });
+          const color = TILE_COLORS[ng[idx]];
+          playFlip(ng[idx]);
+          spawnParticles(px, py, color, 8);
+
+          if (isSolved(ng)) {
+            // Puzzle solved!
+            solvingRef.current = true;
+            setSolving(true);
+            playSolve();
+
+            const timeBon  = timeRef.current * 12;
+            const movePen  = Math.max(0, 300 - (moves + 1) * 8);
+            const lvlBon   = (levelRef.current + 1) * 150;
+            const mult     = comboRef.current + 1;
+            const pts      = Math.round((timeBon + movePen + lvlBon) * mult);
+
+            const newScore = scoreRef.current + pts;
+            scoreRef.current = newScore;
+            setScore(newScore);
+            setCombo(c => c + 1);
+            comboRef.current += 1;
+            setSolveMsg(`+${pts.toLocaleString()} pts${mult > 1 ? ` ×${mult} COMBO!` : ''}`);
+            saveScore(newScore);
+
+            // Burst particles across all tiles
+            for (let i = 0; i < cfg.size * cfg.size; i++) {
+              const row = Math.floor(i / cfg.size);
+              const col = i % cfg.size;
+              const tileSize = Math.min(
+                Math.floor((Math.min(window.innerWidth, 520) - 48) / cfg.size) - 8,
+                Math.floor((window.innerHeight - 180) / cfg.size) - 8,
+                88
+              );
+              const gridLeft = (window.innerWidth - (tileSize * cfg.size + 8 * (cfg.size - 1))) / 2;
+              const gridTop  = 130;
+              setTimeout(() => {
+                spawnParticles(
+                  gridLeft + col * (tileSize + 8) + tileSize / 2,
+                  gridTop  + row * (tileSize + 8) + tileSize / 2,
+                  i % 2 === 0 ? '#00f5ff' : '#ff00ff',
+                  5
+                );
+              }, i * 30);
+            }
+
+            // Advance to next level
+            setTimeout(() => {
+              const nextLvl = levelRef.current + 1;
+              setLevel(nextLvl);
+              levelRef.current = nextLvl;
+              startLevel(nextLvl);
+            }, 1800);
+          }
+
+          return ng;
+        });
+
+        setMoves(m => m + 1);
+      }, [moves, spawnParticles, startLevel, saveScore]);
+
+      /* ── Derived ── */
+      const cfg      = getLevelCfg(level);
+      const size     = cfg.size;
+      const maxTime  = cfg.time;
+      const timeRatio = timeLeft / maxTime;
+      const timerColor = timeRatio > 0.5 ? '#00f5ff' : timeRatio > 0.25 ? '#ffcc00' : '#ff3333';
+
+      const tileSize = Math.min(
+        Math.floor((Math.min(window.innerWidth, 520) - 48) / size) - 8,
+        Math.floor((window.innerHeight - 180) / size) - 8,
+        88
+      );
+
+      /* ─────── BACKGROUND ─────── */
+      const BG = (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'radial-gradient(ellipse at 30% 40%, #0a0025 0%, #06060e 55%, #00001a 100%)',
+          overflow: 'hidden',
+        }}>
+          {STARS.map((s, i) => (
+            <div key={i} style={{
+              position: 'absolute',
+              left: `${s.x}%`, top: `${s.y}%`,
+              width: s.r * 2, height: s.r * 2,
+              borderRadius: '50%',
+              background: s.color,
+              opacity: 0.4,
+              boxShadow: `0 0 ${s.r * 3}px ${s.color}`,
+              animation: `pulseGlow ${s.dur}s ease-in-out infinite`,
+              animationDelay: `${s.delay}s`,
+            }} />
+          ))}
+        </div>
+      );
+
+      /* ─────── START SCREEN ─────── */
+      if (screen === 'start') {
+        return (
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            {BG}
+            <ParticleLayer particles={particles} />
+            <div style={{
+              position: 'relative', zIndex: 5,
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              justifyContent: 'center', height: '100%', gap: 22, padding: 24,
+              animation: 'fadeIn 0.5s ease-out',
+            }}>
+              {/* Title */}
+              <div style={{
+                fontSize: 'clamp(40px, 9vw, 76px)',
+                fontFamily: 'monospace', fontWeight: 900,
+                letterSpacing: '0.08em', textTransform: 'uppercase',
+                background: 'linear-gradient(135deg, #00f5ff 30%, #ff00ff 70%)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+                filter: 'drop-shadow(0 0 24px #00f5ff88)',
+                animation: 'floatY 3s ease-in-out infinite',
+              }}>NEON FLIP</div>
+
+              {/* Subtitle */}
+              <div style={{
+                color: '#aaa', fontFamily: 'monospace',
+                fontSize: 'clamp(13px, 3vw, 17px)', textAlign: 'center',
+                lineHeight: 1.7, maxWidth: 360,
+              }}>
+                Click any tile to flip it and its{' '}
+                <span style={{ color: '#00f5ff' }}>neighbors</span>.
+                <br />
+                Get all tiles the{' '}
+                <span style={{ color: '#ff00ff' }}>same color</span>
+                {' '}before time runs out!
+              </div>
+
+              {/* Demo grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 52px)',
+                gap: 7,
+                filter: 'drop-shadow(0 0 12px #00f5ff44)',
+              }}>
+                {[1,0,0,0,1,0,0,0,1].map((v, i) => (
+                  <div key={i} style={{
+                    width: 52, height: 52, borderRadius: 10,
+                    background: v ? TILE_BG[0] : TILE_BG[1],
+                    border: `2px solid ${v ? TILE_COLORS[0] : TILE_COLORS[1]}`,
+                    boxShadow: `0 0 12px ${v ? TILE_COLORS[0] : TILE_COLORS[1]}88`,
+                    animation: `floatY ${1.8 + (i % 3) * 0.4}s ease-in-out infinite`,
+                    animationDelay: `${(i * 0.15) % 1.5}s`,
+                  }} />
+                ))}
+              </div>
+
+              {/* High score */}
+              {highScore > 0 && (
+                <div style={{
+                  fontFamily: 'monospace', color: '#ffcc00', fontSize: 16,
+                  textShadow: '0 0 10px #ffcc0088',
+                }}>
+                  BEST: {highScore.toLocaleString()}
+                </div>
+              )}
+
+              {/* Play button */}
+              <button
+                id="start-btn"
+                onClick={startGame}
+                style={{
+                  background: 'linear-gradient(135deg, #00f5ff22, #ff00ff22)',
+                  border: '2px solid #00f5ff',
+                  color: '#00f5ff', fontFamily: 'monospace',
+                  fontSize: 'clamp(17px, 4vw, 24px)', fontWeight: 700,
+                  padding: '14px 52px', borderRadius: 12, cursor: 'pointer',
+                  boxShadow: '0 0 28px #00f5ff80',
+                  letterSpacing: '0.12em',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'linear-gradient(135deg, #00f5ff44, #ff00ff44)';
+                  e.currentTarget.style.boxShadow = '0 0 48px #00f5ff';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'linear-gradient(135deg, #00f5ff22, #ff00ff22)';
+                  e.currentTarget.style.boxShadow = '0 0 28px #00f5ff80';
+                }}
+              >
+                ▶ PLAY
+              </button>
+
+              <div style={{ color: '#444', fontFamily: 'monospace', fontSize: 12 }}>
+                CLICK · TAP
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      /* ─────── GAME OVER SCREEN ─────── */
+      if (screen === 'over') {
+        const isNewBest = score >= highScore && score > 0;
+        return (
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            {BG}
+            <ParticleLayer particles={particles} />
+            <div style={{
+              position: 'relative', zIndex: 5,
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              justifyContent: 'center', height: '100%', gap: 20, padding: 24,
+              animation: 'fadeIn 0.5s ease-out',
+            }}>
+              <div style={{
+                fontFamily: 'monospace', fontWeight: 900,
+                fontSize: 'clamp(30px, 7vw, 56px)',
+                color: '#ff3333', textShadow: '0 0 24px #ff3333',
+                letterSpacing: '0.08em',
+              }}>TIME'S UP!</div>
+
+              <div style={{ fontFamily: 'monospace', textAlign: 'center' }}>
+                <div style={{ color: '#666', fontSize: 13, letterSpacing: '0.1em', marginBottom: 4 }}>
+                  FINAL SCORE
+                </div>
+                <div style={{
+                  color: '#fff', fontSize: 'clamp(36px, 8vw, 60px)', fontWeight: 900,
+                  textShadow: '0 0 16px #ffffff88',
+                }}>
+                  {score.toLocaleString()}
+                </div>
+              </div>
+
+              {isNewBest && (
+                <div style={{
+                  color: '#ffcc00', fontFamily: 'monospace', fontSize: 20, fontWeight: 700,
+                  textShadow: '0 0 16px #ffcc00',
+                  animation: 'floatY 1.2s ease-in-out infinite',
+                }}>
+                  🏆 NEW HIGH SCORE!
+                </div>
+              )}
+
+              <div style={{ color: '#666', fontFamily: 'monospace', fontSize: 14 }}>
+                BEST: {Math.max(score, highScore).toLocaleString()}
+              </div>
+
+              <div style={{
+                display: 'flex', gap: 24, fontFamily: 'monospace',
+                color: '#555', fontSize: 13,
+              }}>
+                <span>Level {level + 1}</span>
+                <span>·</span>
+                <span>{combo} solved</span>
+              </div>
+
+              <button
+                id="start-btn"
+                onClick={startGame}
+                style={{
+                  background: 'linear-gradient(135deg, #00f5ff22, #ff00ff22)',
+                  border: '2px solid #00f5ff', color: '#00f5ff',
+                  fontFamily: 'monospace', fontSize: 20, fontWeight: 700,
+                  padding: '13px 44px', borderRadius: 11, cursor: 'pointer',
+                  boxShadow: '0 0 24px #00f5ff80', letterSpacing: '0.1em',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.boxShadow = '0 0 48px #00f5ff';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.boxShadow = '0 0 24px #00f5ff80';
+                }}
+              >
+                PLAY AGAIN
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      /* ─────── GAME SCREEN ─────── */
+      return (
+        <div
+          id="game-root"
+          style={{ position: 'relative', width: '100%', height: '100%', userSelect: 'none' }}
+        >
+          {BG}
+          <ParticleLayer particles={particles} />
+
+          <div style={{ position: 'relative', zIndex: 5, height: '100%', display: 'flex', flexDirection: 'column' }}>
+
+            {/* ── HUD ── */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '10px 20px',
+              borderBottom: '1px solid #ffffff12',
+              backdropFilter: 'blur(4px)',
+              flexShrink: 0,
+            }}>
+              {/* Score */}
+              <div style={{ fontFamily: 'monospace' }}>
+                <div style={{ color: '#555', fontSize: 10, letterSpacing: '0.1em' }}>SCORE</div>
+                <div style={{ color: '#fff', fontSize: 20, fontWeight: 700 }}>
+                  {score.toLocaleString()}
+                </div>
+              </div>
+
+              {/* Level / Grid */}
+              <div style={{ textAlign: 'center', fontFamily: 'monospace' }}>
+                <div style={{ color: '#00f5ff', fontSize: 13, fontWeight: 700 }}>{cfg.label}</div>
+                <div style={{ color: '#555', fontSize: 11 }}>{size}×{size}</div>
+              </div>
+
+              {/* Timer */}
+              <div style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                <div style={{ color: '#555', fontSize: 10, letterSpacing: '0.1em' }}>TIME</div>
+                <div style={{
+                  color: timerColor, fontSize: 20, fontWeight: 700,
+                  textShadow: `0 0 10px ${timerColor}`,
+                  animation: timeLeft <= 5 ? 'timerPulse 0.5s ease-in-out infinite' : 'none',
+                }}>
+                  {timeLeft}s
+                </div>
+              </div>
+            </div>
+
+            {/* Timer bar */}
+            <div style={{
+              height: 3, background: '#111',
+              flexShrink: 0,
+            }}>
+              <div style={{
+                height: '100%',
+                width: `${(timeLeft / maxTime) * 100}%`,
+                background: `linear-gradient(90deg, ${timerColor}, ${timerColor}88)`,
+                boxShadow: `0 0 8px ${timerColor}`,
+                transition: 'width 0.9s linear, background 0.5s',
+              }} />
+            </div>
+
+            {/* Combo badge */}
+            {combo > 0 && (
+              <div style={{
+                textAlign: 'center', fontFamily: 'monospace', padding: '4px 0',
+                color: '#ffcc00', fontSize: 13, fontWeight: 700,
+                textShadow: '0 0 8px #ffcc0088',
+                flexShrink: 0,
+              }}>
+                {combo}× COMBO MULTIPLIER
+              </div>
+            )}
+
+            {/* Grid area */}
+            <div style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              position: 'relative',
+            }}>
+
+              {/* Solve overlay */}
+              {solving && (
+                <div style={{
+                  position: 'absolute', zIndex: 20,
+                  fontFamily: 'monospace', fontWeight: 900,
+                  fontSize: 'clamp(20px, 5vw, 32px)',
+                  color: '#00ff99',
+                  textShadow: '0 0 24px #00ff99, 0 0 48px #00ff9966',
+                  animation: 'solveFlash 0.4s ease-in-out infinite',
+                  textAlign: 'center',
+                  pointerEvents: 'none',
+                }}>
+                  SOLVED!<br />
+                  <span style={{ fontSize: '0.7em', color: '#ffcc00' }}>{solveMsg}</span>
+                </div>
+              )}
+
+              {/* Tile grid */}
+              <div
+                className="game-grid"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${size}, ${tileSize}px)`,
+                  gap: 8,
+                  opacity: solving ? 0.35 : 1,
+                  transition: 'opacity 0.3s',
+                  padding: 8,
+                }}
+              >
+                {grid.map((val, idx) => {
+                  const isFlip = flipping.has(idx);
+                  const color  = TILE_COLORS[val];
+                  const bg     = TILE_BG[val];
+                  return (
+                    <div
+                      key={idx}
+                      onClick={(e) => handleTileClick(idx, e)}
+                      style={{
+                        width: tileSize,
+                        height: tileSize,
+                        borderRadius: Math.max(6, tileSize * 0.13),
+                        background: bg,
+                        border: `2px solid ${color}`,
+                        boxShadow: isFlip
+                          ? `0 0 32px ${color}, inset 0 0 16px ${color}44`
+                          : `0 0 10px ${color}66`,
+                        cursor: solving ? 'default' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        animation: isFlip ? 'tileFlipAnim 0.22s ease-in-out' : 'none',
+                        transition: isFlip ? 'none' : 'box-shadow 0.15s, background 0.15s',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      {/* Inner dot */}
+                      <div style={{
+                        width: tileSize * 0.36,
+                        height: tileSize * 0.36,
+                        borderRadius: '50%',
+                        background: color,
+                        boxShadow: `0 0 ${tileSize * 0.18}px ${color}`,
+                        opacity: 0.85,
+                        transition: 'background 0.15s',
+                      }} />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Hint */}
+              <div style={{
+                marginTop: 12, fontFamily: 'monospace',
+                color: '#333', fontSize: 12, textAlign: 'center',
+              }}>
+                Moves: {moves} · Make all tiles match
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
