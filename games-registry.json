@@ -334,5 +334,19 @@
     "folder": "games/2026-03-10",
     "file": "games/2026-03-10/index.html",
     "preview": "games/2026-03-10/preview.png"
+  },
+  {
+    "id": "2026-03-13",
+    "name": "Neon Flip",
+    "date": "2026-03-13",
+    "description": "A neon Lights Out puzzle — click any tile to flip it and all its neighbors between cyan and magenta. Get every tile the same color before time runs out! Grids grow from 3×3 to 6×6 while combo multipliers reward consecutive solves!",
+    "tagline": "Flip the tiles. Make them match. Beat the clock.",
+    "tags": ["puzzle", "strategy", "casual", "color", "logic"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap any tile to flip it and its neighbors",
+    "folder": "games/2026-03-13",
+    "file": "games/2026-03-13/index.html",
+    "preview": "games/2026-03-13/preview.png"
   }
 ]
