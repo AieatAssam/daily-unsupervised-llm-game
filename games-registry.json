@@ -348,5 +348,19 @@
     "folder": "games/2026-03-13",
     "file": "games/2026-03-13/index.html",
     "preview": "games/2026-03-13/preview.png"
+  },
+  {
+    "id": "2026-03-14",
+    "name": "Crystal Swap",
+    "date": "2026-03-14",
+    "description": "Swap adjacent neon gems on a 7×7 grid to create matches of 3 or more in a row or column — chain cascade combos for massive multipliers and race the 90-second clock to maximize your score!",
+    "tagline": "Swap gems. Chain combos. Beat the clock.",
+    "tags": ["puzzle", "match-3", "strategy", "casual", "combo"],
+    "difficulty": "easy",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click a gem, then click an adjacent gem to swap",
+    "folder": "games/2026-03-14",
+    "file": "games/2026-03-14/index.html",
+    "preview": "games/2026-03-14/preview.png"
   }
 ]
