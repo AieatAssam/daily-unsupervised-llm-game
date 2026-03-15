@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beam Dodge</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; background: #020008; font-family: 'Arial', sans-serif; user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.7; transform: scale(1.08); }
+    }
+    @keyframes crystalSpin {
+      0%   { transform: rotate(0deg) scale(1); }
+      100% { transform: rotate(360deg) scale(1); }
+    }
+    @keyframes floatUp {
+      0%   { transform: translateY(0); opacity: 1; }
+      100% { transform: translateY(-70px); opacity: 0; }
+    }
+    @keyframes shockwave {
+      0%   { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(3); opacity: 0; }
+    }
+    @keyframes titlePulse {
+      0%, 100% { text-shadow: 0 0 20px #0ff, 0 0 40px #0ff, 0 0 80px #0ff; }
+      50%       { text-shadow: 0 0 40px #f0f, 0 0 80px #f0f, 0 0 120px #f0f; }
+    }
+    @keyframes bgShift {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes heartbeat {
+      0%, 100% { transform: scale(1); }
+      50%       { transform: scale(1.3); }
+    }
+    @keyframes dangerFlash {
+      0%, 100% { background: rgba(255,0,0,0); }
+      50%       { background: rgba(255,0,0,0.15); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ── Audio ──────────────────────────────────────────────────────────────
+    function createAudio() {
+      let ctx = null;
+      function getCtx() {
+        if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+        return ctx;
+      }
+      return {
+        collectCrystal(pitch = 660) {
+          try {
+            const c = getCtx();
+            const o = c.createOscillator(), g = c.createGain();
+            o.connect(g); g.connect(c.destination);
+            o.frequency.setValueAtTime(pitch, c.currentTime);
+            o.frequency.exponentialRampToValueAtTime(pitch * 2, c.currentTime + 0.1);
+            g.gain.setValueAtTime(0.3, c.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.2);
+            o.start(c.currentTime); o.stop(c.currentTime + 0.2);
+          } catch(e) {}
+        },
+        hit() {
+          try {
+            const c = getCtx();
+            const o = c.createOscillator(), g = c.createGain();
+            o.type = 'sawtooth';
+            o.connect(g); g.connect(c.destination);
+            o.frequency.setValueAtTime(200, c.currentTime);
+            o.frequency.exponentialRampToValueAtTime(50, c.currentTime + 0.3);
+            g.gain.setValueAtTime(0.5, c.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.3);
+            o.start(c.currentTime); o.stop(c.currentTime + 0.3);
+          } catch(e) {}
+        },
+        combo(n) {
+          try {
+            const c = getCtx();
+            const freqs = [440, 550, 660, 880, 1100];
+            const f = freqs[Math.min(n - 2, freqs.length - 1)];
+            const o = c.createOscillator(), g = c.createGain();
+            o.type = 'sine';
+            o.connect(g); g.connect(c.destination);
+            o.frequency.setValueAtTime(f, c.currentTime);
+            o.frequency.exponentialRampToValueAtTime(f * 1.5, c.currentTime + 0.15);
+            g.gain.setValueAtTime(0.4, c.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.25);
+            o.start(c.currentTime); o.stop(c.currentTime + 0.25);
+          } catch(e) {}
+        },
+        gameOver() {
+          try {
+            const c = getCtx();
+            [300,250,200,150].forEach((freq, i) => {
+              const o = c.createOscillator(), g = c.createGain();
+              o.type = 'square';
+              o.connect(g); g.connect(c.destination);
+              o.frequency.value = freq;
+              g.gain.setValueAtTime(0.3, c.currentTime + i * 0.15);
+              g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + i * 0.15 + 0.15);
+              o.start(c.currentTime + i * 0.15);
+              o.stop(c.currentTime + i * 0.15 + 0.15);
+            });
+          } catch(e) {}
+        }
+      };
+    }
+
+    const AUDIO = createAudio();
+
+    // ── Constants ──────────────────────────────────────────────────────────
+    const PLAYER_RADIUS = 10;
+    const CRYSTAL_RADIUS = 12;
+    const BEAM_WIDTH = 8;
+    const BEAM_HIT_WIDTH = 14; // slightly wider hitbox for feel
+    const MAX_LIVES = 3;
+    const INVINCIBLE_MS = 1800;
+
+    // Crystal colors
+    const CRYSTAL_COLORS = ['#00ffff','#ff00ff','#ffff00','#00ff88','#ff6600','#8888ff'];
+
+    function randBetween(a, b) { return a + Math.random() * (b - a); }
+
+    // Generate a beam configuration
+    function makeBeam(id, W, H, speed, phase) {
+      // pivot is somewhere on screen
+      const pivotX = randBetween(W * 0.2, W * 0.8);
+      const pivotY = randBetween(H * 0.2, H * 0.8);
+      const angle = Math.random() * Math.PI * 2;
+      const length = Math.max(W, H) * 1.5; // long enough to cross whole screen
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      const colors = ['#ff0044','#ff6600','#ff00ff'];
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      return { id, pivotX, pivotY, angle, length, speed: speed * dir, color };
+    }
+
+    function makeCrystal(id, W, H, avoidX, avoidY) {
+      let x, y, attempts = 0;
+      do {
+        x = randBetween(CRYSTAL_RADIUS + 20, W - CRYSTAL_RADIUS - 20);
+        y = randBetween(CRYSTAL_RADIUS + 20, H - CRYSTAL_RADIUS - 20);
+        attempts++;
+      } while (attempts < 20 && Math.hypot(x - avoidX, y - avoidY) < 80);
+      const color = CRYSTAL_COLORS[Math.floor(Math.random() * CRYSTAL_COLORS.length)];
+      const points = Math.floor(randBetween(1, 4));
+      return { id, x, y, color, points, born: performance.now(), life: randBetween(4000, 8000) };
+    }
+
+    // Distance from point (px,py) to a line segment defined by beam
+    function distToBeam(beam, px, py) {
+      const cos = Math.cos(beam.angle);
+      const sin = Math.sin(beam.angle);
+      // beam goes from pivot - length*dir to pivot + length*dir along angle
+      const dx = px - beam.pivotX;
+      const dy = py - beam.pivotY;
+      // perpendicular distance
+      return Math.abs(dx * (-sin) + dy * cos);
+    }
+
+    // ── Main Game ──────────────────────────────────────────────────────────
+    const BeamDodge = () => {
+      const canvasRef = useRef(null);
+      const stateRef = useRef(null);
+      const animRef = useRef(null);
+      const [phase, setPhase] = useState('start'); // start | playing | dead | gameover
+      const [score, setScore] = useState(0);
+      const [lives, setLives] = useState(MAX_LIVES);
+      const [combo, setCombo] = useState(0);
+      const [hiScore, setHiScore] = useState(() => {
+        try { return parseInt(localStorage.getItem('beamDodgeHighScore') || '0'); } catch(e) { return 0; }
+      });
+      // Save best score to localStorage whenever score changes
+      useEffect(() => {
+        if (score > 0) {
+          try {
+            const cur = parseInt(localStorage.getItem('beamDodgeHighScore') || '0');
+            if (score > cur) {
+              localStorage.setItem('beamDodgeHighScore', score.toString());
+              setHiScore(score);
+            }
+          } catch(e) {}
+        }
+      }, [score]);
+      const [floats, setFloats] = useState([]); // floating score texts
+      const [dangerAnim, setDangerAnim] = useState(false);
+
+      const phaseRef = useRef(phase);
+      phaseRef.current = phase;
+
+      // Init game state
+      function initState(W, H) {
+        // Ensure localStorage key is written on game start
+        try {
+          if (!localStorage.getItem('beamDodgeHighScore')) {
+            localStorage.setItem('beamDodgeHighScore', '0');
+          }
+        } catch(e) {}
+        return {
+          W, H,
+          playerX: W / 2,
+          playerY: H / 2,
+          targetX: W / 2,
+          targetY: H / 2,
+          beams: [],
+          crystals: [],
+          score: 0,
+          lives: MAX_LIVES,
+          combo: 0,
+          invincibleUntil: 0,
+          lastCrystalId: 0,
+          lastBeamId: 0,
+          level: 1,
+          levelTimer: 0,
+          particles: [],
+          shockwaves: [],
+          floatId: 0,
+        };
+      }
+
+      function spawnInitialBeams(st) {
+        const count = 2 + Math.floor(st.level / 2);
+        const speed = 0.4 + st.level * 0.08;
+        for (let i = 0; i < count; i++) {
+          st.beams.push(makeBeam(st.lastBeamId++, st.W, st.H, speed, i));
+        }
+      }
+
+      function spawnCrystals(st, count = 3) {
+        for (let i = 0; i < count; i++) {
+          st.crystals.push(makeCrystal(st.lastCrystalId++, st.W, st.H, st.playerX, st.playerY));
+        }
+      }
+
+      const startGame = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const W = canvas.width;
+        const H = canvas.height;
+        const st = initState(W, H);
+        spawnInitialBeams(st);
+        spawnCrystals(st, 4);
+        stateRef.current = st;
+        setScore(0);
+        setLives(MAX_LIVES);
+        setCombo(0);
+        setFloats([]);
+        setDangerAnim(false);
+        setPhase('playing');
+      }, []);
+
+      // Draw everything on canvas
+      function draw(st, now) {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const { W, H } = st;
+
+        // Background
+        ctx.fillStyle = '#020008';
+        ctx.fillRect(0, 0, W, H);
+
+        // Draw grid lines (subtle)
+        ctx.strokeStyle = 'rgba(0,255,255,0.04)';
+        ctx.lineWidth = 1;
+        const gridSize = 60;
+        for (let x = 0; x <= W; x += gridSize) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+        }
+        for (let y = 0; y <= H; y += gridSize) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        }
+
+        // Draw shockwaves
+        for (const sw of st.shockwaves) {
+          const t = (now - sw.born) / sw.life;
+          const r = sw.maxR * t;
+          ctx.beginPath();
+          ctx.arc(sw.x, sw.y, r, 0, Math.PI * 2);
+          ctx.strokeStyle = sw.color.replace(')', `,${1 - t})`).replace('rgb', 'rgba');
+          ctx.lineWidth = 3 * (1 - t);
+          ctx.stroke();
+        }
+
+        // Draw beams
+        for (const beam of st.beams) {
+          const cos = Math.cos(beam.angle);
+          const sin = Math.sin(beam.angle);
+          const x1 = beam.pivotX - cos * beam.length;
+          const y1 = beam.pivotY - sin * beam.length;
+          const x2 = beam.pivotX + cos * beam.length;
+          const y2 = beam.pivotY + sin * beam.length;
+
+          // Outer glow
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.strokeStyle = beam.color.replace(')', ',0.15)').replace('#', 'rgba(').replace('rgba(ff', 'rgba(255');
+          // just use a direct approach:
+          ctx.strokeStyle = hexAlpha(beam.color, 0.2);
+          ctx.lineWidth = BEAM_WIDTH * 4;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+
+          // Core beam
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.strokeStyle = beam.color;
+          ctx.lineWidth = BEAM_WIDTH;
+          ctx.stroke();
+
+          // Inner white core
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // Pivot dot
+          ctx.beginPath();
+          ctx.arc(beam.pivotX, beam.pivotY, 5, 0, Math.PI * 2);
+          ctx.fillStyle = beam.color;
+          ctx.fill();
+        }
+
+        // Draw crystals
+        for (const cryst of st.crystals) {
+          const age = (now - cryst.born) / cryst.life;
+          const alpha = age > 0.75 ? (1 - age) / 0.25 : 1;
+          const rot = ((now - cryst.born) * 0.002) % (Math.PI * 2);
+          ctx.save();
+          ctx.translate(cryst.x, cryst.y);
+          ctx.rotate(rot);
+          ctx.globalAlpha = alpha;
+
+          // Outer glow
+          ctx.beginPath();
+          drawDiamond(ctx, 0, 0, CRYSTAL_RADIUS * 1.8);
+          ctx.fillStyle = hexAlpha(cryst.color, 0.2);
+          ctx.fill();
+
+          // Main gem
+          ctx.beginPath();
+          drawDiamond(ctx, 0, 0, CRYSTAL_RADIUS);
+          ctx.fillStyle = cryst.color;
+          ctx.fill();
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Inner shine
+          ctx.beginPath();
+          ctx.moveTo(-CRYSTAL_RADIUS * 0.3, -CRYSTAL_RADIUS * 0.4);
+          ctx.lineTo(0, -CRYSTAL_RADIUS * 0.1);
+          ctx.lineTo(-CRYSTAL_RADIUS * 0.1, CRYSTAL_RADIUS * 0.2);
+          ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.globalAlpha = 1;
+          ctx.restore();
+
+          // Points label
+          if (cryst.points > 1) {
+            ctx.font = 'bold 10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = cryst.color;
+            ctx.fillText(`×${cryst.points}`, cryst.x, cryst.y - CRYSTAL_RADIUS - 4);
+          }
+        }
+
+        // Draw particles
+        for (const p of st.particles) {
+          const t = (now - p.born) / p.life;
+          const px = p.x + p.vx * (now - p.born) / 1000;
+          const py = p.y + p.vy * (now - p.born) / 1000 + 0.5 * 200 * Math.pow((now - p.born) / 1000, 2);
+          ctx.beginPath();
+          ctx.arc(px, py, p.r * (1 - t), 0, Math.PI * 2);
+          ctx.fillStyle = hexAlpha(p.color, 1 - t);
+          ctx.fill();
+        }
+
+        // Draw player
+        const isInvincible = now < st.invincibleUntil;
+        const blinkOn = isInvincible ? (Math.floor(now / 120) % 2 === 0) : true;
+
+        if (blinkOn) {
+          const pulse = 0.15 * Math.sin(now * 0.006) + 1;
+          ctx.save();
+          ctx.translate(st.playerX, st.playerY);
+
+          // Trail effect - outer ring
+          ctx.beginPath();
+          ctx.arc(0, 0, PLAYER_RADIUS * 2.5 * pulse, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(0,255,255,0.08)';
+          ctx.fill();
+
+          // Main orb
+          const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, PLAYER_RADIUS);
+          grad.addColorStop(0, '#ffffff');
+          grad.addColorStop(0.4, '#00ffff');
+          grad.addColorStop(1, '#0044ff');
+          ctx.beginPath();
+          ctx.arc(0, 0, PLAYER_RADIUS * pulse, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // Glow ring
+          ctx.beginPath();
+          ctx.arc(0, 0, PLAYER_RADIUS * pulse, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(0,255,255,0.8)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          if (isInvincible) {
+            // Shield effect
+            ctx.beginPath();
+            ctx.arc(0, 0, PLAYER_RADIUS * 2 * pulse, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0,255,255,0.5)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
+
+      function drawDiamond(ctx, x, y, size) {
+        ctx.moveTo(x, y - size);
+        ctx.lineTo(x + size * 0.6, y);
+        ctx.lineTo(x, y + size);
+        ctx.lineTo(x - size * 0.6, y);
+        ctx.closePath();
+      }
+
+      function hexAlpha(hex, alpha) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+
+      // Game loop
+      function gameLoop(now) {
+        if (phaseRef.current !== 'playing') return;
+        const st = stateRef.current;
+        if (!st) return;
+
+        const dt = Math.min(32, now - (st.lastTime || now));
+        st.lastTime = now;
+
+        // Smooth player movement toward target
+        const speed = 12;
+        const dx = st.targetX - st.playerX;
+        const dy = st.targetY - st.playerY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 1) {
+          const move = Math.min(dist, speed * dt / 16);
+          st.playerX += (dx / dist) * move;
+          st.playerY += (dy / dist) * move;
+        }
+
+        // Clamp player to canvas
+        st.playerX = Math.max(PLAYER_RADIUS, Math.min(st.W - PLAYER_RADIUS, st.playerX));
+        st.playerY = Math.max(PLAYER_RADIUS, Math.min(st.H - PLAYER_RADIUS, st.playerY));
+
+        // Update beams
+        for (const beam of st.beams) {
+          beam.angle += beam.speed * dt / 1000;
+        }
+
+        // Check beam collisions
+        if (now > st.invincibleUntil) {
+          for (const beam of st.beams) {
+            const d = distToBeam(beam, st.playerX, st.playerY);
+            if (d < PLAYER_RADIUS + BEAM_HIT_WIDTH / 2) {
+              // Hit!
+              st.lives--;
+              st.combo = 0;
+              st.invincibleUntil = now + INVINCIBLE_MS;
+              AUDIO.hit();
+              // Spawn hit particles
+              for (let i = 0; i < 16; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = randBetween(50, 200);
+                st.particles.push({
+                  x: st.playerX, y: st.playerY,
+                  vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+                  r: randBetween(2, 5), color: '#00ffff',
+                  born: now, life: randBetween(300, 700)
+                });
+              }
+              setLives(st.lives);
+              setCombo(0);
+              setDangerAnim(true);
+              setTimeout(() => setDangerAnim(false), 500);
+              if (st.lives <= 0) {
+                AUDIO.gameOver();
+                setPhase('gameover');
+                const best = Math.max(st.score, hiScore);
+                setHiScore(best);
+                try { localStorage.setItem('beamDodgeHighScore', best.toString()); } catch(e) {}
+                return;
+              }
+              break;
+            }
+          }
+        }
+
+        // Check crystal collection
+        for (let i = st.crystals.length - 1; i >= 0; i--) {
+          const cryst = st.crystals[i];
+          const d = Math.hypot(st.playerX - cryst.x, st.playerY - cryst.y);
+          if (d < PLAYER_RADIUS + CRYSTAL_RADIUS) {
+            // Collect!
+            st.combo++;
+            const mult = Math.max(1, Math.floor(st.combo / 3));
+            const pts = cryst.points * 10 * mult;
+            st.score += pts;
+            AUDIO.collectCrystal(440 + st.combo * 40);
+            if (st.combo >= 3 && st.combo % 3 === 0) AUDIO.combo(Math.floor(st.combo / 3));
+            // Shockwave
+            st.shockwaves.push({
+              x: cryst.x, y: cryst.y, born: now, life: 500,
+              maxR: 50, color: cryst.color
+            });
+            // Particles
+            for (let j = 0; j < 12; j++) {
+              const angle = Math.random() * Math.PI * 2;
+              const spd = randBetween(60, 180);
+              st.particles.push({
+                x: cryst.x, y: cryst.y,
+                vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+                r: randBetween(2, 4), color: cryst.color,
+                born: now, life: randBetween(300, 600)
+              });
+            }
+            // Floating score text
+            const fid = st.floatId++;
+            setFloats(prev => [...prev, { id: fid, x: cryst.x, y: cryst.y, text: `+${pts}`, color: cryst.color, combo: st.combo }]);
+            setTimeout(() => setFloats(prev => prev.filter(f => f.id !== fid)), 800);
+            st.crystals.splice(i, 1);
+            // Spawn a new crystal
+            st.crystals.push(makeCrystal(st.lastCrystalId++, st.W, st.H, st.playerX, st.playerY));
+            setScore(st.score);
+            setCombo(st.combo);
+          }
+        }
+
+        // Remove expired crystals
+        for (let i = st.crystals.length - 1; i >= 0; i--) {
+          const age = (now - st.crystals[i].born) / st.crystals[i].life;
+          if (age >= 1) {
+            st.crystals.splice(i, 1);
+            st.combo = 0;
+            setCombo(0);
+            // Spawn replacement
+            st.crystals.push(makeCrystal(st.lastCrystalId++, st.W, st.H, st.playerX, st.playerY));
+          }
+        }
+
+        // Remove old particles
+        st.particles = st.particles.filter(p => now - p.born < p.life);
+        st.shockwaves = st.shockwaves.filter(sw => now - sw.born < sw.life);
+
+        // Level up every 500 points
+        const newLevel = Math.floor(st.score / 500) + 1;
+        if (newLevel > st.level) {
+          st.level = newLevel;
+          // Add a new beam
+          const speed = 0.4 + st.level * 0.08;
+          st.beams.push(makeBeam(st.lastBeamId++, st.W, st.H, speed, 0));
+          // Cap beams at 8
+          if (st.beams.length > 8) st.beams.shift();
+          // Increase existing beam speeds
+          for (const beam of st.beams) {
+            beam.speed = (Math.abs(beam.speed) + 0.03) * Math.sign(beam.speed);
+          }
+        }
+
+        draw(st, now);
+        animRef.current = requestAnimationFrame(gameLoop);
+      }
+
+      // Start/stop loop based on phase
+      useEffect(() => {
+        if (phase === 'playing') {
+          animRef.current = requestAnimationFrame(gameLoop);
+        }
+        return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
+      }, [phase]);
+
+      // Canvas resize
+      useEffect(() => {
+        function resize() {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          if (stateRef.current) {
+            stateRef.current.W = canvas.width;
+            stateRef.current.H = canvas.height;
+          }
+        }
+        resize();
+        window.addEventListener('resize', resize);
+        return () => window.removeEventListener('resize', resize);
+      }, []);
+
+      // Input handlers
+      const handleMouseMove = useCallback((e) => {
+        if (phaseRef.current !== 'playing') return;
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        if (stateRef.current) {
+          stateRef.current.targetX = e.clientX - rect.left;
+          stateRef.current.targetY = e.clientY - rect.top;
+        }
+      }, []);
+
+      const handleTouchMove = useCallback((e) => {
+        if (phaseRef.current !== 'playing') return;
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        if (stateRef.current && touch) {
+          stateRef.current.targetX = touch.clientX - rect.left;
+          stateRef.current.targetY = touch.clientY - rect.top;
+        }
+      }, []);
+
+      const handleTouchStart = useCallback((e) => {
+        if (phaseRef.current === 'start' || phaseRef.current === 'gameover') {
+          startGame();
+          return;
+        }
+        handleTouchMove(e);
+      }, [startGame, handleTouchMove]);
+
+      const handleClick = useCallback(() => {
+        if (phaseRef.current === 'start' || phaseRef.current === 'gameover') {
+          startGame();
+        }
+      }, [startGame]);
+
+      const livesArr = Array.from({ length: MAX_LIVES }, (_, i) => i < lives);
+      const comboMult = combo >= 3 ? Math.max(1, Math.floor(combo / 3)) : 1;
+
+      return (
+        <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#020008' }}>
+          <canvas
+            ref={canvasRef}
+            style={{ display: 'block', cursor: phase === 'playing' ? 'none' : 'default' }}
+            onMouseMove={handleMouseMove}
+            onClick={handleClick}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+          />
+
+          {/* Danger flash overlay */}
+          {dangerAnim && (
+            <div style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none',
+              animation: 'dangerFlash 0.5s ease-out',
+              background: 'rgba(255,0,0,0.15)'
+            }} />
+          )}
+
+          {/* HUD */}
+          {phase === 'playing' && (
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0,
+              padding: '12px 20px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              pointerEvents: 'none',
+              background: 'linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)'
+            }}>
+              {/* Lives */}
+              <div style={{ display: 'flex', gap: 6 }}>
+                {livesArr.map((alive, i) => (
+                  <div key={i} style={{
+                    width: 16, height: 16, borderRadius: '50%',
+                    background: alive ? '#00ffff' : 'rgba(0,255,255,0.2)',
+                    boxShadow: alive ? '0 0 8px #00ffff, 0 0 16px #00ffff' : 'none',
+                    animation: alive ? 'heartbeat 1.5s infinite' : 'none',
+                    animationDelay: `${i * 0.3}s`
+                  }} />
+                ))}
+              </div>
+
+              {/* Score */}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: '#00ffff', fontSize: 26, fontWeight: 'bold', letterSpacing: 2,
+                  textShadow: '0 0 10px #00ffff, 0 0 20px #00ffff', fontFamily: 'monospace' }}>
+                  {score.toString().padStart(6, '0')}
+                </div>
+                {combo >= 3 && (
+                  <div style={{ color: '#ffff00', fontSize: 12, fontWeight: 'bold',
+                    textShadow: '0 0 8px #ffff00', animation: 'pulseGlow 0.5s infinite' }}>
+                    ×{comboMult} COMBO!
+                  </div>
+                )}
+              </div>
+
+              {/* Best */}
+              <div style={{ textAlign: 'right', color: 'rgba(255,255,255,0.5)', fontSize: 12, fontFamily: 'monospace' }}>
+                BEST<br />
+                <span style={{ color: '#ff88ff', fontSize: 16 }}>{hiScore.toString().padStart(6, '0')}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Floating score texts */}
+          {floats.map(f => (
+            <div key={f.id} style={{
+              position: 'absolute',
+              left: f.x, top: f.y,
+              transform: 'translate(-50%, -50%)',
+              color: f.color,
+              fontSize: f.combo >= 6 ? 22 : 16,
+              fontWeight: 'bold',
+              fontFamily: 'monospace',
+              textShadow: `0 0 10px ${f.color}`,
+              animation: 'floatUp 0.8s ease-out forwards',
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap'
+            }}>
+              {f.text}
+              {f.combo >= 3 && <span style={{ fontSize: 10, marginLeft: 3 }}>🔥</span>}
+            </div>
+          ))}
+
+          {/* Start Screen */}
+          {phase === 'start' && (
+            <div onClick={startGame} style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(2,0,8,0.85)',
+              backdropFilter: 'blur(4px)', cursor: 'pointer'
+            }}>
+              <div style={{
+                fontSize: 'clamp(40px, 8vw, 72px)', fontWeight: 'bold', color: '#00ffff',
+                letterSpacing: 4, fontFamily: 'monospace',
+                animation: 'titlePulse 2s infinite',
+                marginBottom: 8
+              }}>BEAM DODGE</div>
+              <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 16, marginBottom: 40, letterSpacing: 2 }}>
+                Dodge the lasers. Collect the crystals.
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 40, color: 'rgba(255,255,255,0.7)', fontSize: 14, textAlign: 'center' }}>
+                <div>🖱️ <strong>Move mouse</strong> to guide your orb</div>
+                <div>💎 Collect <span style={{ color: '#00ffff' }}>crystals</span> for points</div>
+                <div>⚡ Chain picks for <span style={{ color: '#ffff00' }}>combo multipliers</span></div>
+                <div>🔴 <span style={{ color: '#ff4466' }}>Laser beams</span> rotate and multiply</div>
+                <div>❤️ You have <strong>3 lives</strong> — don't get hit!</div>
+              </div>
+
+              {hiScore > 0 && (
+                <div style={{ color: '#ff88ff', fontSize: 14, marginBottom: 24, fontFamily: 'monospace' }}>
+                  BEST: {hiScore.toString().padStart(6, '0')}
+                </div>
+              )}
+
+              <button onClick={startGame} style={{
+                padding: '16px 48px', fontSize: 20, fontWeight: 'bold',
+                background: 'linear-gradient(135deg, #00ffff, #0066ff)',
+                color: '#000', border: 'none', borderRadius: 8, cursor: 'pointer',
+                boxShadow: '0 0 30px rgba(0,255,255,0.6)',
+                letterSpacing: 2, fontFamily: 'monospace',
+                transition: 'transform 0.1s'
+              }}
+                onMouseOver={e => e.target.style.transform = 'scale(1.05)'}
+                onMouseOut={e => e.target.style.transform = 'scale(1)'}
+              >
+                PLAY
+              </button>
+            </div>
+          )}
+
+          {/* Game Over */}
+          {phase === 'gameover' && (
+            <div onClick={startGame} style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(2,0,8,0.88)',
+              backdropFilter: 'blur(4px)', cursor: 'pointer'
+            }}>
+              <div style={{
+                fontSize: 'clamp(32px, 6vw, 56px)', fontWeight: 'bold', color: '#ff2244',
+                letterSpacing: 4, fontFamily: 'monospace',
+                textShadow: '0 0 20px #ff2244, 0 0 40px #ff2244',
+                marginBottom: 8
+              }}>GAME OVER</div>
+
+              <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 16, marginBottom: 30, letterSpacing: 2 }}>
+                You were hit by a laser beam!
+              </div>
+
+              <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(0,255,255,0.3)', borderRadius: 12, padding: '24px 48px', marginBottom: 32, textAlign: 'center' }}>
+                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, letterSpacing: 2, marginBottom: 6 }}>SCORE</div>
+                <div style={{ color: '#00ffff', fontSize: 40, fontWeight: 'bold', fontFamily: 'monospace',
+                  textShadow: '0 0 20px #00ffff' }}>{score.toString().padStart(6, '0')}</div>
+                {score >= hiScore && score > 0 && (
+                  <div style={{ color: '#ffff00', fontSize: 14, marginTop: 8, fontWeight: 'bold',
+                    animation: 'pulseGlow 1s infinite' }}>✨ NEW HIGH SCORE!</div>
+                )}
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 12, letterSpacing: 2 }}>BEST</div>
+                <div style={{ color: '#ff88ff', fontSize: 22, fontFamily: 'monospace' }}>{hiScore.toString().padStart(6, '0')}</div>
+              </div>
+
+              <button onClick={startGame} style={{
+                padding: '14px 44px', fontSize: 18, fontWeight: 'bold',
+                background: 'linear-gradient(135deg, #ff2244, #ff6600)',
+                color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer',
+                boxShadow: '0 0 30px rgba(255,34,68,0.5)',
+                letterSpacing: 2, fontFamily: 'monospace'
+              }}>
+                PLAY AGAIN
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<BeamDodge />);
+  </script>
+</body>
+</html>
