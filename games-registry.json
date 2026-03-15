@@ -362,5 +362,19 @@
     "folder": "games/2026-03-14",
     "file": "games/2026-03-14/index.html",
     "preview": "games/2026-03-14/preview.png"
+  },
+  {
+    "id": "2026-03-15",
+    "name": "Beam Dodge",
+    "date": "2026-03-15",
+    "description": "Guide a neon orb with your mouse through a storm of rotating laser beams — collect glowing crystals for points, chain pickups for combo multipliers, and survive as beams multiply and accelerate!",
+    "tagline": "Dodge the lasers. Collect the crystals. Don't get burned.",
+    "tags": ["action", "reflex", "dodge", "mouse", "arcade"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse / touch to guide your orb — dodge beams, collect crystals",
+    "folder": "games/2026-03-15",
+    "file": "games/2026-03-15/index.html",
+    "preview": "games/2026-03-15/preview.png"
   }
 ]
