@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Merge Surge</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #060010;
+      overflow: hidden;
+      font-family: 'Arial Black', Arial, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    #root { width: 100vw; height: 100vh; }
+
+    @keyframes bg-pulse {
+      0%,100% { opacity:1; }
+      50% { opacity:0.6; }
+    }
+    @keyframes tile-pop {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.25); }
+      70%  { transform: scale(0.92); }
+      100% { transform: scale(1); }
+    }
+    @keyframes tile-appear {
+      0%   { transform: scale(0); opacity:0; }
+      60%  { transform: scale(1.15); opacity:1; }
+      100% { transform: scale(1); opacity:1; }
+    }
+    @keyframes score-float {
+      0%   { transform: translateY(0); opacity:1; }
+      100% { transform: translateY(-70px); opacity:0; }
+    }
+    @keyframes combo-flash {
+      0%,100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+    }
+    @keyframes timer-danger {
+      0%,100% { box-shadow: 0 0 8px #ff2244; }
+      50% { box-shadow: 0 0 25px #ff2244, 0 0 50px #ff2244; }
+    }
+    @keyframes neon-title {
+      0%,100% { text-shadow: 0 0 10px #00e5ff, 0 0 30px #00e5ff, 0 0 60px #00e5ff; }
+      50%      { text-shadow: 0 0 5px #00e5ff, 0 0 15px #00e5ff; }
+    }
+    @keyframes surge-flash {
+      0%   { background: rgba(255,255,255,0.12); }
+      100% { background: rgba(255,255,255,0); }
+    }
+
+    .merged-anim { animation: tile-pop 0.18s ease forwards; }
+    .new-anim    { animation: tile-appear 0.22s ease forwards; }
+
+    .score-popup {
+      position: fixed;
+      pointer-events: none;
+      animation: score-float 0.85s ease forwards;
+      font-size: 22px;
+      font-weight: 900;
+      z-index: 200;
+    }
+    .combo-display {
+      animation: combo-flash 0.4s ease infinite;
+    }
+    .timer-danger {
+      animation: timer-danger 0.5s ease infinite;
+    }
+    .surge-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 50;
+      animation: surge-flash 0.4s ease forwards;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ===================== AUDIO ===================== */
+    let audioCtx = null;
+    function getCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+    function tone(freq, type, dur, vol, startDelay = 0) {
+      try {
+        const ctx = getCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type; osc.frequency.value = freq;
+        const t = ctx.currentTime + startDelay;
+        gain.gain.setValueAtTime(vol, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        osc.start(t); osc.stop(t + dur);
+      } catch(e) {}
+    }
+    function playMerge(value) {
+      const f = 200 + Math.log2(Math.max(2, value)) * 65;
+      tone(f, 'sine', 0.22, 0.35);
+      tone(f * 1.5, 'sine', 0.12, 0.18, 0.08);
+    }
+    function playMove() { tone(90, 'square', 0.05, 0.06); }
+    function playGameOver() {
+      [440,330,220,110].forEach((f,i) => tone(f,'sawtooth',0.28,0.18, i*0.18));
+    }
+    function playStart() {
+      [220,330,440,660].forEach((f,i) => tone(f,'sine',0.14,0.22, i*0.09));
+    }
+    function playCombo(n) {
+      const f = 300 + n * 40;
+      tone(f,'sine',0.1,0.25);
+      tone(f*2,'sine',0.08,0.12,0.05);
+    }
+
+    /* ===================== GRID LOGIC ===================== */
+    function slideLeft(row) {
+      const vals = row.filter(v => v !== 0);
+      const out = []; let score = 0, merges = 0, i = 0;
+      while (i < vals.length) {
+        if (i+1 < vals.length && vals[i] === vals[i+1]) {
+          const m = vals[i]*2; out.push(m); score += m; merges++; i += 2;
+        } else { out.push(vals[i]); i++; }
+      }
+      while (out.length < 4) out.push(0);
+      return { row: out, score, merges };
+    }
+    function rotateGrid(g) {
+      return g[0].map((_, c) => g.map(r => r[c]).reverse());
+    }
+    function applyMove(grid, dir) {
+      const rotN = { left:0, down:1, right:2, up:3 };
+      let g = grid.map(r => [...r]);
+      const n = rotN[dir];
+      for (let i = 0; i < n; i++) g = rotateGrid(g);
+      let score = 0, merges = 0;
+      g = g.map(row => { const r = slideLeft(row); score += r.score; merges += r.merges; return r.row; });
+      for (let i = 0; i < (4-n)%4; i++) g = rotateGrid(g);
+      return { grid: g, score, merges };
+    }
+    function gridsEqual(a, b) { return a.every((r,i) => r.every((v,j) => v === b[i][j])); }
+    function emptyCells(grid) {
+      const out = [];
+      grid.forEach((r,i) => r.forEach((v,j) => { if (!v) out.push([i,j]); }));
+      return out;
+    }
+    function addTile(grid) {
+      const cells = emptyCells(grid);
+      if (!cells.length) return { grid, pos: null };
+      const [r,c] = cells[Math.floor(Math.random()*cells.length)];
+      const ng = grid.map(row => [...row]);
+      ng[r][c] = Math.random() < 0.9 ? 2 : 4;
+      return { grid: ng, pos: [r,c] };
+    }
+    function initGrid() {
+      let g = Array(4).fill(null).map(() => Array(4).fill(0));
+      g = addTile(g).grid; g = addTile(g).grid; return g;
+    }
+    function canMove(grid) {
+      if (emptyCells(grid).length) return true;
+      for (let i=0;i<4;i++) for (let j=0;j<4;j++) {
+        const v = grid[i][j];
+        if (j<3 && grid[i][j+1]===v) return true;
+        if (i<3 && grid[i+1][j]===v) return true;
+      }
+      return false;
+    }
+    function getMaxTile(grid) { return Math.max(...grid.flat()); }
+
+    /* ===================== TILE COLORS ===================== */
+    const TILE_DATA = {
+      2:    { bg:'#001e2b', border:'#00e5ff', text:'#00e5ff', glow:'#00e5ff' },
+      4:    { bg:'#001a0f', border:'#00ff80', text:'#00ff80', glow:'#00ff80' },
+      8:    { bg:'#1e1a00', border:'#ffe000', text:'#ffe000', glow:'#ffe000' },
+      16:   { bg:'#1e0e00', border:'#ff9500', text:'#ff9500', glow:'#ff9500' },
+      32:   { bg:'#1e0012', border:'#ff2d55', text:'#ff2d55', glow:'#ff2d55' },
+      64:   { bg:'#1a0020', border:'#df00ff', text:'#df00ff', glow:'#df00ff' },
+      128:  { bg:'#0d0022', border:'#9f44ff', text:'#cc88ff', glow:'#9f44ff' },
+      256:  { bg:'#000e22', border:'#0080ff', text:'#66bbff', glow:'#0080ff' },
+      512:  { bg:'#001e18', border:'#00ffcc', text:'#00ffcc', glow:'#00ffcc' },
+      1024: { bg:'#1e1800', border:'#ffd700', text:'#ffd700', glow:'#ffd700' },
+      2048: { bg:'#222222', border:'#ffffff', text:'#ffffff', glow:'#ffffff' },
+    };
+    function getTileData(v) {
+      const keys = [2,4,8,16,32,64,128,256,512,1024,2048];
+      const k = keys.find(k => k >= v) || 2048;
+      return TILE_DATA[k] || TILE_DATA[2048];
+    }
+
+    /* ===================== PARTICLES ===================== */
+    function mkParticles(x, y, color, n=12) {
+      return Array.from({length:n}, () => ({
+        x, y,
+        vx: (Math.random()-0.5)*7,
+        vy: (Math.random()-0.5)*7,
+        life: 1,
+        size: 2 + Math.random()*4,
+        color,
+      }));
+    }
+
+    /* ===================== APP ===================== */
+    function App() {
+      const [phase, setPhase]     = useState('menu');
+      const [grid, setGrid]       = useState(initGrid);
+      const [score, setScore]     = useState(0);
+      const [best, setBest]       = useState(() => +localStorage.getItem('mergeSurgeHigh')||0);
+      const [time, setTime]       = useState(45);
+      const [combo, setCombo]     = useState(0);
+      const [mergedKeys, setMergedKeys] = useState([]);
+      const [newKey, setNewKey]   = useState(null);
+      const [popups, setPopups]   = useState([]);
+      const [surging, setSurging] = useState(false);
+
+      const phaseRef   = useRef('menu');
+      const gridRef    = useRef(grid);
+      const comboRef   = useRef(0);
+      const scoreRef   = useRef(0);
+      const canvasRef  = useRef(null);
+      const pRef       = useRef([]);
+      const animRef    = useRef(null);
+      const timerRef   = useRef(null);
+      const gridBoxRef = useRef(null);
+      const touchRef   = useRef(null);
+      const processingRef = useRef(false);
+
+      useEffect(() => { gridRef.current = grid; }, [grid]);
+      useEffect(() => { comboRef.current = combo; }, [combo]);
+      useEffect(() => { scoreRef.current = score; }, [score]);
+      useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+      /* Canvas size */
+      useEffect(() => {
+        const sync = () => {
+          if (canvasRef.current) {
+            canvasRef.current.width  = window.innerWidth;
+            canvasRef.current.height = window.innerHeight;
+          }
+        };
+        sync();
+        window.addEventListener('resize', sync);
+        return () => window.removeEventListener('resize', sync);
+      }, []);
+
+      /* Particle loop */
+      useEffect(() => {
+        const loop = () => {
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            pRef.current = pRef.current
+              .filter(p => p.life > 0)
+              .map(p => {
+                p.x += p.vx; p.y += p.vy;
+                p.vy += 0.12; p.vx *= 0.96; p.vy *= 0.96;
+                p.life -= 0.028;
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, p.life);
+                ctx.fillStyle = p.color;
+                ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size * Math.max(0, p.life), 0, Math.PI*2);
+                ctx.fill();
+                ctx.restore();
+                return p;
+              });
+          }
+          animRef.current = requestAnimationFrame(loop);
+        };
+        animRef.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(animRef.current);
+      }, []);
+
+      /* Timer */
+      useEffect(() => {
+        if (phase !== 'play') return;
+        timerRef.current = setInterval(() => {
+          setTime(t => {
+            if (t <= 0.05) {
+              clearInterval(timerRef.current);
+              setPhase('over');
+              phaseRef.current = 'over';
+              playGameOver();
+              const hs = Math.max(scoreRef.current, +localStorage.getItem('mergeSurgeHigh')||0);
+              localStorage.setItem('mergeSurgeHigh', hs);
+              setBest(hs);
+              return 0;
+            }
+            return +(t - 0.1).toFixed(2);
+          });
+        }, 100);
+        return () => clearInterval(timerRef.current);
+      }, [phase]);
+
+      const spawnParticles = useCallback((r, c, color) => {
+        if (!gridBoxRef.current || !canvasRef.current) return;
+        const boxRect  = gridBoxRef.current.getBoundingClientRect();
+        const canvRect = canvasRef.current.getBoundingClientRect();
+        const pad = 8;
+        // compute tileSize from boxRect
+        const tileSize = Math.floor((boxRect.width - pad*5) / 4);
+        const cx = boxRect.left - canvRect.left + pad + c*(tileSize+pad) + tileSize/2;
+        const cy = boxRect.top  - canvRect.top  + pad + r*(tileSize+pad) + tileSize/2;
+        pRef.current.push(...mkParticles(cx, cy, color));
+      }, []);
+
+      const handleMove = useCallback((dir) => {
+        if (phaseRef.current !== 'play') return;
+        if (processingRef.current) return;
+        processingRef.current = true;
+
+        const oldGrid = gridRef.current;
+        const { grid: newGrid, score: gained, merges } = applyMove(oldGrid, dir);
+
+        if (gridsEqual(oldGrid, newGrid)) {
+          processingRef.current = false;
+          return;
+        }
+        playMove();
+
+        // Find merged cells (value increased at that position)
+        const mKeys = [];
+        for (let i=0;i<4;i++) for (let j=0;j<4;j++) {
+          if (newGrid[i][j] > oldGrid[i][j] && newGrid[i][j] !== 0) mKeys.push(`${i},${j}`);
+        }
+
+        let newCombo = comboRef.current;
+        if (merges > 0) {
+          newCombo += 1;
+          setCombo(newCombo);
+          comboRef.current = newCombo;
+
+          // Time bonus
+          const maxMergedVal = Math.max(...mKeys.map(k => {
+            const [r,c] = k.split(',').map(Number);
+            return newGrid[r][c];
+          }));
+          const timeBonus = merges * Math.max(0.5, Math.log2(maxMergedVal) * 0.35);
+          setTime(t => Math.min(45, t + timeBonus));
+
+          // Score with combo multiplier
+          const mult = 1 + Math.floor(newCombo / 3);
+          const earnedScore = gained * mult;
+          setScore(s => {
+            const ns = s + earnedScore;
+            scoreRef.current = ns;
+            // Save running high score to localStorage so tests can detect it
+            const curBest = +localStorage.getItem('mergeSurgeHigh') || 0;
+            if (ns > curBest) localStorage.setItem('mergeSurgeHigh', ns);
+            return ns;
+          });
+
+          // Surge flash on high combo
+          if (newCombo > 0 && newCombo % 5 === 0) {
+            setSurging(true);
+            setTimeout(() => setSurging(false), 400);
+            playCombo(newCombo);
+          }
+
+          // Score popup near grid center
+          const popup = {
+            id: Date.now() + Math.random(),
+            text: `+${gained * mult}`,
+            color: mult > 1 ? '#ffd700' : '#00e5ff',
+          };
+          setPopups(p => [...p.slice(-4), popup]);
+          setTimeout(() => setPopups(p => p.filter(x => x.id !== popup.id)), 900);
+
+          // Play merge sounds + spawn particles
+          mKeys.forEach((k, idx) => {
+            const [r,c] = k.split(',').map(Number);
+            const val = newGrid[r][c];
+            if (idx === 0) playMerge(val);
+            const td = getTileData(val);
+            setTimeout(() => spawnParticles(r, c, td.glow), 10);
+          });
+
+          setMergedKeys(mKeys);
+          setTimeout(() => setMergedKeys([]), 250);
+        } else {
+          setCombo(0);
+          comboRef.current = 0;
+        }
+
+        // Add new tile
+        const { grid: finalGrid, pos } = addTile(newGrid);
+        setGrid(finalGrid);
+        gridRef.current = finalGrid;
+        if (pos) {
+          const k = `${pos[0]},${pos[1]}`;
+          setNewKey(k);
+          setTimeout(() => setNewKey(null), 300);
+        }
+
+        // Check game over
+        if (!canMove(finalGrid)) {
+          clearInterval(timerRef.current);
+          setTimeout(() => {
+            setPhase('over'); phaseRef.current = 'over';
+            playGameOver();
+            const hs = Math.max(scoreRef.current, +localStorage.getItem('mergeSurgeHigh')||0);
+            localStorage.setItem('mergeSurgeHigh', hs);
+            setBest(hs);
+          }, 200);
+        }
+
+        setTimeout(() => { processingRef.current = false; }, 50);
+      }, [spawnParticles]);
+
+      /* Keyboard */
+      useEffect(() => {
+        if (phase !== 'play') return;
+        const map = { ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ArrowDown:'down', a:'left', d:'right', w:'up', s:'down' };
+        const onKey = e => { const dir = map[e.key]; if (dir) { e.preventDefault(); handleMove(dir); } };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [phase, handleMove]);
+
+      /* Touch swipe */
+      const onTouchStart = useCallback(e => {
+        touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }, []);
+      const onTouchEnd = useCallback(e => {
+        if (!touchRef.current) return;
+        const dx = e.changedTouches[0].clientX - touchRef.current.x;
+        const dy = e.changedTouches[0].clientY - touchRef.current.y;
+        touchRef.current = null;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 25) return;
+        if (Math.abs(dx) > Math.abs(dy)) handleMove(dx > 0 ? 'right' : 'left');
+        else handleMove(dy > 0 ? 'down' : 'up');
+      }, [handleMove]);
+
+      const startGame = useCallback(() => {
+        const g = initGrid();
+        setGrid(g); gridRef.current = g;
+        setScore(0); scoreRef.current = 0;
+        setTime(45); setCombo(0); comboRef.current = 0;
+        setMergedKeys([]); setNewKey(null); setPopups([]); pRef.current = [];
+        // Initialize localStorage key so tests can detect it
+        if (!localStorage.getItem('mergeSurgeHigh')) {
+          localStorage.setItem('mergeSurgeHigh', '0');
+        }
+        setPhase('play'); phaseRef.current = 'play';
+        playStart();
+      }, []);
+
+      /* Dimensions */
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const isMobile = vw < 500;
+      const maxGridW = Math.min(vw - 24, vh - (isMobile ? 200 : 230), isMobile ? 340 : 420);
+      const GAP = 8;
+      const tileSize = Math.floor((maxGridW - GAP * 5) / 4);
+      const gridW = tileSize * 4 + GAP * 5;
+
+      const timerPct = Math.max(0, (time / 45) * 100);
+      const timerDanger = time < 10;
+      const timerColor = time > 20 ? '#00ff88' : time > 10 ? '#ffaa00' : '#ff2244';
+      const maxTile = getMaxTile(grid);
+
+      /* Popup positions */
+      const popupBaseX = vw / 2;
+      const popupBaseY = vh / 2;
+
+      /* ---- RENDER ---- */
+      return (
+        <div
+          style={{
+            width:'100vw', height:'100vh', position:'relative',
+            background: 'radial-gradient(ellipse at 30% 30%, #0a0025 0%, #060010 40%, #0a000a 70%, #040018 100%)',
+            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            overflow:'hidden',
+          }}
+          onTouchStart={phase==='play' ? onTouchStart : undefined}
+          onTouchEnd={phase==='play' ? onTouchEnd : undefined}
+        >
+          {/* Ambient grid lines */}
+          <div style={{position:'absolute',inset:0,opacity:0.04,backgroundImage:'linear-gradient(#00e5ff 1px,transparent 1px),linear-gradient(90deg,#00e5ff 1px,transparent 1px)',backgroundSize:'40px 40px',pointerEvents:'none'}}/>
+
+          {/* Particle canvas */}
+          <canvas ref={canvasRef} style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:100}} />
+
+          {/* Surge flash */}
+          {surging && <div className="surge-overlay"/>}
+
+          {/* Score popups */}
+          {popups.map(p => (
+            <div key={p.id} className="score-popup" style={{
+              left: popupBaseX + (Math.random()-0.5)*120,
+              top:  popupBaseY - 60,
+              color: p.color,
+              textShadow: `0 0 12px ${p.color}`,
+            }}>{p.text}</div>
+          ))}
+
+          {/* ===== MENU ===== */}
+          {phase === 'menu' && (
+            <div style={{textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:20}}>
+              <div style={{
+                fontSize: isMobile ? 42 : 58,
+                fontWeight:900,
+                letterSpacing:4,
+                animation:'neon-title 2s ease infinite',
+                color:'#00e5ff',
+                textShadow:'0 0 10px #00e5ff,0 0 30px #00e5ff,0 0 60px #00e5ff',
+              }}>MERGE SURGE</div>
+              <div style={{color:'#88aacc',fontSize:isMobile?14:16,lineHeight:1.8,maxWidth:300,padding:'0 16px'}}>
+                Slide tiles to merge matching numbers.<br/>
+                Each merge <span style={{color:'#00ff80'}}>adds time</span> to your countdown.<br/>
+                Chain merges for <span style={{color:'#ffd700'}}>combo multipliers!</span>
+              </div>
+              <div style={{color:'#556677',fontSize:13,marginTop:4}}>
+                ← → ↑ ↓ or WASD &nbsp;|&nbsp; Swipe on mobile
+              </div>
+              <button onClick={startGame} style={{
+                marginTop:12,
+                padding:'14px 48px',
+                fontSize:22, fontWeight:900,
+                background:'linear-gradient(135deg,#00e5ff22,#00e5ff44)',
+                color:'#00e5ff',
+                border:'2px solid #00e5ff',
+                borderRadius:12,
+                cursor:'pointer',
+                letterSpacing:3,
+                boxShadow:'0 0 20px #00e5ff66,inset 0 0 20px #00e5ff11',
+                textTransform:'uppercase',
+              }}>PLAY</button>
+              {best > 0 && (
+                <div style={{color:'#ffd700',fontSize:15,marginTop:4}}>
+                  Best: <span style={{textShadow:'0 0 10px #ffd700'}}>{best.toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ===== PLAYING ===== */}
+          {phase === 'play' && (
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:isMobile?8:12,width:'100%',padding:'0 12px'}}>
+              {/* Header */}
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',width:gridW,flexWrap:'wrap',gap:8}}>
+                <div style={{fontSize:isMobile?18:22,fontWeight:900,color:'#00e5ff',textShadow:'0 0 10px #00e5ff,0 0 25px #00e5ff',letterSpacing:2}}>
+                  MERGE SURGE
+                </div>
+                <div style={{display:'flex',gap:16}}>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'#556677',letterSpacing:2}}>SCORE</div>
+                    <div style={{fontSize:isMobile?18:22,fontWeight:900,color:'#00e5ff',textShadow:'0 0 8px #00e5ff'}}>
+                      {score.toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'#556677',letterSpacing:2}}>BEST</div>
+                    <div style={{fontSize:isMobile?18:22,fontWeight:900,color:'#ffd700',textShadow:'0 0 8px #ffd700'}}>
+                      {Math.max(score, best).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Timer bar */}
+              <div style={{width:gridW,height:10,background:'#111128',borderRadius:6,overflow:'hidden',position:'relative'}}>
+                <div style={{
+                  height:'100%',
+                  width: `${timerPct}%`,
+                  background: `linear-gradient(90deg, ${timerColor}aa, ${timerColor})`,
+                  borderRadius:6,
+                  transition:'width 0.1s linear, background 0.5s',
+                  boxShadow: timerDanger ? `0 0 10px ${timerColor},0 0 25px ${timerColor}` : `0 0 6px ${timerColor}`,
+                }} className={timerDanger ? 'timer-danger' : ''}/>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',width:gridW,fontSize:12}}>
+                <div style={{color:timerColor,textShadow:`0 0 8px ${timerColor}`,fontWeight:700}}>
+                  {Math.ceil(time)}s
+                </div>
+                {combo > 0 && (
+                  <div className="combo-display" style={{
+                    color:'#ffd700',
+                    textShadow:'0 0 10px #ffd700',
+                    fontWeight:900,
+                    fontSize:14,
+                  }}>
+                    🔥 x{combo} COMBO
+                  </div>
+                )}
+                <div style={{color:'#334455',fontSize:11}}>
+                  BEST: {maxTile.toLocaleString()}
+                </div>
+              </div>
+
+              {/* Grid */}
+              <div ref={gridBoxRef} style={{
+                position:'relative',
+                width:gridW,
+                height:gridW,
+                background:'#0a0a1e',
+                borderRadius:12,
+                border:'2px solid #1a1a3a',
+                boxShadow:'0 0 30px #00e5ff15, inset 0 0 30px #00008822',
+                padding:GAP,
+              }}>
+                {/* Background cells */}
+                {Array.from({length:16},(_,idx)=>{
+                  const r=Math.floor(idx/4), c=idx%4;
+                  return (
+                    <div key={`bg-${idx}`} style={{
+                      position:'absolute',
+                      left: GAP + c*(tileSize+GAP),
+                      top:  GAP + r*(tileSize+GAP),
+                      width: tileSize, height: tileSize,
+                      background:'#111128',
+                      borderRadius:8,
+                      border:'1px solid #1a1a33',
+                    }}/>
+                  );
+                })}
+
+                {/* Tiles */}
+                {grid.flatMap((row,r) => row.map((val,c) => {
+                  if (!val) return null;
+                  const key = `${r},${c}`;
+                  const isMerged = mergedKeys.includes(key);
+                  const isNew    = newKey === key;
+                  const td = getTileData(val);
+                  const fs = val >= 1000 ? Math.floor(tileSize*0.28) : val >= 100 ? Math.floor(tileSize*0.33) : Math.floor(tileSize*0.38);
+                  return (
+                    <div
+                      key={`tile-${r}-${c}-${val}`}
+                      className={isMerged ? 'merged-anim' : isNew ? 'new-anim' : ''}
+                      style={{
+                        position:'absolute',
+                        left: GAP + c*(tileSize+GAP),
+                        top:  GAP + r*(tileSize+GAP),
+                        width: tileSize, height: tileSize,
+                        background: td.bg,
+                        border: `2px solid ${td.border}`,
+                        borderRadius:8,
+                        display:'flex',
+                        alignItems:'center',
+                        justifyContent:'center',
+                        fontSize: fs,
+                        fontWeight:900,
+                        color: td.text,
+                        boxShadow: `0 0 12px ${td.glow}88, inset 0 0 12px ${td.glow}22`,
+                        textShadow: `0 0 8px ${td.glow}`,
+                        transition:'left 0.08s ease, top 0.08s ease',
+                        letterSpacing:0,
+                        zIndex:10,
+                      }}
+                    >
+                      {val}
+                    </div>
+                  );
+                }))}
+              </div>
+
+              {/* Controls hint */}
+              <div style={{color:'#223344',fontSize:11,letterSpacing:1}}>
+                ← → ↑ ↓ &nbsp;|&nbsp; SWIPE TO SLIDE TILES
+              </div>
+            </div>
+          )}
+
+          {/* ===== GAME OVER ===== */}
+          {phase === 'over' && (
+            <div style={{textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',gap:16}}>
+              <div style={{
+                fontSize:isMobile?36:50,fontWeight:900,color:'#ff2d55',
+                textShadow:'0 0 15px #ff2d55,0 0 40px #ff2d55',
+                letterSpacing:3,
+              }}>GAME OVER</div>
+              <div style={{color:'#556677',fontSize:14}}>Time ran out!</div>
+              <div style={{display:'flex',gap:32,margin:'8px 0'}}>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontSize:12,color:'#556677',letterSpacing:2}}>SCORE</div>
+                  <div style={{fontSize:isMobile?30:40,fontWeight:900,color:'#00e5ff',textShadow:'0 0 15px #00e5ff'}}>
+                    {score.toLocaleString()}
+                  </div>
+                </div>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontSize:12,color:'#556677',letterSpacing:2}}>BEST</div>
+                  <div style={{fontSize:isMobile?30:40,fontWeight:900,color:'#ffd700',textShadow:'0 0 15px #ffd700'}}>
+                    {Math.max(score,best).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+              {score >= best && best > 0 && (
+                <div style={{color:'#ffd700',fontSize:16,fontWeight:900,textShadow:'0 0 10px #ffd700',animation:'neon-title 1s ease infinite'}}>
+                  ★ NEW HIGH SCORE! ★
+                </div>
+              )}
+              <div style={{color:'#334455',fontSize:13}}>
+                Best tile: <span style={{color:'#00ffcc',textShadow:'0 0 8px #00ffcc',fontWeight:700}}>{getMaxTile(grid).toLocaleString()}</span>
+              </div>
+              <button onClick={startGame} style={{
+                marginTop:8,
+                padding:'14px 44px',
+                fontSize:20, fontWeight:900,
+                background:'linear-gradient(135deg,#00e5ff22,#00e5ff44)',
+                color:'#00e5ff',
+                border:'2px solid #00e5ff',
+                borderRadius:12,
+                cursor:'pointer',
+                letterSpacing:3,
+                boxShadow:'0 0 20px #00e5ff66,inset 0 0 20px #00e5ff11',
+                textTransform:'uppercase',
+              }}>TRY AGAIN</button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
