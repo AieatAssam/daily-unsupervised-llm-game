@@ -376,5 +376,19 @@
     "folder": "games/2026-03-15",
     "file": "games/2026-03-15/index.html",
     "preview": "games/2026-03-15/preview.png"
+  },
+  {
+    "id": "2026-03-16",
+    "name": "Merge Surge",
+    "date": "2026-03-16",
+    "description": "Slide neon tiles on a 4×4 grid to merge matching numbers — each merge adds precious seconds to your countdown timer. Chain consecutive merges for massive combo multipliers and race to post the highest score before time runs out!",
+    "tagline": "Slide. Merge. Survive the countdown.",
+    "tags": ["puzzle", "strategy", "casual", "merge", "timer"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "← → ↑ ↓ or WASD to slide tiles | Swipe on mobile",
+    "folder": "games/2026-03-16",
+    "file": "games/2026-03-16/index.html",
+    "preview": "games/2026-03-16/preview.png"
   }
 ]
