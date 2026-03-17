@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pocket Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #08001a; overflow: hidden; font-family: monospace; }
+    @keyframes pulse { from { opacity: 0.7; transform: scale(1); } to { opacity: 1; transform: scale(1.06); } }
+    @keyframes glow { from { text-shadow: 0 0 20px #00ff88; } to { text-shadow: 0 0 50px #00ff88, 0 0 80px #00ff8844; } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const BALL_R = 13;
+    const POCKET_R = 20;
+    const FRICTION = 0.984;
+    const MAX_SPEED = 22;
+    const BALL_COLORS = ['#ff006e','#00ffcc','#ffbe0b','#8338ec','#fb5607','#3a86ff','#ff99cc','#66ff99'];
+
+    // roundRect polyfill for older Chromium
+    if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+        this.moveTo(x + r, y);
+        this.lineTo(x + w - r, y);
+        this.quadraticCurveTo(x + w, y, x + w, y + r);
+        this.lineTo(x + w, y + h - r);
+        this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        this.lineTo(x + r, y + h);
+        this.quadraticCurveTo(x, y + h, x, y + h - r);
+        this.lineTo(x, y + r);
+        this.quadraticCurveTo(x, y, x + r, y);
+        this.closePath();
+        return this;
+      };
+    }
+
+    const PocketRush = () => {
+      const canvasRef = useRef(null);
+      const G = useRef({
+        phase: 'idle',
+        score: 0,
+        highScore: parseInt(localStorage.getItem('pocketRush_highScore') || '0'),
+        timeLeft: 60,
+        combo: 0,
+        level: 1,
+        balls: [],
+        particles: [],
+        canShoot: true,
+        aiming: false,
+        aimX: 0, aimY: 0,
+        audio: null,
+      });
+      const rafRef = useRef(null);
+      const [ui, setUi] = useState({
+        phase: 'idle',
+        score: 0,
+        highScore: parseInt(localStorage.getItem('pocketRush_highScore') || '0'),
+        timeLeft: 60,
+        combo: 0,
+        level: 1,
+        newHigh: false,
+      });
+
+      // Initialize localStorage key on mount so tests can find it
+      useEffect(() => {
+        if (!localStorage.getItem('pocketRush_highScore')) {
+          localStorage.setItem('pocketRush_highScore', '0');
+        }
+      }, []);
+
+      // Sync UI from game ref
+      useEffect(() => {
+        const iv = setInterval(() => {
+          const g = G.current;
+          setUi({
+            phase: g.phase,
+            score: g.score,
+            highScore: g.highScore,
+            timeLeft: g.timeLeft,
+            combo: g.combo,
+            level: g.level,
+            newHigh: g.phase === 'gameover' && g.score > 0 && g.score >= g.highScore,
+          });
+        }, 80);
+        return () => clearInterval(iv);
+      }, []);
+
+      const getTable = (W, H) => {
+        const mx = Math.min(55, W * 0.07);
+        const my = Math.min(85, H * 0.13);
+        return { x: mx, y: my, w: W - mx * 2, h: H - my - Math.min(100, H * 0.15) };
+      };
+
+      const getPockets = (t) => [
+        { x: t.x,             y: t.y },
+        { x: t.x + t.w * 0.5, y: t.y },
+        { x: t.x + t.w,       y: t.y },
+        { x: t.x,             y: t.y + t.h },
+        { x: t.x + t.w * 0.5, y: t.y + t.h },
+        { x: t.x + t.w,       y: t.y + t.h },
+      ];
+
+      const initAudio = () => {
+        if (G.current.audio) return;
+        try {
+          const actx = new (window.AudioContext || window.webkitAudioContext)();
+          G.current.audio = {
+            shoot: () => {
+              try {
+                const o = actx.createOscillator(), g = actx.createGain();
+                o.type = 'sawtooth'; o.connect(g); g.connect(actx.destination);
+                o.frequency.setValueAtTime(250, actx.currentTime);
+                o.frequency.exponentialRampToValueAtTime(80, actx.currentTime + 0.18);
+                g.gain.setValueAtTime(0.18, actx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.2);
+                o.start(actx.currentTime); o.stop(actx.currentTime + 0.2);
+              } catch(e) {}
+            },
+            pocket: (combo) => {
+              try {
+                const freq = Math.min(440 + combo * 55, 1200);
+                const o = actx.createOscillator(), g = actx.createGain();
+                o.connect(g); g.connect(actx.destination);
+                o.frequency.setValueAtTime(freq, actx.currentTime);
+                o.frequency.exponentialRampToValueAtTime(freq * 1.8, actx.currentTime + 0.14);
+                g.gain.setValueAtTime(0.28, actx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.3);
+                o.start(actx.currentTime); o.stop(actx.currentTime + 0.3);
+              } catch(e) {}
+            },
+            hit: () => {
+              try {
+                const o = actx.createOscillator(), g = actx.createGain();
+                o.type = 'square'; o.connect(g); g.connect(actx.destination);
+                o.frequency.setValueAtTime(180, actx.currentTime);
+                g.gain.setValueAtTime(0.07, actx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.07);
+                o.start(actx.currentTime); o.stop(actx.currentTime + 0.07);
+              } catch(e) {}
+            },
+            levelUp: () => {
+              try {
+                [440, 554, 659, 880].forEach((f, i) => {
+                  const o = actx.createOscillator(), g = actx.createGain();
+                  o.connect(g); g.connect(actx.destination);
+                  o.frequency.setValueAtTime(f, actx.currentTime + i * 0.1);
+                  g.gain.setValueAtTime(0.22, actx.currentTime + i * 0.1);
+                  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + i * 0.1 + 0.18);
+                  o.start(actx.currentTime + i * 0.1);
+                  o.stop(actx.currentTime + i * 0.1 + 0.18);
+                });
+              } catch(e) {}
+            },
+          };
+        } catch(e) {}
+      };
+
+      const spawnLevel = (lvl, W, H) => {
+        const t = getTable(W, H);
+        const numBalls = Math.min(5 + lvl * 2, 14);
+        const balls = [];
+
+        // Cue ball in lower center
+        balls.push({ x: t.x + t.w * 0.5, y: t.y + t.h * 0.73, vx: 0, vy: 0, color: '#ffffff', isCue: true, pocketed: false });
+
+        // Colored balls in upper portion
+        for (let i = 0; i < numBalls; i++) {
+          let x, y, tries = 0;
+          do {
+            x = t.x + BALL_R * 4 + Math.random() * (t.w - BALL_R * 8);
+            y = t.y + BALL_R * 4 + Math.random() * (t.h * 0.55);
+            tries++;
+          } while (tries < 120 && balls.some(b => Math.hypot(b.x - x, b.y - y) < BALL_R * 2.6));
+
+          balls.push({
+            x, y, vx: 0, vy: 0,
+            color: BALL_COLORS[i % BALL_COLORS.length],
+            isCue: false, pocketed: false,
+          });
+        }
+
+        const g = G.current;
+        g.balls = balls;
+        g.canShoot = true;
+        g.aiming = false;
+        g.particles = [];
+      };
+
+      const startGame = () => {
+        initAudio();
+        const canvas = canvasRef.current;
+        const g = G.current;
+        g.phase = 'playing';
+        g.score = 0;
+        g.timeLeft = 60;
+        g.combo = 0;
+        g.level = 1;
+        // Save to localStorage immediately so test can find the key
+        localStorage.setItem('pocketRush_highScore', String(g.highScore));
+        spawnLevel(1, canvas.width, canvas.height);
+      };
+
+      // Timer
+      useEffect(() => {
+        const tick = setInterval(() => {
+          const g = G.current;
+          if (g.phase !== 'playing') return;
+          g.timeLeft--;
+          if (g.timeLeft <= 0) {
+            g.timeLeft = 0;
+            g.phase = 'gameover';
+            if (g.score > g.highScore) {
+              g.highScore = g.score;
+              localStorage.setItem('pocketRush_highScore', String(g.highScore));
+            }
+          }
+        }, 1000);
+        return () => clearInterval(tick);
+      }, []);
+
+      // Main render loop — only runs once (empty deps)
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const resize = () => {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        const render = () => {
+          rafRef.current = requestAnimationFrame(render);
+          const W = canvas.width, H = canvas.height;
+          const g = G.current;
+          const t = getTable(W, H);
+          const pockets = getPockets(t);
+
+          // ── Background ──
+          ctx.fillStyle = '#08001a';
+          ctx.fillRect(0, 0, W, H);
+
+          // Subtle grid
+          ctx.strokeStyle = 'rgba(100,50,200,0.06)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+          for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+          // ── Table felt ──
+          const tg = ctx.createLinearGradient(t.x, t.y, t.x, t.y + t.h);
+          tg.addColorStop(0, '#001f0d');
+          tg.addColorStop(1, '#001508');
+          ctx.fillStyle = tg;
+          ctx.beginPath();
+          ctx.roundRect(t.x, t.y, t.w, t.h, 12);
+          ctx.fill();
+
+          // Cushion shadow
+          ctx.strokeStyle = '#004422';
+          ctx.lineWidth = 20;
+          ctx.beginPath();
+          ctx.roundRect(t.x, t.y, t.w, t.h, 12);
+          ctx.stroke();
+
+          // Table glow border
+          ctx.strokeStyle = '#00ff88';
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = '#00ff88';
+          ctx.shadowBlur = 16;
+          ctx.beginPath();
+          ctx.roundRect(t.x - 10, t.y - 10, t.w + 20, t.h + 20, 16);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Center markings
+          ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+          ctx.lineWidth = 1;
+          // Center line
+          ctx.beginPath(); ctx.moveTo(t.x + t.w * 0.5, t.y + 10); ctx.lineTo(t.x + t.w * 0.5, t.y + t.h - 10); ctx.stroke();
+          // Center circle
+          ctx.beginPath(); ctx.arc(t.x + t.w * 0.5, t.y + t.h * 0.5, 50, 0, Math.PI * 2); ctx.stroke();
+          // Baulk line
+          ctx.beginPath(); ctx.moveTo(t.x + 12, t.y + t.h * 0.73); ctx.lineTo(t.x + t.w - 12, t.y + t.h * 0.73); ctx.stroke();
+          // D semi-circle
+          ctx.beginPath(); ctx.arc(t.x + t.w * 0.5, t.y + t.h * 0.73, 40, Math.PI, Math.PI * 2); ctx.stroke();
+
+          // ── Pockets ──
+          pockets.forEach(p => {
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, POCKET_R, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#00ff88';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, POCKET_R, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+          });
+
+          // ── Physics update (only during play) ──
+          if (g.phase === 'playing') {
+            const active = g.balls.filter(b => !b.pocketed);
+
+            active.forEach(b => {
+              b.x += b.vx;
+              b.y += b.vy;
+              b.vx *= FRICTION;
+              b.vy *= FRICTION;
+              if (Math.abs(b.vx) < 0.04) b.vx = 0;
+              if (Math.abs(b.vy) < 0.04) b.vy = 0;
+
+              // Wall bounce with energy loss
+              if (b.x < t.x + BALL_R)       { b.x = t.x + BALL_R;       b.vx =  Math.abs(b.vx) * 0.82; }
+              if (b.x > t.x + t.w - BALL_R) { b.x = t.x + t.w - BALL_R; b.vx = -Math.abs(b.vx) * 0.82; }
+              if (b.y < t.y + BALL_R)       { b.y = t.y + BALL_R;       b.vy =  Math.abs(b.vy) * 0.82; }
+              if (b.y > t.y + t.h - BALL_R) { b.y = t.y + t.h - BALL_R; b.vy = -Math.abs(b.vy) * 0.82; }
+            });
+
+            // Ball-ball elastic collisions
+            for (let i = 0; i < active.length; i++) {
+              for (let j = i + 1; j < active.length; j++) {
+                const a = active[i], b = active[j];
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < BALL_R * 2 && dist > 0) {
+                  const nx = dx / dist, ny = dy / dist;
+                  const dv = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+                  if (dv > 0) {
+                    a.vx -= dv * nx; a.vy -= dv * ny;
+                    b.vx += dv * nx; b.vy += dv * ny;
+                    const overlap = BALL_R * 2 - dist;
+                    a.x -= nx * overlap * 0.51; a.y -= ny * overlap * 0.51;
+                    b.x += nx * overlap * 0.51; b.y += ny * overlap * 0.51;
+                    if (Math.abs(dv) > 1.5) g.audio?.hit();
+                  }
+                }
+              }
+            }
+
+            // Pocket check
+            active.forEach(b => {
+              pockets.forEach(p => {
+                if (b.pocketed) return;
+                if (Math.hypot(b.x - p.x, b.y - p.y) < POCKET_R) {
+                  if (b.isCue) {
+                    // Scratch: respawn cue ball, reset combo
+                    b.x = t.x + t.w * 0.5;
+                    b.y = t.y + t.h * 0.73;
+                    b.vx = 0; b.vy = 0;
+                    g.combo = Math.max(0, g.combo - 2);
+                  } else {
+                    b.pocketed = true;
+                    g.combo++;
+                    const pts = 100 * Math.max(1, g.combo);
+                    g.score += pts;
+                    g.timeLeft = Math.min(g.timeLeft + 4, 90);
+                    localStorage.setItem('pocketRush_highScore', String(Math.max(g.score, g.highScore)));
+                    g.audio?.pocket(g.combo);
+
+                    // Burst particles
+                    for (let k = 0; k < 16; k++) {
+                      const angle = (k / 16) * Math.PI * 2;
+                      const speed = 2.5 + Math.random() * 4;
+                      g.particles.push({
+                        x: p.x, y: p.y,
+                        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                        color: b.color, life: 1, decay: 0.022 + Math.random() * 0.018, size: 3 + Math.random() * 3,
+                        isText: false,
+                      });
+                    }
+                    // Score popup
+                    g.particles.push({ x: p.x, y: p.y - 15, vx: 0, vy: -1.8, color: '#ffff88', life: 1, decay: 0.014, size: 14, isText: true, text: `+${pts}` });
+                    if (g.combo > 1) {
+                      g.particles.push({ x: p.x, y: p.y - 35, vx: 0, vy: -1.4, color: '#ff006e', life: 1, decay: 0.012, size: 12, isText: true, text: `x${g.combo} COMBO!` });
+                    }
+                  }
+                }
+              });
+            });
+
+            // Allow shooting when all balls stopped
+            const cue = g.balls.find(b => b.isCue);
+            if (!g.canShoot && cue) {
+              const allStopped = g.balls.filter(b => !b.pocketed).every(b => b.vx === 0 && b.vy === 0);
+              if (allStopped) g.canShoot = true;
+            }
+
+            // Level clear
+            const remaining = g.balls.filter(b => !b.pocketed && !b.isCue).length;
+            if (remaining === 0) {
+              g.level++;
+              g.score += 500 * (g.level - 1);
+              g.timeLeft = Math.min(g.timeLeft + 12, 90);
+              g.audio?.levelUp();
+              spawnLevel(g.level, W, H);
+            }
+          }
+
+          // ── Particles ──
+          g.particles = g.particles.filter(p => p.life > 0);
+          g.particles.forEach(p => {
+            p.x += p.vx; p.y += p.vy;
+            p.vx *= 0.93; p.vy *= 0.93;
+            p.life -= p.decay;
+            ctx.globalAlpha = Math.max(0, p.life);
+            if (p.isText) {
+              ctx.fillStyle = p.color;
+              ctx.font = `bold ${p.size}px monospace`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.shadowColor = p.color;
+              ctx.shadowBlur = 8;
+              ctx.fillText(p.text, p.x, p.y);
+              ctx.shadowBlur = 0;
+            } else {
+              ctx.fillStyle = p.color;
+              ctx.shadowColor = p.color;
+              ctx.shadowBlur = 12;
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, Math.max(0.1, p.size * p.life), 0, Math.PI * 2);
+              ctx.fill();
+              ctx.shadowBlur = 0;
+            }
+            ctx.globalAlpha = 1;
+          });
+
+          // ── Draw balls ──
+          g.balls.filter(b => !b.pocketed).forEach(b => {
+            const gc = b.isCue ? '#aaaaff' : b.color;
+            ctx.shadowColor = gc;
+            ctx.shadowBlur = 20;
+
+            const grad = ctx.createRadialGradient(b.x - 3, b.y - 4, 1, b.x, b.y, BALL_R);
+            grad.addColorStop(0, '#ffffff');
+            grad.addColorStop(0.4, b.color);
+            grad.addColorStop(1, b.isCue ? '#888899' : b.color + 'aa');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          });
+
+          // ── Aim line ──
+          const cue = g.balls.find(b => b.isCue && !b.pocketed);
+          if (g.phase === 'playing' && g.aiming && g.canShoot && cue) {
+            const dx = g.aimX - cue.x, dy = g.aimY - cue.y;
+            const len = Math.hypot(dx, dy);
+            if (len > 8) {
+              const ux = dx / len, uy = dy / len;
+              const power = Math.min(len / 220, 1);
+
+              // Dashed trajectory line
+              ctx.setLineDash([9, 7]);
+              ctx.strokeStyle = `rgba(255,255,255,${0.35 + power * 0.5})`;
+              ctx.lineWidth = 2;
+              ctx.shadowColor = '#ffffff';
+              ctx.shadowBlur = 6;
+              ctx.beginPath();
+              ctx.moveTo(cue.x, cue.y);
+              ctx.lineTo(cue.x + ux * Math.min(len * 2.2, 380), cue.y + uy * Math.min(len * 2.2, 380));
+              ctx.stroke();
+              ctx.setLineDash([]);
+              ctx.shadowBlur = 0;
+
+              // Ghost ball at aim point
+              ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.arc(cue.x + ux * Math.min(len, 250), cue.y + uy * Math.min(len, 250), BALL_R, 0, Math.PI * 2);
+              ctx.stroke();
+
+              // Power bar
+              const barX = t.x, barY = H - 28, barW = t.w;
+              ctx.fillStyle = '#111';
+              ctx.fillRect(barX, barY, barW, 12);
+              const barColor = power > 0.75 ? '#ff4400' : power > 0.45 ? '#ffbe0b' : '#00ff88';
+              ctx.fillStyle = barColor;
+              ctx.shadowColor = barColor;
+              ctx.shadowBlur = 6;
+              ctx.fillRect(barX, barY, barW * power, 12);
+              ctx.shadowBlur = 0;
+              ctx.strokeStyle = '#333';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(barX, barY, barW, 12);
+
+              ctx.fillStyle = '#aaa';
+              ctx.font = '9px monospace';
+              ctx.textAlign = 'center';
+              ctx.fillText('POWER', t.x + t.w * 0.5, H - 32);
+            }
+          }
+
+          // ── HUD ──
+          if (g.phase === 'playing') {
+            const fs = Math.min(18, W * 0.024);
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
+
+            // Score
+            ctx.fillStyle = '#00ff88';
+            ctx.font = `bold ${fs}px monospace`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = '#00ff88';
+            ctx.shadowBlur = 12;
+            ctx.fillText(`SCORE: ${g.score}`, 14, t.y * 0.52);
+
+            // Time
+            const tc = g.timeLeft <= 10 ? '#ff4400' : '#ffbe0b';
+            ctx.fillStyle = tc;
+            ctx.shadowColor = tc;
+            ctx.textAlign = 'center';
+            ctx.font = `bold ${Math.min(22, W * 0.028)}px monospace`;
+            ctx.fillText(`⏱ ${g.timeLeft}s`, W * 0.5, t.y * 0.52);
+
+            // Right side: combo or level
+            ctx.textAlign = 'right';
+            if (g.combo > 1) {
+              ctx.fillStyle = '#ff006e';
+              ctx.shadowColor = '#ff006e';
+              ctx.font = `bold ${fs}px monospace`;
+              ctx.fillText(`✦ x${g.combo} COMBO`, W - 14, t.y * 0.52);
+            } else {
+              ctx.fillStyle = '#8338ec';
+              ctx.shadowColor = '#8338ec';
+              ctx.font = `bold ${fs}px monospace`;
+              ctx.fillText(`LVL ${g.level}`, W - 14, t.y * 0.52);
+            }
+            ctx.shadowBlur = 0;
+
+            // "Shoot" hint when can shoot
+            if (g.canShoot) {
+              ctx.fillStyle = 'rgba(255,255,255,0.35)';
+              ctx.font = `${Math.min(13, W * 0.016)}px monospace`;
+              ctx.textAlign = 'center';
+              ctx.fillText('Click & drag to aim — release to shoot', W * 0.5, t.y + t.h + 14);
+            }
+          }
+        };
+
+        rafRef.current = requestAnimationFrame(render);
+        return () => {
+          cancelAnimationFrame(rafRef.current);
+          window.removeEventListener('resize', resize);
+        };
+      }, []); // only once
+
+      // ── Input helpers ──
+      const getPos = (e) => {
+        const rect = canvasRef.current.getBoundingClientRect();
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      };
+
+      const onDown = (e) => {
+        const g = G.current;
+        if (g.phase === 'idle') { startGame(); return; }
+        if (g.phase !== 'playing' || !g.canShoot) return;
+        const pos = getPos(e);
+        g.aiming = true;
+        g.aimX = pos.x; g.aimY = pos.y;
+      };
+
+      const onMove = (e) => {
+        const g = G.current;
+        if (!g.aiming) return;
+        const pos = getPos(e);
+        g.aimX = pos.x; g.aimY = pos.y;
+      };
+
+      const onUp = (e) => {
+        const g = G.current;
+        if (g.phase !== 'playing' || !g.aiming || !g.canShoot) return;
+        g.aiming = false;
+        const cue = g.balls.find(b => b.isCue && !b.pocketed);
+        if (!cue) return;
+        const dx = g.aimX - cue.x, dy = g.aimY - cue.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 8) return;
+        const power = Math.min(len / 220, 1);
+        cue.vx = (dx / len) * power * MAX_SPEED;
+        cue.vy = (dy / len) * power * MAX_SPEED;
+        g.canShoot = false;
+        g.audio?.shoot();
+      };
+
+      const onTouchStart = (e) => { e.preventDefault(); onDown(e.touches[0]); };
+      const onTouchMove  = (e) => { e.preventDefault(); onMove(e.touches[0]); };
+      const onTouchEnd   = (e) => { e.preventDefault(); onUp(e.changedTouches[0]); };
+
+      return (
+        <div id="game-root" style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
+          <canvas
+            ref={canvasRef}
+            style={{ display: 'block', cursor: 'crosshair' }}
+            onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp}
+            onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+          />
+
+          {/* Idle screen */}
+          {ui.phase === 'idle' && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,0,26,0.87)', zIndex: 10 }}>
+              <div style={{ fontSize: 'clamp(36px,6.5vw,70px)', fontWeight: 'bold', color: '#00ff88', textShadow: '0 0 40px #00ff88, 0 0 80px #00ff8833', marginBottom: 10, letterSpacing: 4, animation: 'glow 1.5s infinite alternate' }}>
+                POCKET RUSH
+              </div>
+              <div style={{ color: '#aaaacc', fontSize: 'clamp(12px,1.8vw,16px)', textAlign: 'center', maxWidth: 400, padding: '0 24px', marginBottom: 8, lineHeight: 1.7 }}>
+                Drag to aim the cue ball — release to shoot!<br />
+                Pocket all colored balls to advance levels.
+              </div>
+              <div style={{ color: '#555577', fontSize: 'clamp(11px,1.5vw,14px)', marginBottom: 28, textAlign: 'center' }}>
+                Chain pockets for COMBO multipliers · Each pocket adds time
+              </div>
+              {ui.highScore > 0 && (
+                <div style={{ color: '#ffbe0b', fontSize: 18, marginBottom: 22, textShadow: '0 0 12px #ffbe0b' }}>
+                  BEST: {ui.highScore}
+                </div>
+              )}
+              <button
+                onClick={startGame}
+                style={{ background: 'linear-gradient(135deg,#00ff88,#00cc55)', border: 'none', color: '#001a0d', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 22, padding: '14px 54px', borderRadius: 10, cursor: 'pointer', boxShadow: '0 0 40px #00ff8866', letterSpacing: 3 }}
+              >
+                PLAY
+              </button>
+            </div>
+          )}
+
+          {/* Game over screen */}
+          {ui.phase === 'gameover' && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,0,26,0.92)', zIndex: 10 }}>
+              <div style={{ fontSize: 'clamp(28px,5vw,56px)', fontWeight: 'bold', color: '#ff006e', textShadow: '0 0 30px #ff006e', marginBottom: 18 }}>
+                TIME'S UP!
+              </div>
+              <div style={{ color: '#ffffff', fontSize: 'clamp(20px,3vw,34px)', marginBottom: 8, fontWeight: 'bold' }}>
+                Score: {ui.score}
+              </div>
+              <div style={{ color: '#8338ec', fontSize: 18, marginBottom: 8, textShadow: '0 0 8px #8338ec' }}>
+                Level Reached: {ui.level}
+              </div>
+              {ui.newHigh && (
+                <div style={{ color: '#00ff88', fontSize: 'clamp(16px,2.5vw,22px)', marginBottom: 14, textShadow: '0 0 20px #00ff88', animation: 'pulse 0.5s infinite alternate', fontWeight: 'bold' }}>
+                  ✨ NEW HIGH SCORE! ✨
+                </div>
+              )}
+              <div style={{ color: '#ffbe0b', fontSize: 16, marginBottom: 32, textShadow: '0 0 10px #ffbe0b' }}>
+                Best: {ui.highScore}
+              </div>
+              <button
+                onClick={startGame}
+                style={{ background: 'linear-gradient(135deg,#ff006e,#cc0044)', border: 'none', color: '#fff', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 20, padding: '13px 46px', borderRadius: 10, cursor: 'pointer', boxShadow: '0 0 30px #ff006e77', letterSpacing: 2 }}
+              >
+                PLAY AGAIN
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<PocketRush />, document.getElementById('root'));
+  </script>
+</body>
+</html>
