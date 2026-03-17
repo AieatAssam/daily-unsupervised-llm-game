@@ -378,6 +378,20 @@
     "preview": "games/2026-03-15/preview.png"
   },
   {
+    "id": "2026-03-17",
+    "name": "Pocket Rush",
+    "date": "2026-03-17",
+    "description": "Drag back from the white cue ball to aim and shoot — pocket all neon colored balls to advance levels! Chain consecutive pockets for massive combo multipliers and race the clock!",
+    "tagline": "Aim. Shoot. Chain the pockets!",
+    "tags": ["billiards", "physics", "action", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click and drag to aim cue ball — release to shoot | Touch drag on mobile",
+    "folder": "games/2026-03-17",
+    "file": "games/2026-03-17/index.html",
+    "preview": "games/2026-03-17/preview.png"
+  },
+  {
     "id": "2026-03-16",
     "name": "Merge Surge",
     "date": "2026-03-16",
