@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Helix Drop</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050010; overflow: hidden; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: Arial, sans-serif; }
+    #root { width: 100%; height: 100vh; display: flex; justify-content: center; align-items: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+  const { useState, useEffect, useRef } = React;
+
+  const W = 400, H = 600, CX = 200;
+  const DISC_RX = 148, DISC_RY = 22;
+  const DISC_THICK = 10;
+  const DISC_SPACING = 95;
+  const BASE_GAP = Math.PI * 0.44;   // ~79 degree gap
+  const BALL_R = 11;
+  const BALL_Y = H * 0.27;            // ball stays near top of screen
+  const PASS_ANGLE = Math.PI * 1.5;   // top of ellipse = gap must face here
+
+  function mkDisc(worldY, diff) {
+    const spd = (0.007 + Math.random() * 0.013 + diff * 0.0008) * (Math.random() < 0.5 ? 1 : -1);
+    return {
+      worldY,
+      rot: Math.random() * Math.PI * 2,
+      speed: spd,
+      gap: Math.max(BASE_GAP * (1 - diff * 0.025), BASE_GAP * 0.45),
+      hue: Math.floor(Math.random() * 360),
+      passed: false,
+      flash: 0,
+    };
+  }
+
+  // Returns true if the TOP of the ellipse (PASS_ANGLE) is within the disc's gap
+  function ballCanPass(disc, towerRot) {
+    const eff = disc.rot + towerRot;
+    let d = ((PASS_ANGLE - eff) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    return Math.abs(d) < disc.gap / 2;
+  }
+
+  function playSound(actx, type) {
+    if (!actx) return;
+    try {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.connect(g); g.connect(actx.destination);
+      const t = actx.currentTime;
+      if (type === 'pass') {
+        o.frequency.setValueAtTime(523, t);
+        o.frequency.exponentialRampToValueAtTime(880, t + 0.1);
+        g.gain.setValueAtTime(0.15, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        o.start(t); o.stop(t + 0.15);
+      } else if (type === 'hit') {
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(280, t);
+        o.frequency.exponentialRampToValueAtTime(55, t + 0.28);
+        g.gain.setValueAtTime(0.22, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        o.start(t); o.stop(t + 0.28);
+      } else if (type === 'over') {
+        o.type = 'square';
+        o.frequency.setValueAtTime(220, t);
+        o.frequency.exponentialRampToValueAtTime(55, t + 0.75);
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
+        o.start(t); o.stop(t + 0.75);
+      } else if (type === 'combo') {
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(660, t);
+        o.frequency.exponentialRampToValueAtTime(1320, t + 0.07);
+        g.gain.setValueAtTime(0.12, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+        o.start(t); o.stop(t + 0.12);
+      }
+    } catch (e) {}
+  }
+
+  function makeBurst(x, y, hue, n = 18) {
+    return Array.from({ length: n }, () => ({
+      x, y,
+      vx: (Math.random() - 0.5) * 9,
+      vy: (Math.random() - 0.5) * 9,
+      life: 1,
+      decay: 0.03 + Math.random() * 0.04,
+      r: 2 + Math.random() * 4,
+      hue,
+    }));
+  }
+
+  function makeFloater(x, y, text, hue) {
+    return { x, y, text, life: 1, decay: 0.014, vy: -1.5, hue };
+  }
+
+  const App = () => {
+    const cvs = useRef(null);
+    const G = useRef(null);
+    const raf = useRef(null);
+    const [ui, setUi] = useState({ phase: 'start', score: 0, lives: 3, combo: 0, hs: 0 });
+
+    useEffect(() => {
+      const canvas = cvs.current;
+      const hs0 = parseInt(localStorage.getItem('helixDrop_hs') || '0');
+
+      function mkState() {
+        const discs = [];
+        for (let i = 0; i < 9; i++) {
+          discs.push(mkDisc(BALL_Y + 60 + i * DISC_SPACING, 0));
+        }
+        return {
+          phase: 'start',
+          ball: { worldY: 0, vy: 2.5, bouncing: false, bounceVy: 0 },
+          camY: -BALL_Y,
+          discs,
+          tRot: 0,
+          score: 0, combo: 0, lives: 3,
+          hs: G.current ? G.current.hs : hs0,
+          parts: [],
+          floaters: [],
+          keys: {},
+          diff: 0,
+          inv: 0,
+          bgHue: 200,
+          audioCtx: G.current ? G.current.audioCtx : null,
+        };
+      }
+
+      G.current = mkState();
+      setUi({ phase: 'start', score: 0, lives: 3, combo: 0, hs: hs0 });
+
+      function startGame() {
+        const prev = G.current;
+        if (!prev.audioCtx) {
+          try { prev.audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+        }
+        const s = mkState();
+        s.audioCtx = prev.audioCtx;
+        s.hs = prev.hs;
+        s.phase = 'play';
+        G.current = s;
+        setUi({ phase: 'play', score: 0, lives: 3, combo: 0, hs: s.hs });
+      }
+
+      function update() {
+        const g = G.current;
+        if (g.phase !== 'play') return;
+
+        g.bgHue = (g.bgHue + 0.3) % 360;
+        if (g.inv > 0) g.inv--;
+
+        // Player controls tower rotation
+        const rs = 0.023 + g.diff * 0.0015;
+        if (g.keys['ArrowLeft'] || g.keys['a'] || g.keys['A']) g.tRot -= rs;
+        if (g.keys['ArrowRight'] || g.keys['d'] || g.keys['D']) g.tRot += rs;
+
+        // Auto-spin discs
+        g.discs.forEach(d => {
+          d.rot += d.speed;
+          if (d.flash > 0) d.flash -= 0.06;
+        });
+
+        // Ball physics
+        const fallSpd = 2.5 + g.diff * 0.18;
+        if (g.ball.bouncing) {
+          g.ball.worldY += g.ball.bounceVy;
+          g.ball.bounceVy += 0.45;
+          if (g.ball.bounceVy >= 0) {
+            g.ball.bouncing = false;
+            g.ball.vy = fallSpd;
+          }
+        } else {
+          g.ball.worldY += fallSpd;
+        }
+
+        // Smooth camera: keep ball near BALL_Y on screen
+        const targetCam = g.ball.worldY - BALL_Y;
+        g.camY += (targetCam - g.camY) * 0.14;
+
+        // Update particles
+        g.parts = g.parts.filter(p => p.life > 0);
+        g.parts.forEach(p => {
+          p.x += p.vx; p.y += p.vy;
+          p.vx *= 0.95; p.vy *= 0.95;
+          p.life -= p.decay;
+        });
+
+        // Update score floaters
+        g.floaters = g.floaters.filter(f => f.life > 0);
+        g.floaters.forEach(f => { f.y += f.vy; f.life -= f.decay; });
+
+        // Collision detection
+        const ballScreenY = g.ball.worldY - g.camY;
+        if (!g.ball.bouncing && g.inv === 0) {
+          for (const disc of g.discs) {
+            if (disc.passed) continue;
+            const sy = disc.worldY - g.camY;
+            if (Math.abs(ballScreenY - sy) < DISC_RY + BALL_R + 3) {
+              if (ballCanPass(disc, g.tRot)) {
+                // PASS!
+                disc.passed = true;
+                g.combo++;
+                const pts = 10 * g.combo;
+                g.score += pts;
+                g.diff = Math.floor(g.score / 80);
+                if (g.score > g.hs) {
+                  g.hs = g.score;
+                  localStorage.setItem('helixDrop_hs', g.score);
+                }
+                g.parts.push(...makeBurst(CX, sy, disc.hue, 22));
+                g.floaters.push(makeFloater(CX + (Math.random() - 0.5) * 60, sy - 10, `+${pts}`, disc.hue));
+                playSound(g.audioCtx, g.combo >= 3 ? 'combo' : 'pass');
+                setUi(u => ({ ...u, score: g.score, combo: g.combo, hs: g.hs }));
+              } else {
+                // HIT!
+                disc.flash = 1;
+                g.ball.bouncing = true;
+                g.ball.bounceVy = -10;
+                g.combo = 0;
+                g.inv = 35;
+                g.lives--;
+                g.parts.push(...makeBurst(CX, sy, 0, 20));
+                playSound(g.audioCtx, 'hit');
+                if (g.lives <= 0) {
+                  g.phase = 'over';
+                  playSound(g.audioCtx, 'over');
+                }
+                setUi(u => ({ ...u, lives: g.lives, combo: 0, phase: g.phase }));
+              }
+              break;
+            }
+          }
+        }
+
+        // Disc pool management
+        g.discs = g.discs.filter(d => d.worldY - g.camY > -280);
+        while (g.discs.length < 11) {
+          const last = g.discs[g.discs.length - 1];
+          const baseY = last ? last.worldY + DISC_SPACING : g.camY + H + 100;
+          g.discs.push(mkDisc(baseY, g.diff));
+        }
+      }
+
+      function draw() {
+        const g = G.current;
+        const ctx = canvas.getContext('2d');
+
+        // Background
+        ctx.fillStyle = '#050010';
+        ctx.fillRect(0, 0, W, H);
+
+        // Ambient pulsing glow
+        const rg = ctx.createRadialGradient(CX, BALL_Y, 0, CX, BALL_Y, 240);
+        rg.addColorStop(0, `hsla(${g.bgHue}, 80%, 40%, 0.08)`);
+        rg.addColorStop(1, 'transparent');
+        ctx.fillStyle = rg;
+        ctx.fillRect(0, 0, W, H);
+
+        // Center guide line
+        ctx.save();
+        ctx.strokeStyle = 'rgba(100,160,255,0.1)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 10]);
+        ctx.beginPath(); ctx.moveTo(CX, 0); ctx.lineTo(CX, H); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Draw discs (back to front: larger worldY first)
+        const sorted = [...g.discs].sort((a, b) => b.worldY - a.worldY);
+        sorted.forEach(disc => {
+          const sy = disc.worldY - g.camY;
+          if (sy < -80 || sy > H + 80) return;
+
+          const gapC = disc.rot + g.tRot;
+          const gapStart = gapC - disc.gap / 2;
+          const gapEnd = gapC + disc.gap / 2;
+          const col = disc.flash > 0
+            ? `hsl(0, 100%, ${55 + disc.flash * 35}%)`
+            : `hsl(${disc.hue}, 100%, 58%)`;
+
+          ctx.save();
+          // Solid arc (everything except gap)
+          ctx.shadowBlur = 18;
+          ctx.shadowColor = col;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = DISC_THICK;
+          ctx.beginPath();
+          // Draw from gapEnd to gapStart+2PI = the long arc (solid portion)
+          ctx.ellipse(CX, sy, DISC_RX, DISC_RY, 0, gapEnd, gapStart + Math.PI * 2, false);
+          ctx.stroke();
+
+          // Dim gap hint
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = `hsla(${disc.hue}, 50%, 28%, 0.55)`;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.ellipse(CX, sy, DISC_RX, DISC_RY, 0, gapStart, gapEnd, false);
+          ctx.stroke();
+
+          // Inner rim depth effect
+          ctx.strokeStyle = `hsla(${disc.hue}, 60%, 30%, 0.3)`;
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.ellipse(CX, sy + 4, DISC_RX * 0.88, DISC_RY * 0.75, 0, gapEnd, gapStart + Math.PI * 2, false);
+          ctx.stroke();
+
+          ctx.restore();
+        });
+
+        // Particles
+        ctx.save();
+        g.parts.forEach(p => {
+          ctx.globalAlpha = p.life * 0.9;
+          ctx.fillStyle = `hsl(${p.hue}, 100%, 70%)`;
+          ctx.shadowBlur = 7;
+          ctx.shadowColor = ctx.fillStyle;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r * Math.sqrt(p.life), 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+        ctx.restore();
+
+        // Score floaters
+        ctx.save();
+        g.floaters.forEach(f => {
+          ctx.globalAlpha = f.life;
+          ctx.fillStyle = `hsl(${f.hue}, 100%, 78%)`;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = ctx.fillStyle;
+          ctx.font = `bold ${Math.round(14 + (1 - f.life) * 6)}px Arial`;
+          ctx.textAlign = 'center';
+          ctx.fillText(f.text, f.x, f.y);
+        });
+        ctx.globalAlpha = 1;
+        ctx.restore();
+
+        // Ball
+        const bx = CX, by = g.ball.worldY - g.camY;
+        const alpha = g.inv > 0 ? 0.35 + 0.65 * (Math.sin(g.inv * 0.55) * 0.5 + 0.5) : 1;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        // Outer halo
+        ctx.shadowBlur = 32;
+        ctx.shadowColor = '#00eeff';
+        const ballG = ctx.createRadialGradient(bx - 3, by - 3, 1, bx, by, BALL_R);
+        ballG.addColorStop(0, '#ffffff');
+        ballG.addColorStop(0.4, '#00eeff');
+        ballG.addColorStop(1, '#0055ff');
+        ctx.fillStyle = ballG;
+        ctx.beginPath();
+        ctx.arc(bx, by, BALL_R, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Inner highlight
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.beginPath();
+        ctx.arc(bx - 3, by - 3, BALL_R * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // ---- Overlays ----
+        if (g.phase === 'start' || g.phase === 'over') {
+          ctx.fillStyle = 'rgba(2,0,18,0.80)';
+          ctx.fillRect(0, 0, W, H);
+          ctx.textAlign = 'center';
+
+          if (g.phase === 'start') {
+            // Title
+            ctx.save();
+            ctx.shadowBlur = 35; ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = '#00ffff';
+            ctx.font = 'bold 54px Arial, sans-serif';
+            ctx.fillText('HELIX DROP', CX, H / 2 - 80);
+            ctx.restore();
+            // Subtitle
+            ctx.fillStyle = '#7799cc';
+            ctx.font = '17px Arial, sans-serif';
+            ctx.fillText('Rotate the tower to align gaps', CX, H / 2 - 25);
+            ctx.fillText('with the falling ball', CX, H / 2 + 3);
+            ctx.fillStyle = '#aabbee';
+            ctx.font = '15px Arial, sans-serif';
+            ctx.fillText('← → Arrow Keys  |  Swipe on mobile', CX, H / 2 + 35);
+            // Start prompt
+            ctx.save();
+            ctx.shadowBlur = 22; ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 21px Arial, sans-serif';
+            ctx.fillText('TAP OR CLICK TO START', CX, H / 2 + 90);
+            ctx.restore();
+            // Best score
+            if (g.hs > 0) {
+              ctx.fillStyle = '#ffcc44';
+              ctx.font = '16px Arial, sans-serif';
+              ctx.fillText(`Best: ${g.hs}`, CX, H / 2 + 125);
+            }
+          } else {
+            // Game Over
+            ctx.save();
+            ctx.shadowBlur = 35; ctx.shadowColor = '#ff4466';
+            ctx.fillStyle = '#ff4466';
+            ctx.font = 'bold 52px Arial, sans-serif';
+            ctx.fillText('GAME OVER', CX, H / 2 - 80);
+            ctx.restore();
+            ctx.fillStyle = '#ccccff';
+            ctx.font = '24px Arial, sans-serif';
+            ctx.fillText(`Score: ${g.score}`, CX, H / 2 - 20);
+            ctx.fillStyle = '#ffcc44';
+            ctx.font = '20px Arial, sans-serif';
+            ctx.fillText(`Best: ${g.hs}`, CX, H / 2 + 14);
+            ctx.save();
+            ctx.shadowBlur = 22; ctx.shadowColor = '#ff4466';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 21px Arial, sans-serif';
+            ctx.fillText('TAP OR CLICK TO RETRY', CX, H / 2 + 75);
+            ctx.restore();
+          }
+        }
+
+        // Combo flash banner (top)
+        if (g.combo >= 3 && g.phase === 'play') {
+          const alpha2 = Math.min(1, g.combo * 0.15);
+          ctx.save();
+          ctx.globalAlpha = alpha2 * 0.8;
+          ctx.fillStyle = `hsl(${(g.combo * 30) % 360}, 100%, 60%)`;
+          ctx.shadowBlur = 20; ctx.shadowColor = ctx.fillStyle;
+          ctx.font = `bold ${Math.min(28, 18 + g.combo)}px Arial`;
+          ctx.textAlign = 'center';
+          ctx.fillText(`x${g.combo} COMBO!`, CX, 38);
+          ctx.restore();
+        }
+      }
+
+      function loop() {
+        update();
+        draw();
+        raf.current = requestAnimationFrame(loop);
+      }
+
+      // ---- Event Listeners ----
+      const onKD = (e) => {
+        G.current.keys[e.key] = true;
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) e.preventDefault();
+        if (e.key === ' ' || e.key === 'Enter') {
+          if (G.current.phase === 'start' || G.current.phase === 'over') startGame();
+        }
+      };
+      const onKU = (e) => { G.current.keys[e.key] = false; };
+
+      let touchStartX = null;
+      const onTS = (e) => {
+        touchStartX = e.touches[0].clientX;
+        if (G.current.phase === 'start' || G.current.phase === 'over') startGame();
+      };
+      const onTM = (e) => {
+        e.preventDefault();
+        if (touchStartX !== null) {
+          const rect = canvas.getBoundingClientRect();
+          const scale = W / rect.width;
+          G.current.tRot += (e.touches[0].clientX - touchStartX) * scale * 0.009;
+          touchStartX = e.touches[0].clientX;
+        }
+      };
+      const onTE = () => { touchStartX = null; };
+      const onClick = () => {
+        if (G.current.phase === 'start' || G.current.phase === 'over') startGame();
+      };
+
+      window.addEventListener('keydown', onKD);
+      window.addEventListener('keyup', onKU);
+      canvas.addEventListener('touchstart', onTS, { passive: true });
+      canvas.addEventListener('touchmove', onTM, { passive: false });
+      canvas.addEventListener('touchend', onTE, { passive: true });
+      canvas.addEventListener('click', onClick);
+
+      raf.current = requestAnimationFrame(loop);
+
+      return () => {
+        window.removeEventListener('keydown', onKD);
+        window.removeEventListener('keyup', onKU);
+        canvas.removeEventListener('touchstart', onTS);
+        canvas.removeEventListener('touchmove', onTM);
+        canvas.removeEventListener('touchend', onTE);
+        canvas.removeEventListener('click', onClick);
+        cancelAnimationFrame(raf.current);
+      };
+    }, []);
+
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', height: '100vh', background: '#050010',
+        userSelect: 'none'
+      }}>
+        {/* HUD */}
+        <div style={{
+          width: Math.min(W, window.innerWidth),
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '5px 14px', color: '#7799cc',
+          fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.07em'
+        }}>
+          <span style={{ color: '#ff5577', fontSize: 16 }}>
+            {Array.from({ length: 3 }, (_, i) => (
+              <span key={i} style={{ opacity: i < ui.lives ? 1 : 0.2 }}>♥</span>
+            ))}
+          </span>
+          <span>Score <strong style={{ color: '#00ffff' }}>{ui.score}</strong></span>
+          <span>Best <strong style={{ color: '#ffcc00' }}>{ui.hs}</strong></span>
+        </div>
+        <canvas
+          ref={cvs}
+          width={W}
+          height={H}
+          style={{
+            display: 'block',
+            maxWidth: '100vw',
+            maxHeight: 'calc(100vh - 50px)',
+            cursor: 'pointer',
+            touchAction: 'none',
+          }}
+        />
+      </div>
+    );
+  };
+
+  ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>

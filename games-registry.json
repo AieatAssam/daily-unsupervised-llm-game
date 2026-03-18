@@ -404,5 +404,19 @@
     "folder": "games/2026-03-16",
     "file": "games/2026-03-16/index.html",
     "preview": "games/2026-03-16/preview.png"
+  },
+  {
+    "id": "2026-03-18",
+    "name": "Helix Drop",
+    "date": "2026-03-18",
+    "description": "A ball falls through spinning neon disc rings — hold left/right to rotate the entire tower and align each gap with the ball's path before it crashes. Chain passes for massive combo multipliers as rings spin faster each level!",
+    "tagline": "Rotate the tower. Thread the gaps. Don't get blocked.",
+    "tags": ["action", "reflex", "timing", "arcade", "rotation"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "← → Arrow Keys or A/D to rotate tower | Swipe left/right on mobile",
+    "folder": "games/2026-03-18",
+    "file": "games/2026-03-18/index.html",
+    "preview": "games/2026-03-18/preview.png"
   }
 ]
