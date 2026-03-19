@@ -418,5 +418,19 @@
     "folder": "games/2026-03-18",
     "file": "games/2026-03-18/index.html",
     "preview": "games/2026-03-18/preview.png"
+  },
+  {
+    "id": "2026-03-19",
+    "name": "Grav Shift",
+    "date": "2026-03-19",
+    "description": "Roll a glowing neon ball through a maze by shifting gravity in 4 directions — collect all cyan gems to open the golden portal exit, and dodge red spikes that cost you a life!",
+    "tagline": "Shift gravity. Collect gems. Reach the portal.",
+    "tags": ["puzzle", "physics", "maze", "gravity", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "← → ↑ ↓ or WASD to shift gravity direction | Swipe on mobile",
+    "folder": "games/2026-03-19",
+    "file": "games/2026-03-19/index.html",
+    "preview": "games/2026-03-19/preview.png"
   }
 ]
