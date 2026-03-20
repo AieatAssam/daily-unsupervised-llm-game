@@ -432,5 +432,19 @@
     "folder": "games/2026-03-19",
     "file": "games/2026-03-19/index.html",
     "preview": "games/2026-03-19/preview.png"
+  },
+  {
+    "id": "2026-03-20",
+    "name": "Nova Pulse",
+    "date": "2026-03-20",
+    "description": "Hold to expand a glowing ring outward from the center and hit bouncing neon balls — chain multiple hits per expansion for massive combo multipliers, but release before the ring overflows or lose a life!",
+    "tagline": "Hold to expand. Hit the balls. Don't overflow.",
+    "tags": ["action", "reflex", "timing", "arcade", "hold"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Hold Mouse / Touch / Space to expand ring — release to contract",
+    "folder": "games/2026-03-20",
+    "file": "games/2026-03-20/index.html",
+    "preview": "games/2026-03-20/preview.png"
   }
 ]
