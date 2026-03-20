@@ -16,8 +16,10 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: 'Arial Black', Arial, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
-    #root { width: 100vw; height: 100vh; position: relative; }
-  </style>
+    #root { width: 100%; height: 100vh; position: relative; }
+      html { overflow: hidden; }
+    canvas { display: block; max-width: calc(100% - 2px); height: auto; margin: 0 auto; }
+</style>
 </head>
 <body>
   <div id="root"></div>

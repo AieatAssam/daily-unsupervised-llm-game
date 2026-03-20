@@ -10,7 +10,7 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { margin: 0; overflow: hidden; background: #050010; font-family: 'Arial', sans-serif; user-select: none; }
-    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    #root { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
 
     @keyframes bgPulse {
       0%   { background-position: 0% 50%; }
@@ -55,7 +55,9 @@
       0%   { left: -100%; }
       100% { left: 200%; }
     }
-  </style>
+      html { overflow: hidden; }
+    canvas { display: block; max-width: calc(100% - 2px); height: auto; margin: 0 auto; }
+</style>
 </head>
 <body>
   <div id="root"></div>

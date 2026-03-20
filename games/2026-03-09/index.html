@@ -23,7 +23,8 @@
       min-height: 100vh;
       flex-direction: column;
     }
-  </style>
+      html { overflow: hidden; }
+</style>
 </head>
 <body>
   <div id="root"></div>
@@ -749,7 +750,7 @@
           <div style={{
             display: 'flex',
             width: `${GW}px`,
-            maxWidth: '100vw',
+            maxWidth: 'calc(100vw - 2px)',
             gap: '8px',
             padding: '8px',
           }}>
