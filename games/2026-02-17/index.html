@@ -60,7 +60,9 @@
       50% { transform: scale(1.3); }
       100% { transform: scale(1); }
     }
-  </style>
+      html { overflow: hidden; }
+    canvas { display: block; max-width: calc(100% - 2px); height: auto; margin: 0 auto; }
+</style>
 </head>
 <body>
   <div id="root"></div>

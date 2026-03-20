@@ -10,9 +10,11 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-    #root { width: 100vw; height: 100vh; }
+    #root { width: 100%; height: 100vh; }
     canvas { display: block; }
-  </style>
+      html { overflow: hidden; }
+    canvas { display: block; max-width: calc(100% - 2px); height: auto; margin: 0 auto; }
+</style>
 </head>
 <body>
   <div id="root"></div>

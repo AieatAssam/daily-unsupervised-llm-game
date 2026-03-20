@@ -12,7 +12,9 @@
     body { background: #08001a; overflow: hidden; font-family: monospace; }
     @keyframes pulse { from { opacity: 0.7; transform: scale(1); } to { opacity: 1; transform: scale(1.06); } }
     @keyframes glow { from { text-shadow: 0 0 20px #00ff88; } to { text-shadow: 0 0 50px #00ff88, 0 0 80px #00ff8844; } }
-  </style>
+      html { overflow: hidden; }
+    canvas { display: block; max-width: calc(100% - 2px); height: auto; margin: 0 auto; }
+</style>
 </head>
 <body>
   <div id="root"></div>
