@@ -101,14 +101,30 @@
         return { x: mx, y: my, w: W - mx * 2, h: H - my - Math.min(100, H * 0.15) };
       };
 
-      const getPockets = (t) => [
-        { x: t.x,             y: t.y },
-        { x: t.x + t.w * 0.5, y: t.y },
-        { x: t.x + t.w,       y: t.y },
-        { x: t.x,             y: t.y + t.h },
-        { x: t.x + t.w * 0.5, y: t.y + t.h },
-        { x: t.x + t.w,       y: t.y + t.h },
-      ];
+      const getPockets = (t) => {
+        // Center (side) pockets always go on the LONG sides of the table
+        if (t.h >= t.w) {
+          // Portrait: long sides are left and right
+          return [
+            { x: t.x,       y: t.y },              // TL corner
+            { x: t.x + t.w, y: t.y },              // TR corner
+            { x: t.x,       y: t.y + t.h * 0.5 }, // Left center (long side)
+            { x: t.x + t.w, y: t.y + t.h * 0.5 }, // Right center (long side)
+            { x: t.x,       y: t.y + t.h },        // BL corner
+            { x: t.x + t.w, y: t.y + t.h },        // BR corner
+          ];
+        } else {
+          // Landscape: long sides are top and bottom
+          return [
+            { x: t.x,             y: t.y },         // TL corner
+            { x: t.x + t.w * 0.5, y: t.y },        // Top center (long side)
+            { x: t.x + t.w,       y: t.y },         // TR corner
+            { x: t.x,             y: t.y + t.h },   // BL corner
+            { x: t.x + t.w * 0.5, y: t.y + t.h },  // Bottom center (long side)
+            { x: t.x + t.w,       y: t.y + t.h },   // BR corner
+          ];
+        }
+      };
 
       const initAudio = () => {
         if (G.current.audio) return;

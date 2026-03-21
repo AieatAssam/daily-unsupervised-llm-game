@@ -9,9 +9,9 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { margin: 0; overflow: hidden; background: #05000f; font-family: 'Courier New', monospace; display: flex; align-items: center; justify-content: center; height: 100vh; }
-      html { overflow: hidden; }
-    canvas { display: block; max-width: calc(100% - 2px); height: auto; margin: 0 auto; }
+    html, body { overflow: hidden; background: #05000f; }
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Courier New', monospace; }
+    canvas { display: block; }
 </style>
 </head>
 <body>
@@ -156,6 +156,20 @@
         if (!canvas) return;
         canvas.width = CW;
         canvas.height = CH;
+
+        // Scale canvas to fit viewport while preserving aspect ratio
+        function fitCanvas() {
+          const sc = Math.min(
+            (window.innerWidth - 8) / CW,
+            (window.innerHeight - 8) / CH,
+            1
+          );
+          canvas.style.width  = (CW * sc) + 'px';
+          canvas.style.height = (CH * sc) + 'px';
+        }
+        fitCanvas();
+        window.addEventListener('resize', fitCanvas);
+
         const ctx = canvas.getContext('2d');
 
         const gv = gameVarsRef.current;
@@ -497,8 +511,9 @@
 
           ctx.shadowBlur = 8;
           ctx.fillStyle = '#00ffcc';
-          ctx.font = '16px Courier New';
-          ctx.fillText('Shift gravity · Collect all gems · Reach the portal', CW / 2, CH / 2 - 32);
+          ctx.font = '15px Courier New';
+          ctx.fillText('Shift gravity · Collect all gems', CW / 2, CH / 2 - 38);
+          ctx.fillText('Reach the portal', CW / 2, CH / 2 - 18);
 
           ctx.fillStyle = '#aaaacc';
           ctx.font = '13px Courier New';
@@ -583,6 +598,7 @@
         return () => {
           cancelAnimationFrame(rafRef.current);
           window.removeEventListener('keydown', handleKey);
+          window.removeEventListener('resize', fitCanvas);
           canvas.removeEventListener('click', handleAction);
           canvas.removeEventListener('touchstart', handleTouchStart);
           canvas.removeEventListener('touchend', handleTouchEnd);
@@ -598,7 +614,7 @@
               background: 'rgba(255,255,255,0.05)', borderRadius: '8px',
               border: '1px solid rgba(180,80,255,0.3)', color: '#fff',
               fontFamily: 'Courier New', fontSize: '13px',
-              width: CW + 'px', justifyContent: 'space-between', flexWrap: 'wrap',
+              width: Math.min(CW, window.innerWidth - 8) + 'px', justifyContent: 'space-between', flexWrap: 'wrap',
             }}>
               <span>LV <span style={{ color: '#cc88ff', fontWeight: 'bold' }}>{hud.level}</span></span>
               <span>SCORE <span style={{ color: '#00ffcc', fontWeight: 'bold' }}>{hud.score.toLocaleString()}</span></span>
