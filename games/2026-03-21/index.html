@@ -234,8 +234,8 @@
           if (ball.x + BALL_R > W - PAD) { ball.x = W - PAD - BALL_R; ball.vx = -Math.abs(ball.vx); }
           // Ceiling
           if (ball.y - BALL_R < GT) { ball.y = GT + BALL_R; ball.vy = Math.abs(ball.vy); }
-          // Floor — return
-          if (ball.y + BALL_R >= GB) {
+          // Floor — return (use canvas bottom H, not danger line GB)
+          if (ball.y + BALL_R >= H) {
             ball.active = false;
             s.ballsBack++;
             if (s.firstX === null) s.firstX = ball.x;
