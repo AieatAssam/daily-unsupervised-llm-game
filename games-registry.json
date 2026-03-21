@@ -446,5 +446,19 @@
     "folder": "games/2026-03-20",
     "file": "games/2026-03-20/index.html",
     "preview": "games/2026-03-20/preview.png"
+  },
+  {
+    "id": "2026-03-21",
+    "name": "Brick Blitz",
+    "date": "2026-03-21",
+    "description": "Drag to aim a volley of neon balls and blast numbered HP bricks — collect +1 orbs to grow your ball count, chain destruction combos for massive scores, and don't let bricks reach the red line!",
+    "tagline": "Aim. Shoot. Smash every brick!",
+    "tags": ["action", "physics", "arcade", "casual", "ballz"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Click and drag upward to aim — release to fire all balls | Touch drag on mobile",
+    "folder": "games/2026-03-21",
+    "file": "games/2026-03-21/index.html",
+    "preview": "games/2026-03-21/preview.png"
   }
 ]
