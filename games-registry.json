@@ -460,5 +460,19 @@
     "folder": "games/2026-03-21",
     "file": "games/2026-03-21/index.html",
     "preview": "games/2026-03-21/preview.png"
+  },
+  {
+    "id": "2026-03-22",
+    "name": "Cipher Blitz",
+    "date": "2026-03-22",
+    "description": "Crack the hidden neon color code in 8 guesses — gold dots mean right color and right spot, silver dots mean right color wrong spot. Race a 90-second timer across multiple rounds as codes grow longer and harder each level!",
+    "tagline": "Deduce the code. Beat the clock. Chain the solves.",
+    "tags": ["puzzle", "logic", "deduction", "casual", "strategy"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click a color, then click a peg slot to place it — press Submit or Enter to check your guess",
+    "folder": "games/2026-03-22",
+    "file": "games/2026-03-22/index.html",
+    "preview": "games/2026-03-22/preview.png"
   }
 ]

@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cipher Blitz</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #070014; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
+    @keyframes fadeIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-7px)} 80%{transform:translateX(7px)} }
+    @keyframes popIn { 0%{transform:scale(0);opacity:0} 60%{transform:scale(1.2)} 100%{transform:scale(1);opacity:1} }
+    @keyframes floatUp { 0%{opacity:1;transform:translateY(0) scale(1)} 100%{opacity:0;transform:translateY(-70px) scale(1.3)} }
+    @keyframes particle { 0%{opacity:1;transform:translate(0,0) scale(1)} 100%{opacity:0;transform:translate(var(--tx),var(--ty)) scale(0)} }
+    @keyframes glow { 0%,100%{box-shadow:0 0 12px var(--gc),0 0 24px var(--gc)} 50%{box-shadow:0 0 24px var(--gc),0 0 48px var(--gc),0 0 72px var(--gc)} }
+    @keyframes slideIn { from{opacity:0;transform:translateX(-20px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes timerPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    @keyframes bgDrift {
+      0%{transform:translate(0,0) scale(1)}
+      33%{transform:translate(30px,-20px) scale(1.05)}
+      66%{transform:translate(-20px,25px) scale(0.97)}
+      100%{transform:translate(0,0) scale(1)}
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ─── Constants ──────────────────────────────────────────────────────── */
+    const COLORS = [
+      { id:'pink',   hex:'#ff2d78', shadow:'rgba(255,45,120,0.9)',  name:'Pink'   },
+      { id:'cyan',   hex:'#00e5ff', shadow:'rgba(0,229,255,0.9)',   name:'Cyan'   },
+      { id:'yellow', hex:'#ffe600', shadow:'rgba(255,230,0,0.9)',   name:'Yellow' },
+      { id:'green',  hex:'#39ff14', shadow:'rgba(57,255,20,0.9)',   name:'Green'  },
+      { id:'orange', hex:'#ff6a00', shadow:'rgba(255,106,0,0.9)',   name:'Orange' },
+      { id:'purple', hex:'#bf5fff', shadow:'rgba(191,95,255,0.9)', name:'Purple' },
+    ];
+    const MAX_GUESSES = 8;
+    const LS_KEY = 'cipherBlitz_hs';
+    const INIT_TIME = 90;
+
+    /* ─── Audio ──────────────────────────────────────────────────────────── */
+    let _audioCtx = null;
+    function audio() {
+      if (!_audioCtx) try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+      return _audioCtx;
+    }
+    function tone(freq, dur, vol=0.25, type='sine', slide=null) {
+      const ctx = audio(); if (!ctx) return;
+      try {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = type; o.connect(g); g.connect(ctx.destination);
+        o.frequency.setValueAtTime(freq, ctx.currentTime);
+        if (slide) o.frequency.exponentialRampToValueAtTime(slide, ctx.currentTime + dur);
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.start(ctx.currentTime); o.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+    const sfx = {
+      place:  () => tone(700, 0.06, 0.12),
+      submit: () => tone(900, 0.08, 0.18),
+      gold:   () => tone(1100, 0.12, 0.22),
+      error:  () => tone(180, 0.18, 0.3, 'sawtooth'),
+      tick:   () => tone(440, 0.04, 0.08),
+      win:    () => [523,659,784,1047].forEach((f,i) => setTimeout(()=>tone(f,0.2,0.28),i*90)),
+      lose:   () => tone(200, 0.7, 0.32, 'sawtooth', 100),
+      combo:  () => tone(1400, 0.15, 0.25, 'triangle'),
+    };
+
+    /* ─── Helpers ────────────────────────────────────────────────────────── */
+    function getFeedback(secret, guess) {
+      let gold = 0, silver = 0;
+      const sl = [], gl = [];
+      for (let i = 0; i < secret.length; i++) {
+        if (secret[i] === guess[i]) { gold++; }
+        else { sl.push(secret[i]); gl.push(guess[i]); }
+      }
+      for (const c of gl) { const idx = sl.indexOf(c); if (idx !== -1) { silver++; sl.splice(idx, 1); } }
+      return { gold, silver };
+    }
+
+    function makeSecret(len, numC) {
+      const pool = COLORS.slice(0, numC);
+      return Array.from({length: len}, () => pool[Math.floor(Math.random() * pool.length)].id);
+    }
+
+    function colorOf(id) { return COLORS.find(c => c.id === id); }
+
+    /* ─── Particles ──────────────────────────────────────────────────────── */
+    function Particles({ list }) {
+      return (
+        <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:200,overflow:'hidden'}}>
+          {list.map(p => (
+            <div key={p.id} style={{
+              position:'absolute', left:p.x, top:p.y,
+              width:p.sz, height:p.sz, borderRadius:'50%',
+              background:p.color, boxShadow:`0 0 ${p.sz*2}px ${p.color}`,
+              '--tx':`${p.vx}px`, '--ty':`${p.vy}px`,
+              animation:`particle ${p.dur}s ease-out forwards`,
+              animationDelay:`${p.delay}s`,
+            }}/>
+          ))}
+        </div>
+      );
+    }
+
+    function burst(x, y, color, n=18) {
+      return Array.from({length:n}, (_,i) => {
+        const a = (i/n)*Math.PI*2 + Math.random()*0.5;
+        const sp = 30 + Math.random()*80;
+        return {
+          id: Math.random(), x, y,
+          vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
+          sz: 4+Math.random()*8, color,
+          dur: 0.5+Math.random()*0.5, delay: Math.random()*0.05,
+        };
+      });
+    }
+
+    /* ─── Score Popup ────────────────────────────────────────────────────── */
+    function ScorePopups({ popups }) {
+      return (
+        <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:150}}>
+          {popups.map(p => (
+            <div key={p.id} style={{
+              position:'absolute', left:p.x, top:p.y,
+              color:p.color, fontWeight:'bold', fontSize:p.big?28:18,
+              fontFamily:'Courier New,monospace', whiteSpace:'nowrap',
+              textShadow:`0 0 10px ${p.color}`,
+              animation:'floatUp 1s ease-out forwards',
+              transform:'translateX(-50%)',
+            }}>{p.text}</div>
+          ))}
+        </div>
+      );
+    }
+
+    /* ─── Peg component ──────────────────────────────────────────────────── */
+    function Peg({ colorId, size=38, glow=true, border='2px', active=false, onClick, animIn=false }) {
+      const c = colorId ? colorOf(colorId) : null;
+      return (
+        <div onClick={onClick} style={{
+          width: size, height: size, borderRadius:'50%', flexShrink:0,
+          border: `${border} solid ${c ? c.hex : active ? 'rgba(180,180,255,0.25)' : 'rgba(255,255,255,0.1)'}`,
+          background: c
+            ? `radial-gradient(circle at 32% 32%, ${c.hex}ee, ${c.hex}55)`
+            : active ? 'rgba(255,255,255,0.04)' : 'transparent',
+          boxShadow: c && glow ? `0 0 10px ${c.shadow}, 0 0 20px ${c.shadow}60, inset 0 0 8px rgba(255,255,255,0.15)` : 'none',
+          cursor: onClick ? 'pointer' : 'default',
+          transition: 'all 0.15s ease',
+          animation: animIn ? 'popIn 0.25s ease' : 'none',
+        }}/>
+      );
+    }
+
+    /* ─── Feedback dots ──────────────────────────────────────────────────── */
+    function FeedbackDots({ gold, silver, total }) {
+      const cols = Math.ceil(total / 2);
+      return (
+        <div style={{display:'grid', gridTemplateColumns:`repeat(${cols},12px)`, gap:3}}>
+          {Array.from({length:total}, (_,i) => {
+            const t = i < gold ? 'gold' : i < gold+silver ? 'silver' : 'empty';
+            return (
+              <div key={i} style={{
+                width:11, height:11, borderRadius:'50%',
+                background: t==='gold'?'#ffd700' : t==='silver'?'#bbbbbb' : 'rgba(255,255,255,0.07)',
+                boxShadow: t==='gold'?'0 0 6px #ffd700,0 0 12px #ffd70080' : t==='silver'?'0 0 5px #bbb':'none',
+                border: t==='empty'?'1px solid rgba(255,255,255,0.12)':'none',
+                animation: t!=='empty' ? `popIn 0.2s ease ${i*0.06}s both` : 'none',
+              }}/>
+            );
+          })}
+        </div>
+      );
+    }
+
+    /* ─── Main Game ──────────────────────────────────────────────────────── */
+    function Game() {
+      const [screen, setScreen]           = useState('title');
+      const [secret, setSecret]           = useState([]);
+      const [guesses, setGuesses]         = useState([]);
+      const [curGuess, setCurGuess]       = useState([]);
+      const [selColor, setSelColor]       = useState(null);
+      const [score, setScore]             = useState(0);
+      const [highScore, setHighScore]     = useState(() => parseInt(localStorage.getItem(LS_KEY)||'0'));
+      const [level, setLevel]             = useState(1);
+      const [combo, setCombo]             = useState(0);
+      const [timeLeft, setTimeLeft]       = useState(INIT_TIME);
+      const [shake, setShake]             = useState(false);
+      const [particles, setParticles]     = useState([]);
+      const [popups, setPopups]           = useState([]);
+      const [roundMsg, setRoundMsg]       = useState(null); // {type:'won'|'lost', pts, guessesUsed}
+      const [revealSecret, setRevealSecret] = useState(false);
+      const timerRef = useRef(null);
+      const roundMsgTimer = useRef(null);
+
+      // Derived
+      const codeLen  = level <= 2 ? 4 : 5;
+      const numColors = level <= 1 ? 5 : 6;
+
+      // Save high score
+      useEffect(() => {
+        if (score > highScore) {
+          setHighScore(score);
+          localStorage.setItem(LS_KEY, String(score));
+        }
+      }, [score]);
+
+      // Cleanup particles
+      useEffect(() => {
+        if (!particles.length) return;
+        const t = setTimeout(() => setParticles([]), 1800);
+        return () => clearTimeout(t);
+      }, [particles]);
+
+      // Cleanup popups
+      useEffect(() => {
+        if (!popups.length) return;
+        const t = setTimeout(() => setPopups([]), 1500);
+        return () => clearTimeout(t);
+      }, [popups]);
+
+      // Timer
+      useEffect(() => {
+        if (screen !== 'playing') { clearInterval(timerRef.current); return; }
+        timerRef.current = setInterval(() => {
+          setTimeLeft(t => {
+            if (t <= 1) {
+              clearInterval(timerRef.current);
+              sfx.lose();
+              setRevealSecret(true);
+              setScreen('gameover');
+              return 0;
+            }
+            if (t <= 10) sfx.tick();
+            return t - 1;
+          });
+        }, 1000);
+        return () => clearInterval(timerRef.current);
+      }, [screen]);
+
+      function addPopup(text, x, y, color, big=false) {
+        setPopups(prev => [...prev, {id:Math.random(), text, x, y, color, big}]);
+      }
+
+      function newRound(lvl) {
+        const cl = lvl <= 2 ? 4 : 5;
+        const nc = lvl <= 1 ? 5 : 6;
+        const s = makeSecret(cl, nc);
+        setSecret(s);
+        setGuesses([]);
+        setCurGuess(Array(cl).fill(null));
+        setSelColor(null);
+        setRevealSecret(false);
+        setRoundMsg(null);
+      }
+
+      function beginGame() {
+        audio(); // unlock
+        setScore(0);
+        setLevel(1);
+        setCombo(0);
+        setTimeLeft(INIT_TIME);
+        newRound(1);
+        setScreen('playing');
+      }
+
+      const submitGuess = useCallback(() => {
+        if (screen !== 'playing' || roundMsg) return;
+        if (curGuess.some(c => c === null)) {
+          setShake(true);
+          sfx.error();
+          setTimeout(() => setShake(false), 400);
+          return;
+        }
+        sfx.submit();
+        const fb = getFeedback(secret, curGuess);
+        const newGuesses = [...guesses, {colors:[...curGuess], feedback:fb}];
+        setGuesses(newGuesses);
+
+        if (fb.gold === codeLen) {
+          // Round won!
+          const guessesUsed = newGuesses.length;
+          const timeBonus = Math.floor(timeLeft * 4);
+          const guessBonus = Math.max(0, (MAX_GUESSES - guessesUsed)) * 120;
+          const comboBonus = combo * 80;
+          const lvlBonus = level * 80;
+          const pts = 400 + timeBonus + guessBonus + comboBonus + lvlBonus;
+
+          sfx.win();
+          setScore(s => s + pts);
+          setCombo(c => c + 1);
+          if (combo >= 1) sfx.combo();
+
+          // Particles at screen center
+          const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+          setParticles([
+            ...burst(cx, cy, '#ffd700', 20),
+            ...burst(cx - 60, cy, '#00e5ff', 10),
+            ...burst(cx + 60, cy, '#ff2d78', 10),
+          ]);
+          addPopup(`+${pts}`, cx, cy - 80, '#ffd700', true);
+
+          setRoundMsg({type:'won', pts, guessesUsed});
+          roundMsgTimer.current = setTimeout(() => {
+            setLevel(l => {
+              const nextL = l + 1;
+              newRound(nextL);
+              return nextL;
+            });
+          }, 1600);
+        } else if (newGuesses.length >= MAX_GUESSES) {
+          // Round lost!
+          sfx.lose();
+          setCombo(0);
+          setRevealSecret(true);
+          setRoundMsg({type:'lost', pts:0, guessesUsed:MAX_GUESSES});
+          // Penalize timer
+          setTimeLeft(t => Math.max(0, t - 12));
+          roundMsgTimer.current = setTimeout(() => {
+            newRound(level);
+          }, 2000);
+        } else {
+          if (fb.gold > 0) sfx.gold();
+          setCurGuess(Array(codeLen).fill(null));
+          setSelColor(null);
+        }
+      }, [screen, roundMsg, curGuess, secret, guesses, codeLen, timeLeft, combo, level]);
+
+      const placeColor = useCallback((slotIdx) => {
+        if (screen !== 'playing' || roundMsg || !selColor) return;
+        sfx.place();
+        setCurGuess(prev => { const n=[...prev]; n[slotIdx]=selColor; return n; });
+      }, [screen, roundMsg, selColor]);
+
+      // Keyboard
+      useEffect(() => {
+        const h = (e) => {
+          if (screen === 'title' || screen === 'gameover') {
+            if (e.key === 'Enter' || e.key === ' ') beginGame();
+            return;
+          }
+          if (screen === 'playing') {
+            if (e.key === 'Enter') { e.preventDefault(); submitGuess(); }
+            const n = parseInt(e.key);
+            if (n >= 1 && n <= numColors) setSelColor(COLORS[n-1].id);
+          }
+        };
+        window.addEventListener('keydown', h);
+        return () => window.removeEventListener('keydown', h);
+      }, [screen, submitGuess, numColors]);
+
+      // Cleanup round msg timer on unmount
+      useEffect(() => () => clearTimeout(roundMsgTimer.current), []);
+
+      const timerPct = timeLeft / INIT_TIME;
+      const timerColor = timerPct > 0.5 ? '#39ff14' : timerPct > 0.25 ? '#ffe600' : '#ff2d78';
+      const selC = selColor ? colorOf(selColor) : null;
+
+      /* ── BG orbs ── */
+      const bgOrbs = [
+        {x:'15%', y:'20%', r:220, color:'#3300cc', op:0.10, dur:7},
+        {x:'85%', y:'15%', r:160, color:'#cc0066', op:0.07, dur:9},
+        {x:'70%', y:'80%', r:200, color:'#0066cc', op:0.07, dur:11},
+        {x:'30%', y:'75%', r:130, color:'#6600cc', op:0.06, dur:8},
+      ];
+      const Orbs = () => bgOrbs.map((o,i) => (
+        <div key={i} style={{
+          position:'absolute', left:o.x, top:o.y, width:o.r*2, height:o.r*2,
+          borderRadius:'50%', background:o.color, opacity:o.op,
+          filter:'blur(70px)', transform:'translate(-50%,-50%)',
+          animation:`bgDrift ${o.dur}s ease-in-out infinite alternate`,
+          animationDelay:`${i*1.5}s`,
+          pointerEvents:'none',
+        }}/>
+      ));
+
+      /* ─────── TITLE ─────── */
+      if (screen === 'title') {
+        return (
+          <div id="game-title" style={{
+            width:'100vw', height:'100vh', background:'#070014', display:'flex',
+            alignItems:'center', justifyContent:'center', position:'relative', overflow:'hidden',
+            cursor:'pointer',
+          }} onClick={beginGame}>
+            <Orbs/>
+            <Particles list={particles}/>
+            <div style={{textAlign:'center', zIndex:1, padding:'0 24px', animation:'fadeIn 0.5s ease'}}>
+              <div style={{
+                fontSize:'clamp(38px,9vw,78px)', fontWeight:'bold', letterSpacing:4,
+                background:'linear-gradient(135deg, #00e5ff 0%, #bf5fff 50%, #ff2d78 100%)',
+                WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent',
+                marginBottom:8, lineHeight:1.1,
+              }}>CIPHER BLITZ</div>
+              <div style={{fontSize:'clamp(13px,3vw,17px)', color:'rgba(180,180,255,0.65)', letterSpacing:3, marginBottom:40}}>
+                CRACK THE NEON CODE
+              </div>
+
+              <div style={{
+                background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.1)',
+                borderRadius:16, padding:'18px 28px', maxWidth:380, margin:'0 auto 36px',
+                textAlign:'left',
+              }}>
+                <div style={{color:'#ffd700', fontWeight:'bold', marginBottom:10, fontSize:12, letterSpacing:2}}>HOW TO PLAY</div>
+                <div style={{color:'rgba(200,200,255,0.8)', fontSize:12, lineHeight:1.9}}>
+                  Pick a color, click a slot — fill the 4 pegs.<br/>
+                  Press <span style={{color:'#00e5ff'}}>SUBMIT</span> (or Enter) to check your guess.<br/>
+                  <span style={{color:'#ffd700'}}>● Gold</span> = right color, right spot<br/>
+                  <span style={{color:'#bbbbbb'}}>● Silver</span> = right color, wrong spot<br/>
+                  Crack the code in <span style={{color:'#00e5ff'}}>8 tries</span> before the <span style={{color:'#39ff14'}}>90s</span> timer runs out!
+                </div>
+              </div>
+
+              <div style={{display:'flex', gap:10, justifyContent:'center', marginBottom:36}}>
+                {COLORS.slice(0,5).map((c,i) => (
+                  <div key={c.id} style={{
+                    width:42, height:42, borderRadius:'50%',
+                    background:`radial-gradient(circle at 32% 32%, ${c.hex}ee, ${c.hex}55)`,
+                    boxShadow:`0 0 14px ${c.shadow}, 0 0 28px ${c.shadow}50`,
+                    border:`2px solid ${c.hex}`,
+                    animation:`glow 2s ease-in-out infinite`, '--gc':c.shadow,
+                    animationDelay:`${i*0.25}s`,
+                  }}/>
+                ))}
+              </div>
+
+              <div style={{color:'rgba(255,255,255,0.55)', fontSize:15, animation:'pulse 1.5s infinite'}}>
+                Click anywhere or press Enter
+              </div>
+              {highScore > 0 && (
+                <div style={{marginTop:12, color:'#ffd700', fontSize:13}}>
+                  🏆 Best: {highScore.toLocaleString()}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      /* ─────── GAME OVER ─────── */
+      if (screen === 'gameover') {
+        return (
+          <div id="game-gameover" style={{
+            width:'100vw', height:'100vh', background:'#070014', display:'flex',
+            alignItems:'center', justifyContent:'center', position:'relative', overflow:'hidden',
+            cursor:'pointer',
+          }} onClick={beginGame}>
+            <Orbs/>
+            <Particles list={particles}/>
+            <div style={{textAlign:'center', zIndex:1, animation:'fadeIn 0.4s ease', padding:'0 24px'}}>
+              <div style={{fontSize:52, marginBottom:10}}>⏰</div>
+              <div style={{fontSize:36, color:'#ff2d78', fontWeight:'bold', letterSpacing:3, marginBottom:16}}>
+                TIME'S UP!
+              </div>
+              <div style={{fontSize:22, color:'rgba(200,200,255,0.8)', marginBottom:8}}>
+                Score: <span style={{color:'#00e5ff', fontWeight:'bold'}}>{score.toLocaleString()}</span>
+              </div>
+              <div style={{fontSize:14, color:'#ffd700', marginBottom:8}}>
+                Level reached: {level} · Combo peak: {combo}
+              </div>
+
+              {revealSecret && secret.length > 0 && (
+                <>
+                  <div style={{color:'rgba(180,180,255,0.55)', fontSize:12, marginBottom:10, letterSpacing:1}}>
+                    THE CODE WAS:
+                  </div>
+                  <div style={{display:'flex', gap:8, justifyContent:'center', marginBottom:24}}>
+                    {secret.map((cId,i) => {
+                      const c = colorOf(cId);
+                      return <div key={i} style={{
+                        width:42, height:42, borderRadius:'50%',
+                        background:`radial-gradient(circle at 32% 32%, ${c.hex}ee, ${c.hex}55)`,
+                        boxShadow:`0 0 12px ${c.shadow}`,
+                        border:`2px solid ${c.hex}`,
+                      }}/>;
+                    })}
+                  </div>
+                </>
+              )}
+
+              {score > 0 && score >= highScore && (
+                <div style={{color:'#ffd700', marginBottom:16, fontSize:16, animation:'pulse 1s infinite'}}>
+                  🏆 New High Score!
+                </div>
+              )}
+              <div style={{color:'rgba(255,255,255,0.45)', animation:'pulse 1.5s infinite', fontSize:14}}>
+                Click to play again
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      /* ─────── PLAYING ─────── */
+      return (
+        <div id="game-playing" style={{
+          width:'100vw', height:'100vh', background:'#070014',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          position:'relative', overflow:'hidden',
+        }}>
+          <Orbs/>
+          <Particles list={particles}/>
+          <ScorePopups popups={popups}/>
+
+          {/* Round result overlay */}
+          {roundMsg && (
+            <div style={{
+              position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
+              background:'rgba(0,0,0,0.55)', zIndex:80, animation:'fadeIn 0.25s ease',
+              pointerEvents:'none',
+            }}>
+              <div style={{
+                textAlign:'center', padding:'28px 44px', borderRadius:20,
+                background:'rgba(8,0,25,0.96)',
+                border:`2px solid ${roundMsg.type==='won'?'#ffd700':'#ff2d78'}`,
+                boxShadow:`0 0 40px ${roundMsg.type==='won'?'#ffd70060':'#ff2d7860'}`,
+                animation:'popIn 0.3s ease',
+              }}>
+                <div style={{fontSize:40, marginBottom:6}}>{roundMsg.type==='won'?'🎉':'💥'}</div>
+                <div style={{
+                  fontSize:26, fontWeight:'bold', letterSpacing:3,
+                  color: roundMsg.type==='won' ? '#ffd700' : '#ff2d78',
+                  marginBottom:6,
+                }}>
+                  {roundMsg.type==='won' ? 'CODE CRACKED!' : 'CODE FAILED!'}
+                </div>
+                {roundMsg.type==='won' && (
+                  <div style={{color:'rgba(200,200,255,0.7)', fontSize:13}}>
+                    +{roundMsg.pts} pts · {roundMsg.guessesUsed} guess{roundMsg.guessesUsed!==1?'es':''}
+                    {combo > 1 && <span style={{color:'#ff6a00'}}> · 🔥 COMBO x{combo}</span>}
+                  </div>
+                )}
+                {roundMsg.type==='lost' && revealSecret && (
+                  <>
+                    <div style={{fontSize:12, color:'rgba(180,180,255,0.5)', marginBottom:8}}>The code was:</div>
+                    <div style={{display:'flex', gap:7, justifyContent:'center'}}>
+                      {secret.map((cId,i) => {
+                        const c = colorOf(cId);
+                        return <div key={i} style={{
+                          width:34, height:34, borderRadius:'50%',
+                          background:`radial-gradient(circle at 32% 32%, ${c.hex}ee, ${c.hex}55)`,
+                          border:`2px solid ${c.hex}`,
+                        }}/>;
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Main game panel */}
+          <div style={{
+            display:'flex', flexDirection:'column', alignItems:'center', gap:6,
+            maxHeight:'100vh', padding:'8px 12px', zIndex:1,
+            width:'100%', maxWidth:460,
+          }}>
+            {/* Header */}
+            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', marginBottom:2}}>
+              <div>
+                <div style={{
+                  fontSize:'clamp(15px,4vw,20px)', fontWeight:'bold', letterSpacing:2,
+                  background:'linear-gradient(135deg,#00e5ff,#bf5fff)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent',
+                }}>CIPHER BLITZ</div>
+                <div style={{fontSize:10, color:'rgba(255,255,255,0.35)', letterSpacing:1}}>
+                  LV.{level} · {codeLen} PEGS · {numColors} COLORS
+                </div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:'clamp(18px,4.5vw,26px)', color:'#00e5ff', fontWeight:'bold', lineHeight:1}}>
+                  {score.toLocaleString()}
+                </div>
+                <div style={{fontSize:10, color:'#ffd700'}}>BEST: {highScore.toLocaleString()}</div>
+              </div>
+            </div>
+
+            {/* Timer bar */}
+            <div style={{width:'100%', height:6, background:'rgba(255,255,255,0.08)', borderRadius:3, overflow:'hidden'}}>
+              <div style={{
+                height:'100%', width:`${timerPct*100}%`, background:timerColor,
+                boxShadow:`0 0 8px ${timerColor}`,
+                transition:'width 1s linear, background 0.5s',
+                borderRadius:3,
+                animation: timeLeft<=10 ? 'timerPulse 0.5s ease-in-out infinite' : 'none',
+              }}/>
+            </div>
+            <div style={{
+              fontSize:11, color:timerColor, fontWeight:'bold', alignSelf:'flex-end', marginTop:-4,
+              animation: timeLeft<=10 ? 'pulse 0.5s infinite' : 'none',
+            }}>
+              {timeLeft}s{combo>1 ? ` · 🔥x${combo}` : ''}
+            </div>
+
+            {/* Guess rows */}
+            <div style={{width:'100%', display:'flex', flexDirection:'column', gap:3}}>
+              {Array.from({length:MAX_GUESSES}, (_,rowIdx) => {
+                const g = guesses[rowIdx];
+                const isActive = rowIdx === guesses.length && !roundMsg;
+                return (
+                  <div key={rowIdx} style={{
+                    display:'flex', alignItems:'center', gap:8,
+                    padding:'5px 10px', borderRadius:10,
+                    background: isActive ? 'rgba(100,100,255,0.07)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${isActive ? 'rgba(150,150,255,0.18)' : 'rgba(255,255,255,0.04)'}`,
+                    minHeight:48,
+                    animation: g ? `slideIn 0.2s ease ${Math.max(0,(rowIdx-1)*0)  }s both` : 'none',
+                    boxShadow: isActive ? 'inset 0 0 16px rgba(80,80,200,0.08)' : 'none',
+                  }}>
+                    {/* Row number */}
+                    <div style={{width:18, fontSize:10, color:'rgba(255,255,255,0.22)', textAlign:'center', fontWeight:'bold'}}>
+                      {MAX_GUESSES - rowIdx}
+                    </div>
+                    {/* Pegs */}
+                    <div style={{display:'flex', gap:5}}>
+                      {Array.from({length:codeLen}, (_,si) => {
+                        const cId = isActive ? curGuess[si] : (g ? g.colors[si] : null);
+                        const c = cId ? colorOf(cId) : null;
+                        return (
+                          <div key={si} onClick={() => isActive && placeColor(si)} style={{
+                            width:36, height:36, borderRadius:'50%', flexShrink:0,
+                            border:`2px solid ${c ? c.hex : isActive ? 'rgba(180,180,255,0.2)' : 'rgba(255,255,255,0.07)'}`,
+                            background: c
+                              ? `radial-gradient(circle at 32% 32%, ${c.hex}dd, ${c.hex}44)`
+                              : isActive ? 'rgba(255,255,255,0.03)' : 'transparent',
+                            boxShadow: c ? `0 0 8px ${c.shadow}80` : 'none',
+                            cursor: isActive ? 'pointer' : 'default',
+                            transition:'all 0.15s ease',
+                            animation: shake && isActive ? 'shake 0.35s ease' : 'none',
+                          }}/>
+                        );
+                      })}
+                    </div>
+                    {/* Feedback */}
+                    <div style={{marginLeft:'auto', display:'flex', flexWrap:'wrap', gap:3, width:codeLen<=4?54:70}}>
+                      {g && Array.from({length:codeLen}, (_,di) => {
+                        const t = di < g.feedback.gold ? 'gold' : di < g.feedback.gold + g.feedback.silver ? 'silver' : 'empty';
+                        return (
+                          <div key={di} style={{
+                            width:11, height:11, borderRadius:'50%',
+                            background: t==='gold'?'#ffd700' : t==='silver'?'#bbbbbb' : 'rgba(255,255,255,0.07)',
+                            boxShadow: t==='gold'?'0 0 5px #ffd700,0 0 10px #ffd70060' : t==='silver'?'0 0 4px #bbb':'none',
+                            border: t==='empty'?'1px solid rgba(255,255,255,0.1)':'none',
+                            animation: t!=='empty' ? `popIn 0.2s ease ${di*0.07}s both` : 'none',
+                          }}/>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Color palette */}
+            <div style={{display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap', paddingTop:4}}>
+              {COLORS.slice(0, numColors).map((c,i) => (
+                <div key={c.id} onClick={() => { setSelColor(c.id); sfx.place(); }} style={{
+                  width:40, height:40, borderRadius:'50%', flexShrink:0, cursor:'pointer',
+                  background:`radial-gradient(circle at 32% 32%, ${c.hex}ee, ${c.hex}66)`,
+                  border:`3px solid ${selColor===c.id ? '#ffffff' : c.hex}`,
+                  boxShadow: selColor===c.id
+                    ? `0 0 16px ${c.shadow}, 0 0 32px ${c.shadow}, 0 0 0 3px rgba(255,255,255,0.5)`
+                    : `0 0 8px ${c.shadow}50`,
+                  transform: selColor===c.id ? 'scale(1.22)' : 'scale(1)',
+                  transition:'all 0.15s ease',
+                  title: `${c.name} (${i+1})`,
+                }}/>
+              ))}
+            </div>
+
+            {/* Selected hint */}
+            <div style={{fontSize:11, color:'rgba(180,180,255,0.45)', minHeight:16}}>
+              {selC
+                ? <>Selected: <span style={{color:selC.hex, fontWeight:'bold'}}>{selC.name}</span> — click a peg slot to place</>
+                : 'Pick a color above, then click a peg slot'}
+            </div>
+
+            {/* Submit button */}
+            <button onClick={submitGuess} disabled={!!roundMsg} style={{
+              width:'100%', padding:'10px 20px', borderRadius:12,
+              border:'2px solid rgba(0,229,255,0.55)',
+              background:'linear-gradient(135deg, rgba(0,80,180,0.25), rgba(0,200,255,0.1))',
+              color:'#00e5ff', fontSize:13, fontWeight:'bold', letterSpacing:3,
+              cursor:roundMsg?'default':'pointer', fontFamily:'inherit',
+              boxShadow:'0 0 12px rgba(0,229,255,0.25)',
+              transition:'all 0.2s ease', opacity:roundMsg?0.4:1,
+            }}
+              onMouseEnter={e => !roundMsg && (e.target.style.boxShadow='0 0 24px rgba(0,229,255,0.5)')}
+              onMouseLeave={e => e.target.style.boxShadow='0 0 12px rgba(0,229,255,0.25)'}
+            >
+              ▶ SUBMIT GUESS (Enter)
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<Game />, document.getElementById('root'));
+  </script>
+</body>
+</html>
