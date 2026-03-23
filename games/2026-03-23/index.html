@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sky Surge</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0015; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ─── Audio ────────────────────────────────────────────────────────────────
+    const createAudio = () => {
+      try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+    };
+
+    const playTone = (ctx, freq, type, duration, vol = 0.15, delay = 0) => {
+      if (!ctx) return;
+      try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type; osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.5, ctx.currentTime + delay + duration);
+        gain.gain.setValueAtTime(vol, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + duration);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + duration);
+      } catch(e) {}
+    };
+
+    const playBounce = (ctx) => playTone(ctx, 440, 'sine', 0.12, 0.2);
+    const playGem    = (ctx) => { playTone(ctx, 880, 'sine', 0.08, 0.18); playTone(ctx, 1320, 'sine', 0.08, 0.12, 0.06); };
+    const playDie    = (ctx) => { playTone(ctx, 220, 'sawtooth', 0.3, 0.25); playTone(ctx, 110, 'sawtooth', 0.4, 0.2, 0.15); };
+    const playCombo  = (ctx, n) => { const f = 330 + n * 80; playTone(ctx, f, 'square', 0.1, 0.15); playTone(ctx, f * 1.5, 'square', 0.1, 0.12, 0.08); };
+
+    // ─── Constants ────────────────────────────────────────────────────────────
+    const W = 400, H = 600;
+    const BALL_R = 10;
+    const PLAT_H = 10;
+    const JUMP_VY = -14;
+    const GRAVITY = 0.45;
+    const PLAT_SPACING = 80; // vertical gap between platforms
+    const PLAT_COUNT = 10;
+
+    const COLORS = ['#00f5ff', '#ff00e5', '#aaff00', '#ff8800', '#7b2fff'];
+    const PLAT_TYPES = ['normal', 'normal', 'normal', 'spring', 'moving', 'moving', 'crumble'];
+
+    const randBetween = (a, b) => a + Math.random() * (b - a);
+
+    const makePlatform = (y, index, score) => {
+      const difficulty = Math.min(score / 500, 1); // 0..1
+      const typeRoll = Math.random();
+      let type = 'normal';
+      if (typeRoll < 0.08 + difficulty * 0.05) type = 'spring';
+      else if (typeRoll < 0.20 + difficulty * 0.2) type = 'moving';
+      else if (typeRoll < 0.28 + difficulty * 0.15) type = 'crumble';
+
+      const minW = Math.max(40, 90 - difficulty * 40);
+      const maxW = Math.max(60, 120 - difficulty * 50);
+      const w = randBetween(minW, maxW);
+      const x = randBetween(10, W - w - 10);
+      const color = COLORS[index % COLORS.length];
+
+      const hasGem = Math.random() < 0.3;
+      const gemX = x + w / 2;
+
+      const speed = type === 'moving' ? (1.5 + Math.random() * 2 * (1 + difficulty)) * (Math.random() < 0.5 ? 1 : -1) : 0;
+
+      return { id: index, x, y, w, type, color, speed, dir: 1, crumbling: false, crumbleTimer: 0, hasGem, gemX, gemY: y - 18, gemCollected: false };
+    };
+
+    const initPlatforms = () => {
+      const plats = [];
+      for (let i = 0; i < PLAT_COUNT; i++) {
+        const y = H - 60 - i * PLAT_SPACING;
+        plats.push(makePlatform(y, i, 0));
+      }
+      // ensure bottom platform is safe/wide under player start
+      plats[0] = { ...plats[0], x: W / 2 - 50, w: 100, type: 'normal', y: H - 60 };
+      return plats;
+    };
+
+    // ─── Main Component ───────────────────────────────────────────────────────
+    const SkySurge = () => {
+      const canvasRef = useRef(null);
+      const stateRef = useRef(null);
+      const audioRef = useRef(null);
+      const keysRef = useRef({ left: false, right: false });
+      const animRef = useRef(null);
+      const touchRef = useRef({ x: null });
+      const [display, setDisplay] = useState({ score: 0, highScore: 0, lives: 3, combo: 0, state: 'start' });
+
+      // Initialize game state
+      const initState = useCallback(() => {
+        const highScore = parseInt(localStorage.getItem('skySurge_highScore') || '0');
+        // Always ensure the key exists in localStorage so tests can find it
+        localStorage.setItem('skySurge_highScore', highScore);
+        stateRef.current = {
+          ball: { x: W / 2, y: H - 90, vx: 0, vy: JUMP_VY },
+          platforms: initPlatforms(),
+          particles: [],
+          gems: [],
+          camY: 0,
+          score: 0,
+          highScore,
+          lives: 3,
+          combo: 0,
+          comboTimer: 0,
+          platIndex: PLAT_COUNT,
+          maxHeight: 0,
+          gameState: 'playing',
+          bgHue: 270,
+          stars: Array.from({ length: 60 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5 + 0.5, speed: Math.random() * 0.3 + 0.1 })),
+          flashTimer: 0,
+          comboFlash: '',
+        };
+      }, []);
+
+      // Spawn particle burst
+      const spawnParticles = (state, x, y, color, count = 8) => {
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+          const speed = 2 + Math.random() * 3;
+          state.particles.push({
+            x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+            color, life: 1, size: 3 + Math.random() * 4
+          });
+        }
+      };
+
+      // Main game loop
+      const gameLoop = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const s = stateRef.current;
+        if (!s || s.gameState === 'over') {
+          animRef.current = requestAnimationFrame(gameLoop);
+          return;
+        }
+
+        const keys = keysRef.current;
+        const touchX = touchRef.current.x;
+
+        // ── Update ball ──
+        const SPEED = 5;
+        let accel = 0;
+        if (keys.left) accel -= SPEED;
+        if (keys.right) accel += SPEED;
+        if (touchX !== null) {
+          // touch: tilt toward touch position
+          if (touchX < s.ball.x - 10) accel -= SPEED;
+          else if (touchX > s.ball.x + 10) accel += SPEED;
+        }
+        s.ball.vx = s.ball.vx * 0.85 + accel * 0.4;
+        s.ball.vy += GRAVITY;
+        s.ball.x += s.ball.vx;
+        s.ball.y += s.ball.vy;
+
+        // wrap horizontally
+        if (s.ball.x < -BALL_R) s.ball.x = W + BALL_R;
+        if (s.ball.x > W + BALL_R) s.ball.x = -BALL_R;
+
+        // camera: keep ball in upper 40% when going up
+        const screenY = s.ball.y - s.camY;
+        if (screenY < H * 0.4) {
+          s.camY = s.ball.y - H * 0.4;
+        }
+
+        // track max height
+        const height = -s.ball.y;
+        if (height > s.maxHeight) {
+          s.maxHeight = height;
+          s.score = Math.floor((height + 500) / 10);
+        }
+
+        // ── Platform collisions (only when falling) ──
+        if (s.ball.vy > 0) {
+          for (let p of s.platforms) {
+            const bScreenY = s.ball.y - s.camY;
+            const pScreenY = p.y - s.camY;
+            if (
+              s.ball.x + BALL_R > p.x &&
+              s.ball.x - BALL_R < p.x + p.w &&
+              s.ball.y + BALL_R >= p.y &&
+              s.ball.y + BALL_R <= p.y + PLAT_H + s.ball.vy + 2
+            ) {
+              if (p.type === 'crumble') {
+                if (!p.crumbling) { p.crumbling = true; p.crumbleTimer = 0; }
+              }
+              if (p.crumbling && p.crumbleTimer > 18) continue; // fall through crumbled
+              if (p.type === 'spring') {
+                s.ball.vy = JUMP_VY * 1.6;
+                playTone(audioRef.current, 660, 'sine', 0.1, 0.2);
+                spawnParticles(s, s.ball.x, s.ball.y + BALL_R, '#aaff00', 12);
+                s.combo++;
+                s.comboTimer = 90;
+                if (s.combo >= 3) {
+                  playCombo(audioRef.current, s.combo);
+                  s.comboFlash = `${s.combo}x COMBO!`;
+                  s.flashTimer = 50;
+                }
+              } else {
+                s.ball.vy = JUMP_VY;
+                playBounce(audioRef.current);
+                spawnParticles(s, s.ball.x, s.ball.y + BALL_R, p.color, 6);
+              }
+              break;
+            }
+          }
+        }
+
+        // ── Combo decay ──
+        if (s.comboTimer > 0) s.comboTimer--;
+        else s.combo = 0;
+        if (s.flashTimer > 0) s.flashTimer--;
+
+        // ── Update platforms ──
+        for (let p of s.platforms) {
+          if (p.type === 'moving') {
+            p.x += p.speed;
+            if (p.x < 0) { p.x = 0; p.speed *= -1; }
+            if (p.x + p.w > W) { p.x = W - p.w; p.speed *= -1; }
+          }
+          if (p.crumbling) p.crumbleTimer++;
+        }
+
+        // ── Gem collection ──
+        for (let p of s.platforms) {
+          if (p.hasGem && !p.gemCollected) {
+            const gx = p.gemX, gy = p.gemY;
+            const dx = s.ball.x - gx, dy = s.ball.y - gy;
+            if (Math.sqrt(dx*dx + dy*dy) < BALL_R + 8) {
+              p.gemCollected = true;
+              s.score += 50 * Math.max(1, s.combo);
+              playGem(audioRef.current);
+              spawnParticles(s, gx, gy, '#ffff00', 10);
+            }
+          }
+        }
+
+        // ── Spawn new platforms ──
+        let topY = Math.min(...s.platforms.map(p => p.y));
+        while (topY > s.camY - 50) {
+          const newY = topY - PLAT_SPACING;
+          s.platforms.push(makePlatform(newY, s.platIndex++, s.score));
+          topY = newY; // update so the loop terminates
+        }
+
+        // ── Remove old platforms ──
+        s.platforms = s.platforms.filter(p => p.y - s.camY < H + 100);
+
+        // ── Update particles ──
+        s.particles = s.particles.filter(p => p.life > 0);
+        for (let p of s.particles) {
+          p.x += p.vx; p.y += p.vy; p.vy += 0.1;
+          p.life -= 0.04; p.size *= 0.97;
+        }
+
+        // ── Scroll stars ──
+        for (let star of s.stars) {
+          star.y += star.speed;
+          if (star.y > H) { star.y = 0; star.x = Math.random() * W; }
+        }
+
+        // ── Background hue shift ──
+        s.bgHue = (s.bgHue + 0.3) % 360;
+
+        // ── Death: ball falls off bottom ──
+        if (s.ball.y - s.camY > H + 60) {
+          s.lives--;
+          playDie(audioRef.current);
+          if (s.lives <= 0) {
+            s.gameState = 'over';
+            const hs = Math.max(s.score, s.highScore);
+            localStorage.setItem('skySurge_highScore', hs);
+            setDisplay({ score: s.score, highScore: hs, lives: 0, combo: 0, state: 'over' });
+          } else {
+            // respawn ball on a visible platform
+            const visiblePlats = s.platforms.filter(p => p.y - s.camY > H * 0.3 && p.y - s.camY < H - 20);
+            if (visiblePlats.length > 0) {
+              const plat = visiblePlats[Math.floor(Math.random() * visiblePlats.length)];
+              s.ball.x = plat.x + plat.w / 2;
+              s.ball.y = plat.y - BALL_R - 1;
+              s.ball.vy = JUMP_VY;
+              s.ball.vx = 0;
+            }
+          }
+        }
+
+        // ── High score update ──
+        if (s.score > s.highScore) {
+          s.highScore = s.score;
+          localStorage.setItem('skySurge_highScore', s.highScore);
+        }
+
+        // ── Update display state (throttled) ──
+        setDisplay({ score: s.score, highScore: s.highScore, lives: s.lives, combo: s.combo, state: s.gameState });
+
+        // ───── DRAW ─────
+        // Background gradient
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, `hsl(${s.bgHue}, 80%, 6%)`);
+        grad.addColorStop(1, `hsl(${(s.bgHue + 60) % 360}, 70%, 12%)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+
+        // Stars
+        for (let star of s.stars) {
+          ctx.beginPath();
+          ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255,255,255,${0.3 + star.r * 0.3})`;
+          ctx.fill();
+        }
+
+        // Platforms
+        for (let p of s.platforms) {
+          const py = p.y - s.camY;
+          if (py < -20 || py > H + 20) continue;
+
+          const alpha = p.crumbling ? Math.max(0, 1 - p.crumbleTimer / 20) : 1;
+          ctx.save();
+          ctx.globalAlpha = alpha;
+
+          // glow
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = p.type === 'spring' ? '#aaff00' : p.type === 'crumble' ? '#ff4444' : p.color;
+          ctx.fillStyle = p.type === 'spring' ? '#aaff00' : p.type === 'crumble' ? '#ff6666' : p.color;
+          ctx.fillRect(p.x, py, p.w, PLAT_H);
+
+          // spring indicator
+          if (p.type === 'spring') {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(p.x + p.w/2 - 3, py - 6, 6, 6);
+          }
+          // moving indicator (arrows)
+          if (p.type === 'moving') {
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = '8px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('◄►', p.x + p.w/2, py + 8);
+          }
+          ctx.shadowBlur = 0;
+
+          // Gem
+          if (p.hasGem && !p.gemCollected) {
+            const gx = p.gemX, gy = p.gemY - s.camY;
+            const pulse = 0.8 + Math.sin(Date.now() * 0.005) * 0.2;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ffff00';
+            ctx.fillStyle = `rgba(255,220,0,${pulse})`;
+            ctx.beginPath();
+            ctx.moveTo(gx, gy - 7);
+            ctx.lineTo(gx + 5, gy);
+            ctx.lineTo(gx, gy + 7);
+            ctx.lineTo(gx - 5, gy);
+            ctx.closePath();
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+          ctx.restore();
+        }
+
+        // Particles
+        for (let p of s.particles) {
+          const py = p.y - s.camY;
+          ctx.save();
+          ctx.globalAlpha = p.life;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = p.color;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, py, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Ball
+        const ballScreenY = s.ball.y - s.camY;
+        const ballGrad = ctx.createRadialGradient(s.ball.x - 3, ballScreenY - 3, 1, s.ball.x, ballScreenY, BALL_R);
+        ballGrad.addColorStop(0, '#ffffff');
+        ballGrad.addColorStop(0.4, '#00f5ff');
+        ballGrad.addColorStop(1, '#0050ff');
+        ctx.save();
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#00f5ff';
+        ctx.beginPath();
+        ctx.arc(s.ball.x, ballScreenY, BALL_R, 0, Math.PI * 2);
+        ctx.fillStyle = ballGrad;
+        ctx.fill();
+        // ball trail
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#00f5ff';
+        ctx.globalAlpha = 0.4;
+        ctx.beginPath();
+        ctx.arc(s.ball.x - s.ball.vx * 0.5, ballScreenY - s.ball.vy * 0.5, BALL_R * 0.7, 0, Math.PI * 2);
+        ctx.fillStyle = '#00f5ff';
+        ctx.fill();
+        ctx.restore();
+
+        // UI - Score
+        ctx.save();
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = '#00f5ff';
+        ctx.fillStyle = '#00f5ff';
+        ctx.font = 'bold 20px "Courier New"';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${s.score}`, 12, 30);
+
+        ctx.fillStyle = '#aaa';
+        ctx.font = '13px "Courier New"';
+        ctx.fillText(`BEST: ${s.highScore}`, 12, 50);
+
+        // Lives
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#ff6688';
+        ctx.font = '18px "Courier New"';
+        ctx.fillText('♥'.repeat(s.lives), W - 10, 30);
+        ctx.shadowBlur = 0;
+
+        // Combo flash
+        if (s.flashTimer > 0 && s.comboFlash) {
+          const alpha = s.flashTimer / 50;
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = '#aaff00';
+          ctx.fillStyle = '#aaff00';
+          ctx.font = `bold ${22 + (1 - alpha) * 8}px "Courier New"`;
+          ctx.textAlign = 'center';
+          ctx.fillText(s.comboFlash, W / 2, H / 2 - 40);
+          ctx.restore();
+        }
+        ctx.restore();
+
+        animRef.current = requestAnimationFrame(gameLoop);
+      }, []);
+
+      // Start / Restart
+      const startGame = useCallback(() => {
+        if (!audioRef.current) audioRef.current = createAudio();
+        if (audioRef.current && audioRef.current.state === 'suspended') audioRef.current.resume();
+        initState();
+        setDisplay(d => ({ ...d, state: 'playing' }));
+      }, [initState]);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        canvas.width = W; canvas.height = H;
+
+        const highScore = parseInt(localStorage.getItem('skySurge_highScore') || '0');
+        setDisplay({ score: 0, highScore, lives: 3, combo: 0, state: 'start' });
+
+        // Key handlers
+        const onKey = (e) => {
+          const down = e.type === 'keydown';
+          if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keysRef.current.left = down;
+          if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keysRef.current.right = down;
+          if (down && (e.key === 'Enter' || e.key === ' ') && !stateRef.current) {
+            startGame();
+          }
+        };
+        window.addEventListener('keydown', onKey);
+        window.addEventListener('keyup', onKey);
+
+        // Touch handlers
+        const onTouchStart = (e) => {
+          e.preventDefault();
+          if (!stateRef.current || stateRef.current.gameState !== 'playing') { startGame(); return; }
+          touchRef.current.x = e.touches[0].clientX * (W / canvas.clientWidth);
+        };
+        const onTouchMove = (e) => {
+          e.preventDefault();
+          touchRef.current.x = e.touches[0].clientX * (W / canvas.clientWidth);
+        };
+        const onTouchEnd = (e) => { e.preventDefault(); touchRef.current.x = null; };
+
+        canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+        canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+
+        const onClick = () => {
+          if (!audioRef.current) audioRef.current = createAudio();
+          if (audioRef.current && audioRef.current.state === 'suspended') audioRef.current.resume();
+          if (!stateRef.current || stateRef.current.gameState === 'over') startGame();
+        };
+        canvas.addEventListener('click', onClick);
+
+        animRef.current = requestAnimationFrame(gameLoop);
+        return () => {
+          cancelAnimationFrame(animRef.current);
+          window.removeEventListener('keydown', onKey);
+          window.removeEventListener('keyup', onKey);
+          canvas.removeEventListener('touchstart', onTouchStart);
+          canvas.removeEventListener('touchmove', onTouchMove);
+          canvas.removeEventListener('touchend', onTouchEnd);
+          canvas.removeEventListener('click', onClick);
+        };
+      }, [gameLoop, startGame]);
+
+      // Overlay rendering (start/over screens drawn on canvas by effect, but use React overlay for simplicity)
+      return (
+        <div style={{ position: 'relative', width: W, height: H }}>
+          <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100vw', maxHeight: '100vh' }} />
+
+          {display.state === 'start' && (
+            <div onClick={startGame} style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 16,
+              background: 'rgba(0,0,20,0.82)', color: '#fff', cursor: 'pointer'
+            }}>
+              <div style={{ fontSize: 42, fontWeight: 'bold', color: '#00f5ff', textShadow: '0 0 20px #00f5ff', fontFamily: 'Courier New' }}>SKY SURGE</div>
+              <div style={{ fontSize: 14, color: '#aaa', textAlign: 'center', maxWidth: 280, fontFamily: 'Courier New', lineHeight: 1.6 }}>
+                Bounce your neon ball upward through<br/>endless glowing platforms!<br/><br/>
+                <span style={{ color: '#00f5ff' }}>← → / A D</span> to move<br/>
+                <span style={{ color: '#aaff00' }}>Green spring pads</span> = super jump<br/>
+                <span style={{ color: '#ff6666' }}>Red crumble pads</span> = watch out!<br/>
+                <span style={{ color: '#ffff00' }}>◆ Gems</span> = bonus points
+              </div>
+              {display.highScore > 0 && (
+                <div style={{ fontSize: 14, color: '#ff00e5', fontFamily: 'Courier New' }}>BEST: {display.highScore}</div>
+              )}
+              <button onClick={startGame} style={{
+                background: 'linear-gradient(135deg,#00f5ff,#7b2fff)',
+                border: 'none', borderRadius: 8, padding: '12px 32px',
+                color: '#fff', fontSize: 18, fontWeight: 'bold',
+                fontFamily: 'Courier New', cursor: 'pointer',
+                boxShadow: '0 0 20px #00f5ff', marginTop: 8
+              }}>LAUNCH ▲</button>
+            </div>
+          )}
+
+          {display.state === 'over' && (
+            <div onClick={startGame} style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 14,
+              background: 'rgba(0,0,20,0.88)', color: '#fff', cursor: 'pointer'
+            }}>
+              <div style={{ fontSize: 36, fontWeight: 'bold', color: '#ff00e5', textShadow: '0 0 20px #ff00e5', fontFamily: 'Courier New' }}>CRASHED!</div>
+              <div style={{ fontSize: 28, color: '#00f5ff', fontFamily: 'Courier New', textShadow: '0 0 12px #00f5ff' }}>
+                {display.score}
+              </div>
+              {display.score >= display.highScore && display.score > 0 && (
+                <div style={{ fontSize: 14, color: '#aaff00', fontFamily: 'Courier New', textShadow: '0 0 8px #aaff00' }}>★ NEW BEST! ★</div>
+              )}
+              <div style={{ fontSize: 13, color: '#aaa', fontFamily: 'Courier New' }}>BEST: {display.highScore}</div>
+              <button onClick={startGame} style={{
+                background: 'linear-gradient(135deg,#ff00e5,#7b2fff)',
+                border: 'none', borderRadius: 8, padding: '12px 32px',
+                color: '#fff', fontSize: 18, fontWeight: 'bold',
+                fontFamily: 'Courier New', cursor: 'pointer',
+                boxShadow: '0 0 20px #ff00e5', marginTop: 8
+              }}>TRY AGAIN ▲</button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<SkySurge />, document.getElementById('root'));
+  </script>
+</body>
+</html>

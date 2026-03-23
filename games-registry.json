@@ -474,5 +474,19 @@
     "folder": "games/2026-03-22",
     "file": "games/2026-03-22/index.html",
     "preview": "games/2026-03-22/preview.png"
+  },
+  {
+    "id": "2026-03-23",
+    "name": "Sky Surge",
+    "date": "2026-03-23",
+    "description": "Bounce a glowing neon ball upward through endless procedurally generated platforms — ride spring pads for super jumps, dodge crumbling platforms, collect gems for bonus points, and survive as platforms grow narrower and faster!",
+    "tagline": "Bounce up. Don't fall. Reach the sky!",
+    "tags": ["arcade", "reflex", "action", "platformer", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "← → or A/D to move left/right | Touch left/right side on mobile",
+    "folder": "games/2026-03-23",
+    "file": "games/2026-03-23/index.html",
+    "preview": "games/2026-03-23/preview.png"
   }
 ]
