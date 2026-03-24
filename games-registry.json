@@ -488,5 +488,19 @@
     "folder": "games/2026-03-23",
     "file": "games/2026-03-23/index.html",
     "preview": "games/2026-03-23/preview.png"
+  },
+  {
+    "id": "2026-03-24",
+    "name": "Chromatic Drop",
+    "date": "2026-03-24",
+    "description": "Catch falling neon balls that match your basket's colour — rainbow orbs shift your basket hue, ×2 orbs double your points, and chain perfect catches for explosive combo multipliers as balls rain faster each level!",
+    "tagline": "Match the colour. Chain the catches. Don't miss!",
+    "tags": ["reflex", "action", "casual", "color", "catching"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse / touch to guide basket | ← → or A/D keys",
+    "folder": "games/2026-03-24",
+    "file": "games/2026-03-24/index.html",
+    "preview": "games/2026-03-24/preview.png"
   }
 ]
