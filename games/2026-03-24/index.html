@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chromatic Drop</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    // 5 neon colors for balls and basket
+    const NEON = [
+      { name: 'CYAN',    hex: '#00ffff', dark: '#004444' },
+      { name: 'MAGENTA', hex: '#ff00ff', dark: '#440044' },
+      { name: 'LIME',    hex: '#00ff66', dark: '#004422' },
+      { name: 'ORANGE',  hex: '#ff6600', dark: '#442200' },
+      { name: 'VIOLET',  hex: '#bb44ff', dark: '#330044' },
+    ];
+
+    const BW = 100; // basket width
+    const BH = 18;  // basket height
+    const BR = 18;  // ball radius
+
+    function makeAudio() {
+      return new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    function beep(actx, type) {
+      if (!actx) return;
+      try {
+        const note = (freq, dur, wave = 'sine', vol = 0.22, t0 = 0) => {
+          const o = actx.createOscillator();
+          const g = actx.createGain();
+          o.connect(g); g.connect(actx.destination);
+          o.type = wave;
+          o.frequency.setValueAtTime(freq, actx.currentTime + t0);
+          g.gain.setValueAtTime(vol, actx.currentTime + t0);
+          g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + t0 + dur);
+          o.start(actx.currentTime + t0);
+          o.stop(actx.currentTime + t0 + dur);
+        };
+        if (type === 'catch') {
+          note(440, 0.10); note(660, 0.10, 'sine', 0.18, 0.05);
+        } else if (type === 'combo') {
+          [440, 550, 660, 880].forEach((f, i) => note(f, 0.15, 'sine', 0.15, i * 0.06));
+        } else if (type === 'miss') {
+          note(180, 0.28, 'sawtooth', 0.28);
+        } else if (type === 'power') {
+          [300, 500, 700, 1000].forEach((f, i) => note(f, 0.12, 'triangle', 0.14, i * 0.05));
+        } else if (type === 'over') {
+          [330, 220, 165, 110].forEach((f, i) => note(f, 0.22, 'sawtooth', 0.18, i * 0.15));
+        }
+      } catch (_) {}
+    }
+
+    function Game() {
+      const cvs = useRef(null);
+      const G = useRef(null);   // game state
+      const raf = useRef(null);
+      const keys = useRef({});
+      const actx = useRef(null);
+
+      useEffect(() => {
+        const canvas = cvs.current;
+
+        // Initialise localStorage key immediately so tests can find it
+        if (localStorage.getItem('chromaticDrop_highScore') === null) {
+          localStorage.setItem('chromaticDrop_highScore', '0');
+        }
+
+        // ─── resize ────────────────────────────────────────────────────────────
+        function resize() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          if (G.current && G.current.bx === 0) G.current.bx = canvas.width / 2;
+        }
+
+        // ─── helpers ───────────────────────────────────────────────────────────
+        function makeStars() {
+          return Array.from({ length: 90 }, () => ({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            r: Math.random() * 1.6 + 0.3,
+            v: Math.random() * 0.45 + 0.1,
+            a: Math.random() * 0.55 + 0.2,
+          }));
+        }
+
+        function startGame() {
+          const W = canvas.width;
+          const prev = G.current;
+          G.current = {
+            phase: 'playing',
+            score: 0,
+            hs: parseInt(localStorage.getItem('chromaticDrop_highScore') || '0'),
+            lives: 3,
+            combo: 0,
+            maxCombo: 0,
+            level: 1,
+            bx: W / 2,
+            ci: Math.floor(Math.random() * NEON.length), // basket color index
+            balls: [],
+            parts: [],          // particles
+            texts: [],          // floating +score labels
+            stars: prev ? prev.stars : makeStars(),
+            t: prev ? prev.t : 0, // global time for bg animation
+            spawnT: 0,
+            spawnI: 82,         // spawn interval (frames)
+            comboT: 0,          // combo display timer
+            flash: null, flashT: 0,
+            shake: 0,
+            dp: false, dpT: 0,  // double-points power-up
+          };
+        }
+
+        // ─── init start screen ─────────────────────────────────────────────────
+        G.current = {
+          phase: 'start',
+          hs: parseInt(localStorage.getItem('chromaticDrop_highScore') || '0'),
+          stars: makeStars(),
+          t: 0, score: 0, lives: 3, combo: 0, ci: 0,
+          balls: [], parts: [], texts: [],
+        };
+
+        // ─── spawn a ball ──────────────────────────────────────────────────────
+        function spawnBall() {
+          const g = G.current;
+          const W = canvas.width;
+          const rng = Math.random();
+          const isShift = rng < 0.07;             // rainbow color-changer
+          const isDbl   = !isShift && rng < 0.13; // ×2 power-up
+
+          // 45 % chance of matching player's color to keep action going
+          const ci = (isShift || isDbl)
+            ? Math.floor(Math.random() * NEON.length)
+            : (Math.random() < 0.45 ? g.ci : Math.floor(Math.random() * NEON.length));
+
+          const baseSpd = 2.6 + (g.level - 1) * 0.32;
+          g.balls.push({
+            x: BR + Math.random() * (W - BR * 2),
+            y: -BR,
+            ci,
+            type: isShift ? 'shift' : isDbl ? 'dbl' : 'normal',
+            spd: baseSpd + Math.random() * 1.4,
+            trail: [],
+            ang: 0,
+            spin: (Math.random() - 0.5) * 0.09,
+          });
+        }
+
+        // ─── burst particles ───────────────────────────────────────────────────
+        function burst(x, y, color, n = 14) {
+          const g = G.current;
+          for (let i = 0; i < n; i++) {
+            const ang  = (Math.PI * 2 * i / n) + Math.random() * 0.5;
+            const spd  = 3 + Math.random() * 5;
+            g.parts.push({
+              x, y,
+              vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 1,
+              color, life: 1,
+              decay: 0.02 + Math.random() * 0.025,
+              r: 3 + Math.random() * 4,
+            });
+          }
+        }
+
+        // ─── update ────────────────────────────────────────────────────────────
+        function update() {
+          const g = G.current;
+          const W = canvas.width, H = canvas.height;
+
+          g.t += 0.003;
+
+          // stars animate on every phase
+          g.stars.forEach(s => {
+            s.y += s.v;
+            if (s.y > H) { s.y = 0; s.x = Math.random() * W; }
+          });
+
+          if (g.phase !== 'playing') return;
+
+          // timers
+          g.comboT = Math.max(0, g.comboT - 1);
+          g.flashT = Math.max(0, g.flashT - 1);
+          g.shake  = Math.max(0, g.shake  - 1);
+          if (g.dp) { g.dpT--; if (g.dpT <= 0) g.dp = false; }
+
+          // keyboard basket movement
+          const mv = 8;
+          if (keys.current.ArrowLeft  || keys.current.KeyA) g.bx = Math.max(BW / 2, g.bx - mv);
+          if (keys.current.ArrowRight || keys.current.KeyD) g.bx = Math.min(W - BW / 2, g.bx + mv);
+
+          // spawning
+          g.spawnT++;
+          if (g.spawnT >= g.spawnI) {
+            g.spawnT = 0;
+            spawnBall();
+            if (g.level >= 3 && Math.random() < 0.35) spawnBall();
+            if (g.level >= 5 && Math.random() < 0.25) spawnBall();
+            g.spawnI = Math.max(28, 82 - (g.level - 1) * 9);
+          }
+
+          // level progression
+          g.level = Math.floor(g.score / 600) + 1;
+
+          // basket collision zone
+          const BY = H - 55;
+
+          // update balls
+          g.balls = g.balls.filter(ball => {
+            ball.trail.push({ x: ball.x, y: ball.y });
+            if (ball.trail.length > 8) ball.trail.shift();
+            ball.y += ball.spd;
+            ball.ang += ball.spin;
+
+            const hit = (
+              ball.y + BR >= BY - BH / 2 &&
+              ball.y - BR <= BY + BH / 2 &&
+              ball.x >= g.bx - BW / 2 - BR &&
+              ball.x <= g.bx + BW / 2 + BR
+            );
+
+            if (hit) {
+              if (ball.type === 'shift') {
+                // Color-shift orb — change basket color
+                g.ci = ball.ci;
+                burst(ball.x, ball.y, NEON[ball.ci].hex, 22);
+                beep(actx.current, 'power');
+                g.flash = NEON[ball.ci].hex; g.flashT = 14;
+
+              } else if (ball.type === 'dbl') {
+                // Double-points power-up
+                g.dp = true; g.dpT = 360;
+                burst(ball.x, ball.y, '#ffffff', 20);
+                beep(actx.current, 'power');
+                g.flash = '#ffffff'; g.flashT = 14;
+
+              } else if (ball.ci === g.ci) {
+                // ✓ COLOUR MATCH!
+                g.combo++;
+                if (g.combo > g.maxCombo) g.maxCombo = g.combo;
+                const pts = 100 * Math.min(g.combo, 10) * (g.dp ? 2 : 1);
+                g.score += pts;
+                burst(ball.x, ball.y, NEON[ball.ci].hex, 15);
+                g.texts.push({ x: ball.x, y: ball.y - 10, txt: `+${pts}`, color: NEON[ball.ci].hex, life: 1 });
+                beep(actx.current, g.combo >= 3 ? 'combo' : 'catch');
+                g.flash = NEON[ball.ci].hex; g.flashT = 7;
+                g.comboT = 90;
+
+              } else {
+                // ✗ WRONG COLOUR
+                g.lives--;
+                g.combo = 0;
+                g.comboT = 0;
+                burst(ball.x, ball.y, '#ff3333', 12);
+                g.texts.push({ x: ball.x, y: ball.y - 10, txt: '✗', color: '#ff3333', life: 1 });
+                beep(actx.current, 'miss');
+                g.flash = '#ff0000'; g.flashT = 22;
+                g.shake = 18;
+
+                if (g.lives <= 0) {
+                  g.phase = 'gameover';
+                  const newHs = Math.max(g.score, g.hs);
+                  g.hs = newHs;
+                  localStorage.setItem('chromaticDrop_highScore', newHs.toString());
+                  beep(actx.current, 'over');
+                }
+              }
+              return false; // remove ball
+            }
+
+            // ball exits bottom — reset combo if it was matching colour
+            if (ball.y > H + BR) {
+              if (ball.type === 'normal' && ball.ci === g.ci) g.combo = 0;
+              return false;
+            }
+            return true;
+          });
+
+          // update particles
+          g.parts = g.parts.filter(p => {
+            p.x += p.vx; p.y += p.vy;
+            p.vy += 0.13; p.vx *= 0.96;
+            p.life -= p.decay;
+            return p.life > 0;
+          });
+
+          // update floating texts
+          g.texts = g.texts.filter(t => {
+            t.y -= 1.6;
+            t.life -= 0.022;
+            return t.life > 0;
+          });
+        }
+
+        // ─── draw ──────────────────────────────────────────────────────────────
+        function draw() {
+          const g = G.current;
+          const ctx = canvas.getContext('2d');
+          const W = canvas.width, H = canvas.height;
+
+          // animated background gradient
+          const hue1 = (g.t * 22) % 360;
+          const grad = ctx.createLinearGradient(0, 0, W, H);
+          grad.addColorStop(0,   `hsl(${hue1},             70%, 4%)`);
+          grad.addColorStop(0.5, `hsl(${(hue1 + 110) % 360}, 60%, 7%)`);
+          grad.addColorStop(1,   `hsl(${(hue1 + 220) % 360}, 70%, 4%)`);
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+
+          // flash overlay
+          if (g.flashT > 0) {
+            const a16 = Math.floor((g.flashT / 22) * 55).toString(16).padStart(2, '0');
+            ctx.fillStyle = (g.flash || '#ffffff') + a16;
+            ctx.fillRect(0, 0, W, H);
+          }
+
+          // stars
+          g.stars.forEach(s => {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${s.a})`;
+            ctx.fill();
+          });
+
+          // screen shake
+          const sx = g.shake > 0 ? (Math.random() - 0.5) * 7 : 0;
+          const sy = g.shake > 0 ? (Math.random() - 0.5) * 7 : 0;
+          ctx.save();
+          if (g.shake > 0) ctx.translate(sx, sy);
+
+          // ── gameplay layer ──────────────────────────────────────────────────
+          if (g.phase === 'playing' || g.phase === 'gameover') {
+            const BY  = H - 55;
+            const col = NEON[g.ci];
+
+            // draw balls
+            g.balls.forEach(ball => {
+              const bc = NEON[ball.ci];
+
+              // glow trail
+              ball.trail.forEach((p, i) => {
+                const alpha = (i / ball.trail.length) * 0.3;
+                const r     = BR * 0.55 * (i / ball.trail.length);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+                ctx.fillStyle = bc.hex + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+                ctx.fill();
+              });
+
+              ctx.save();
+              ctx.shadowBlur = 22;
+              ctx.shadowColor = bc.hex;
+
+              if (ball.type === 'shift') {
+                // ── Rainbow colour-shift orb ──
+                ctx.save();
+                ctx.translate(ball.x, ball.y);
+                ctx.rotate(ball.ang * 3.5);
+                NEON.forEach((c, i) => {
+                  const a = (Math.PI * 2 * i / NEON.length);
+                  ctx.beginPath();
+                  ctx.arc(Math.cos(a) * 9, Math.sin(a) * 9, 6, 0, Math.PI * 2);
+                  ctx.fillStyle = c.hex;
+                  ctx.shadowColor = c.hex;
+                  ctx.shadowBlur = 14;
+                  ctx.fill();
+                });
+                ctx.restore();
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, BR, 0, Math.PI * 2);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                ctx.fill();
+
+              } else if (ball.type === 'dbl') {
+                // ── ×2 power-up ──
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, BR, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 13px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('×2', ball.x, ball.y);
+
+              } else {
+                // ── Normal coloured ball ──
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, BR, 0, Math.PI * 2);
+                const rg = ctx.createRadialGradient(ball.x - 5, ball.y - 6, 2, ball.x, ball.y, BR);
+                rg.addColorStop(0,   '#ffffff');
+                rg.addColorStop(0.3, bc.hex);
+                rg.addColorStop(1,   bc.hex + '44');
+                ctx.fillStyle = rg;
+                ctx.fill();
+              }
+
+              ctx.restore();
+            });
+
+            // draw particles
+            g.parts.forEach(p => {
+              ctx.save();
+              ctx.globalAlpha = p.life;
+              ctx.shadowBlur = 12;
+              ctx.shadowColor = p.color;
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+              ctx.fillStyle = p.color;
+              ctx.fill();
+              ctx.restore();
+            });
+
+            // floating score texts
+            g.texts.forEach(t => {
+              ctx.save();
+              ctx.globalAlpha = t.life;
+              ctx.shadowBlur = 14;
+              ctx.shadowColor = t.color;
+              ctx.fillStyle = t.color;
+              ctx.font = 'bold 17px "Courier New"';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(t.txt, t.x, t.y);
+              ctx.restore();
+            });
+
+            // ── basket ─────────────────────────────────────────────────────────
+            const pulse = Math.sin(g.t * 6) * 2.5;
+            const bx = g.bx, by = BY + pulse;
+            ctx.save();
+            ctx.shadowBlur = 38;
+            ctx.shadowColor = col.hex;
+
+            // platform body
+            ctx.beginPath();
+            ctx.rect(bx - BW / 2, by - BH / 2, BW, BH);
+            const bg = ctx.createLinearGradient(bx - BW / 2, by, bx + BW / 2, by);
+            bg.addColorStop(0,   col.hex + '55');
+            bg.addColorStop(0.5, col.hex);
+            bg.addColorStop(1,   col.hex + '55');
+            ctx.fillStyle = bg;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // side walls
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = col.hex;
+            ctx.beginPath();
+            ctx.moveTo(bx - BW / 2, by - BH / 2);
+            ctx.lineTo(bx - BW / 2 - 10, by + 26);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(bx + BW / 2, by - BH / 2);
+            ctx.lineTo(bx + BW / 2 + 10, by + 26);
+            ctx.stroke();
+            ctx.restore();
+
+            // basket color label
+            ctx.save();
+            ctx.shadowBlur = 16;
+            ctx.shadowColor = col.hex;
+            ctx.fillStyle = col.hex;
+            ctx.font = 'bold 13px "Courier New"';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText('▼ CATCH ' + col.name, bx, BY + 18 + pulse);
+            ctx.restore();
+
+            // double-points indicator
+            if (g.dp) {
+              ctx.save();
+              ctx.shadowBlur = 25;
+              ctx.shadowColor = '#fff';
+              ctx.fillStyle = '#fff';
+              ctx.textAlign = 'center';
+              ctx.font = `bold ${13 + Math.sin(g.t * 12) * 2}px "Courier New"`;
+              ctx.fillText('⭐ ×2 POINTS ⭐', g.bx, BY - 40);
+              ctx.restore();
+            }
+
+            // combo display
+            if (g.combo >= 2 && g.comboT > 0) {
+              ctx.save();
+              ctx.globalAlpha = g.comboT / 90;
+              ctx.shadowBlur = 42;
+              ctx.shadowColor = col.hex;
+              ctx.fillStyle = col.hex;
+              ctx.textAlign = 'center';
+              ctx.font = `bold ${22 + Math.min(g.combo, 8) * 3}px "Courier New"`;
+              ctx.fillText(`×${g.combo} COMBO!`, W / 2, H / 2 - 70);
+              ctx.restore();
+            }
+
+            // ── HUD ───────────────────────────────────────────────────────────
+            ctx.save();
+            // score
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = col.hex;
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 30px "Courier New"';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText(g.score, 16, 14);
+            ctx.font = '13px "Courier New"';
+            ctx.fillStyle = '#999';
+            ctx.shadowBlur = 0;
+            ctx.fillText('BEST ' + g.hs, 16, 52);
+
+            // lives
+            ctx.textAlign = 'right';
+            ctx.font = 'bold 22px "Courier New"';
+            ctx.fillStyle = '#ff4444';
+            ctx.shadowColor = '#ff4444';
+            ctx.shadowBlur = 14;
+            const hearts = '♥'.repeat(Math.max(0, g.lives)) + '♡'.repeat(Math.max(0, 3 - g.lives));
+            ctx.fillText(hearts, W - 14, 14);
+
+            // level
+            ctx.font = '13px "Courier New"';
+            ctx.fillStyle = '#ffff00';
+            ctx.shadowColor = '#ffff00';
+            ctx.fillText('LVL ' + g.level, W - 14, 52);
+            ctx.restore();
+          }
+
+          ctx.restore(); // end shake
+
+          // ── START SCREEN ────────────────────────────────────────────────────
+          if (g.phase === 'start') {
+            ctx.fillStyle = 'rgba(0,0,0,0.52)';
+            ctx.fillRect(0, 0, W, H);
+
+            const hue = (g.t * 55) % 360;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            ctx.shadowBlur = 55;
+            ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+            ctx.fillStyle   = `hsl(${hue}, 100%, 70%)`;
+            ctx.font = 'bold 56px "Courier New"';
+            ctx.fillText('CHROMATIC', W / 2, H / 2 - 96);
+
+            ctx.shadowColor = `hsl(${(hue + 160) % 360}, 100%, 60%)`;
+            ctx.fillStyle   = `hsl(${(hue + 160) % 360}, 100%, 70%)`;
+            ctx.fillText('DROP', W / 2, H / 2 - 30);
+
+            ctx.shadowBlur = 6;
+            ctx.fillStyle = '#ccc';
+            ctx.font = '15px "Courier New"';
+            ctx.fillText('Catch balls matching your basket colour!', W / 2, H / 2 + 22);
+            ctx.fillText('Wrong colour = lose a life  |  Chain for combos', W / 2, H / 2 + 46);
+            ctx.fillText('🌈 orb = colour shift   ×2 orb = double points', W / 2, H / 2 + 70);
+            ctx.fillText('Mouse / Touch to move  |  ← → A D for keyboard', W / 2, H / 2 + 94);
+
+            const blink = Math.floor(Date.now() / 500) % 2;
+            if (blink) {
+              ctx.shadowBlur = 28;
+              ctx.shadowColor = '#00ffff';
+              ctx.fillStyle = '#00ffff';
+              ctx.font = 'bold 20px "Courier New"';
+              ctx.fillText('CLICK / TAP TO START', W / 2, H / 2 + 132);
+            }
+
+            if (g.hs > 0) {
+              ctx.shadowBlur = 10;
+              ctx.shadowColor = '#ffff00';
+              ctx.fillStyle = '#ffff00';
+              ctx.font = '14px "Courier New"';
+              ctx.fillText('BEST: ' + g.hs, W / 2, H / 2 + 168);
+            }
+          }
+
+          // ── GAME OVER SCREEN ────────────────────────────────────────────────
+          if (g.phase === 'gameover') {
+            ctx.fillStyle = 'rgba(0,0,0,0.74)';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            ctx.shadowBlur = 34;
+            ctx.shadowColor = '#ff4444';
+            ctx.fillStyle = '#ff4444';
+            ctx.font = 'bold 52px "Courier New"';
+            ctx.fillText('GAME OVER', W / 2, H / 2 - 90);
+
+            ctx.shadowColor = '#fff';
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 28px "Courier New"';
+            ctx.fillText('Score: ' + g.score, W / 2, H / 2 - 24);
+
+            ctx.shadowColor = '#ffff00';
+            ctx.fillStyle = '#ffff00';
+            ctx.font = '18px "Courier New"';
+            ctx.fillText('Best: ' + g.hs, W / 2, H / 2 + 14);
+            ctx.fillText('Max Combo: ×' + g.maxCombo, W / 2, H / 2 + 44);
+
+            const blink2 = Math.floor(Date.now() / 500) % 2;
+            if (blink2) {
+              ctx.shadowBlur = 28;
+              ctx.shadowColor = '#00ffff';
+              ctx.fillStyle = '#00ffff';
+              ctx.font = 'bold 20px "Courier New"';
+              ctx.fillText('CLICK / TAP TO RETRY', W / 2, H / 2 + 96);
+            }
+          }
+        }
+
+        // ─── game loop ─────────────────────────────────────────────────────────
+        function loop() {
+          update();
+          draw();
+          raf.current = requestAnimationFrame(loop);
+        }
+
+        // ─── event handlers ────────────────────────────────────────────────────
+        function moveBasket(clientX) {
+          if (!G.current || G.current.phase !== 'playing') return;
+          const rect = canvas.getBoundingClientRect();
+          const x = (clientX - rect.left) * (canvas.width / rect.width);
+          G.current.bx = Math.max(BW / 2, Math.min(canvas.width - BW / 2, x));
+        }
+
+        function handleMouseMove(e) { moveBasket(e.clientX); }
+
+        function handleTouchMove(e) {
+          e.preventDefault();
+          moveBasket(e.touches[0].clientX);
+        }
+
+        function handleClick() {
+          if (!actx.current) actx.current = makeAudio();
+          if (!G.current) return;
+          if (G.current.phase === 'start' || G.current.phase === 'gameover') startGame();
+        }
+
+        function handleTouchStart(e) {
+          if (!actx.current) actx.current = makeAudio();
+          if (!G.current) return;
+          if (G.current.phase === 'start' || G.current.phase === 'gameover') {
+            startGame();
+          } else if (G.current.phase === 'playing') {
+            moveBasket(e.touches[0].clientX);
+          }
+        }
+
+        function handleKeyDown(e) {
+          keys.current[e.code] = true;
+          if (e.code === 'Space' || e.code === 'Enter') {
+            if (!actx.current) actx.current = makeAudio();
+            if (G.current && (G.current.phase === 'start' || G.current.phase === 'gameover')) {
+              startGame();
+            }
+          }
+        }
+        function handleKeyUp(e) { keys.current[e.code] = false; }
+
+        // ─── mount ─────────────────────────────────────────────────────────────
+        resize();
+        window.addEventListener('resize', resize);
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('click', handleClick);
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: true });
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+
+        loop();
+
+        return () => {
+          cancelAnimationFrame(raf.current);
+          window.removeEventListener('resize', resize);
+          canvas.removeEventListener('mousemove', handleMouseMove);
+          canvas.removeEventListener('touchmove', handleTouchMove);
+          canvas.removeEventListener('click', handleClick);
+          canvas.removeEventListener('touchstart', handleTouchStart);
+          window.removeEventListener('keydown', handleKeyDown);
+          window.removeEventListener('keyup', handleKeyUp);
+        };
+      }, []);
+
+      return (
+        <canvas
+          ref={cvs}
+          style={{ display: 'block', width: '100vw', height: '100vh', cursor: 'none' }}
+        />
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
+  </script>
+</body>
+</html>
