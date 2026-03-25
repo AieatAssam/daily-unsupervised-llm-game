@@ -502,5 +502,19 @@
     "folder": "games/2026-03-24",
     "file": "games/2026-03-24/index.html",
     "preview": "games/2026-03-24/preview.png"
+  },
+  {
+    "id": "2026-03-25",
+    "name": "Neon Smash",
+    "date": "2026-03-25",
+    "description": "Smash glowing neon targets that pop up from a 4×3 grid — hit the cyan, green, and yellow ones for combo-multiplied points, but avoid the red bombs or lose a life! Speed escalates as your score climbs.",
+    "tagline": "Pop the targets. Dodge the bombs. Chain the combos!",
+    "tags": ["reflex", "action", "arcade", "casual", "whack-a-mole"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap glowing targets — avoid red bombs!",
+    "folder": "games/2026-03-25",
+    "file": "games/2026-03-25/index.html",
+    "preview": "games/2026-03-25/preview.png"
   }
 ]
