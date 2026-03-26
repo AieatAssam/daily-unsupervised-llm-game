@@ -516,5 +516,19 @@
     "folder": "games/2026-03-25",
     "file": "games/2026-03-25/index.html",
     "preview": "games/2026-03-25/preview.png"
+  },
+  {
+    "id": "2026-03-26",
+    "name": "Bubble Blitz",
+    "date": "2026-03-26",
+    "description": "Aim a neon cannon and shoot colored bubbles into a hex grid — match clusters of 3 or more to pop them in particle bursts, chain combos for massive multipliers, and clear the board before bubbles reach the danger line!",
+    "tagline": "Aim. Shoot. Pop. Chain the neon!",
+    "tags": ["puzzle", "action", "arcade", "casual", "shooter"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Move mouse to aim cannon · Click / tap to shoot · Space to fire",
+    "folder": "games/2026-03-26",
+    "file": "games/2026-03-26/index.html",
+    "preview": "games/2026-03-26/preview.png"
   }
 ]
