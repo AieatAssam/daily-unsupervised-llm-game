@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Juggle Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: Arial, sans-serif; user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+    canvas { display: block; touch-action: none; }
+  </style>
+  <script>
+    // Initialize localStorage immediately (before React loads)
+    try {
+      if (!localStorage.getItem('juggleRush_highScore')) {
+        localStorage.setItem('juggleRush_highScore', '0');
+      }
+    } catch(e) {}
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const BALL_COLORS = [
+      { fill: '#00ffff', glow: '#00ffff88' },
+      { fill: '#ff00ff', glow: '#ff00ff88' },
+      { fill: '#ff6600', glow: '#ff660088' },
+      { fill: '#00ff88', glow: '#00ff8888' },
+      { fill: '#ff0088', glow: '#ff008888' },
+      { fill: '#aaff00', glow: '#aaff0088' },
+    ];
+
+    function initAudio() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        return {
+          bounce(freq) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(freq * 1.8, ctx.currentTime + 0.12);
+            gain.gain.setValueAtTime(0.25, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+            osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.25);
+          },
+          drop() {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(220, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.35);
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+            osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.35);
+          },
+          combo(n) {
+            const freqs = [523, 659, 784, 988, 1175, 1319, 1568];
+            const freq = freqs[Math.min(n - 1, freqs.length - 1)];
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+            osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.2);
+          }
+        };
+      } catch(e) { return null; }
+    }
+
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const gRef = useRef({
+        phase: 'start', // start | playing | gameover
+        balls: [],
+        particles: [],
+        floats: [],      // floating score text
+        lives: 3,
+        score: 0,
+        combo: 0,
+        highScore: parseInt(localStorage.getItem('juggleRush_highScore') || '0'),
+        startTime: 0,
+        lastSpawn: 0,
+        spawnInterval: 4500,
+        ballCount: 0,
+        bgHue: 270,
+        audio: null,
+        nextId: 0,
+      });
+      const rafRef = useRef(null);
+      const [ui, setUi] = useState({
+        phase: 'start', score: 0, lives: 3, combo: 0,
+        highScore: parseInt(localStorage.getItem('juggleRush_highScore') || '0'),
+      });
+
+      // Ensure localStorage key exists from the very start
+      useEffect(() => {
+        const saved = localStorage.getItem('juggleRush_highScore');
+        localStorage.setItem('juggleRush_highScore', saved || '0');
+        gRef.current.highScore = parseInt(saved || '0');
+      }, []);
+
+      // HUD sync
+      useEffect(() => {
+        const id = setInterval(() => {
+          const g = gRef.current;
+          setUi({ phase: g.phase, score: g.score, lives: g.lives, combo: g.combo, highScore: g.highScore });
+        }, 80);
+        return () => clearInterval(id);
+      }, []);
+
+      function spawnBall(canvas, g) {
+        const margin = 50;
+        const W = canvas.width;
+        const radius = 20 + Math.random() * 10;
+        const color = BALL_COLORS[Math.floor(Math.random() * BALL_COLORS.length)];
+        g.balls.push({
+          id: g.nextId++,
+          x: margin + Math.random() * (W - margin * 2),
+          y: -radius - Math.random() * 60,
+          vx: (Math.random() - 0.5) * 2.5,
+          vy: 0.5 + Math.random() * 1.5,
+          radius,
+          color,
+          trail: [],
+          pulse: Math.random() * Math.PI * 2,
+        });
+        g.ballCount++;
+      }
+
+      function emitParticles(g, x, y, color, count = 14) {
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI * 2 * i / count) + Math.random() * 0.4;
+          const spd = 2.5 + Math.random() * 4;
+          g.particles.push({
+            x, y,
+            vx: Math.cos(angle) * spd,
+            vy: Math.sin(angle) * spd - 1,
+            r: 3 + Math.random() * 4,
+            life: 1,
+            decay: 0.025 + Math.random() * 0.025,
+            color: color.fill,
+          });
+        }
+      }
+
+      function startGame(g, canvas) {
+        g.phase = 'playing';
+        g.balls = [];
+        g.particles = [];
+        g.floats = [];
+        g.lives = 3;
+        g.score = 0;
+        g.combo = 0;
+        g.startTime = performance.now();
+        g.lastSpawn = performance.now() - g.spawnInterval + 500;
+        g.spawnInterval = 4500;
+        g.ballCount = 0;
+        if (!g.audio) g.audio = initAudio();
+        // Spawn first 3 balls staggered
+        spawnBall(canvas, g);
+        setTimeout(() => { if (g.phase === 'playing') spawnBall(canvas, g); }, 900);
+        setTimeout(() => { if (g.phase === 'playing') spawnBall(canvas, g); }, 1800);
+      }
+
+      function handleInput(cx, cy) {
+        const g = gRef.current;
+        const canvas = canvasRef.current;
+
+        if (g.phase === 'start') {
+          startGame(g, canvas);
+          return;
+        }
+        if (g.phase === 'gameover') {
+          g.spawnInterval = 4500;
+          startGame(g, canvas);
+          return;
+        }
+        if (g.phase !== 'playing') return;
+
+        // Find nearest ball within tap radius
+        let best = null, bestDist = Infinity;
+        for (const b of g.balls) {
+          const dx = b.x - cx, dy = b.y - cy;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d < b.radius + 45 && d < bestDist) { best = b; bestDist = d; }
+        }
+
+        if (best) {
+          best.vy = -(8.5 + Math.random() * 2);
+          best.vx += (Math.random() - 0.5) * 2;
+          best.pulse = 0;
+
+          g.combo++;
+          const pts = 10 * Math.min(g.combo, 10);
+          g.score += pts;
+          localStorage.setItem('juggleRush_highScore', Math.max(g.highScore, g.score).toString());
+
+          emitParticles(g, best.x, best.y, best.color, 15);
+          g.floats.push({
+            x: best.x, y: best.y - 20,
+            text: g.combo > 1 ? `×${g.combo} COMBO` : `+${pts}`,
+            color: best.color.fill,
+            life: 1.0,
+          });
+
+          if (g.audio) {
+            if (g.combo > 1) g.audio.combo(g.combo);
+            else g.audio.bounce(300 + Math.random() * 200);
+          }
+        }
+        // No penalty for missing taps (only ball-floor contact resets combo)
+      }
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        function loop(ts) {
+          const g = gRef.current;
+          const W = canvas.width, H = canvas.height;
+
+          // Background gradient shift
+          g.bgHue = (g.bgHue + 0.15) % 360;
+          const bg = ctx.createLinearGradient(0, 0, W, H);
+          bg.addColorStop(0, `hsl(${g.bgHue}, 80%, 5%)`);
+          bg.addColorStop(0.5, `hsl(${(g.bgHue + 60) % 360}, 70%, 7%)`);
+          bg.addColorStop(1, `hsl(${(g.bgHue + 120) % 360}, 80%, 5%)`);
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, W, H);
+
+          // Grid lines (subtle)
+          ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < W; x += 60) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+          }
+          for (let y = 0; y < H; y += 60) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+          }
+
+          // Danger zone
+          const dangerH = 90;
+          const dangerY = H - dangerH;
+          const dangerAlpha = 0.12 + 0.06 * Math.sin(ts * 0.005);
+          ctx.fillStyle = `rgba(255,40,40,${dangerAlpha})`;
+          ctx.fillRect(0, dangerY, W, dangerH);
+          ctx.save();
+          ctx.setLineDash([12, 8]);
+          ctx.strokeStyle = `rgba(255,60,60,0.6)`;
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(0, dangerY); ctx.lineTo(W, dangerY); ctx.stroke();
+          ctx.restore();
+          ctx.fillStyle = 'rgba(255,80,80,0.4)';
+          ctx.font = 'bold 13px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('DANGER ZONE', W / 2, dangerY + 20);
+
+          if (g.phase === 'playing') {
+            // Gravity increases slowly over time
+            const elapsed = (ts - g.startTime) / 1000;
+            const gravity = 0.14 + elapsed * 0.0008;
+
+            // Spawn new balls
+            if (ts - g.lastSpawn > g.spawnInterval && g.balls.length < 7) {
+              spawnBall(canvas, g);
+              g.lastSpawn = ts;
+              g.spawnInterval = Math.max(2200, g.spawnInterval - 120);
+            }
+
+            // Re-spawn if all balls somehow gone
+            if (g.balls.length === 0) {
+              spawnBall(canvas, g);
+              g.lastSpawn = ts;
+            }
+
+            // Update balls
+            const toRemove = new Set();
+            for (const b of g.balls) {
+              // Trail
+              b.trail.push({ x: b.x, y: b.y });
+              if (b.trail.length > 14) b.trail.shift();
+
+              b.vy += gravity;
+              // Cap fall speed
+              if (b.vy > 14) b.vy = 14;
+              b.x += b.vx;
+              b.y += b.vy;
+              b.pulse += 0.08;
+
+              // Wall bounce
+              if (b.x - b.radius < 0) { b.x = b.radius; b.vx = Math.abs(b.vx) * 0.75; }
+              if (b.x + b.radius > W) { b.x = W - b.radius; b.vx = -Math.abs(b.vx) * 0.75; }
+              // Small horizontal drift damping
+              b.vx *= 0.998;
+
+              // Hit the floor
+              if (b.y - b.radius > H) {
+                toRemove.add(b.id);
+                emitParticles(g, b.x, H - 30, b.color, 20);
+                g.combo = 0;
+                g.lives--;
+
+                if (g.audio) g.audio.drop();
+
+                if (g.lives <= 0) {
+                  g.phase = 'gameover';
+                  if (g.score > g.highScore) {
+                    g.highScore = g.score;
+                    localStorage.setItem('juggleRush_highScore', g.score.toString());
+                  }
+                }
+              }
+            }
+
+            if (toRemove.size > 0) {
+              g.balls = g.balls.filter(b => !toRemove.has(b.id));
+            }
+
+            // Draw trails
+            for (const b of g.balls) {
+              for (let i = 0; i < b.trail.length; i++) {
+                const t = i / b.trail.length;
+                const alpha = Math.floor(t * 60).toString(16).padStart(2, '0');
+                ctx.beginPath();
+                ctx.arc(b.trail[i].x, b.trail[i].y, b.radius * t * 0.55, 0, Math.PI * 2);
+                ctx.fillStyle = b.color.fill + alpha;
+                ctx.fill();
+              }
+            }
+
+            // Draw balls
+            for (const b of g.balls) {
+              const pulseMult = 1 + 0.06 * Math.sin(b.pulse);
+
+              // Danger proximity glow
+              const dangerRatio = Math.max(0, (b.y - dangerY * 0.6) / (dangerY * 0.4));
+              if (dangerRatio > 0) {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, (b.radius + 8) * pulseMult, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(255,60,60,${Math.min(dangerRatio, 0.9)})`;
+                ctx.lineWidth = 2 + dangerRatio * 4;
+                ctx.stroke();
+              }
+
+              ctx.save();
+              ctx.shadowBlur = 25;
+              ctx.shadowColor = b.color.fill;
+
+              // Ball gradient
+              const grad = ctx.createRadialGradient(
+                b.x - b.radius * 0.32, b.y - b.radius * 0.32, 0,
+                b.x, b.y, b.radius * pulseMult
+              );
+              grad.addColorStop(0, '#ffffff');
+              grad.addColorStop(0.35, b.color.fill);
+              grad.addColorStop(1, b.color.fill + '33');
+
+              ctx.beginPath();
+              ctx.arc(b.x, b.y, b.radius * pulseMult, 0, Math.PI * 2);
+              ctx.fillStyle = grad;
+              ctx.fill();
+
+              // Specular highlight
+              ctx.beginPath();
+              ctx.arc(b.x - b.radius * 0.3, b.y - b.radius * 0.3, b.radius * 0.25, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(255,255,255,0.55)';
+              ctx.fill();
+              ctx.restore();
+            }
+
+            // Update floating text
+            for (const f of g.floats) {
+              f.life -= 0.028;
+              f.y -= 1.2;
+            }
+            g.floats = g.floats.filter(f => f.life > 0);
+          }
+
+          // Draw particles
+          for (const p of g.particles) {
+            p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.life -= p.decay;
+            if (p.life > 0) {
+              const alpha = Math.floor(p.life * 255).toString(16).padStart(2, '0');
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+              ctx.fillStyle = p.color + alpha;
+              ctx.fill();
+            }
+          }
+          g.particles = g.particles.filter(p => p.life > 0);
+
+          // Draw floating score texts
+          for (const f of g.floats) {
+            if (f.life > 0) {
+              ctx.save();
+              ctx.globalAlpha = Math.min(f.life * 1.5, 1);
+              ctx.font = `bold ${18 + (1 - f.life) * 16}px Arial`;
+              ctx.fillStyle = f.color;
+              ctx.shadowBlur = 12;
+              ctx.shadowColor = f.color;
+              ctx.textAlign = 'center';
+              ctx.fillText(f.text, f.x, f.y);
+              ctx.restore();
+            }
+          }
+
+          rafRef.current = requestAnimationFrame(loop);
+        }
+
+        rafRef.current = requestAnimationFrame(loop);
+        return () => {
+          cancelAnimationFrame(rafRef.current);
+          window.removeEventListener('resize', resize);
+        };
+      }, []);
+
+      function onPointerDown(e) {
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const src = e.touches ? e.touches[0] : e;
+        handleInput(src.clientX - rect.left, src.clientY - rect.top);
+      }
+
+      return (
+        <div style={{ position: 'relative', width: '100vw', height: '100vh' }} id="game-root">
+          <canvas
+            ref={canvasRef}
+            onMouseDown={onPointerDown}
+            onTouchStart={onPointerDown}
+            style={{ display: 'block', cursor: 'crosshair' }}
+          />
+
+          {/* HUD */}
+          {ui.phase === 'playing' && (
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+              padding: '14px 20px', pointerEvents: 'none',
+            }}>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ color: '#00ffff', fontSize: 22, fontWeight: 'bold',
+                  textShadow: '0 0 12px #00ffff', letterSpacing: 2 }}>
+                  {'❤️'.repeat(ui.lives)}{'🖤'.repeat(Math.max(0, 3 - ui.lives))}
+                </div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: '#fff', fontSize: 36, fontWeight: 'bold',
+                  textShadow: '0 0 20px #00ffff, 0 0 40px #00ffff88', lineHeight: 1 }}>
+                  {ui.score}
+                </div>
+                {ui.combo > 1 && (
+                  <div style={{ color: '#ff00ff', fontSize: 15, marginTop: 2,
+                    textShadow: '0 0 10px #ff00ff', fontWeight: 'bold', letterSpacing: 2 }}>
+                    ×{ui.combo} COMBO
+                  </div>
+                )}
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ color: '#ff6600', fontSize: 13,
+                  textShadow: '0 0 8px #ff6600' }}>BEST</div>
+                <div style={{ color: '#ff6600', fontSize: 20, fontWeight: 'bold',
+                  textShadow: '0 0 10px #ff6600' }}>{ui.highScore}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Start screen */}
+          {ui.phase === 'start' && (
+            <div
+              onMouseDown={onPointerDown}
+              onTouchStart={onPointerDown}
+              style={{
+                position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(0,0,0,0.65)', cursor: 'pointer',
+              }}
+            >
+              <div style={{
+                fontSize: 58, fontWeight: 'bold', color: '#00ffff', fontFamily: 'Arial',
+                textShadow: '0 0 30px #00ffff, 0 0 60px #00ffff55',
+                letterSpacing: 5, marginBottom: 6,
+              }}>JUGGLE RUSH</div>
+              <div style={{
+                color: '#ff00ff', fontSize: 18, marginBottom: 50,
+                textShadow: '0 0 12px #ff00ff', letterSpacing: 2,
+              }}>Keep all balls in the air!</div>
+
+              <div style={{
+                background: 'rgba(0,255,255,0.12)', border: '2px solid #00ffff',
+                borderRadius: 14, padding: '16px 48px', color: '#00ffff',
+                fontSize: 24, fontWeight: 'bold', letterSpacing: 3,
+                textShadow: '0 0 12px #00ffff',
+                boxShadow: '0 0 30px rgba(0,255,255,0.35)',
+              }}>TAP TO PLAY</div>
+
+              <div style={{
+                marginTop: 40, color: '#aaa', fontSize: 14, lineHeight: 1.9,
+                textAlign: 'center', letterSpacing: 1,
+              }}>
+                Click / Tap near a falling ball to bounce it up<br />
+                Don't let any ball reach the red zone!<br />
+                Chain bounces for COMBO multipliers
+              </div>
+
+              {ui.highScore > 0 && (
+                <div style={{
+                  marginTop: 24, color: '#ff6600', fontSize: 18,
+                  textShadow: '0 0 10px #ff6600', fontWeight: 'bold',
+                }}>🏆 BEST: {ui.highScore}</div>
+              )}
+            </div>
+          )}
+
+          {/* Game Over screen */}
+          {ui.phase === 'gameover' && (
+            <div
+              onMouseDown={onPointerDown}
+              onTouchStart={onPointerDown}
+              style={{
+                position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(0,0,0,0.78)', cursor: 'pointer',
+              }}
+            >
+              <div style={{
+                fontSize: 52, fontWeight: 'bold', color: '#ff3333',
+                textShadow: '0 0 25px #ff3333, 0 0 50px #ff333355',
+                fontFamily: 'Arial', marginBottom: 16, letterSpacing: 4,
+              }}>GAME OVER</div>
+
+              <div style={{
+                color: '#ffffff', fontSize: 44, fontWeight: 'bold',
+                textShadow: '0 0 20px #00ffff', marginBottom: 4,
+              }}>{ui.score}</div>
+              <div style={{ color: '#666', fontSize: 14, marginBottom: 8, letterSpacing: 2 }}>SCORE</div>
+
+              {ui.score > 0 && ui.score >= ui.highScore && (
+                <div style={{
+                  color: '#ff6600', fontSize: 20, fontWeight: 'bold',
+                  textShadow: '0 0 12px #ff6600', marginBottom: 16, letterSpacing: 2,
+                }}>🏆 NEW HIGH SCORE!</div>
+              )}
+
+              <div style={{ color: '#ff6600', fontSize: 16, marginBottom: 36,
+                textShadow: '0 0 8px #ff6600' }}>
+                Best: {ui.highScore}
+              </div>
+
+              <div style={{
+                background: 'rgba(0,255,255,0.12)', border: '2px solid #00ffff',
+                borderRadius: 14, padding: '14px 44px', color: '#00ffff',
+                fontSize: 22, fontWeight: 'bold', letterSpacing: 3,
+                textShadow: '0 0 12px #00ffff',
+                boxShadow: '0 0 30px rgba(0,255,255,0.35)',
+              }}>PLAY AGAIN</div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<Game />, document.getElementById('root'));
+  </script>
+</body>
+</html>

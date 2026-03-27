@@ -518,6 +518,20 @@
     "preview": "games/2026-03-25/preview.png"
   },
   {
+    "id": "2026-03-27",
+    "name": "Juggle Rush",
+    "date": "2026-03-27",
+    "description": "Keep multiple neon balls in the air by clicking or tapping near them before they hit the danger zone — chain combo hits for massive multipliers as gravity increases and more balls spawn over time!",
+    "tagline": "Click to bounce. Don't let them drop!",
+    "tags": ["reflex", "action", "arcade", "casual", "juggling"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap near a falling ball to bounce it up — keep all balls in the air!",
+    "folder": "games/2026-03-27",
+    "file": "games/2026-03-27/index.html",
+    "preview": "games/2026-03-27/preview.png"
+  },
+  {
     "id": "2026-03-26",
     "name": "Bubble Blitz",
     "date": "2026-03-26",
