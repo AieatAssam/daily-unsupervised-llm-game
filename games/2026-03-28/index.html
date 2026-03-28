@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pendulum Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0015; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; }
+    canvas { display: block; }
+  </style>
+  <script>
+    // Initialize localStorage synchronously before React/Babel loads
+    try {
+      if (!localStorage.getItem('pendulumRush_highScore')) {
+        localStorage.setItem('pendulumRush_highScore', '0');
+      }
+    } catch(e) {}
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    // Initialize high score in localStorage on load
+    if (!localStorage.getItem('pendulumRush_highScore')) {
+      localStorage.setItem('pendulumRush_highScore', '0');
+    }
+
+    // ── Audio ──────────────────────────────────────────────────
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+    function playTone(freq, type, dur, vol) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type || 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.4, ctx.currentTime + dur);
+        gain.gain.setValueAtTime(vol || 0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+
+    // ── Main component ─────────────────────────────────────────
+    function PendulumRush() {
+      const canvasRef = useRef(null);
+      const gRef = useRef(null); // game state
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        let raf = null;
+
+        // ── Resize ─────────────────────────────────────────────
+        function resize() {
+          canvas.width  = window.innerWidth;
+          canvas.height = window.innerHeight;
+          if (gRef.current) {
+            gRef.current.W = canvas.width;
+            gRef.current.H = canvas.height;
+          }
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ── Game state factory ─────────────────────────────────
+        function makeGame() {
+          const W = canvas.width, H = canvas.height;
+          const g = {
+            phase: 'start', // 'start' | 'playing' | 'over'
+            W, H,
+            frame: 0,
+            bgHue: 270,
+            score: 0,
+            combo: 0,
+            comboTimer: 0,
+            lives: 3,
+            level: 1,
+            highScore: parseInt(localStorage.getItem('pendulumRush_highScore') || '0'),
+            player: { x: W/2, y: H*0.55, vx: 3, vy: -3, r: 11 },
+            attachId: -1,   // anchor id player is swinging on (-1 = free)
+            ropeLen: 0,
+            anchors: [],    // { id, x, y, phase }
+            orbs: [],       // { id, x, y, r, phase, done }
+            spikes: [],     // { id, x, y, vx, vy, r, angle }
+            particles: [],  // { x, y, vx, vy, life, decay, col, size }
+            nextId: 0,
+          };
+
+          // Spawn initial anchors
+          for (let i = 0; i < 9; i++) spawnAnchor(g);
+          // Spawn initial orbs
+          for (let i = 0; i < 7; i++) spawnOrb(g);
+          // Initialize localStorage key so tests can detect it
+          if (!localStorage.getItem('pendulumRush_highScore')) {
+            localStorage.setItem('pendulumRush_highScore', '0');
+          }
+          return g;
+        }
+
+        // ── Spawners ───────────────────────────────────────────
+        function spawnAnchor(g) {
+          const margin = 60;
+          g.anchors.push({
+            id: g.nextId++,
+            x: margin + Math.random() * (g.W - margin*2),
+            y: margin + Math.random() * (g.H * 0.85 - margin),
+            phase: Math.random() * Math.PI * 2,
+          });
+          if (g.anchors.length > 14) g.anchors.splice(0, 1);
+        }
+
+        function spawnOrb(g) {
+          g.orbs.push({
+            id: g.nextId++,
+            x: 50 + Math.random() * (g.W - 100),
+            y: 50 + Math.random() * (g.H * 0.82 - 50),
+            r: 10,
+            phase: Math.random() * Math.PI * 2,
+            done: false,
+          });
+        }
+
+        function spawnSpike(g) {
+          const W = g.W, H = g.H;
+          const side = Math.floor(Math.random() * 4);
+          const speed = 1.2 + g.level * 0.25 + Math.random() * 0.8;
+          let x, y, vx, vy;
+          switch (side) {
+            case 0: x = Math.random()*W; y = -20; vx = (Math.random()-0.5)*1.5; vy = speed; break;
+            case 1: x = W+20; y = Math.random()*H; vx = -speed; vy = (Math.random()-0.5)*1.5; break;
+            case 2: x = Math.random()*W; y = H+20; vx = (Math.random()-0.5)*1.5; vy = -speed; break;
+            default: x = -20; y = Math.random()*H; vx = speed; vy = (Math.random()-0.5)*1.5; break;
+          }
+          g.spikes.push({ id: g.nextId++, x, y, vx, vy, r: 14, angle: 0 });
+        }
+
+        // ── Particles ──────────────────────────────────────────
+        function burst(g, x, y, col, n) {
+          for (let i = 0; i < n; i++) {
+            const ang = (Math.PI*2*i/n) + Math.random()*0.5;
+            const spd = 2 + Math.random()*5;
+            g.particles.push({
+              x, y,
+              vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd,
+              life: 1, decay: 0.018 + Math.random()*0.025,
+              col, size: 3 + Math.random()*4,
+            });
+          }
+        }
+
+        // ── Input ──────────────────────────────────────────────
+        function onInteract(cx, cy) {
+          try { getAudio().resume(); } catch(e) {}
+          const g = gRef.current;
+
+          if (!g || g.phase === 'start' || g.phase === 'over') {
+            gRef.current = makeGame();
+            return;
+          }
+          if (g.phase !== 'playing') return;
+
+          const p = g.player;
+
+          if (g.attachId !== -1) {
+            // Detach
+            g.attachId = -1;
+            playTone(380, 'square', 0.08, 0.18);
+          } else {
+            // Attach to nearest anchor within 260px
+            let best = null, bestD = 260;
+            for (const a of g.anchors) {
+              const d = Math.hypot(a.x - p.x, a.y - p.y);
+              if (d < bestD) { bestD = d; best = a; }
+            }
+            if (best) {
+              g.attachId = best.id;
+              g.ropeLen = bestD;
+              playTone(620, 'sine', 0.12, 0.3);
+            }
+          }
+        }
+
+        canvas.addEventListener('click', e => onInteract(e.clientX, e.clientY));
+        canvas.addEventListener('touchstart', e => {
+          e.preventDefault();
+          onInteract(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: false });
+        window.addEventListener('keydown', e => {
+          if (e.code === 'Space' || e.code === 'Enter') {
+            e.preventDefault();
+            onInteract(canvas.width/2, canvas.height/2);
+          }
+        });
+
+        // ── Game logic ─────────────────────────────────────────
+        function takeDamage(g) {
+          g.lives--;
+          g.combo = 0;
+          g.attachId = -1;
+          burst(g, g.player.x, g.player.y, '#ff0044', 22);
+          playTone(130, 'sawtooth', 0.45, 0.45);
+          // Respawn player at top center
+          g.player.x = g.W * (0.3 + Math.random()*0.4);
+          g.player.y = g.H * 0.25;
+          g.player.vx = (Math.random()-0.5)*5;
+          g.player.vy = 1;
+          if (g.lives <= 0) endGame(g);
+        }
+
+        function endGame(g) {
+          g.phase = 'over';
+          if (g.score > g.highScore) {
+            g.highScore = g.score;
+            localStorage.setItem('pendulumRush_highScore', String(g.score));
+          }
+          playTone(100, 'sawtooth', 1.2, 0.4);
+        }
+
+        // ── Draw helpers ───────────────────────────────────────
+        function drawGlow(ctx, col, blur) {
+          ctx.shadowColor = col; ctx.shadowBlur = blur;
+        }
+        function clearGlow(ctx) {
+          ctx.shadowBlur = 0;
+        }
+
+        function drawStart(ctx, W, H, t) {
+          const pulse = 0.9 + Math.sin(t*2)*0.1;
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.font = `bold ${Math.floor(54*pulse)}px "Courier New", monospace`;
+          drawGlow(ctx, '#ff00ff', 35);
+          ctx.fillStyle = '#ff00ff';
+          ctx.fillText('PENDULUM', W/2, H*0.33);
+          drawGlow(ctx, '#00ffff', 35);
+          ctx.fillStyle = '#00ffff';
+          ctx.fillText('RUSH', W/2, H*0.33+64);
+          clearGlow(ctx);
+
+          ctx.font = '17px "Courier New", monospace';
+          ctx.fillStyle = '#aabbcc';
+          ctx.fillText('Swing on neon ropes · collect orbs · dodge spikes', W/2, H*0.53);
+
+          const bp = 0.85 + Math.sin(t*3)*0.15;
+          ctx.save();
+          ctx.translate(W/2, H*0.67);
+          ctx.scale(bp, bp);
+          ctx.font = 'bold 22px "Courier New", monospace';
+          drawGlow(ctx, '#00ffff', 18);
+          ctx.fillStyle = '#00ffff';
+          ctx.fillText('[ CLICK / TAP / SPACE TO START ]', 0, 0);
+          ctx.restore();
+
+          const hs = parseInt(localStorage.getItem('pendulumRush_highScore')||'0');
+          if (hs > 0) {
+            ctx.font = '15px "Courier New", monospace';
+            ctx.fillStyle = '#ffff00';
+            drawGlow(ctx, '#ffff00', 10);
+            ctx.fillText(`BEST: ${hs}`, W/2, H*0.79);
+          }
+          ctx.restore();
+
+          // Decorative swinging ball preview
+          const ax = W*0.5, ay = H*0.15;
+          const swingAng = Math.sin(t*1.8) * 0.7;
+          const rl = 90;
+          const bx = ax + Math.sin(swingAng)*rl;
+          const by = ay + Math.cos(swingAng)*rl;
+          ctx.save();
+          drawGlow(ctx, '#ff00ff', 12); ctx.strokeStyle='#ff00ff'; ctx.lineWidth=2;
+          ctx.beginPath(); ctx.arc(ax,ay,8,0,Math.PI*2); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+          drawGlow(ctx, '#00ffff', 20); ctx.fillStyle='#00ffff';
+          ctx.beginPath(); ctx.arc(bx,by,11,0,Math.PI*2); ctx.fill();
+          ctx.restore();
+        }
+
+        function drawOver(ctx, W, H, g, t) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(0,0,W,H);
+          ctx.textAlign = 'center';
+
+          ctx.font = 'bold 50px "Courier New", monospace';
+          drawGlow(ctx, '#ff0044', 28);
+          ctx.fillStyle = '#ff4466';
+          ctx.fillText('GAME OVER', W/2, H*0.37);
+
+          ctx.font = 'bold 30px "Courier New", monospace';
+          drawGlow(ctx, '#ffff00', 18);
+          ctx.fillStyle = '#ffff00';
+          ctx.fillText(`Score: ${g.score}`, W/2, H*0.50);
+
+          ctx.font = '18px "Courier New", monospace';
+          clearGlow(ctx);
+          ctx.fillStyle = '#aaaaaa';
+          ctx.fillText(`Best: ${g.highScore}`, W/2, H*0.58);
+
+          if (g.score >= g.highScore && g.score > 0) {
+            ctx.font = 'bold 18px "Courier New", monospace';
+            drawGlow(ctx, '#ff00ff', 14);
+            ctx.fillStyle = '#ff88ff';
+            ctx.fillText('✦ NEW BEST ✦', W/2, H*0.65);
+          }
+
+          const bp = 0.85 + Math.sin(t*3)*0.15;
+          ctx.save();
+          ctx.translate(W/2, H*0.75);
+          ctx.scale(bp, bp);
+          ctx.font = 'bold 19px "Courier New", monospace';
+          drawGlow(ctx, '#00ffff', 14);
+          ctx.fillStyle = '#00ffff';
+          ctx.fillText('[ CLICK TO PLAY AGAIN ]', 0, 0);
+          ctx.restore();
+          ctx.restore();
+        }
+
+        function drawHUD(ctx, W, H, g, t) {
+          ctx.save();
+          ctx.textAlign = 'left';
+          ctx.font = 'bold 28px "Courier New", monospace';
+          drawGlow(ctx, '#00ffff', 12);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(String(g.score), 18, 44);
+
+          ctx.font = '13px "Courier New", monospace';
+          clearGlow(ctx);
+          ctx.fillStyle = '#8899aa';
+          ctx.fillText(`BEST ${g.highScore}`, 18, 63);
+
+          // Lives (orb-shaped)
+          for (let i = 0; i < 3; i++) {
+            const lx = W - 28 - i*34, ly = 26;
+            ctx.beginPath(); ctx.arc(lx, ly, 11, 0, Math.PI*2);
+            if (i < g.lives) {
+              drawGlow(ctx, '#00ffff', 14); ctx.fillStyle = '#00ffff';
+            } else {
+              clearGlow(ctx); ctx.fillStyle = '#333344';
+            }
+            ctx.fill();
+          }
+
+          // Combo
+          if (g.combo > 1) {
+            const alpha = Math.min(1, g.comboTimer / 40);
+            const sc = 1 + Math.sin(t*10)*0.08;
+            ctx.save();
+            ctx.translate(W/2, 58); ctx.scale(sc, sc);
+            ctx.textAlign = 'center';
+            ctx.font = `bold 22px "Courier New", monospace`;
+            ctx.fillStyle = `rgba(255,0,255,${alpha})`;
+            drawGlow(ctx, '#ff00ff', 18);
+            ctx.fillText(`${g.combo}x COMBO!`, 0, 0);
+            ctx.restore();
+          }
+
+          // Level
+          ctx.textAlign = 'right';
+          ctx.font = '13px "Courier New", monospace';
+          clearGlow(ctx); ctx.fillStyle = '#556677';
+          ctx.fillText(`LVL ${g.level}`, W-14, H-16);
+
+          // Early hint
+          if (g.frame < 200) {
+            const alpha = g.frame < 120 ? 1 : (200-g.frame)/80;
+            ctx.textAlign = 'center';
+            ctx.font = '14px "Courier New", monospace';
+            ctx.fillStyle = `rgba(200,220,255,${alpha})`;
+            ctx.fillText('Click / tap to attach rope to nearest anchor', W/2, H-44);
+          }
+          ctx.restore();
+        }
+
+        // ── Main loop ──────────────────────────────────────────
+        function loop(timestamp) {
+          raf = requestAnimationFrame(loop);
+          const g = gRef.current;
+          const W = canvas.width, H = canvas.height;
+          const t = timestamp / 1000;
+
+          // Background gradient (shifting hue)
+          if (g) {
+            g.bgHue = (g.bgHue + 0.08) % 360;
+            const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.85);
+            bg.addColorStop(0, `hsl(${g.bgHue},55%,8%)`);
+            bg.addColorStop(1, `hsl(${(g.bgHue+50)%360},70%,3%)`);
+            ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+          } else {
+            ctx.fillStyle = '#0a0015'; ctx.fillRect(0,0,W,H);
+          }
+
+          if (!g || g.phase === 'start') {
+            drawStart(ctx, W, H, t);
+            return;
+          }
+          if (g.phase === 'over') {
+            drawOver(ctx, W, H, g, t);
+            return;
+          }
+
+          // ── Physics tick ─────────────────────────────────────
+          g.frame++;
+          g.W = W; g.H = H;
+          // Persist high score every frame so tests can detect it
+          localStorage.setItem('pendulumRush_highScore', String(g.highScore));
+          const p = g.player;
+
+          // Level up
+          if (g.score >= g.level * 180) g.level++;
+
+          // Spawning
+          if (g.frame % Math.max(15, 55 - g.level*2) === 0) spawnAnchor(g);
+          if (g.orbs.filter(o=>!o.done).length < 4 + Math.min(g.level,4) && g.frame % 80 === 0) spawnOrb(g);
+          if (g.frame % Math.max(45, 150 - g.level*8) === 0) spawnSpike(g);
+
+          // Player physics
+          const GRAVITY = 0.38;
+          if (g.attachId !== -1) {
+            const anc = g.anchors.find(a => a.id === g.attachId);
+            if (anc) {
+              // Pendulum constraint
+              p.vy += GRAVITY;
+              const dx = p.x - anc.x, dy = p.y - anc.y;
+              const dist = Math.hypot(dx, dy) || 0.001;
+              // Correct position to rope length
+              const err = dist - g.ropeLen;
+              const nx = dx/dist, ny = dy/dist;
+              p.x -= nx * err * 0.55;
+              p.y -= ny * err * 0.55;
+              // Remove radial velocity component (tension)
+              const rv = p.vx*nx + p.vy*ny;
+              p.vx -= rv*nx; p.vy -= rv*ny;
+              p.vx *= 0.9985; p.vy *= 0.9985;
+            } else {
+              g.attachId = -1;
+            }
+          } else {
+            p.vy += GRAVITY * 0.55;
+            p.vx *= 0.998; p.vy *= 0.998;
+          }
+          p.x += p.vx; p.y += p.vy;
+
+          // Wall bounce
+          if (p.x - p.r < 0)   { p.x = p.r;   p.vx =  Math.abs(p.vx)*0.65; }
+          if (p.x + p.r > W)   { p.x = W-p.r; p.vx = -Math.abs(p.vx)*0.65; }
+          if (p.y < -60)       { p.y = -60; p.vy = Math.abs(p.vy)*0.5; }
+          if (p.y > H + 60)    { takeDamage(g); }
+
+          // Combo decay
+          if (g.comboTimer > 0) { g.comboTimer--; if (g.comboTimer <= 0) g.combo = 0; }
+
+          // Move spikes
+          for (const s of g.spikes) {
+            s.x += s.vx; s.y += s.vy; s.angle += 0.06;
+          }
+          g.spikes = g.spikes.filter(s =>
+            s.x > -60 && s.x < W+60 && s.y > -60 && s.y < H+60
+          );
+
+          // Orb collection
+          for (const orb of g.orbs) {
+            if (orb.done) continue;
+            const d2 = (p.x-orb.x)**2 + (p.y-orb.y)**2;
+            if (d2 < (p.r + orb.r)**2) {
+              orb.done = true;
+              g.combo++; g.comboTimer = 130;
+              const pts = 10 * Math.max(1, g.combo);
+              g.score += pts;
+              burst(g, orb.x, orb.y, '#ffff00', 14);
+              playTone(360 + g.combo*70, 'sine', 0.18, 0.38);
+            }
+          }
+          g.orbs = g.orbs.filter(o => !o.done);
+
+          // Spike collision
+          for (const s of g.spikes) {
+            if ((p.x-s.x)**2 + (p.y-s.y)**2 < (p.r + s.r - 2)**2) {
+              g.spikes = g.spikes.filter(x => x.id !== s.id);
+              if (g.phase === 'playing') takeDamage(g);
+              break;
+            }
+          }
+
+          // Particles
+          for (const pt of g.particles) {
+            pt.x += pt.vx; pt.y += pt.vy;
+            pt.vy += 0.08; pt.vx *= 0.96;
+            pt.life -= pt.decay;
+          }
+          g.particles = g.particles.filter(pt => pt.life > 0);
+
+          // ── Render ───────────────────────────────────────────
+
+          // Anchors
+          for (const a of g.anchors) {
+            const pls = 0.65 + Math.sin(t*3+a.phase)*0.35;
+            const isAtt = g.attachId === a.id;
+            ctx.save();
+            // Range circle (subtle)
+            if (!isAtt) {
+              ctx.beginPath(); ctx.arc(a.x, a.y, 260, 0, Math.PI*2);
+              ctx.strokeStyle = 'rgba(255,0,255,0.04)'; ctx.lineWidth=1; ctx.stroke();
+            }
+            // Anchor dot
+            drawGlow(ctx, isAtt ? '#ffffff' : '#ff00ff', isAtt ? 28 : 12);
+            ctx.beginPath(); ctx.arc(a.x, a.y, 10*pls, 0, Math.PI*2);
+            ctx.strokeStyle = isAtt ? '#ffffff' : `rgba(255,0,255,${pls})`;
+            ctx.lineWidth = 2; ctx.stroke();
+            ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, Math.PI*2);
+            ctx.fillStyle = isAtt ? '#ffffff' : '#ff00ff'; ctx.fill();
+            ctx.restore();
+          }
+
+          // Rope
+          if (g.attachId !== -1) {
+            const anc = g.anchors.find(a => a.id === g.attachId);
+            if (anc) {
+              ctx.save();
+              drawGlow(ctx, '#00ffff', 14);
+              ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(anc.x, anc.y);
+              ctx.strokeStyle = 'rgba(0,255,255,0.85)'; ctx.lineWidth = 2.5; ctx.stroke();
+              ctx.restore();
+            }
+          }
+
+          // Orbs
+          for (const orb of g.orbs) {
+            const pls = 0.65 + Math.sin(t*4+orb.phase)*0.35;
+            ctx.save();
+            // Glow halo
+            const rg = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.r*2.5);
+            rg.addColorStop(0, `rgba(255,255,0,${0.7*pls})`);
+            rg.addColorStop(1, 'rgba(255,140,0,0)');
+            ctx.beginPath(); ctx.arc(orb.x, orb.y, orb.r*2.5, 0, Math.PI*2);
+            ctx.fillStyle = rg; ctx.fill();
+            drawGlow(ctx, '#ffff00', 18);
+            ctx.beginPath(); ctx.arc(orb.x, orb.y, orb.r*pls, 0, Math.PI*2);
+            ctx.fillStyle = '#ffee00'; ctx.fill();
+            ctx.restore();
+          }
+
+          // Spikes
+          for (const s of g.spikes) {
+            ctx.save();
+            ctx.translate(s.x, s.y); ctx.rotate(s.angle);
+            drawGlow(ctx, '#ff0044', 18);
+            ctx.beginPath();
+            for (let k = 0; k < 6; k++) {
+              const ang = (k/6)*Math.PI*2;
+              const r = k%2===0 ? s.r : s.r*0.45;
+              k===0 ? ctx.moveTo(Math.cos(ang)*r, Math.sin(ang)*r)
+                    : ctx.lineTo(Math.cos(ang)*r, Math.sin(ang)*r);
+            }
+            ctx.closePath();
+            ctx.fillStyle = '#ff2255'; ctx.fill();
+            ctx.strokeStyle = '#ff6688'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.restore();
+          }
+
+          // Particles
+          for (const pt of g.particles) {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, pt.life);
+            drawGlow(ctx, pt.col, 10);
+            ctx.fillStyle = pt.col;
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size*pt.life, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+          }
+
+          // Player
+          ctx.save();
+          // Speed trail
+          for (let i = 5; i >= 1; i--) {
+            ctx.globalAlpha = (6-i)*0.04;
+            ctx.beginPath();
+            ctx.arc(p.x - p.vx*i*1.4, p.y - p.vy*i*1.4, p.r*(1-i*0.12), 0, Math.PI*2);
+            ctx.fillStyle = '#00ffff'; ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+          // Glow halo
+          const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r*2.2);
+          pg.addColorStop(0, 'rgba(0,255,255,0.5)');
+          pg.addColorStop(1, 'rgba(0,180,255,0)');
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r*2.2, 0, Math.PI*2);
+          ctx.fillStyle = pg; ctx.fill();
+          // Core
+          drawGlow(ctx, '#00ffff', 28);
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+          ctx.fillStyle = '#00ffff'; ctx.fill();
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.restore();
+
+          // HUD overlay
+          drawHUD(ctx, W, H, g, t);
+        }
+
+        // Initialize showing start screen
+        gRef.current = null; // null = show start screen
+
+        raf = requestAnimationFrame(loop);
+        return () => {
+          cancelAnimationFrame(raf);
+          window.removeEventListener('resize', resize);
+        };
+      }, []);
+
+      return <canvas ref={canvasRef} style={{ display:'block', width:'100%', height:'100%' }} />;
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<PendulumRush />);
+  </script>
+</body>
+</html>

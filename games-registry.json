@@ -544,5 +544,19 @@
     "folder": "games/2026-03-26",
     "file": "games/2026-03-26/index.html",
     "preview": "games/2026-03-26/preview.png"
+  },
+  {
+    "id": "2026-03-28",
+    "name": "Pendulum Rush",
+    "date": "2026-03-28",
+    "description": "Swing a glowing neon ball on a rope between anchor points — click to attach and detach, chain orb collections for massive combo multipliers, and dodge spinning spike enemies before they take your last life!",
+    "tagline": "Swing the rope. Collect the orbs. Don't get spiked.",
+    "tags": ["physics", "action", "reflex", "arcade", "swinging"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap / Space to attach rope to nearest anchor — click again to release",
+    "folder": "games/2026-03-28",
+    "file": "games/2026-03-28/index.html",
+    "preview": "games/2026-03-28/preview.png"
   }
 ]
