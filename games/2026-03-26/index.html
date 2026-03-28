@@ -393,6 +393,11 @@
         const resize = () => {
           canvas.width  = Math.min(window.innerWidth, 520);
           canvas.height = window.innerHeight;
+          // Keep game state in sync so cannon stays at bottom
+          if (stateRef.current) {
+            stateRef.current.W = canvas.width;
+            stateRef.current.H = canvas.height;
+          }
         };
         resize();
         window.addEventListener('resize', resize);
@@ -476,9 +481,22 @@
       // ── Handlers ─────────────────────────────────────────────────────────────
       const onMove  = (e) => { if (stateRef.current?.phase === 'playing') aimAt(e.clientX, e.clientY); };
       const onClick = (e) => { if (stateRef.current?.phase === 'playing') { aimAt(e.clientX, e.clientY); shoot(); } };
-      const onTouch = (e) => {
+      // Touch: aim while holding, shoot on release
+      const onTouchStart = (e) => {
         e.preventDefault();
         const t = e.touches[0] || e.changedTouches[0];
+        if (!t) return;
+        if (stateRef.current?.phase === 'playing') aimAt(t.clientX, t.clientY);
+      };
+      const onTouchMove = (e) => {
+        e.preventDefault();
+        const t = e.touches[0] || e.changedTouches[0];
+        if (!t) return;
+        if (stateRef.current?.phase === 'playing') aimAt(t.clientX, t.clientY);
+      };
+      const onTouchEnd = (e) => {
+        e.preventDefault();
+        const t = e.changedTouches[0];
         if (!t) return;
         if (stateRef.current?.phase === 'playing') { aimAt(t.clientX, t.clientY); shoot(); }
       };
@@ -500,7 +518,9 @@
           <div style={{ position:'relative', width:'100%', maxWidth:520 }}>
             <canvas ref={canvasRef}
               onMouseMove={onMove} onClick={onClick}
-              onTouchStart={onTouch}
+              onTouchStart={onTouchStart}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
               style={{ cursor:'crosshair', touchAction:'none', display:'block' }}
             />
 
@@ -515,7 +535,8 @@
                 </div>
                 <div style={{ fontSize:14, color:'rgba(255,255,255,0.55)', lineHeight:1.8,
                   textAlign:'center', marginBottom:32 }}>
-                  Move mouse to aim · Click or tap to shoot<br/>
+                  Move mouse to aim · Click to shoot<br/>
+                  Touch and hold to aim · Release to shoot<br/>
                   Chain pop combos for massive multipliers!<br/>
                   New row added every 8 shots — don't let them reach the danger line!
                 </div>
