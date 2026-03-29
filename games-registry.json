@@ -558,5 +558,19 @@
     "folder": "games/2026-03-28",
     "file": "games/2026-03-28/index.html",
     "preview": "games/2026-03-28/preview.png"
+  },
+  {
+    "id": "2026-03-29",
+    "name": "Ricochet Rush",
+    "date": "2026-03-29",
+    "description": "Fire bouncing neon bullets off the walls to blast glowing targets — aim carefully, chain consecutive hits for massive combo multipliers, and rack up the highest score in 90 seconds!",
+    "tagline": "Bounce bullets. Hit targets. Chain the combos!",
+    "tags": ["action", "reflex", "physics", "arcade", "precision"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse to aim · Click / Tap above cannon to fire bouncing bullet",
+    "folder": "games/2026-03-29",
+    "file": "games/2026-03-29/index.html",
+    "preview": "games/2026-03-29/preview.png"
   }
 ]
