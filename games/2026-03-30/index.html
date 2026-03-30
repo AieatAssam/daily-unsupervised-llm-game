@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chromagate</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050010; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    // --- Neon color palette ---
+    const COLORS = [
+      { hex: '#00ffff', glow: 'rgba(0,255,255,0.6)',  dark: 'rgba(0,200,200,0.3)' },
+      { hex: '#ff00ff', glow: 'rgba(255,0,255,0.6)',  dark: 'rgba(200,0,200,0.3)' },
+      { hex: '#ffff00', glow: 'rgba(255,255,0,0.6)',  dark: 'rgba(200,200,0,0.3)'  },
+      { hex: '#ff6600', glow: 'rgba(255,102,0,0.6)', dark: 'rgba(200,80,0,0.3)'   },
+      { hex: '#00ff66', glow: 'rgba(0,255,102,0.6)', dark: 'rgba(0,200,80,0.3)'   },
+      { hex: '#cc00ff', glow: 'rgba(204,0,255,0.6)', dark: 'rgba(160,0,200,0.3)'  },
+    ];
+
+    const WHEEL_R   = 130;
+    const ORB_R     = 14;
+    const INIT_SEGS = 4;
+    const INIT_SPD  = 160;  // px/s
+    const HS_KEY    = 'chromagate_highScore';
+
+    // Initialize localStorage on load so it's available immediately
+    if (!localStorage.getItem(HS_KEY)) localStorage.setItem(HS_KEY, '0');
+
+    // Audio helpers
+    function makeCtx() {
+      try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+    }
+    function beep(ac, freq, type = 'sine', dur = 0.25, vol = 0.3) {
+      if (!ac) return;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+      o.start(); o.stop(ac.currentTime + dur);
+    }
+    function playMatch(ac, colorIdx, combo) {
+      beep(ac, 300 + colorIdx * 70 + Math.min(combo * 40, 280), 'sine', 0.3, 0.35);
+    }
+    function playMiss(ac) {
+      beep(ac, 120, 'sawtooth', 0.4, 0.4);
+    }
+    function playLevelUp(ac) {
+      [440, 550, 660].forEach((f, i) => {
+        setTimeout(() => beep(ac, f, 'square', 0.18, 0.25), i * 80);
+      });
+    }
+
+    // Which segment index is at the top (12 o'clock) of the wheel?
+    function topSegIdx(wheelAngle, n) {
+      const seg = (2 * Math.PI) / n;
+      const top = -Math.PI / 2;
+      let norm = ((top - wheelAngle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+      return Math.floor(norm / seg) % n;
+    }
+
+    function spawnParticles(particles, x, y, color, n = 18) {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * 2 * Math.PI;
+        const s = 60 + Math.random() * 180;
+        particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+          life: 1, maxLife: 0.45 + Math.random()*0.45,
+          color: color.hex, r: 2 + Math.random()*4 });
+      }
+    }
+
+    function spawnOrb(state) {
+      const ci = Math.floor(Math.random() * state.numSegs);
+      state.orbs.push({
+        id: Math.random(),
+        x: state.wx + (Math.random()-0.5)*20,
+        y: -ORB_R,
+        ci,
+        color: COLORS[ci],
+        speed: state.orbSpeed + (Math.random()-0.5)*30,
+        trail: [],
+      });
+    }
+
+    function resetGame(state) {
+      state.phase = 'playing';
+      state.score = 0;
+      state.lives = 3;
+      state.combo = 0;
+      state.wheelAngle = 0;
+      state.wheelVel = 0;
+      state.numSegs = INIT_SEGS;
+      state.orbSpeed = INIT_SPD;
+      state.spawnInterval = 2.0;
+      state.spawnTimer = 1.2;
+      state.orbs = [];
+      state.particles = [];
+      state.level = 1;
+      state.lastTime = null;
+      state.comboFade = 0;
+      state.lastScore = null;
+      state.scorePopups = [];
+      state.bgPhase = 0;
+    }
+
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const stateRef  = useRef({
+        phase: 'start',
+        score: 0,
+        highScore: parseInt(localStorage.getItem(HS_KEY) || '0'),
+        lives: 3,
+        combo: 0,
+        wheelAngle: 0,
+        wheelVel: 0,
+        numSegs: INIT_SEGS,
+        orbSpeed: INIT_SPD,
+        spawnInterval: 2.0,
+        spawnTimer: 0,
+        orbs: [],
+        particles: [],
+        scorePopups: [],
+        level: 1,
+        lastTime: null,
+        comboFade: 0,
+        bgPhase: 0,
+        width: 0, height: 0,
+        wx: 0, wy: 0,
+        keyLeft: false, keyRight: false,
+        audioCtx: null,
+        touches: {},
+      });
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const S = stateRef.current;
+
+        function resize() {
+          canvas.width  = window.innerWidth;
+          canvas.height = window.innerHeight;
+          S.width  = canvas.width;
+          S.height = canvas.height;
+          S.wx     = canvas.width / 2;
+          S.wy     = canvas.height * 0.62;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ---- UPDATE ----
+        function update(dt) {
+          if (S.phase !== 'playing') return;
+
+          // BG
+          S.bgPhase += dt * 0.4;
+
+          // Wheel rotation
+          const ROT = 4.0;
+          if (S.keyLeft)       S.wheelVel = -ROT;
+          else if (S.keyRight) S.wheelVel =  ROT;
+          else                 S.wheelVel *= Math.pow(0.05, dt);
+          S.wheelAngle += S.wheelVel * dt;
+
+          // Spawn
+          S.spawnTimer += dt;
+          if (S.spawnTimer >= S.spawnInterval) {
+            S.spawnTimer = 0;
+            spawnOrb(S);
+            if (S.level >= 5 && Math.random() < 0.35) spawnOrb(S);
+          }
+
+          // Orbs
+          const hitY = S.wy - WHEEL_R;
+          for (let i = S.orbs.length - 1; i >= 0; i--) {
+            const orb = S.orbs[i];
+            orb.trail.unshift({ x: orb.x, y: orb.y });
+            if (orb.trail.length > 8) orb.trail.pop();
+            orb.y += orb.speed * dt;
+
+            if (orb.y >= hitY) {
+              const topIdx = topSegIdx(S.wheelAngle, S.numSegs);
+              if (topIdx === orb.ci) {
+                // Match!
+                S.combo++;
+                const pts = 100 * S.combo;
+                S.score += pts;
+                S.scorePopups.push({ x: S.wx, y: hitY - 20, text: `+${pts}`, life: 1, color: orb.color.hex });
+                spawnParticles(S.particles, S.wx, hitY, orb.color, 22);
+                playMatch(S.audioCtx, orb.ci, S.combo);
+              } else {
+                // Miss
+                S.combo = 0;
+                S.lives--;
+                spawnParticles(S.particles, S.wx, hitY, { hex: '#ff3344' }, 12);
+                playMiss(S.audioCtx);
+                if (S.lives <= 0) endGame();
+              }
+              S.comboFade = 1.5;
+              S.orbs.splice(i, 1);
+              continue;
+            }
+            // Fell past wheel
+            if (orb.y > S.wy + 60) {
+              S.combo = 0;
+              S.lives--;
+              playMiss(S.audioCtx);
+              if (S.lives <= 0) endGame();
+              S.orbs.splice(i, 1);
+            }
+          }
+
+          // Particles
+          for (let i = S.particles.length - 1; i >= 0; i--) {
+            const p = S.particles[i];
+            p.x += p.vx * dt; p.y += p.vy * dt;
+            p.vy += 220 * dt;
+            p.vx *= Math.pow(0.7, dt);
+            p.life -= dt / p.maxLife;
+            if (p.life <= 0) S.particles.splice(i, 1);
+          }
+
+          // Score popups
+          for (let i = S.scorePopups.length - 1; i >= 0; i--) {
+            const sp = S.scorePopups[i];
+            sp.y -= 60 * dt;
+            sp.life -= dt * 1.5;
+            if (sp.life <= 0) S.scorePopups.splice(i, 1);
+          }
+
+          // Combo fade
+          if (S.comboFade > 0) S.comboFade -= dt;
+
+          // Level up
+          const newLevel = Math.floor(S.score / 1200) + 1;
+          if (newLevel > S.level) {
+            S.level = newLevel;
+            S.orbSpeed    = INIT_SPD + (S.level - 1) * 28;
+            S.spawnInterval = Math.max(0.7, 2.0 - (S.level - 1) * 0.12);
+            if (S.level % 3 === 0 && S.numSegs < COLORS.length) S.numSegs++;
+            playLevelUp(S.audioCtx);
+          }
+        }
+
+        function endGame() {
+          S.phase = 'gameover';
+          if (S.score > S.highScore) {
+            S.highScore = S.score;
+            localStorage.setItem(HS_KEY, String(S.score));
+          }
+        }
+
+        // ---- DRAW ----
+        function draw() {
+          const { width: W, height: H, wx, wy } = S;
+          ctx.clearRect(0, 0, W, H);
+
+          // Animated gradient bg
+          const bg = ctx.createRadialGradient(wx, wy, 50, wx, H*0.3, H);
+          const hue1 = (260 + Math.sin(S.bgPhase)*30)|0;
+          const hue2 = (180 + Math.cos(S.bgPhase*0.7)*40)|0;
+          bg.addColorStop(0, `hsl(${hue1},80%,4%)`);
+          bg.addColorStop(1, `hsl(${hue2},60%,3%)`);
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, W, H);
+
+          // Grid
+          ctx.save();
+          ctx.strokeStyle = 'rgba(120,0,200,0.1)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < W; x += 44) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+          for (let y = 0; y < H; y += 44) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+          ctx.restore();
+
+          drawParticles(ctx, S);
+          if (S.phase === 'start') { drawStart(ctx, S); return; }
+          drawWheel(ctx, S);
+          drawOrbs(ctx, S);
+          drawScorePopups(ctx, S);
+          drawHUD(ctx, S);
+          if (S.phase === 'gameover') drawGameOver(ctx, S);
+        }
+
+        function drawParticles(ctx, S) {
+          for (const p of S.particles) {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.shadowBlur = 14; ctx.shadowColor = p.color;
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        function drawWheel(ctx, S) {
+          const { wx, wy, numSegs, wheelAngle } = S;
+          const seg = (2 * Math.PI) / numSegs;
+
+          // Outer glow ring
+          ctx.save();
+          ctx.shadowBlur = 35;
+          ctx.shadowColor = 'rgba(180,0,255,0.5)';
+          ctx.strokeStyle = 'rgba(180,0,255,0.35)';
+          ctx.lineWidth = 6;
+          ctx.beginPath(); ctx.arc(wx, wy, WHEEL_R + 6, 0, Math.PI*2); ctx.stroke();
+          ctx.restore();
+
+          // Segments
+          for (let i = 0; i < numSegs; i++) {
+            const sa = wheelAngle + i * seg;
+            const ea = sa + seg;
+            const c  = COLORS[i % COLORS.length];
+            ctx.save();
+            ctx.shadowBlur = 18; ctx.shadowColor = c.glow;
+            ctx.beginPath(); ctx.moveTo(wx, wy); ctx.arc(wx, wy, WHEEL_R, sa, ea); ctx.closePath();
+            ctx.fillStyle = c.dark; ctx.fill();
+            ctx.strokeStyle = c.hex; ctx.lineWidth = 2.5; ctx.stroke();
+            ctx.restore();
+
+            // Label inside segment
+            const midA = sa + seg / 2;
+            const lx   = wx + Math.cos(midA) * (WHEEL_R * 0.6);
+            const ly   = wy + Math.sin(midA) * (WHEEL_R * 0.6);
+            ctx.save();
+            ctx.fillStyle = c.hex;
+            ctx.shadowBlur = 8; ctx.shadowColor = c.hex;
+            ctx.font = `bold ${Math.max(12, 22 - numSegs)}px Courier New`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('●', lx, ly);
+            ctx.restore();
+          }
+
+          // Center hub
+          ctx.save();
+          ctx.shadowBlur = 25; ctx.shadowColor = '#ffffff';
+          ctx.beginPath(); ctx.arc(wx, wy, 22, 0, Math.PI*2);
+          ctx.fillStyle = '#0a001a'; ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.restore();
+
+          // Top indicator arrow
+          const arrowTip = wy - WHEEL_R - 4;
+          ctx.save();
+          ctx.shadowBlur = 18; ctx.shadowColor = '#ffffff';
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.moveTo(wx, arrowTip);
+          ctx.lineTo(wx - 13, arrowTip - 22);
+          ctx.lineTo(wx + 13, arrowTip - 22);
+          ctx.closePath(); ctx.fill();
+          ctx.restore();
+        }
+
+        function drawOrbs(ctx, S) {
+          for (const orb of S.orbs) {
+            // Trail
+            for (let t = 0; t < orb.trail.length; t++) {
+              const pt = orb.trail[t];
+              ctx.save();
+              ctx.globalAlpha = (1 - t / orb.trail.length) * 0.3;
+              ctx.shadowBlur = 8; ctx.shadowColor = orb.color.hex;
+              ctx.fillStyle = orb.color.hex;
+              ctx.beginPath(); ctx.arc(pt.x, pt.y, ORB_R * (1 - t/orb.trail.length) * 0.7, 0, Math.PI*2); ctx.fill();
+              ctx.restore();
+            }
+            // Orb body
+            ctx.save();
+            ctx.shadowBlur = 24; ctx.shadowColor = orb.color.glow;
+            const grad = ctx.createRadialGradient(orb.x - ORB_R*0.3, orb.y - ORB_R*0.3, 1, orb.x, orb.y, ORB_R);
+            grad.addColorStop(0, '#ffffff');
+            grad.addColorStop(0.3, orb.color.hex);
+            grad.addColorStop(1, orb.color.dark || orb.color.hex);
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(orb.x, orb.y, ORB_R, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        function drawScorePopups(ctx, S) {
+          for (const sp of S.scorePopups) {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, sp.life);
+            ctx.fillStyle = sp.color;
+            ctx.shadowBlur = 12; ctx.shadowColor = sp.color;
+            ctx.font = 'bold 22px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText(sp.text, sp.x, sp.y);
+            ctx.restore();
+          }
+        }
+
+        function drawHUD(ctx, S) {
+          const { width: W } = S;
+          ctx.save();
+
+          // Score
+          ctx.textAlign = 'center';
+          ctx.font = 'bold 30px Courier New';
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowBlur = 12; ctx.shadowColor = '#aa00ff';
+          ctx.fillText(`${S.score}`, W / 2, 42);
+
+          ctx.font = '15px Courier New';
+          ctx.fillStyle = '#9966cc';
+          ctx.shadowBlur = 0;
+          ctx.fillText(`BEST ${S.highScore}`, W / 2, 62);
+
+          // Lives
+          ctx.textAlign = 'left';
+          ctx.font = 'bold 22px Courier New';
+          ctx.shadowBlur = 10;
+          for (let i = 0; i < 3; i++) {
+            ctx.fillStyle = i < S.lives ? '#ff4466' : '#330022';
+            ctx.shadowColor = i < S.lives ? '#ff4466' : 'transparent';
+            ctx.fillText('♥', 18 + i * 28, 42);
+          }
+
+          // Level
+          ctx.textAlign = 'right';
+          ctx.fillStyle = '#ffaa00';
+          ctx.shadowColor = '#ffaa00';
+          ctx.font = 'bold 18px Courier New';
+          ctx.fillText(`LVL ${S.level}`, W - 18, 42);
+
+          ctx.font = '13px Courier New';
+          ctx.fillStyle = '#886600';
+          ctx.shadowBlur = 0;
+          ctx.fillText(`${S.numSegs} colors`, W - 18, 62);
+
+          // Combo
+          if (S.combo >= 2 && S.comboFade > 0) {
+            ctx.textAlign = 'center';
+            const hue = (S.combo * 35) % 360;
+            ctx.fillStyle = `hsl(${hue},100%,65%)`;
+            ctx.shadowColor = ctx.fillStyle;
+            ctx.shadowBlur = 20;
+            const sz = Math.min(16 + S.combo * 4, 40);
+            ctx.font = `bold ${sz}px Courier New`;
+            ctx.globalAlpha = Math.min(1, S.comboFade);
+            ctx.fillText(`✦ ${S.combo}x COMBO! ✦`, W/2, S.height - 50);
+          }
+
+          // Controls hint at bottom
+          ctx.globalAlpha = 0.4;
+          ctx.textAlign = 'center';
+          ctx.font = '13px Courier New';
+          ctx.fillStyle = '#aaaaaa';
+          ctx.shadowBlur = 0;
+          ctx.fillText('← → / A D  or  swipe to rotate wheel', W/2, S.height - 16);
+
+          ctx.restore();
+        }
+
+        function drawStart(ctx, S) {
+          const { width: W, height: H } = S;
+          // Demo wheel
+          const cx = W/2, cy = H*0.55;
+          const seg = (Math.PI*2) / 4;
+          for (let i = 0; i < 4; i++) {
+            const c = COLORS[i];
+            ctx.save();
+            ctx.shadowBlur = 22; ctx.shadowColor = c.glow;
+            ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, 90, i*seg, (i+1)*seg); ctx.closePath();
+            ctx.fillStyle = c.dark; ctx.fill();
+            ctx.strokeStyle = c.hex; ctx.lineWidth = 2.5; ctx.stroke();
+            ctx.restore();
+          }
+          ctx.save();
+          ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI*2);
+          ctx.fillStyle = '#0a001a'; ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+
+          // Demo orb
+          const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.004);
+          ctx.shadowBlur = 20; ctx.shadowColor = COLORS[1].glow;
+          ctx.fillStyle = COLORS[1].hex;
+          ctx.beginPath(); ctx.arc(cx, cy - 90 - 30 - pulse*10, ORB_R, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+
+          // Title
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.font = 'bold 52px Courier New';
+          ctx.shadowBlur = 30; ctx.shadowColor = '#aa00ff';
+          const tg = ctx.createLinearGradient(W/2 - 150, 0, W/2 + 150, 0);
+          tg.addColorStop(0, '#00ffff'); tg.addColorStop(0.5, '#ff00ff'); tg.addColorStop(1, '#ffff00');
+          ctx.fillStyle = tg;
+          ctx.fillText('CHROMAGATE', W/2, H*0.2);
+
+          ctx.font = '19px Courier New';
+          ctx.fillStyle = '#ccaaff';
+          ctx.shadowBlur = 8;
+          ctx.fillText('Rotate the wheel · Match the falling orb', W/2, H*0.2 + 38);
+
+          ctx.font = '15px Courier New';
+          ctx.fillStyle = '#887799';
+          ctx.shadowBlur = 0;
+          ctx.fillText('← → or A/D to rotate  ·  swipe on mobile', W/2, H*0.2 + 64);
+
+          const glow = 0.6 + 0.4*Math.sin(Date.now()*0.003);
+          ctx.globalAlpha = glow;
+          ctx.font = 'bold 24px Courier New';
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowBlur = 18; ctx.shadowColor = '#00ffff';
+          ctx.fillText('▶  TAP OR CLICK TO START  ◀', W/2, H - 38);
+          ctx.restore();
+        }
+
+        function drawGameOver(ctx, S) {
+          const { width: W, height: H } = S;
+          ctx.save();
+          ctx.fillStyle = 'rgba(3,0,12,0.8)';
+          ctx.fillRect(0, 0, W, H);
+
+          ctx.textAlign = 'center';
+          ctx.font = 'bold 56px Courier New';
+          ctx.shadowBlur = 35; ctx.shadowColor = '#ff0044';
+          ctx.fillStyle = '#ff0044';
+          ctx.fillText('GAME OVER', W/2, H/2 - 80);
+
+          ctx.font = '30px Courier New';
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = '#aa00ff';
+          ctx.shadowBlur = 15;
+          ctx.fillText(`Score: ${S.score}`, W/2, H/2 - 20);
+
+          ctx.font = '22px Courier New';
+          ctx.fillStyle = '#ffaa00';
+          ctx.shadowColor = '#ffaa00';
+          ctx.fillText(`Best: ${S.highScore}`, W/2, H/2 + 20);
+
+          const glow2 = 0.5 + 0.5*Math.sin(Date.now()*0.003);
+          ctx.globalAlpha = glow2;
+          ctx.font = 'bold 22px Courier New';
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = 18;
+          ctx.fillText('TAP OR CLICK TO PLAY AGAIN', W/2, H/2 + 90);
+          ctx.restore();
+        }
+
+        // ---- LOOP ----
+        let rafId;
+        function loop(ts) {
+          const S = stateRef.current;
+          if (!S.lastTime) S.lastTime = ts;
+          const dt = Math.min((ts - S.lastTime) / 1000, 0.05);
+          S.lastTime = ts;
+          update(dt);
+          draw();
+          rafId = requestAnimationFrame(loop);
+        }
+        rafId = requestAnimationFrame(loop);
+
+        // ---- INPUT ----
+        function startGame() {
+          const S = stateRef.current;
+          if (!S.audioCtx) { try { S.audioCtx = makeCtx(); } catch(e){} }
+          resetGame(S);
+        }
+
+        function onKeyDown(e) {
+          const S = stateRef.current;
+          if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') { S.keyLeft  = true; e.preventDefault(); }
+          if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { S.keyRight = true; e.preventDefault(); }
+          if ((e.key === ' ' || e.key === 'Enter') && S.phase !== 'playing') startGame();
+        }
+        function onKeyUp(e) {
+          const S = stateRef.current;
+          if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') S.keyLeft  = false;
+          if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') S.keyRight = false;
+        }
+        function onClick() {
+          const S = stateRef.current;
+          if (S.phase !== 'playing') startGame();
+        }
+
+        let lastTouchX = null;
+        function onTouchStart(e) {
+          const S = stateRef.current;
+          if (S.phase !== 'playing') { startGame(); return; }
+          lastTouchX = e.touches[0].clientX;
+        }
+        function onTouchMove(e) {
+          e.preventDefault();
+          const S = stateRef.current;
+          if (S.phase !== 'playing' || lastTouchX === null) return;
+          const dx = e.touches[0].clientX - lastTouchX;
+          lastTouchX = e.touches[0].clientX;
+          S.wheelVel = (dx / S.width) * 18;
+        }
+        function onTouchEnd() { lastTouchX = null; }
+
+        window.addEventListener('keydown',    onKeyDown);
+        window.addEventListener('keyup',      onKeyUp);
+        window.addEventListener('click',      onClick);
+        window.addEventListener('touchstart', onTouchStart, { passive: true });
+        window.addEventListener('touchmove',  onTouchMove,  { passive: false });
+        window.addEventListener('touchend',   onTouchEnd);
+
+        return () => {
+          cancelAnimationFrame(rafId);
+          window.removeEventListener('resize',     resize);
+          window.removeEventListener('keydown',    onKeyDown);
+          window.removeEventListener('keyup',      onKeyUp);
+          window.removeEventListener('click',      onClick);
+          window.removeEventListener('touchstart', onTouchStart);
+          window.removeEventListener('touchmove',  onTouchMove);
+          window.removeEventListener('touchend',   onTouchEnd);
+        };
+      }, []);
+
+      return <canvas ref={canvasRef} />;
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Game />);
+  </script>
+</body>
+</html>
