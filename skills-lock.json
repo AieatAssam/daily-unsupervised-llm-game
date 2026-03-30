@@ -4,7 +4,7 @@
     "agent-browser": {
       "source": "vercel-labs/agent-browser",
       "sourceType": "github",
-      "computedHash": "0eafe0971692cf8fcecb75f955595821452a835791d315db738f89ee49063a34"
+      "computedHash": "3f0bdaf98d9d5af8530bd2644d287254b0c5264a3e857e4e883fffefd3ceeacf"
     }
   }
 }
