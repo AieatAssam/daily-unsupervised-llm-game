@@ -586,5 +586,19 @@
     "folder": "games/2026-03-30",
     "file": "games/2026-03-30/index.html",
     "preview": "games/2026-03-30/preview.png"
+  },
+  {
+    "id": "2026-03-31",
+    "name": "Sequence Rush",
+    "date": "2026-03-31",
+    "description": "Neon numbered orbs are scattered randomly across the screen — click them in ascending order (1, 2, 3…) as fast as you can before the countdown expires! Chain perfect clicks for massive combo multipliers and race for the highest score across escalating rounds!",
+    "tagline": "Find the numbers. Click in order. Beat the clock!",
+    "tags": ["reflex", "precision", "puzzle", "casual", "sequential"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap numbered orbs in ascending order",
+    "folder": "games/2026-03-31",
+    "file": "games/2026-03-31/index.html",
+    "preview": "games/2026-03-31/preview.png"
   }
 ]

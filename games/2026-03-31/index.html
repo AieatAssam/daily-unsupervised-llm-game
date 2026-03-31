@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sequence Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050010; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    // ─── HIGH SCORE KEY (must contain 'highScore' for test detection) ───
+    const HS_KEY = 'seqRush_highScore';
+    if (!localStorage.getItem(HS_KEY)) localStorage.setItem(HS_KEY, '0');
+
+    // ─── AUDIO ───────────────────────────────────────────────────────────
+    let _ac = null;
+    function getAC() {
+      if (!_ac) try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+      return _ac;
+    }
+    function beep(freq, vol, dur, type = 'sine') {
+      const ac = getAC(); if (!ac) return;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+      o.start(ac.currentTime); o.stop(ac.currentTime + dur);
+    }
+    function sfxHit(n, max) {
+      const f = 280 + (n / max) * 520;
+      beep(f, 0.12, 0.18, 'sine');
+      beep(f * 1.25, 0.06, 0.12, 'triangle');
+    }
+    function sfxWrong() { beep(90, 0.22, 0.28, 'sawtooth'); }
+    function sfxRound() {
+      [[523, 0], [659, 90], [784, 180], [1047, 280]].forEach(([f, d]) =>
+        setTimeout(() => beep(f, 0.14, 0.35), d)
+      );
+    }
+
+    // ─── COLOUR HELPERS ──────────────────────────────────────────────────
+    function orbHue(v, max) {
+      return Math.round(160 + (v / max) * 220); // cyan → warm magenta
+    }
+    function orbColor(v, max) { return `hsl(${orbHue(v, max)},100%,62%)`; }
+
+    // ─── POLYFILL roundRect ───────────────────────────────────────────────
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+        r = Math.min(r, w / 2, h / 2);
+        this.moveTo(x + r, y);
+        this.lineTo(x + w - r, y);
+        this.quadraticCurveTo(x + w, y, x + w, y + r);
+        this.lineTo(x + w, y + h - r);
+        this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        this.lineTo(x + r, y + h);
+        this.quadraticCurveTo(x, y + h, x, y + h - r);
+        this.lineTo(x, y + r);
+        this.quadraticCurveTo(x, y, x + r, y);
+        this.closePath();
+      };
+    }
+
+    // ─── ORB LAYOUT ──────────────────────────────────────────────────────
+    function scatter(n, W, H, uiH, R) {
+      const pad = R + 14;
+      const minD = R * 2.9;
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        let x, y, ok, t = 0;
+        do {
+          x = pad + Math.random() * (W - 2 * pad);
+          y = uiH + pad + Math.random() * (H - uiH - pad - 10);
+          ok = pts.every(p => Math.hypot(p.x - x, p.y - y) > minD);
+          t++;
+        } while (!ok && t < 500);
+        pts.push({ x, y });
+      }
+      return pts.map((p, i) => ({
+        val: i + 1,
+        x: p.x, y: p.y,
+        r: R,
+        alive: true,
+        clickAnim: -1, // -1=not popping; 0..1=popping
+        wrongAnim: 0,  // >0=wrong flash countdown
+        pulse: Math.random() * Math.PI * 2,
+      }));
+    }
+
+    // ─── MAIN COMPONENT ──────────────────────────────────────────────────
+    function App() {
+      const canvasRef = useRef(null);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const W = canvas.width  = window.innerWidth;
+        const H = canvas.height = window.innerHeight;
+        const ctx = canvas.getContext('2d');
+
+        const UI_H = 88;
+        const ORB_R = Math.max(24, Math.min(38, W * 0.052));
+
+        const countFor = r => Math.min(10 + (r - 1) * 3, 25);
+        const timeFor  = r => Math.max(18, 44 - (r - 1) * 2);
+
+        // ── Game state ──────────────────────────────────────────────────
+        const G = {
+          phase: 'title',    // title | playing | roundClear | gameOver
+          orbs: [],
+          target: 1,
+          round: 1,
+          score: 0,
+          combo: 0,
+          timeLeft: 40,
+          maxTime: 40,
+          particles: [],
+          floats: [],
+          best: +(localStorage.getItem(HS_KEY) || 0),
+          flashBad: 0,       // red flash on wrong
+          flashGood: 0,      // green flash on correct
+          roundClearTimer: 0,
+          // decorative title orbs
+          titleOrbs: Array.from({ length: 9 }, (_, i) => ({
+            val: i + 1,
+            x: (0.07 + i * 0.11) * W,
+            y: H * 0.28 + Math.sin(i * 1.1) * H * 0.12,
+            r: ORB_R,
+            phase: i * 0.7,
+          })),
+        };
+
+        function launchRound(r) {
+          G.round = r;
+          G.target = 1;
+          G.combo = 0;
+          G.timeLeft = timeFor(r);
+          G.maxTime = timeFor(r);
+          G.orbs = scatter(countFor(r), W, H, UI_H, ORB_R);
+          G.particles = [];
+          G.floats = [];
+          G.phase = 'playing';
+        }
+
+        function startGame() {
+          G.score = 0;
+          launchRound(1);
+        }
+
+        function burst(x, y, hue, count = 22) {
+          for (let i = 0; i < count; i++) {
+            const a = (i / count) * Math.PI * 2 + Math.random() * 0.35;
+            const s = 55 + Math.random() * 170;
+            G.particles.push({
+              x, y,
+              vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40,
+              c: `hsl(${hue + Math.random() * 50 - 25},100%,65%)`,
+              r: 3 + Math.random() * 5, life: 1,
+            });
+          }
+        }
+
+        // ── Input ────────────────────────────────────────────────────────
+        function onInput(cx, cy) {
+          if (G.phase === 'title' || G.phase === 'gameOver') {
+            startGame();
+            return;
+          }
+          if (G.phase !== 'playing') return;
+
+          let hit = false;
+          for (const orb of G.orbs) {
+            if (!orb.alive) continue;
+            if (Math.hypot(orb.x - cx, orb.y - cy) <= orb.r * 1.35) {
+              hit = true;
+              if (orb.val === G.target) {
+                // ── Correct ──
+                sfxHit(orb.val, G.orbs.length);
+                burst(orb.x, orb.y, orbHue(orb.val, G.orbs.length));
+                orb.alive = false;
+                orb.clickAnim = 1;
+                G.combo++;
+                const pts = 10 * Math.min(G.combo, 10);
+                G.score += pts;
+                G.flashGood = 0.15;
+                G.floats.push({
+                  x: orb.x, y: orb.y,
+                  text: `+${pts}`,
+                  hue: orbHue(orb.val, G.orbs.length),
+                  life: 1.1, big: false,
+                });
+                G.target++;
+                // ── Round complete? ──
+                if (G.target > G.orbs.length) {
+                  sfxRound();
+                  const bonus = Math.round(G.timeLeft * 5);
+                  G.score += bonus;
+                  if (G.score > G.best) {
+                    G.best = G.score;
+                    localStorage.setItem(HS_KEY, G.best.toString());
+                  }
+                  if (bonus > 0) {
+                    G.floats.push({
+                      x: W / 2, y: H / 2 + 50,
+                      text: `TIME BONUS +${bonus}`,
+                      hue: 120, life: 1.8, big: true,
+                    });
+                  }
+                  G.roundClearTimer = 1.9;
+                  G.phase = 'roundClear';
+                }
+              } else {
+                // ── Wrong ──
+                sfxWrong();
+                G.combo = 0;
+                G.flashBad = 0.28;
+                orb.wrongAnim = 0.5;
+              }
+              break;
+            }
+          }
+        }
+
+        function handleClick(e) {
+          e.preventDefault();
+          const rect = canvas.getBoundingClientRect();
+          const src  = e.touches ? e.touches[0] : e;
+          onInput(src.clientX - rect.left, src.clientY - rect.top);
+        }
+
+        canvas.addEventListener('click', handleClick);
+        canvas.addEventListener('touchstart', handleClick, { passive: false });
+
+        // ── Update ───────────────────────────────────────────────────────
+        function update(dt) {
+          // Particles
+          for (const p of G.particles) {
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.vy += 220 * dt;
+            p.life -= dt * 1.5;
+          }
+          G.particles = G.particles.filter(p => p.life > 0);
+
+          // Floats
+          for (const f of G.floats) {
+            f.y -= 55 * dt;
+            f.life -= dt * (f.big ? 0.7 : 1.3);
+          }
+          G.floats = G.floats.filter(f => f.life > 0);
+
+          // Orb animations
+          for (const orb of G.orbs) {
+            if (orb.clickAnim >= 0) {
+              orb.clickAnim -= dt * 2.8;
+            }
+            if (orb.wrongAnim > 0) orb.wrongAnim -= dt * 2.5;
+            orb.pulse += dt * (orb.val === G.target ? 4 : 1.5);
+          }
+
+          // Flash timers
+          if (G.flashBad  > 0) G.flashBad  -= dt * 4;
+          if (G.flashGood > 0) G.flashGood -= dt * 8;
+
+          // Countdown
+          if (G.phase === 'playing') {
+            G.timeLeft -= dt;
+            if (G.timeLeft <= 0) {
+              G.timeLeft = 0;
+              G.phase = 'gameOver';
+              if (G.score > G.best) {
+                G.best = G.score;
+                localStorage.setItem(HS_KEY, G.best.toString());
+              }
+            }
+          }
+
+          // Round-clear timer
+          if (G.phase === 'roundClear') {
+            G.roundClearTimer -= dt;
+            if (G.roundClearTimer <= 0) launchRound(G.round + 1);
+          }
+
+          // Title orbs float
+          for (const o of G.titleOrbs) {
+            o.phase += dt * 1.1;
+          }
+        }
+
+        // ── Draw helpers ─────────────────────────────────────────────────
+        function drawOrb(ctx, orb, maxVal) {
+          const col = orbColor(orb.val, maxVal);
+          const hue = orbHue(orb.val, maxVal);
+          const isTarget = orb.val === G.target && orb.alive;
+
+          let scale = 1, alpha = 1;
+          if (orb.clickAnim >= 0) {
+            // pop-out animation
+            const t = Math.max(0, orb.clickAnim);
+            scale = 1 + (1 - t) * 1.4;
+            alpha = t;
+          } else if (orb.wrongAnim > 0) {
+            scale = 1.1 + Math.sin(orb.wrongAnim * 22) * 0.08;
+          } else if (isTarget) {
+            scale = 1 + Math.sin(orb.pulse) * 0.08;
+          }
+
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha);
+          ctx.translate(orb.x, orb.y);
+          ctx.scale(scale, scale);
+
+          // Outer glow ring for target
+          if (isTarget) {
+            const gr = ctx.createRadialGradient(0, 0, orb.r * 0.8, 0, 0, orb.r * 3.8);
+            gr.addColorStop(0, `hsla(${hue},100%,62%,0.28)`);
+            gr.addColorStop(1, 'transparent');
+            ctx.fillStyle = gr;
+            ctx.beginPath();
+            ctx.arc(0, 0, orb.r * 3.8, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Fill
+          ctx.fillStyle = orb.wrongAnim > 0
+            ? 'rgba(255,50,50,0.3)'
+            : isTarget
+              ? `hsla(${hue},100%,62%,0.22)`
+              : `hsla(${hue},100%,62%,0.10)`;
+          ctx.beginPath();
+          ctx.arc(0, 0, orb.r, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Border
+          ctx.strokeStyle = orb.wrongAnim > 0 ? '#ff4444' : col;
+          ctx.lineWidth = isTarget ? 2.5 : 1.5;
+          ctx.shadowColor = orb.wrongAnim > 0 ? '#ff4444' : col;
+          ctx.shadowBlur = isTarget ? 22 : 8;
+          ctx.beginPath();
+          ctx.arc(0, 0, orb.r, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Number
+          if (alpha > 0.05) {
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = `bold ${Math.round(orb.r * 0.72)}px monospace`;
+            ctx.fillStyle = orb.wrongAnim > 0 ? '#ff5555' : col;
+            ctx.shadowColor = orb.wrongAnim > 0 ? '#ff4444' : col;
+            ctx.shadowBlur = isTarget ? 16 : 6;
+            ctx.fillText(orb.val, 0, 1);
+          }
+
+          ctx.restore();
+        }
+
+        function drawHUD() {
+          // Gradient top bar
+          const grad = ctx.createLinearGradient(0, 0, 0, UI_H);
+          grad.addColorStop(0, 'rgba(0,0,10,0.90)');
+          grad.addColorStop(1, 'rgba(0,0,10,0)');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, UI_H);
+
+          ctx.save();
+          ctx.textBaseline = 'top';
+
+          // Score (left)
+          ctx.textAlign = 'left';
+          ctx.font = '13px monospace';
+          ctx.fillStyle = '#666';
+          ctx.shadowBlur = 0;
+          ctx.fillText('SCORE', 16, 10);
+          ctx.font = 'bold 26px monospace';
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = 10;
+          ctx.fillText(G.score, 16, 26);
+
+          // Target indicator (center)
+          ctx.textAlign = 'center';
+          ctx.font = '13px monospace';
+          ctx.fillStyle = '#555';
+          ctx.shadowBlur = 0;
+          ctx.fillText(`ROUND ${G.round}`, W / 2, 10);
+          ctx.font = `bold 26px monospace`;
+          ctx.fillStyle = '#ffff00';
+          ctx.shadowColor = '#ffff00';
+          ctx.shadowBlur = 14;
+          ctx.fillText(`→ ${G.target} ←`, W / 2, 28);
+
+          // Timer (right)
+          const tc = G.timeLeft > 10 ? '#00ffff' : G.timeLeft > 5 ? '#ffff00' : '#ff4444';
+          ctx.textAlign = 'right';
+          ctx.font = '13px monospace';
+          ctx.fillStyle = '#666';
+          ctx.shadowBlur = 0;
+          ctx.fillText('TIME', W - 16, 10);
+          ctx.font = 'bold 26px monospace';
+          ctx.fillStyle = tc;
+          ctx.shadowColor = tc;
+          ctx.shadowBlur = G.timeLeft <= 5 ? 22 : 10;
+          ctx.fillText(`${Math.ceil(G.timeLeft)}s`, W - 16, 26);
+
+          // Combo (below timer)
+          if (G.combo >= 2) {
+            ctx.textAlign = 'right';
+            ctx.font = 'bold 14px monospace';
+            ctx.fillStyle = '#ff00ff';
+            ctx.shadowColor = '#ff00ff';
+            ctx.shadowBlur = 10;
+            ctx.fillText(`×${Math.min(G.combo, 10)} COMBO`, W - 16, 58);
+          }
+
+          ctx.restore();
+
+          // Timer bar
+          const barY = UI_H - 8;
+          const barW = W - 32;
+          const frac = Math.max(0, G.timeLeft / G.maxTime);
+          ctx.save();
+          ctx.fillStyle = 'rgba(255,255,255,0.07)';
+          ctx.beginPath();
+          ctx.roundRect(16, barY, barW, 4, 2);
+          ctx.fill();
+          ctx.fillStyle = tc;
+          ctx.shadowColor = tc;
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.roundRect(16, barY, Math.max(0, barW * frac), 4, 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        function drawTitle() {
+          const cx = W / 2, cy = H / 2;
+          const t = Date.now() / 1000;
+
+          // Floating decorative orbs
+          for (const o of G.titleOrbs) {
+            const col = orbColor(o.val, 9);
+            const hue = orbHue(o.val, 9);
+            const py  = o.y + Math.sin(o.phase * 0.6) * 18;
+            ctx.save();
+            ctx.globalAlpha = 0.25 + Math.sin(o.phase) * 0.12;
+            // glow
+            const gr = ctx.createRadialGradient(o.x, py, 0, o.x, py, o.r * 2.5);
+            gr.addColorStop(0, `hsla(${hue},100%,62%,0.3)`);
+            gr.addColorStop(1, 'transparent');
+            ctx.fillStyle = gr;
+            ctx.beginPath();
+            ctx.arc(o.x, py, o.r * 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            // circle
+            ctx.strokeStyle = col;
+            ctx.lineWidth = 1.5;
+            ctx.shadowColor = col;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(o.x, py, o.r, 0, Math.PI * 2);
+            ctx.stroke();
+            // number
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = `bold ${Math.round(o.r * 0.72)}px monospace`;
+            ctx.fillStyle = col;
+            ctx.fillText(o.val, o.x, py + 1);
+            ctx.restore();
+          }
+
+          // Title
+          const fs = Math.min(62, W * 0.12);
+          const glowHue = 160 + Math.sin(t * 0.9) * 55;
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          ctx.font = `900 ${fs}px monospace`;
+          ctx.shadowColor = `hsl(${glowHue},100%,65%)`;
+          ctx.shadowBlur = 32;
+          ctx.fillStyle = '#ffffff';
+          ctx.letterSpacing = '4px';
+          ctx.fillText('SEQUENCE', cx, cy - fs * 0.65);
+
+          ctx.shadowColor = `hsl(${glowHue + 100},100%,65%)`;
+          ctx.fillText('RUSH', cx, cy + fs * 0.1);
+          ctx.restore();
+
+          // Subtitle
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = '16px monospace';
+          ctx.fillStyle = '#555';
+          ctx.fillText('Tap numbers 1 → N in order. Race the clock!', cx, cy + fs * 0.8 + 8);
+          ctx.restore();
+
+          // Best score
+          if (G.best > 0) {
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = 'bold 22px monospace';
+            ctx.fillStyle = '#ff00bb';
+            ctx.shadowColor = '#ff00bb';
+            ctx.shadowBlur = 15;
+            ctx.fillText(`★ BEST: ${G.best}`, cx, cy + fs * 0.8 + 46);
+            ctx.restore();
+          }
+
+          // TAP TO START button
+          const by = cy + fs * 0.8 + (G.best > 0 ? 96 : 62);
+          const bw = 200, bh = 50;
+          const pulse = 0.82 + Math.sin(t * 2.8) * 0.18;
+          ctx.save();
+          ctx.globalAlpha = pulse;
+          ctx.strokeStyle = '#00ffff';
+          ctx.lineWidth = 2;
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = 20;
+          ctx.fillStyle = 'rgba(0,255,255,0.10)';
+          ctx.beginPath();
+          ctx.roundRect(cx - bw / 2, by - bh / 2, bw, bh, 28);
+          ctx.fill();
+          ctx.stroke();
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = 'bold 20px monospace';
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowBlur = 14;
+          ctx.fillText('TAP TO START', cx, by);
+          ctx.restore();
+        }
+
+        function drawPlaying() {
+          const max = G.orbs.length;
+          // Draw all orbs (including popping ones)
+          for (const orb of G.orbs) {
+            if (orb.clickAnim < -0.01 && !orb.alive) continue; // fully gone
+            drawOrb(ctx, orb, max);
+          }
+          drawHUD();
+        }
+
+        function drawRoundClear() {
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,20,0.55)';
+          ctx.fillRect(0, 0, W, H);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = `bold ${Math.min(44, W * 0.095)}px monospace`;
+          ctx.fillStyle = '#00ff88';
+          ctx.shadowColor = '#00ff88';
+          ctx.shadowBlur = 35;
+          ctx.fillText(`ROUND ${G.round} CLEAR!`, W / 2, H / 2 - 16);
+          ctx.restore();
+        }
+
+        function drawGameOver() {
+          const cx = W / 2, cy = H / 2;
+          const t = Date.now() / 1000;
+
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,10,0.90)';
+          ctx.fillRect(0, 0, W, H);
+
+          // TIME'S UP
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = `bold ${Math.min(50, W * 0.11)}px monospace`;
+          ctx.fillStyle = '#ff4444';
+          ctx.shadowColor = '#ff4444';
+          ctx.shadowBlur = 30;
+          ctx.fillText("TIME'S UP!", cx, cy - 110);
+
+          // Score label
+          ctx.font = '16px monospace';
+          ctx.fillStyle = '#666';
+          ctx.shadowBlur = 0;
+          ctx.fillText('FINAL SCORE', cx, cy - 50);
+
+          // Score value
+          ctx.font = `bold ${Math.min(60, W * 0.13)}px monospace`;
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = 22;
+          ctx.fillText(G.score, cx, cy + 5);
+
+          // New best
+          if (G.score > 0 && G.score >= G.best) {
+            ctx.font = 'bold 24px monospace';
+            ctx.fillStyle = '#ff00ff';
+            ctx.shadowColor = '#ff00ff';
+            ctx.shadowBlur = 22;
+            ctx.fillText('★  NEW BEST!  ★', cx, cy + 68);
+          }
+
+          // Stats
+          ctx.font = '16px monospace';
+          ctx.fillStyle = '#444';
+          ctx.shadowBlur = 0;
+          ctx.fillText(`Round ${G.round}  ·  Best: ${G.best}`, cx, cy + 110);
+
+          // Play again button
+          const by = cy + 162;
+          const bw = 210, bh = 50;
+          const pulse = 0.80 + Math.sin(t * 3) * 0.20;
+          ctx.globalAlpha = pulse;
+          ctx.strokeStyle = '#00ffff';
+          ctx.lineWidth = 2;
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = 20;
+          ctx.fillStyle = 'rgba(0,255,255,0.10)';
+          ctx.beginPath();
+          ctx.roundRect(cx - bw / 2, by - bh / 2, bw, bh, 28);
+          ctx.fill();
+          ctx.stroke();
+          ctx.font = 'bold 20px monospace';
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowBlur = 12;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('PLAY AGAIN', cx, by);
+          ctx.restore();
+        }
+
+        function drawParticles() {
+          for (const p of G.particles) {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, p.life * 0.9);
+            ctx.fillStyle = p.c;
+            ctx.shadowColor = p.c;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.max(0.5, p.r * Math.max(0, p.life)), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        function drawFloats() {
+          for (const f of G.floats) {
+            ctx.save();
+            ctx.globalAlpha = Math.min(1, f.life);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = `bold ${f.big ? 20 : 17}px monospace`;
+            ctx.fillStyle = `hsl(${f.hue},100%,65%)`;
+            ctx.shadowColor = `hsl(${f.hue},100%,65%)`;
+            ctx.shadowBlur = 12;
+            ctx.fillText(f.text, f.x, f.y);
+            ctx.restore();
+          }
+        }
+
+        // ── Main loop ────────────────────────────────────────────────────
+        let lastTs = 0;
+        let raf;
+
+        function loop(ts) {
+          const dt = Math.min((ts - lastTs) / 1000, 0.05);
+          lastTs = ts;
+
+          update(dt);
+
+          // Clear
+          ctx.fillStyle = '#050010';
+          ctx.fillRect(0, 0, W, H);
+
+          // Subtle grid
+          ctx.strokeStyle = 'rgba(80,0,160,0.07)';
+          ctx.lineWidth = 0.5;
+          for (let x = 0; x < W; x += 45) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+          }
+          for (let y = 0; y < H; y += 45) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+          }
+
+          // Draw phase
+          if (G.phase === 'title') {
+            drawTitle();
+          } else if (G.phase === 'playing' || G.phase === 'roundClear') {
+            drawPlaying();
+            if (G.phase === 'roundClear') drawRoundClear();
+          } else if (G.phase === 'gameOver') {
+            drawPlaying(); // show final orb state behind overlay
+            drawGameOver();
+          }
+
+          // Particles & floats always on top
+          drawParticles();
+          drawFloats();
+
+          // Screen flash overlays
+          if (G.flashBad > 0) {
+            ctx.fillStyle = `rgba(255,0,0,${Math.max(0, G.flashBad) * 0.7})`;
+            ctx.fillRect(0, 0, W, H);
+          }
+          if (G.flashGood > 0) {
+            ctx.fillStyle = `rgba(0,255,120,${Math.max(0, G.flashGood) * 0.45})`;
+            ctx.fillRect(0, 0, W, H);
+          }
+
+          raf = requestAnimationFrame(loop);
+        }
+
+        raf = requestAnimationFrame(loop);
+
+        return () => {
+          cancelAnimationFrame(raf);
+          canvas.removeEventListener('click', handleClick);
+          canvas.removeEventListener('touchstart', handleClick);
+        };
+      }, []);
+
+      return React.createElement('canvas', {
+        ref: canvasRef,
+        style: { display: 'block', cursor: 'pointer', touchAction: 'none' },
+      });
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      React.createElement(App)
+    );
+  </script>
+</body>
+</html>
