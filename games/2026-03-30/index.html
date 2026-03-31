@@ -598,7 +598,10 @@
           if (S.phase !== 'playing' || lastTouchX === null) return;
           const dx = e.touches[0].clientX - lastTouchX;
           lastTouchX = e.touches[0].clientX;
-          S.wheelVel = (dx / S.width) * 18;
+          // Direct rotation so the wheel follows the finger immediately:
+          // swiping half the screen width = one full rotation (2π radians)
+          S.wheelAngle += (dx / S.width) * Math.PI * 4;
+          S.wheelVel = 0;
         }
         function onTouchEnd() { lastTouchX = null; }
 

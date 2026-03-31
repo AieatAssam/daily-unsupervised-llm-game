@@ -427,7 +427,7 @@
           const angle = Math.atan2(gs.mouseY - cy, gs.mouseX - cx);
           ctx.save();
           ctx.translate(cx, cy);
-          ctx.rotate(angle);
+          ctx.rotate(angle + Math.PI / 2);
           ctx.shadowBlur = 28;
           ctx.shadowColor = '#00ffff';
           // Base glow circle
