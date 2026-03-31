@@ -308,7 +308,7 @@
         // Cannon barrel
         const cx = W/2, cy = H - 72;
         ctx.save();
-        ctx.translate(cx, cy); ctx.rotate(s.angle);
+        ctx.translate(cx, cy); ctx.rotate(s.angle + Math.PI / 2);
         ctx.shadowColor = '#00f5ff'; ctx.shadowBlur = 18;
         ctx.fillStyle = '#00f5ff';
         ctx.fillRect(-5, -R*2.3, 10, R*2.3);
