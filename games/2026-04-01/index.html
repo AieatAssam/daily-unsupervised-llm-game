@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spin Frenzy</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #080010; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    // ─── Audio helpers ─────────────────────────────────────────────────────────
+    let _audioCtx = null;
+    function getAudioCtx() {
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return _audioCtx;
+    }
+
+    function playSpinBoost() {
+      try {
+        const ctx = getAudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(320, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(980, ctx.currentTime + 0.14);
+        gain.gain.setValueAtTime(0.35, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(); osc.stop(ctx.currentTime + 0.22);
+      } catch(e) {}
+    }
+
+    function playCrash() {
+      try {
+        const ctx = getAudioCtx();
+        const len = Math.floor(ctx.sampleRate * 0.45);
+        const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) {
+          d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.5);
+        }
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.65, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+        src.connect(gain); gain.connect(ctx.destination);
+        src.start();
+      } catch(e) {}
+    }
+
+    function playWarningBeep(pitch) {
+      try {
+        const ctx = getAudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(pitch || 190, ctx.currentTime);
+        gain.gain.setValueAtTime(0.09, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(); osc.stop(ctx.currentTime + 0.09);
+      } catch(e) {}
+    }
+
+    function playStartSound() {
+      try {
+        const ctx = getAudioCtx();
+        [261, 329, 392, 523].forEach((f, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(f, ctx.currentTime + i * 0.1);
+          gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.1 + 0.2);
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + i * 0.1);
+          osc.stop(ctx.currentTime + i * 0.1 + 0.2);
+        });
+      } catch(e) {}
+    }
+
+    // ─── Constants ────────────────────────────────────────────────────────────
+    const COLORS = [
+      '#00ffff', '#ff00ff', '#ffff00', '#ff6600',
+      '#00ff88', '#ff0088', '#88aaff', '#ffaa00',
+      '#44ffdd', '#ff44aa'
+    ];
+    const TOP_RADIUS = 40;
+    const MAX_TOPS = 8;
+    const BASE_DECAY = 0.017;   // spin fraction lost per second at start
+    const CLICK_BOOST = 0.48;   // spin restored per click
+    const LS_KEY = 'spinFrenzyHighScore';
+
+    // ─── Top factory ──────────────────────────────────────────────────────────
+    let _nextId = 0;
+    function makeTop(W, H, existing, diffLevel) {
+      let x, y, tries = 0;
+      do {
+        x = TOP_RADIUS + 30 + Math.random() * (W - (TOP_RADIUS + 30) * 2);
+        y = TOP_RADIUS + 90 + Math.random() * (H - (TOP_RADIUS + 90) - (TOP_RADIUS + 30));
+        tries++;
+      } while (tries < 100 && existing.some(t => Math.hypot(t.x - x, t.y - y) < TOP_RADIUS * 2.9));
+
+      const id = _nextId++;
+      return {
+        id,
+        x, y,
+        color: COLORS[id % COLORS.length],
+        spin: 0.82 + Math.random() * 0.18,
+        angle: Math.random() * Math.PI * 2,
+        decay: BASE_DECAY + (diffLevel || 0) * BASE_DECAY * 0.5,
+        particles: [],
+        warnTimer: 0,
+        clickFlash: 0,
+        spawnFlash: 1.2,
+      };
+    }
+
+    // ─── Main Component ───────────────────────────────────────────────────────
+    const SpinFrenzy = () => {
+      const canvasRef = useRef(null);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        // Initialize localStorage at load time
+        if (!localStorage.getItem(LS_KEY)) {
+          localStorage.setItem(LS_KEY, '0');
+        }
+
+        // Resize
+        const resize = () => {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ── Game state ────────────────────────────────────────────────────
+        const g = {
+          phase: 'start',       // 'start' | 'playing' | 'dead'
+          tops: [],
+          score: 0,
+          lives: 3,
+          highScore: parseInt(localStorage.getItem(LS_KEY) || '0'),
+          spawnTimer: 0,
+          spawnInterval: 4.8,   // seconds between new tops
+          diffTimer: 0,
+          diffLevel: 0,
+          deathParticles: [],
+          bgParticles: [],
+        };
+
+        // Initialize bg sparkles
+        for (let i = 0; i < 60; i++) {
+          g.bgParticles.push({
+            x: Math.random() * window.innerWidth,
+            y: Math.random() * window.innerHeight,
+            size: 0.5 + Math.random() * 1.5,
+            brightness: Math.random(),
+            twinkleSpeed: 1 + Math.random() * 3,
+            phase: Math.random() * Math.PI * 2,
+          });
+        }
+
+        const startGame = () => {
+          _nextId = 0;
+          g.phase = 'playing';
+          g.score = 0;
+          g.lives = 3;
+          g.spawnTimer = 0;
+          g.spawnInterval = 4.8;
+          g.diffTimer = 0;
+          g.diffLevel = 0;
+          g.deathParticles = [];
+          g.tops = [
+            makeTop(canvas.width, canvas.height, [], 0),
+            makeTop(canvas.width, canvas.height, g.tops.slice(0, 1), 0),
+          ];
+          playStartSound();
+        };
+
+        // ── Input ─────────────────────────────────────────────────────────
+        const onInput = (clientX, clientY) => {
+          if (g.phase === 'start' || g.phase === 'dead') {
+            startGame();
+            return;
+          }
+          const rect = canvas.getBoundingClientRect();
+          const sx = canvas.width / rect.width;
+          const sy = canvas.height / rect.height;
+          const px = (clientX - rect.left) * sx;
+          const py = (clientY - rect.top) * sy;
+
+          let hit = false;
+          for (const top of g.tops) {
+            if (Math.hypot(top.x - px, top.y - py) <= TOP_RADIUS + 15) {
+              top.spin = Math.min(1.0, top.spin + CLICK_BOOST);
+              top.clickFlash = 1.0;
+              // Burst particles
+              for (let i = 0; i < 16; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const spd = 2.5 + Math.random() * 6;
+                top.particles.push({
+                  x: top.x, y: top.y,
+                  vx: Math.cos(a) * spd,
+                  vy: Math.sin(a) * spd,
+                  life: 1.0,
+                  color: top.color,
+                  size: 2 + Math.random() * 3.5,
+                });
+              }
+              playSpinBoost();
+              hit = true;
+              break;
+            }
+          }
+          // Missed click: small penalty flash on nearest endangered top
+          if (!hit && g.tops.length > 0) {
+            const nearest = g.tops.reduce((a, b) =>
+              Math.hypot(a.x - px, a.y - py) < Math.hypot(b.x - px, b.y - py) ? a : b
+            );
+            if (nearest.spin < 0.35) nearest.clickFlash = 0.3;
+          }
+        };
+
+        const onClick = e => onInput(e.clientX, e.clientY);
+        const onTouch = e => {
+          e.preventDefault();
+          if (e.touches.length > 0) onInput(e.touches[0].clientX, e.touches[0].clientY);
+        };
+        canvas.addEventListener('click', onClick);
+        canvas.addEventListener('touchstart', onTouch, { passive: false });
+
+        // ── Game loop ─────────────────────────────────────────────────────
+        let rafId;
+        let lastT = 0;
+
+        const loop = (t) => {
+          rafId = requestAnimationFrame(loop);
+          const dt = Math.min((t - lastT) / 1000, 0.05);
+          lastT = t;
+
+          const W = canvas.width;
+          const H = canvas.height;
+
+          // ── Update ──────────────────────────────────────────────────────
+          if (g.phase === 'playing') {
+            // Score: 10 pts/sec × active tops bonus
+            g.score += dt * 10 * (1 + g.tops.length * 0.6);
+
+            g.spawnTimer += dt;
+            g.diffTimer += dt;
+
+            // Difficulty ramp every 15 seconds
+            if (g.diffTimer >= 15) {
+              g.diffTimer = 0;
+              g.diffLevel++;
+              for (const top of g.tops) {
+                top.decay = Math.min(BASE_DECAY * 5, top.decay + BASE_DECAY * 0.55);
+              }
+            }
+
+            // Spawn new top
+            if (g.tops.length < MAX_TOPS && g.spawnTimer >= g.spawnInterval) {
+              g.spawnTimer = 0;
+              g.spawnInterval = Math.max(2.2, g.spawnInterval - 0.28);
+              const newTop = makeTop(W, H, g.tops, g.diffLevel);
+              g.tops.push(newTop);
+            }
+
+            // Save high score periodically (every ~5 seconds of score ticks)
+            if (Math.floor(g.score) % 500 === 0 && g.score > 0) {
+              const cur = Math.floor(g.score);
+              if (cur > g.highScore) {
+                g.highScore = cur;
+                localStorage.setItem(LS_KEY, cur.toString());
+              }
+            }
+
+            // Update tops
+            const dead = [];
+            for (const top of g.tops) {
+              // Decay spin
+              top.spin = Math.max(0, top.spin - top.decay * dt);
+              // Rotate (angular velocity proportional to spin)
+              top.angle += (top.spin * 7 + 0.2) * dt;
+              // Flash decay
+              if (top.clickFlash > 0) top.clickFlash = Math.max(0, top.clickFlash - dt * 4.5);
+              if (top.spawnFlash > 0) top.spawnFlash = Math.max(0, top.spawnFlash - dt * 1.8);
+              // Particle update
+              top.particles = top.particles.filter(p => p.life > 0);
+              for (const p of top.particles) {
+                p.x += p.vx; p.y += p.vy;
+                p.vx *= 0.93; p.vy *= 0.93;
+                p.life -= dt * 2.8;
+                p.size *= 0.975;
+              }
+              // Warning beep (only when slowing down)
+              if (top.spin > 0 && top.spin < 0.3) {
+                top.warnTimer += dt;
+                // Beep more frequently as spin approaches 0
+                const beepInterval = 0.1 + top.spin * 0.65;
+                if (top.warnTimer >= beepInterval) {
+                  top.warnTimer = 0;
+                  playWarningBeep(160 + top.spin * 300);
+                }
+              } else {
+                top.warnTimer = 0;
+              }
+              if (top.spin <= 0) dead.push(top);
+            }
+
+            // Handle dead tops
+            for (const deadTop of dead) {
+              g.tops = g.tops.filter(t => t.id !== deadTop.id);
+              g.lives--;
+              playCrash();
+              // Big explosion
+              for (let i = 0; i < 35; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const spd = 1.5 + Math.random() * 9;
+                g.deathParticles.push({
+                  x: deadTop.x, y: deadTop.y,
+                  vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+                  life: 1.0, color: deadTop.color,
+                  size: 2.5 + Math.random() * 5,
+                });
+              }
+              if (g.lives <= 0) {
+                g.phase = 'dead';
+                const finalScore = Math.floor(g.score);
+                if (finalScore > g.highScore) {
+                  g.highScore = finalScore;
+                  localStorage.setItem(LS_KEY, finalScore.toString());
+                }
+              }
+            }
+
+            // Update death particles
+            g.deathParticles = g.deathParticles.filter(p => p.life > 0);
+            for (const p of g.deathParticles) {
+              p.x += p.vx; p.y += p.vy;
+              p.vx *= 0.93; p.vy *= 0.93;
+              p.life -= dt * 1.4;
+            }
+          }
+
+          // ── Draw ────────────────────────────────────────────────────────
+          // Background gradient
+          const bgGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.8);
+          bgGrad.addColorStop(0, '#120025');
+          bgGrad.addColorStop(1, '#040008');
+          ctx.fillStyle = bgGrad;
+          ctx.fillRect(0, 0, W, H);
+
+          // Subtle grid
+          ctx.strokeStyle = 'rgba(80, 0, 180, 0.10)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < W; x += 60) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+          }
+          for (let y = 0; y < H; y += 60) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+          }
+
+          // Background sparkles
+          const tnow = t / 1000;
+          for (const sp of g.bgParticles) {
+            const b = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(tnow * sp.twinkleSpeed + sp.phase));
+            ctx.globalAlpha = b * 0.7;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+
+          // Death particles
+          for (const p of g.deathParticles) {
+            ctx.globalAlpha = p.life * 0.9;
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = p.color;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * Math.max(0.1, p.life), 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+          // ── Draw each spinning top ───────────────────────────────────────
+          for (const top of g.tops) {
+            const { x, y, color, spin, angle, clickFlash, spawnFlash, particles } = top;
+            const isWarn = spin < 0.30;
+            const warnPulse = isWarn ? 0.5 + 0.5 * Math.sin(tnow * 10) : 0;
+
+            // Particles
+            for (const p of particles) {
+              ctx.globalAlpha = Math.max(0, p.life * 0.95);
+              ctx.fillStyle = p.color;
+              ctx.shadowColor = p.color;
+              ctx.shadowBlur = 14;
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, Math.max(0.1, p.size), 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+            // Outer glow halo
+            if (spin > 0.05) {
+              const haloGrad = ctx.createRadialGradient(x, y, TOP_RADIUS * 0.7, x, y, TOP_RADIUS * 1.8);
+              const haloColor = isWarn ? '#ff4422' : color;
+              haloGrad.addColorStop(0, haloColor + Math.floor((isWarn ? warnPulse * 0.25 : spin * 0.18) * 255).toString(16).padStart(2, '0'));
+              haloGrad.addColorStop(1, haloColor + '00');
+              ctx.fillStyle = haloGrad;
+              ctx.beginPath();
+              ctx.arc(x, y, TOP_RADIUS * 1.8, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            // Spin meter ring (track)
+            ctx.beginPath();
+            ctx.arc(x, y, TOP_RADIUS + 10, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+
+            // Spin meter ring (fill)
+            if (spin > 0) {
+              const meterColor = isWarn
+                ? `rgba(255, ${Math.floor(80 + 120 * (spin / 0.3))}, 50, 1)`
+                : color;
+              ctx.beginPath();
+              ctx.arc(x, y, TOP_RADIUS + 10, -Math.PI / 2, -Math.PI / 2 + spin * Math.PI * 2);
+              ctx.strokeStyle = meterColor;
+              ctx.lineWidth = 6;
+              ctx.shadowColor = meterColor;
+              ctx.shadowBlur = 18;
+              ctx.stroke();
+              ctx.shadowBlur = 0;
+            }
+
+            // Warning expanding ring
+            if (isWarn && warnPulse > 0.3) {
+              ctx.beginPath();
+              ctx.arc(x, y, TOP_RADIUS + 12 + warnPulse * 12, 0, Math.PI * 2);
+              ctx.strokeStyle = `rgba(255, 60, 30, ${0.5 * warnPulse})`;
+              ctx.lineWidth = 2;
+              ctx.stroke();
+            }
+
+            // ── Draw rotating top body ─────────────────────────────────────
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+
+            const numSpikes = 6;
+            const outerR = TOP_RADIUS * 0.88;
+            const innerR = TOP_RADIUS * 0.36;
+            const bodyOpacity = Math.max(0.25, 0.3 + spin * 0.7 + (spawnFlash > 0 ? spawnFlash * 0.3 : 0));
+
+            // Star path
+            ctx.beginPath();
+            for (let i = 0; i < numSpikes * 2; i++) {
+              const r = i % 2 === 0 ? outerR : innerR;
+              const a = (Math.PI * 2 * i) / (numSpikes * 2) - Math.PI / 2;
+              const px2 = Math.cos(a) * r;
+              const py2 = Math.sin(a) * r;
+              if (i === 0) ctx.moveTo(px2, py2);
+              else ctx.lineTo(px2, py2);
+            }
+            ctx.closePath();
+
+            // Fill with gradient
+            const starGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, outerR);
+            if (isWarn) {
+              starGrad.addColorStop(0, `rgba(255, 150, 80, ${bodyOpacity})`);
+              starGrad.addColorStop(1, `rgba(255, 40, 20, ${bodyOpacity * 0.6})`);
+            } else {
+              starGrad.addColorStop(0, color + 'ff');
+              starGrad.addColorStop(0.6, color + Math.floor(bodyOpacity * 180).toString(16).padStart(2, '0'));
+              starGrad.addColorStop(1, color + '22');
+            }
+            ctx.fillStyle = starGrad;
+            ctx.shadowColor = isWarn ? '#ff5533' : color;
+            ctx.shadowBlur = 22 * spin + 8;
+            ctx.fill();
+
+            // Stroke outline
+            ctx.strokeStyle = isWarn ? `rgba(255,100,50,${bodyOpacity})` : `${color}${Math.floor(bodyOpacity * 200).toString(16).padStart(2,'0')}`;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Inner bright core
+            ctx.beginPath();
+            ctx.arc(0, 0, TOP_RADIUS * 0.22, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${spin * 0.9})`;
+            ctx.shadowColor = 'white';
+            ctx.shadowBlur = 12 * spin;
+            ctx.fill();
+
+            // Inner ring accent
+            ctx.beginPath();
+            ctx.arc(0, 0, innerR * 0.85, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(255,255,255,${spin * 0.4})`;
+            ctx.lineWidth = 1;
+            ctx.shadowBlur = 0;
+            ctx.stroke();
+
+            ctx.restore();
+
+            // Click flash ring
+            if (clickFlash > 0) {
+              const expansionRadius = TOP_RADIUS + 15 + (1 - clickFlash) * 25;
+              ctx.beginPath();
+              ctx.arc(x, y, expansionRadius, 0, Math.PI * 2);
+              ctx.strokeStyle = `rgba(255, 255, 255, ${clickFlash * 0.85})`;
+              ctx.lineWidth = 3;
+              ctx.shadowColor = 'white';
+              ctx.shadowBlur = 15 * clickFlash;
+              ctx.stroke();
+              ctx.shadowBlur = 0;
+            }
+
+            // Spawn flash pulse
+            if (spawnFlash > 0) {
+              ctx.beginPath();
+              ctx.arc(x, y, TOP_RADIUS * (1.1 + spawnFlash * 0.8), 0, Math.PI * 2);
+              ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(1, spawnFlash) * 0.7})`;
+              ctx.lineWidth = 2.5;
+              ctx.stroke();
+            }
+          }
+
+          // ── HUD ───────────────────────────────────────────────────────────
+          ctx.shadowBlur = 0;
+
+          // Score
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = 20;
+          ctx.font = `bold ${Math.min(28, W / 18)}px "Courier New", monospace`;
+          ctx.fillText(Math.floor(g.score).toLocaleString(), W / 2, 46);
+
+          // Best score
+          if (g.highScore > 0) {
+            ctx.fillStyle = 'rgba(180, 255, 255, 0.45)';
+            ctx.shadowBlur = 0;
+            ctx.font = `${Math.min(13, W / 32)}px "Courier New", monospace`;
+            ctx.fillText(`best: ${g.highScore.toLocaleString()}`, W / 2, 66);
+          }
+
+          // Lives (pink circles)
+          ctx.shadowBlur = 12;
+          for (let i = 0; i < 3; i++) {
+            ctx.beginPath();
+            const lx = 22 + i * 32, ly = 28;
+            ctx.arc(lx, ly, 10, 0, Math.PI * 2);
+            if (i < g.lives) {
+              ctx.fillStyle = '#ff00aa';
+              ctx.shadowColor = '#ff00aa';
+            } else {
+              ctx.fillStyle = 'rgba(80, 0, 40, 0.5)';
+              ctx.shadowColor = 'transparent';
+            }
+            ctx.fill();
+          }
+
+          // Tops count
+          ctx.textAlign = 'right';
+          ctx.fillStyle = 'rgba(200, 200, 255, 0.55)';
+          ctx.shadowBlur = 0;
+          ctx.font = `${Math.min(13, W / 32)}px "Courier New", monospace`;
+          ctx.fillText(`× ${g.tops.length} spinning`, W - 14, 36);
+
+          ctx.shadowBlur = 0;
+
+          // ── Overlay Screens ────────────────────────────────────────────────
+          if (g.phase === 'start' || g.phase === 'dead') {
+            // Dim overlay
+            ctx.fillStyle = 'rgba(4, 0, 12, 0.78)';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.textAlign = 'center';
+            const cy = H / 2;
+            const titleSize = Math.min(62, W / 7.5);
+            const subtitleSize = Math.min(19, W / 22);
+            const btnSize = Math.min(25, W / 17);
+
+            if (g.phase === 'start') {
+              // Title
+              ctx.fillStyle = '#ff00ff';
+              ctx.shadowColor = '#ff00ff';
+              ctx.shadowBlur = 45;
+              ctx.font = `bold ${titleSize}px "Courier New", monospace`;
+              ctx.fillText('SPIN FRENZY', W / 2, cy - 115);
+
+              // Tagline
+              ctx.fillStyle = '#ffff00';
+              ctx.shadowColor = '#ffff00';
+              ctx.shadowBlur = 18;
+              ctx.font = `${Math.min(15, W / 28)}px "Courier New", monospace`;
+              ctx.fillText('Keep the tops spinning or lose a life!', W / 2, cy - 62);
+
+              // Instructions
+              ctx.fillStyle = '#00ffff';
+              ctx.shadowColor = '#00ffff';
+              ctx.shadowBlur = 15;
+              ctx.font = `${subtitleSize}px "Courier New", monospace`;
+              const lines = [
+                'Click / Tap a top to spin it up',
+                'More tops = more points per second',
+                'Red glow = danger! Don\'t ignore it!',
+              ];
+              lines.forEach((line, i) => ctx.fillText(line, W / 2, cy - 10 + i * 34));
+
+              // High score
+              if (g.highScore > 0) {
+                ctx.fillStyle = '#ffaa00';
+                ctx.shadowColor = '#ffaa00';
+                ctx.shadowBlur = 14;
+                ctx.font = `${Math.min(15, W / 28)}px "Courier New", monospace`;
+                ctx.fillText(`Best: ${g.highScore.toLocaleString()}`, W / 2, cy + 100);
+              }
+            } else {
+              // Game over
+              ctx.fillStyle = '#ff3333';
+              ctx.shadowColor = '#ff3333';
+              ctx.shadowBlur = 50;
+              ctx.font = `bold ${titleSize}px "Courier New", monospace`;
+              ctx.fillText('FRENZY OVER', W / 2, cy - 95);
+
+              ctx.fillStyle = '#00ffff';
+              ctx.shadowColor = '#00ffff';
+              ctx.shadowBlur = 25;
+              ctx.font = `bold ${Math.min(42, W / 11)}px "Courier New", monospace`;
+              ctx.fillText(Math.floor(g.score).toLocaleString(), W / 2, cy - 22);
+
+              ctx.fillStyle = '#ffff00';
+              ctx.shadowColor = '#ffff00';
+              ctx.shadowBlur = 16;
+              ctx.font = `${subtitleSize}px "Courier New", monospace`;
+              ctx.fillText(`Best: ${g.highScore.toLocaleString()}`, W / 2, cy + 28);
+
+              if (Math.floor(g.score) >= g.highScore && g.score > 0) {
+                const nb = 0.6 + 0.4 * Math.sin(tnow * 5);
+                ctx.fillStyle = `rgba(255, 0, 255, ${nb})`;
+                ctx.shadowColor = '#ff00ff';
+                ctx.shadowBlur = 20;
+                ctx.font = `bold ${Math.min(20, W / 22)}px "Courier New", monospace`;
+                ctx.fillText('NEW HIGH SCORE!', W / 2, cy + 68);
+              }
+            }
+
+            // Pulsing CTA button
+            const pulse = 0.65 + 0.35 * Math.sin(tnow * 2.6);
+            ctx.fillStyle = `rgba(255, 115, 15, ${pulse})`;
+            ctx.shadowColor = '#ff7310';
+            ctx.shadowBlur = 18 + pulse * 22;
+            ctx.font = `bold ${btnSize}px "Courier New", monospace`;
+            const btnY = g.phase === 'start' ? cy + 158 : cy + 120;
+            const btnText = g.phase === 'start' ? '[ CLICK TO START ]' : '[ CLICK TO RETRY ]';
+            ctx.fillText(btnText, W / 2, btnY);
+            ctx.shadowBlur = 0;
+          }
+        };
+
+        rafId = requestAnimationFrame(loop);
+
+        return () => {
+          cancelAnimationFrame(rafId);
+          canvas.removeEventListener('click', onClick);
+          canvas.removeEventListener('touchstart', onTouch);
+          window.removeEventListener('resize', resize);
+        };
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          style={{ display: 'block', width: '100vw', height: '100vh' }}
+        />
+      );
+    };
+
+    ReactDOM.render(<SpinFrenzy />, document.getElementById('root'));
+  </script>
+</body>
+</html>

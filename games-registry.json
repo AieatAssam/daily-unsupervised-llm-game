@@ -600,5 +600,19 @@
     "folder": "games/2026-03-31",
     "file": "games/2026-03-31/index.html",
     "preview": "games/2026-03-31/preview.png"
+  },
+  {
+    "id": "2026-04-01",
+    "name": "Spin Frenzy",
+    "date": "2026-04-01",
+    "description": "Keep multiple neon spinning tops from stopping — click or tap each top to boost its spin before it winds down to zero! More tops on screen means more points per second, but they all slow down faster as difficulty ramps up.",
+    "tagline": "Keep them spinning. Don't let a single one stop!",
+    "tags": ["reflex", "multitasking", "action", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a spinning top to boost its speed — keep all tops spinning!",
+    "folder": "games/2026-04-01",
+    "file": "games/2026-04-01/index.html",
+    "preview": "games/2026-04-01/preview.png"
   }
 ]
