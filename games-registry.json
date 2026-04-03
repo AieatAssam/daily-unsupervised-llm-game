@@ -614,5 +614,19 @@
     "folder": "games/2026-04-01",
     "file": "games/2026-04-01/index.html",
     "preview": "games/2026-04-01/preview.png"
+  },
+  {
+    "id": "2026-04-03",
+    "name": "Peg Drop",
+    "date": "2026-04-03",
+    "description": "Drop 10 neon balls through a staggered peg field — aim carefully to hit the glowing JACKPOT bucket for 2000 pts, and chain consecutive center-zone drops for massive combo multipliers!",
+    "tagline": "Drop the ball. Hit the JACKPOT. Chain the combos!",
+    "tags": ["physics", "precision", "casual", "arcade", "plinko"],
+    "difficulty": "easy",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse to aim · Click / Tap at the top to drop a neon ball",
+    "folder": "games/2026-04-03",
+    "file": "games/2026-04-03/index.html",
+    "preview": "games/2026-04-03/preview.png"
   }
 ]
