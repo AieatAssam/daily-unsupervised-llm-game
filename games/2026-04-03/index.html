@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peg Drop</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #050010;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #root {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+    }
+    .game-wrap {
+      position: relative;
+      touch-action: none;
+    }
+    canvas { display: block; cursor: crosshair; }
+    .overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(5, 0, 16, 0.88);
+    }
+    .neon-title {
+      font-size: 46px;
+      font-weight: bold;
+      color: #ff88ff;
+      text-shadow: 0 0 18px #ff00ff, 0 0 40px #ff00cc;
+      letter-spacing: 4px;
+      margin-bottom: 10px;
+    }
+    .neon-sub {
+      font-size: 14px;
+      color: #88aaff;
+      text-shadow: 0 0 8px #4466ff;
+      text-align: center;
+      line-height: 1.7;
+      margin-bottom: 28px;
+      padding: 0 20px;
+    }
+    .neon-btn {
+      padding: 13px 40px;
+      font-size: 20px;
+      font-family: 'Courier New', monospace;
+      background: transparent;
+      border: 2px solid #ff00ff;
+      color: #ff88ff;
+      cursor: pointer;
+      text-shadow: 0 0 10px #ff00ff;
+      box-shadow: 0 0 18px #ff00ff, inset 0 0 14px rgba(255,0,255,0.08);
+      letter-spacing: 3px;
+      transition: all 0.15s;
+    }
+    .neon-btn:hover {
+      background: rgba(255,0,255,0.12);
+      box-shadow: 0 0 30px #ff00ff, inset 0 0 20px rgba(255,0,255,0.15);
+    }
+    .score-big {
+      font-size: 54px;
+      font-weight: bold;
+      color: #ffff44;
+      text-shadow: 0 0 22px #ffff00, 0 0 50px #ffaa00;
+      margin: 12px 0 4px;
+    }
+    .high-label {
+      font-size: 13px;
+      color: #ffaa44;
+      text-shadow: 0 0 8px #ff8800;
+      margin-bottom: 26px;
+    }
+    .hud {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 14px 0;
+      pointer-events: none;
+    }
+    .hud-cell { text-align: center; }
+    .hud-label { font-size: 10px; color: #9966cc; letter-spacing: 1px; }
+    .hud-val {
+      font-size: 17px;
+      font-weight: bold;
+      color: #ffffff;
+      text-shadow: 0 0 10px #ff88ff;
+    }
+    .combo-pop {
+      position: absolute;
+      top: 42%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 34px;
+      font-weight: bold;
+      color: #ffff00;
+      text-shadow: 0 0 20px #ffff00, 0 0 45px #ff8800;
+      pointer-events: none;
+      animation: popUp 0.65s ease-out forwards;
+      white-space: nowrap;
+    }
+    @keyframes popUp {
+      0%   { opacity: 1; transform: translateX(-50%) scale(1.6); }
+      100% { opacity: 0; transform: translateX(-50%) translateY(-60px) scale(0.9); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- Initialize localStorage synchronously before Babel transpilation -->
+  <script>
+    if (!localStorage.getItem('pegDrop_highScore')) localStorage.setItem('pegDrop_highScore', '0');
+  </script>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ── Initialize localStorage immediately (before React mounts) ── */
+    const LS_KEY_INIT = 'pegDrop_highScore';
+    if (!localStorage.getItem(LS_KEY_INIT)) localStorage.setItem(LS_KEY_INIT, '0');
+
+    /* ── Constants ─────────────────────────────────────── */
+    const CW = 480, CH = 660;
+    const PEG_R = 5, BALL_R = 9;
+    const GRAVITY = 0.42, FRICTION = 0.994;
+    const BUCKET_H = 70, DROP_Y = 38;
+    const TOTAL_BALLS = 10;
+    const LS_KEY = 'pegDrop_highScore';
+
+    const BUCKET_VALS  = [50, 100, 200, 500, 2000, 500, 200, 100, 50];
+    const BUCKET_LABEL = ['50','100','200','500','★2K','500','200','100','50'];
+    const BUCKET_COLS  = ['#00ffaa','#00ccff','#aa00ff','#ff5500','#ffdd00','#ff5500','#aa00ff','#00ccff','#00ffaa'];
+
+    /* ── Peg generator ─────────────────────────────────── */
+    function buildPegs() {
+      const pegs = [];
+      const ROWS = 12;
+      const yTop = DROP_Y + 28, yBot = CH - BUCKET_H - 28;
+      const yStep = (yBot - yTop) / (ROWS - 1);
+      for (let r = 0; r < ROWS; r++) {
+        const even = r % 2 === 0;
+        const cols  = even ? 9 : 8;
+        const xPad  = even ? 26 : 52;
+        const xStep = (CW - 2 * xPad) / (cols - 1);
+        for (let c = 0; c < cols; c++) {
+          pegs.push({ x: xPad + c * xStep, y: yTop + r * yStep, flash: 0 });
+        }
+      }
+      return pegs;
+    }
+
+    /* ── Audio ─────────────────────────────────────────── */
+    let _actx = null;
+    function actx() {
+      if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+      return _actx;
+    }
+    function tone(freq, type, dur, vol = 0.22) {
+      try {
+        const c = actx(), o = c.createOscillator(), g = c.createGain();
+        o.connect(g); g.connect(c.destination);
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol, c.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+        o.start(); o.stop(c.currentTime + dur);
+      } catch(_) {}
+    }
+    function sfxPeg()    { tone(220 + Math.random()*350, 'sine',     0.06, 0.07); }
+    function sfxDrop()   { tone(260,                     'triangle', 0.12, 0.18); }
+    function sfxBucket(i) {
+      const f = [160,210,290,420,650,420,290,210,160][i];
+      tone(f, 'triangle', 0.38, 0.32);
+      if (i === 4) {
+        setTimeout(() => tone(880, 'square', 0.18, 0.18), 90);
+        setTimeout(() => tone(1100,'square', 0.18, 0.18), 180);
+      }
+    }
+
+    /* ── Particles ─────────────────────────────────────── */
+    function spawnParts(g, x, y, col, n = 10) {
+      for (let i = 0; i < n; i++) {
+        const a = (Math.PI * 2 * i / n) + Math.random() * 0.9;
+        const s = 1.8 + Math.random() * 4;
+        g.parts.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, col, life: 1, r: 2+Math.random()*3 });
+      }
+    }
+
+    /* ── Main Component ────────────────────────────────── */
+    const App = () => {
+      const canvasRef = useRef(null);
+      const gRef      = useRef(null);
+      const rafRef    = useRef(null);
+      const mxRef     = useRef(CW / 2);
+      const [scale, setScale]       = useState(1);
+      const [phase, setPhase]       = useState('start');
+      const [hud, setHud]           = useState({ score: 0, best: 0, balls: TOTAL_BALLS, comboMult: 1 });
+      const [comboKey, setComboKey] = useState(null); // { k, text }
+
+      /* ── Responsive scale ── */
+      useEffect(() => {
+        const calc = () => setScale(Math.min(window.innerWidth / CW, window.innerHeight / CH, 1));
+        calc();
+        window.addEventListener('resize', calc);
+        return () => window.removeEventListener('resize', calc);
+      }, []);
+
+      /* ── Ensure localStorage key exists on mount ── */
+      useEffect(() => {
+        if (!localStorage.getItem(LS_KEY)) localStorage.setItem(LS_KEY, '0');
+      }, []);
+
+      const getBest = () => parseInt(localStorage.getItem(LS_KEY) || '0');
+
+      /* ── Init game state ── */
+      const initState = () => ({
+        pegs:     buildPegs(),
+        balls:    [],
+        parts:    [],
+        floats:   [],
+        score:    0,
+        ballsLeft: TOTAL_BALLS,
+        inflight:  0,
+        combo:     0,
+        comboMult: 1,
+      });
+
+      /* ── Start / restart ── */
+      const startGame = useCallback(() => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        gRef.current = initState();
+        localStorage.setItem(LS_KEY, getBest().toString()); // ensure key present
+        setHud({ score: 0, best: getBest(), balls: TOTAL_BALLS, comboMult: 1 });
+        setPhase('playing');
+      }, []);
+
+      /* ── Drop ball ── */
+      const dropBall = useCallback((clientX) => {
+        const g = gRef.current;
+        if (!g || g.ballsLeft <= 0 || phase !== 'playing') return;
+        const canvas = canvasRef.current;
+        const rect   = canvas.getBoundingClientRect();
+        const sx     = CW / rect.width;
+        const cx     = Math.max(BALL_R + 4, Math.min(CW - BALL_R - 4, (clientX - rect.left) * sx));
+        // Slight sideways bias from center
+        const bias   = (cx - CW / 2) / (CW / 2) * 1.6;
+        g.ballsLeft--;
+        g.inflight++;
+        g.balls.push({
+          x: cx, y: DROP_Y - 2,
+          vx: bias + (Math.random() - 0.5) * 0.8,
+          vy: 1.8,
+          col: `hsl(${(g.ballsLeft * 41 + 180) % 360},100%,62%)`,
+          trail: [], done: false,
+        });
+        sfxDrop();
+        setHud(h => ({ ...h, balls: g.ballsLeft }));
+      }, [phase]);
+
+      /* ── Game loop ── */
+      useEffect(() => {
+        if (phase !== 'playing') return;
+        const canvas = canvasRef.current;
+        const ctx    = canvas.getContext('2d');
+        let live     = true;
+        const bw     = CW / BUCKET_VALS.length;
+
+        const tick = () => {
+          if (!live) return;
+          const g = gRef.current;
+
+          /* Physics */
+          for (let bi = g.balls.length - 1; bi >= 0; bi--) {
+            const b = g.balls[bi];
+            if (b.done) { g.balls.splice(bi, 1); continue; }
+
+            b.vy += GRAVITY;
+            b.vx *= FRICTION;
+            b.trail.push({ x: b.x, y: b.y });
+            if (b.trail.length > 10) b.trail.shift();
+            b.x += b.vx; b.y += b.vy;
+
+            // Walls
+            if (b.x < BALL_R)      { b.x = BALL_R;      b.vx =  Math.abs(b.vx) * 0.55; }
+            if (b.x > CW - BALL_R) { b.x = CW - BALL_R; b.vx = -Math.abs(b.vx) * 0.55; }
+
+            // Peg collisions
+            for (const peg of g.pegs) {
+              const dx = b.x - peg.x, dy = b.y - peg.y;
+              const d  = Math.sqrt(dx*dx + dy*dy);
+              const md = BALL_R + PEG_R + 1;
+              if (d < md && d > 0.1) {
+                const nx = dx/d, ny = dy/d;
+                b.x = peg.x + nx * (md + 0.5);
+                b.y = peg.y + ny * (md + 0.5);
+                const dot = b.vx*nx + b.vy*ny;
+                b.vx = (b.vx - 2*dot*nx) * 0.62 + (Math.random()-0.5) * 0.9;
+                b.vy = Math.max(1.4, (b.vy - 2*dot*ny) * 0.62);
+                peg.flash = 1;
+                if (Math.random() < 0.35) sfxPeg();
+                if (Math.random() < 0.22) spawnParts(g, b.x, b.y, b.col, 4);
+              }
+            }
+
+            // Bucket landing
+            if (b.y >= CH - BUCKET_H) {
+              const idx  = Math.min(Math.floor(b.x / bw), BUCKET_VALS.length - 1);
+              const base = BUCKET_VALS[idx];
+              // Combo: center 3 buckets (idx 3,4,5)
+              if (idx >= 3 && idx <= 5) {
+                g.combo++;
+                g.comboMult = Math.min(6, 1 + Math.floor(g.combo / 2));
+              } else {
+                g.combo    = 0;
+                g.comboMult = 1;
+              }
+              const earned = base * g.comboMult;
+              g.score += earned;
+
+              g.floats.push({
+                x: b.x, y: CH - BUCKET_H - 12,
+                text: `+${earned.toLocaleString()}${g.comboMult > 1 ? ` ×${g.comboMult}` : ''}`,
+                col: BUCKET_COLS[idx], life: 1,
+              });
+              spawnParts(g, b.x, CH - BUCKET_H, BUCKET_COLS[idx], idx === 4 ? 28 : 13);
+              sfxBucket(idx);
+
+              if (g.comboMult > 1) {
+                setComboKey({ k: Date.now(), text: `COMBO ×${g.comboMult}!` });
+              }
+
+              b.done = true;
+              g.inflight = Math.max(0, g.inflight - 1);
+
+              const finalScore = g.score;
+              if (g.ballsLeft === 0 && g.inflight === 0) {
+                const best = getBest();
+                if (finalScore > best) localStorage.setItem(LS_KEY, finalScore.toString());
+                setTimeout(() => {
+                  setHud(h => ({ ...h, score: finalScore, best: Math.max(getBest(), finalScore) }));
+                  setPhase('gameover');
+                }, 700);
+              }
+              setHud(h => ({ ...h, score: g.score, balls: g.ballsLeft, comboMult: g.comboMult }));
+            }
+          }
+
+          // Peg flash decay
+          g.pegs.forEach(p => { if (p.flash > 0) p.flash -= 0.055; });
+
+          // Particles
+          for (let pi = g.parts.length - 1; pi >= 0; pi--) {
+            const p = g.parts[pi];
+            p.x += p.vx; p.y += p.vy; p.vy += 0.14; p.life -= 0.028;
+            if (p.life <= 0) g.parts.splice(pi, 1);
+          }
+
+          // Floats
+          for (let fi = g.floats.length - 1; fi >= 0; fi--) {
+            const f = g.floats[fi];
+            f.y -= 1.3; f.life -= 0.016;
+            if (f.life <= 0) g.floats.splice(fi, 1);
+          }
+
+          /* ── Draw ── */
+          // Background
+          ctx.fillStyle = '#050010';
+          ctx.fillRect(0, 0, CW, CH);
+
+          // Ambient grid lines
+          ctx.strokeStyle = 'rgba(80,40,160,0.06)';
+          ctx.lineWidth = 1;
+          for (let gy = 0; gy < CH; gy += 40) {
+            ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(CW, gy); ctx.stroke();
+          }
+          for (let gx = 0; gx < CW; gx += 40) {
+            ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, CH); ctx.stroke();
+          }
+
+          // Side glow walls
+          const wg1 = ctx.createLinearGradient(0,0,22,0);
+          wg1.addColorStop(0,'rgba(130,0,255,0.28)'); wg1.addColorStop(1,'transparent');
+          ctx.fillStyle = wg1; ctx.fillRect(0, 0, 22, CH);
+          const wg2 = ctx.createLinearGradient(CW,0,CW-22,0);
+          wg2.addColorStop(0,'rgba(130,0,255,0.28)'); wg2.addColorStop(1,'transparent');
+          ctx.fillStyle = wg2; ctx.fillRect(CW-22, 0, 22, CH);
+
+          // Drop zone divider
+          ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 8]);
+          ctx.beginPath(); ctx.moveTo(0, DROP_Y); ctx.lineTo(CW, DROP_Y); ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Drop indicator arrow
+          if (g.ballsLeft > 0) {
+            const mx = mxRef.current;
+            ctx.shadowBlur = 10; ctx.shadowColor = '#ffaa22';
+            ctx.fillStyle = 'rgba(255,180,60,0.75)';
+            ctx.beginPath();
+            ctx.moveTo(mx,        DROP_Y + 4);
+            ctx.lineTo(mx - 8,    DROP_Y - 12);
+            ctx.lineTo(mx + 8,    DROP_Y - 12);
+            ctx.closePath(); ctx.fill();
+            ctx.shadowBlur = 0;
+            // Dotted guide line
+            ctx.strokeStyle = 'rgba(255,180,60,0.25)';
+            ctx.lineWidth = 1; ctx.setLineDash([3,6]);
+            ctx.beginPath(); ctx.moveTo(mx, 0); ctx.lineTo(mx, DROP_Y); ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          // Pegs
+          g.pegs.forEach(peg => {
+            const fl = Math.max(0, peg.flash);
+            ctx.shadowBlur  = fl > 0 ? 22 * fl : 5;
+            ctx.shadowColor = fl > 0 ? '#ffffff' : '#9955ff';
+            ctx.fillStyle   = fl > 0 ? `rgba(255,255,255,${0.65 + fl*0.35})` : '#7733cc';
+            ctx.beginPath();
+            ctx.arc(peg.x, peg.y, PEG_R + fl * 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          ctx.shadowBlur = 0;
+
+          // Buckets
+          for (let i = 0; i < BUCKET_VALS.length; i++) {
+            const bx = i * bw;
+            const isHigh = i >= 3 && i <= 5;
+            const isJack = i === 4;
+
+            ctx.globalAlpha = isJack ? 0.26 : isHigh ? 0.16 : 0.09;
+            ctx.fillStyle   = BUCKET_COLS[i];
+            ctx.fillRect(bx + 1, CH - BUCKET_H, bw - 2, BUCKET_H);
+            ctx.globalAlpha = 1;
+
+            ctx.shadowBlur  = isJack ? 14 : isHigh ? 8 : 4;
+            ctx.shadowColor = BUCKET_COLS[i];
+            ctx.strokeStyle = BUCKET_COLS[i];
+            ctx.lineWidth   = isJack ? 2 : 1;
+            ctx.strokeRect(bx + 1, CH - BUCKET_H, bw - 2, BUCKET_H);
+
+            ctx.fillStyle   = BUCKET_COLS[i];
+            ctx.shadowBlur  = 7; ctx.shadowColor = BUCKET_COLS[i];
+            ctx.font        = `bold ${isJack ? 12 : 10}px Courier New`;
+            ctx.textAlign   = 'center';
+            if (isJack) {
+              ctx.fillText('★', bx + bw/2, CH - BUCKET_H + 22);
+              ctx.font = 'bold 11px Courier New';
+              ctx.fillText('JACK', bx + bw/2, CH - BUCKET_H + 37);
+              ctx.fillText('2000', bx + bw/2, CH - BUCKET_H + 52);
+            } else {
+              ctx.fillText(BUCKET_LABEL[i], bx + bw/2, CH - BUCKET_H + 32);
+            }
+            ctx.shadowBlur = 0;
+          }
+
+          // Ball trails + balls
+          for (const b of g.balls) {
+            for (let t = 0; t < b.trail.length; t++) {
+              const a = (t / b.trail.length) * 0.38;
+              const r = BALL_R * 0.55 * (t / b.trail.length);
+              ctx.globalAlpha = a;
+              ctx.fillStyle   = b.col;
+              ctx.beginPath(); ctx.arc(b.trail[t].x, b.trail[t].y, r, 0, Math.PI*2); ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 18; ctx.shadowColor = b.col;
+            ctx.fillStyle  = b.col;
+            ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+            // Shine
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.beginPath(); ctx.arc(b.x - 2.5, b.y - 2.5, 3, 0, Math.PI*2); ctx.fill();
+          }
+
+          // Particles
+          ctx.globalAlpha = 1;
+          for (const p of g.parts) {
+            ctx.globalAlpha = p.life * 0.9;
+            ctx.fillStyle   = p.col;
+            ctx.shadowBlur  = 8; ctx.shadowColor = p.col;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+          ctx.globalAlpha = 1;
+
+          // Floating score texts
+          for (const f of g.floats) {
+            ctx.globalAlpha = f.life;
+            ctx.fillStyle   = f.col;
+            ctx.shadowBlur  = 10; ctx.shadowColor = f.col;
+            ctx.font        = 'bold 19px Courier New';
+            ctx.textAlign   = 'center';
+            ctx.fillText(f.text, f.x, f.y);
+            ctx.shadowBlur = 0;
+          }
+          ctx.globalAlpha = 1;
+
+          rafRef.current = requestAnimationFrame(tick);
+        };
+
+        rafRef.current = requestAnimationFrame(tick);
+        return () => { live = false; cancelAnimationFrame(rafRef.current); };
+      }, [phase]);
+
+      /* ── Input handlers ── */
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onMove = (e) => {
+          const rect = canvas.getBoundingClientRect();
+          mxRef.current = (e.clientX - rect.left) * (CW / rect.width);
+        };
+        const onClick = (e) => {
+          if (phase === 'playing') dropBall(e.clientX);
+        };
+        const onTouch = (e) => {
+          e.preventDefault();
+          const t = e.changedTouches[0];
+          mxRef.current = (t.clientX - canvas.getBoundingClientRect().left) * (CW / canvas.getBoundingClientRect().width);
+          if (phase === 'playing') dropBall(t.clientX);
+        };
+
+        canvas.addEventListener('mousemove', onMove);
+        canvas.addEventListener('click',     onClick);
+        canvas.addEventListener('touchstart', onTouch, { passive: false });
+        return () => {
+          canvas.removeEventListener('mousemove', onMove);
+          canvas.removeEventListener('click',     onClick);
+          canvas.removeEventListener('touchstart', onTouch);
+        };
+      }, [phase, dropBall]);
+
+      const best = getBest();
+      const cw   = Math.floor(CW * scale);
+      const ch   = Math.floor(CH * scale);
+
+      return (
+        <div className="game-wrap" style={{ width: cw, height: ch }}>
+          <canvas ref={canvasRef} width={CW} height={CH}
+            style={{ width: cw, height: ch }} />
+
+          {/* HUD */}
+          {phase === 'playing' && (
+            <div className="hud" style={{ fontSize: `${scale * 100}%` }}>
+              <div className="hud-cell">
+                <div className="hud-label">SCORE</div>
+                <div className="hud-val">{hud.score.toLocaleString()}</div>
+              </div>
+              <div className="hud-cell">
+                <div className="hud-label">BALLS</div>
+                <div className="hud-val">{hud.balls} / {TOTAL_BALLS}</div>
+              </div>
+              <div className="hud-cell" style={{ textAlign: 'right' }}>
+                <div className="hud-label">BEST</div>
+                <div className="hud-val">{hud.best.toLocaleString()}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Combo pop */}
+          {comboKey && (
+            <div key={comboKey.k} className="combo-pop">{comboKey.text}</div>
+          )}
+
+          {/* Start */}
+          {phase === 'start' && (
+            <div className="overlay">
+              <div className="neon-title">PEG DROP</div>
+              <div className="neon-sub">
+                Drop 10 neon balls through the peg field<br />
+                Aim for the ★ JACKPOT for 2000 pts!<br />
+                Chain center hits for COMBO multipliers
+              </div>
+              {best > 0 && (
+                <div style={{ color:'#ffaa44', fontSize:13, marginBottom:18,
+                  textShadow:'0 0 8px #ff8800' }}>
+                  BEST: {best.toLocaleString()}
+                </div>
+              )}
+              <button className="neon-btn" onClick={startGame}>PLAY</button>
+            </div>
+          )}
+
+          {/* Game over */}
+          {phase === 'gameover' && (
+            <div className="overlay">
+              <div className="neon-title" style={{ fontSize: 34, marginBottom: 6 }}>
+                GAME OVER
+              </div>
+              <div className="score-big">{hud.score.toLocaleString()}</div>
+              {hud.score >= getBest() && hud.score > 0
+                ? <div className="high-label">✦ NEW HIGH SCORE ✦</div>
+                : <div className="high-label">BEST: {getBest().toLocaleString()}</div>
+              }
+              <button className="neon-btn" onClick={startGame}>PLAY AGAIN</button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
