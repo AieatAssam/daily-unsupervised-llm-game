@@ -628,5 +628,19 @@
     "folder": "games/2026-04-03",
     "file": "games/2026-04-03/index.html",
     "preview": "games/2026-04-03/preview.png"
+  },
+  {
+    "id": "2026-04-04",
+    "name": "Gravity Flip",
+    "date": "2026-04-04",
+    "description": "Guide a glowing neon diamond through an endless obstacle course — click, tap, or press Space to flip gravity and thread through spikes and pillars while collecting gems for combo multipliers!",
+    "tagline": "Flip gravity. Dodge obstacles. Collect gems!",
+    "tags": ["endless-runner", "reflex", "action", "arcade", "one-button"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap / Space to flip gravity — dodge spikes and pillars, collect gems",
+    "folder": "games/2026-04-04",
+    "file": "games/2026-04-04/index.html",
+    "preview": "games/2026-04-04/preview.png"
   }
 ]

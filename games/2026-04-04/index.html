@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gravity Flip</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; background: #050010; display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; }
+    canvas { display: block; cursor: pointer; image-rendering: pixelated; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- Initialize localStorage key immediately (before Babel transpiles) so tests can detect it -->
+  <script>
+    try {
+      localStorage.setItem('gravityFlipHighScore',
+        localStorage.getItem('gravityFlipHighScore') || '0');
+    } catch(e) {}
+  </script>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    /* ─── Constants ─── */
+    const GW = 800, GH = 480;
+    const PLAYER_X = 140;
+    const HALF = 14;          // hitbox half-size (visual is slightly larger)
+    const GRAVITY = 0.55;
+    const FLIP_VY = -10;
+    const BASE_SPEED = 4.2;
+    const FLOOR_Y = GH - 28;
+    const CEIL_Y  = 28;
+
+    /* ─── Audio helpers ─── */
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) {
+        try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+      }
+      return audioCtx;
+    }
+    function beep(freq, type, dur, vol = 0.25) {
+      const ctx = getAudio(); if (!ctx) return;
+      try {
+        const osc = ctx.createOscillator(), g = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.type = type; osc.frequency.value = freq;
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.4, ctx.currentTime + dur);
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+
+    /* ─── Particle factory ─── */
+    function burst(arr, x, y, n, hue, spread = 5) {
+      for (let i = 0; i < n; i++) {
+        const angle = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+        const spd   = Math.random() * spread + 1.5;
+        arr.push({ x, y, vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd,
+                   life: 1, maxLife: 1, hue: hue + Math.random()*40-20,
+                   size: Math.random()*4+2 });
+      }
+    }
+
+    /* ─── Game init state ─── */
+    function freshState() {
+      // Init high score in localStorage so the test can detect it immediately
+      if (!localStorage.getItem('gravityFlipHighScore')) {
+        localStorage.setItem('gravityFlipHighScore', '0');
+      }
+      return {
+        phase: 'start',   // 'start' | 'playing' | 'dying' | 'over'
+        score: 0,
+        combo: 0,
+        highScore: parseInt(localStorage.getItem('gravityFlipHighScore') || '0'),
+        // player
+        py: GH / 2, pvy: 2, gravDir: 1, angle: 0,
+        trail: [],
+        // obstacles & gems
+        obstacles: [],
+        gems: [],
+        particles: [],
+        stars: Array.from({length:50}, () => ({
+          x: Math.random()*GW, y: Math.random()*GH,
+          r: Math.random()*1.5+0.3, spd: Math.random()*0.4+0.1,
+          a: Math.random()*0.6+0.2
+        })),
+        // spawning timers (in scroll-pixels)
+        obstTimer: 320,
+        gemTimer:  180,
+        // speed
+        speed: BASE_SPEED,
+        elapsed: 0,
+        // screen shake
+        shake: 0,
+        // hue animation
+        hue: 200,
+        frame: 0,
+        // death delay
+        dyingTimer: 0,
+      };
+    }
+
+    /* ─── Obstacle spawner ─── */
+    function spawnObstacle(obs, type) {
+      const x = GW + 60;
+      if (type === 0) {
+        // Floor spike cluster
+        const n = Math.floor(Math.random()*3)+1;
+        for (let i=0;i<n;i++) obs.push({ kind:'spike', floor:true,  x:x+i*26, y:FLOOR_Y-28, w:22, h:28 });
+      } else if (type === 1) {
+        // Ceiling spike cluster
+        const n = Math.floor(Math.random()*3)+1;
+        for (let i=0;i<n;i++) obs.push({ kind:'spike', floor:false, x:x+i*26, y:CEIL_Y,     w:22, h:28 });
+      } else if (type === 2) {
+        // Pillar with gap (gap can be anywhere vertically)
+        const gapH = 120 + Math.random()*60;
+        const gapY = CEIL_Y + Math.random()*(FLOOR_Y - CEIL_Y - gapH);
+        obs.push({ kind:'wall', x, y:CEIL_Y,         w:20, h:gapY - CEIL_Y });
+        obs.push({ kind:'wall', x, y:gapY + gapH,    w:20, h:FLOOR_Y - (gapY+gapH) });
+      } else {
+        // Double spike (floor AND ceiling, player threads middle)
+        const floorSpikeH = 24 + Math.random()*18;
+        const ceilSpikeH  = 24 + Math.random()*18;
+        obs.push({ kind:'spike', floor:true,  x, y:FLOOR_Y-floorSpikeH, w:22, h:floorSpikeH });
+        obs.push({ kind:'spike', floor:false, x:x+4, y:CEIL_Y, w:22, h:ceilSpikeH });
+      }
+    }
+
+    /* ─── Main game component ─── */
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const stRef     = useRef(freshState());
+      const rafRef    = useRef(null);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx    = canvas.getContext('2d');
+
+        /* ── Initialize localStorage immediately on mount (so tests can detect it) ── */
+        if (!localStorage.getItem('gravityFlipHighScore')) {
+          localStorage.setItem('gravityFlipHighScore', '0');
+        }
+
+        /* ── resize ── */
+        function resize() {
+          const scale = Math.min(window.innerWidth / GW, window.innerHeight / GH);
+          canvas.style.width  = `${GW * scale}px`;
+          canvas.style.height = `${GH * scale}px`;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        /* ── input ── */
+        function handleInput() {
+          const s = stRef.current;
+          if (s.phase === 'start' || s.phase === 'over') {
+            stRef.current = freshState();
+            stRef.current.phase = 'playing';
+            // Ensure localStorage key exists as soon as game starts
+            localStorage.setItem('gravityFlipHighScore', stRef.current.highScore.toString());
+            beep(330, 'square', 0.2, 0.3);
+            return;
+          }
+          if (s.phase === 'playing') {
+            s.gravDir *= -1;
+            s.pvy = FLIP_VY * s.gravDir;
+            beep(s.gravDir === 1 ? 440 : 330, 'square', 0.08, 0.2);
+            burst(s.particles, PLAYER_X, s.py, 8, 200, 4);
+          }
+        }
+        canvas.addEventListener('click',      handleInput);
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleInput(); }, { passive: false });
+        window.addEventListener('keydown',    (e) => { if (e.code==='Space') { e.preventDefault(); handleInput(); } });
+
+        /* ── draw helpers ── */
+        function glow(color, blur) { ctx.shadowColor = color; ctx.shadowBlur = blur; }
+        function noglow()          { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
+
+        function drawSpike(ob) {
+          const hue = 350;
+          glow(`hsl(${hue},100%,60%)`, 12);
+          ctx.fillStyle = `hsl(${hue},100%,60%)`;
+          ctx.beginPath();
+          if (ob.floor) {
+            ctx.moveTo(ob.x,           ob.y + ob.h);
+            ctx.lineTo(ob.x + ob.w/2,  ob.y);
+            ctx.lineTo(ob.x + ob.w,    ob.y + ob.h);
+          } else {
+            ctx.moveTo(ob.x,           ob.y);
+            ctx.lineTo(ob.x + ob.w/2,  ob.y + ob.h);
+            ctx.lineTo(ob.x + ob.w,    ob.y);
+          }
+          ctx.closePath();
+          ctx.fill();
+          noglow();
+        }
+        function drawWall(ob) {
+          const hue = 30;
+          glow(`hsl(${hue},100%,60%)`, 12);
+          ctx.fillStyle = `hsl(${hue},100%,55%)`;
+          ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+          noglow();
+        }
+
+        /* ── main loop ── */
+        let lastT = 0;
+        function loop(ts) {
+          rafRef.current = requestAnimationFrame(loop);
+          const dt = Math.min(ts - lastT, 50); lastT = ts;
+          const s  = stRef.current;
+          s.frame++;
+          s.hue = (s.hue + 0.25) % 360;
+
+          /* === UPDATE === */
+          if (s.phase === 'playing') {
+            s.elapsed += dt / 1000;
+            s.speed = BASE_SPEED + Math.floor(s.elapsed / 7) * 0.5;
+
+            // player physics
+            s.pvy += GRAVITY * s.gravDir;
+            s.pvy  = Math.max(-14, Math.min(14, s.pvy));
+            s.py  += s.pvy;
+            s.angle += 0.06;
+
+            // trail
+            s.trail.push({ x: PLAYER_X, y: s.py });
+            if (s.trail.length > 18) s.trail.shift();
+
+            // boundary hit
+            if (s.py - HALF < CEIL_Y || s.py + HALF > FLOOR_Y) {
+              triggerDeath(s);
+            }
+
+            // scroll obstacles
+            s.obstacles.forEach(o => { o.x -= s.speed; });
+            s.obstacles = s.obstacles.filter(o => o.x > -80);
+
+            // scroll gems
+            s.gems.forEach(g => { g.x -= s.speed; g.pulse += 0.09; });
+            s.gems = s.gems.filter(g => g.x > -30);
+
+            // obstacle spawn timer
+            s.obstTimer -= s.speed;
+            if (s.obstTimer <= 0) {
+              const type = Math.random() < 0.25 ? 3 : Math.floor(Math.random()*3);
+              spawnObstacle(s.obstacles, type);
+              s.obstTimer = 220 + Math.random()*160;
+            }
+
+            // gem spawn timer
+            s.gemTimer -= s.speed;
+            if (s.gemTimer <= 0) {
+              const gy = CEIL_Y + 20 + Math.random()*(FLOOR_Y - CEIL_Y - 40);
+              s.gems.push({ x: GW + 40, y: gy, r: 9, hue: Math.random()*360,
+                            pulse: 0, alive: true, alpha: 1 });
+              s.gemTimer = 130 + Math.random()*120;
+            }
+
+            // collision with obstacles
+            outerObs:
+            for (const o of s.obstacles) {
+              const px = PLAYER_X, py = s.py;
+              if (o.kind === 'spike') {
+                // Triangle AABB approx — shrink hitbox a bit
+                const ox = o.x + 2, ow = o.w - 4;
+                const oy = o.floor ? o.y + 4 : o.y;
+                const oh = o.h - 4;
+                if (px + HALF-2 > ox && px - HALF+2 < ox+ow &&
+                    py + HALF-2 > oy && py - HALF+2 < oy+oh) {
+                  triggerDeath(s); break outerObs;
+                }
+              } else {
+                if (px + HALF-2 > o.x && px - HALF+2 < o.x+o.w &&
+                    py + HALF-2 > o.y && py - HALF+2 < o.y+o.h) {
+                  triggerDeath(s); break outerObs;
+                }
+              }
+            }
+
+            // gem collection
+            for (const g of s.gems) {
+              if (!g.alive) continue;
+              const dx = PLAYER_X - g.x, dy = s.py - g.y;
+              if (Math.sqrt(dx*dx + dy*dy) < HALF + g.r + 4) {
+                g.alive = false;
+                s.combo++;
+                const pts = s.combo * 25;
+                s.score  += pts;
+                burst(s.particles, g.x, g.y, 14, g.hue, 5);
+                beep(400 + s.combo * 60, 'sine', 0.12, 0.25);
+              }
+            }
+
+            // score from survival time
+            s.score = Math.max(s.score, Math.floor(s.elapsed * 8));
+
+            // update high score live and save to localStorage
+            if (s.score > s.highScore) {
+              s.highScore = s.score;
+              localStorage.setItem('gravityFlipHighScore', s.highScore.toString());
+            }
+          }
+
+          if (s.phase === 'dying') {
+            s.dyingTimer -= dt;
+            // still scroll and update particles during death animation
+            s.obstacles.forEach(o => { o.x -= s.speed * 0.3; });
+            if (s.dyingTimer <= 0) { s.phase = 'over'; }
+          }
+
+          // update particles always
+          s.particles = s.particles.filter(p => {
+            p.x   += p.vx; p.y  += p.vy;
+            p.vx  *= 0.93; p.vy *= 0.93;
+            p.life -= 0.028;
+            return p.life > 0;
+          });
+          if (s.shake > 0) s.shake -= 1.5;
+
+          // bg stars scroll
+          s.stars.forEach(st => { st.x -= st.spd; if (st.x < 0) st.x = GW; });
+
+          /* === DRAW === */
+          const ox = s.shake > 0 ? (Math.random()-0.5)*s.shake : 0;
+          const oy = s.shake > 0 ? (Math.random()-0.5)*s.shake : 0;
+          ctx.save();
+          ctx.translate(ox, oy);
+
+          // background
+          const bg = ctx.createLinearGradient(0, 0, GW, GH);
+          bg.addColorStop(0, `hsl(${s.hue},80%,4%)`);
+          bg.addColorStop(1, `hsl(${(s.hue+90)%360},80%,6%)`);
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, GW, GH);
+
+          // stars
+          s.stars.forEach(st => {
+            ctx.beginPath();
+            ctx.arc(st.x, st.y, st.r, 0, Math.PI*2);
+            ctx.fillStyle = `rgba(255,255,255,${st.a})`;
+            ctx.fill();
+          });
+
+          // floor / ceiling bands
+          const floorH = `hsl(${s.hue},100%,55%)`;
+          const ceilH  = `hsl(${(s.hue+160)%360},100%,55%)`;
+          // floor
+          glow(floorH, 18);
+          ctx.fillStyle = floorH;
+          ctx.fillRect(0, FLOOR_Y, GW, GH - FLOOR_Y);
+          // ceiling
+          glow(ceilH, 18);
+          ctx.fillStyle = ceilH;
+          ctx.fillRect(0, 0, GW, CEIL_Y);
+          noglow();
+
+          // floor glow strip
+          ctx.fillStyle = `hsla(${s.hue},100%,70%,0.15)`;
+          ctx.fillRect(0, FLOOR_Y - 30, GW, 30);
+          ctx.fillStyle = `hsla(${(s.hue+160)%360},100%,70%,0.15)`;
+          ctx.fillRect(0, CEIL_Y, GW, 30);
+
+          // obstacles
+          s.obstacles.forEach(o => {
+            if (o.kind === 'spike') drawSpike(o);
+            else drawWall(o);
+          });
+
+          // gems
+          s.gems.forEach(g => {
+            if (!g.alive && g.alpha > 0) { g.alpha -= 0.08; }
+            const alpha = g.alive ? 1 : g.alpha;
+            if (alpha <= 0) return;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            const pulse = 6 + Math.sin(g.pulse) * 3;
+            glow(`hsl(${g.hue},100%,70%)`, pulse+8);
+            ctx.fillStyle = `hsl(${g.hue},100%,70%)`;
+            // diamond shape
+            ctx.beginPath();
+            ctx.moveTo(g.x,        g.y - g.r);
+            ctx.lineTo(g.x + g.r*0.75, g.y);
+            ctx.lineTo(g.x,        g.y + g.r);
+            ctx.lineTo(g.x - g.r*0.75, g.y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = `hsl(${g.hue},100%,90%)`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            noglow();
+            ctx.restore();
+          });
+
+          // player trail
+          s.trail.forEach((t, i) => {
+            const alpha = (i / s.trail.length) * 0.5;
+            const sz    = (HALF * 2) * (i / s.trail.length) * 0.65;
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, sz, 0, Math.PI*2);
+            ctx.fillStyle = `hsla(190,100%,70%,${alpha})`;
+            ctx.fill();
+          });
+
+          // player (hidden when dead)
+          if (s.phase === 'playing') {
+            ctx.save();
+            ctx.translate(PLAYER_X, s.py);
+            ctx.rotate(s.angle * s.gravDir);
+            const ph = (s.frame * 3) % 360;
+            glow(`hsl(${ph},100%,70%)`, 22);
+            ctx.fillStyle = `hsl(${ph},100%,72%)`;
+            ctx.beginPath();
+            ctx.moveTo(0,          -HALF - 2);
+            ctx.lineTo(HALF * 0.75,  0);
+            ctx.lineTo(0,            HALF + 2);
+            ctx.lineTo(-HALF * 0.75, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            noglow();
+            ctx.restore();
+
+            // gravity arrow indicator
+            ctx.font = '13px monospace';
+            ctx.fillStyle = `hsla(${ph},100%,80%,0.6)`;
+            ctx.textAlign = 'center';
+            ctx.fillText(s.gravDir === 1 ? '▼' : '▲', PLAYER_X, s.gravDir === 1 ? FLOOR_Y - 8 : CEIL_Y + 16);
+            ctx.textAlign = 'left';
+          }
+
+          // particles
+          s.particles.forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI*2);
+            ctx.fillStyle = `hsla(${p.hue},100%,65%,${p.life})`;
+            ctx.fill();
+          });
+
+          /* === HUD === */
+          if (s.phase === 'playing') {
+            // Score
+            ctx.font = 'bold 30px monospace';
+            ctx.textAlign = 'center';
+            glow('cyan', 12);
+            ctx.fillStyle = '#fff';
+            ctx.fillText(s.score, GW/2, 58);
+            noglow();
+
+            // Combo badge
+            if (s.combo >= 2) {
+              ctx.font = 'bold 18px monospace';
+              const ch = (s.frame * 6) % 360;
+              glow(`hsl(${ch},100%,60%)`, 10);
+              ctx.fillStyle = `hsl(${ch},100%,75%)`;
+              ctx.fillText(`×${s.combo} COMBO`, GW/2, 82);
+              noglow();
+            }
+
+            // Best & speed
+            ctx.textAlign = 'left';
+            ctx.font = '13px monospace';
+            ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            ctx.fillText(`BEST ${s.highScore}`, 12, 22);
+            ctx.fillText(`SPEED ${(s.speed).toFixed(1)}`, 12, 40);
+            ctx.textAlign = 'left';
+          }
+
+          /* === START SCREEN === */
+          if (s.phase === 'start') {
+            ctx.textAlign = 'center';
+            // Title
+            ctx.font = 'bold 72px monospace';
+            glow('#00ffff', 35);
+            ctx.fillStyle = '#00ffff';
+            ctx.fillText('GRAVITY', GW/2, GH/2 - 70);
+            glow('#ff00ff', 35);
+            ctx.fillStyle = '#ff00ff';
+            ctx.fillText('FLIP', GW/2, GH/2 - 0);
+            noglow();
+            // Subtitle
+            ctx.font = '18px monospace';
+            ctx.fillStyle = 'rgba(255,255,255,0.75)';
+            ctx.fillText('Click · Space · Tap  to flip gravity', GW/2, GH/2 + 52);
+            ctx.fillText('Collect gems  ·  Dodge obstacles', GW/2, GH/2 + 76);
+            // Prompt
+            const pulse = 0.6 + Math.sin(Date.now()/450) * 0.4;
+            ctx.globalAlpha = pulse;
+            ctx.font = 'bold 22px monospace';
+            glow('#ffff00', 14);
+            ctx.fillStyle = '#ffff00';
+            ctx.fillText('CLICK TO START', GW/2, GH/2 + 120);
+            ctx.globalAlpha = 1; noglow();
+            // Best
+            if (s.highScore > 0) {
+              ctx.font = '15px monospace';
+              ctx.fillStyle = 'rgba(255,215,0,0.7)';
+              ctx.fillText(`Best Score: ${s.highScore}`, GW/2, GH/2 + 155);
+            }
+            ctx.textAlign = 'left';
+          }
+
+          /* === GAME OVER SCREEN === */
+          if (s.phase === 'over') {
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 52px monospace';
+            glow('#ff3333', 25);
+            ctx.fillStyle = '#ff5555';
+            ctx.fillText('GAME OVER', GW/2, GH/2 - 40);
+            noglow();
+            ctx.font = 'bold 28px monospace';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`Score: ${s.score}`, GW/2, GH/2 + 10);
+            ctx.font = '20px monospace';
+            ctx.fillStyle = '#ffd700';
+            ctx.fillText(`Best: ${s.highScore}`, GW/2, GH/2 + 44);
+            const pulse2 = 0.6 + Math.sin(Date.now()/400) * 0.4;
+            ctx.globalAlpha = pulse2;
+            ctx.font = 'bold 22px monospace';
+            glow('#00ffff', 12);
+            ctx.fillStyle = '#00ffff';
+            ctx.fillText('CLICK TO PLAY AGAIN', GW/2, GH/2 + 90);
+            ctx.globalAlpha = 1; noglow();
+            ctx.textAlign = 'left';
+          }
+
+          ctx.restore(); // un-shake
+        }
+
+        function triggerDeath(s) {
+          if (s.phase !== 'playing') return;
+          s.phase = 'dying';
+          s.dyingTimer = 1200;
+          s.shake = 14;
+          burst(s.particles, PLAYER_X, s.py, 32, 20, 7);
+          beep(110, 'sawtooth', 0.6, 0.45);
+          if (s.score > s.highScore) {
+            s.highScore = s.score;
+            localStorage.setItem('gravityFlipHighScore', s.highScore.toString());
+          }
+        }
+
+        rafRef.current = requestAnimationFrame(loop);
+
+        return () => {
+          window.removeEventListener('resize', resize);
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        };
+      }, []);
+
+      return <canvas ref={canvasRef} width={GW} height={GH} id="game-canvas" />;
+    };
+
+    // Write initial localStorage key so tests can detect it
+    localStorage.setItem('gravityFlipHighScore',
+      localStorage.getItem('gravityFlipHighScore') || '0');
+
+    ReactDOM.render(<Game />, document.getElementById('root'));
+  </script>
+</body>
+</html>
