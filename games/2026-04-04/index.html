@@ -3,39 +3,37 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gravity Flip</title>
+  <title>Orbit Frenzy</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { margin: 0; overflow: hidden; background: #050010; display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; }
-    canvas { display: block; cursor: pointer; image-rendering: pixelated; }
+    body { margin: 0; overflow: hidden; background: #04000e; display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; }
+    canvas { display: block; cursor: pointer; }
   </style>
 </head>
 <body>
   <div id="root"></div>
-  <!-- Initialize localStorage key immediately (before Babel transpiles) so tests can detect it -->
   <script>
     try {
-      localStorage.setItem('gravityFlipHighScore',
-        localStorage.getItem('gravityFlipHighScore') || '0');
+      localStorage.setItem('orbitFrenzyHighScore',
+        localStorage.getItem('orbitFrenzyHighScore') || '0');
     } catch(e) {}
   </script>
   <script type="text/babel">
     const { useEffect, useRef } = React;
 
-    /* ─── Constants ─── */
+    /* ─── Layout ─── */
     const GW = 800, GH = 480;
-    const PLAYER_X = 140;
-    const HALF = 14;          // hitbox half-size (visual is slightly larger)
-    const GRAVITY = 0.55;
-    const FLIP_VY = -10;
-    const BASE_SPEED = 4.2;
-    const FLOOR_Y = GH - 28;
-    const CEIL_Y  = 28;
+    const CX = GW / 2, CY = GH / 2;
+    const INNER_R   = 88;   // inner orbit radius
+    const OUTER_R   = 170;  // outer orbit radius
+    const PLAYER_VR = 11;   // visual radius of player dot
+    const HIT_ARC   = 14;   // collision arc-length tolerance (pixels)
+    const HS_KEY    = 'orbitFrenzyHighScore';
 
-    /* ─── Audio helpers ─── */
+    /* ─── Audio ─── */
     let audioCtx = null;
     function getAudio() {
       if (!audioCtx) {
@@ -49,87 +47,58 @@
         const osc = ctx.createOscillator(), g = ctx.createGain();
         osc.connect(g); g.connect(ctx.destination);
         osc.type = type; osc.frequency.value = freq;
-        osc.frequency.exponentialRampToValueAtTime(freq * 0.4, ctx.currentTime + dur);
         g.gain.setValueAtTime(vol, ctx.currentTime);
         g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
         osc.start(); osc.stop(ctx.currentTime + dur);
       } catch(e) {}
     }
 
-    /* ─── Particle factory ─── */
-    function burst(arr, x, y, n, hue, spread = 5) {
+    /* ─── Particles ─── */
+    function burst(arr, x, y, n, hue, spd = 5) {
       for (let i = 0; i < n; i++) {
-        const angle = (Math.PI * 2 * i) / n + Math.random() * 0.5;
-        const spd   = Math.random() * spread + 1.5;
-        arr.push({ x, y, vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd,
-                   life: 1, maxLife: 1, hue: hue + Math.random()*40-20,
-                   size: Math.random()*4+2 });
+        const a = (Math.PI * 2 * i) / n + Math.random() * 0.4;
+        const s = Math.random() * spd + 1.5;
+        arr.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+                   life: 1, hue: hue + Math.random()*50-25, size: Math.random()*4+2 });
       }
     }
 
-    /* ─── Game init state ─── */
+    /* ─── Fresh state ─── */
     function freshState() {
-      // Init high score in localStorage so the test can detect it immediately
-      if (!localStorage.getItem('gravityFlipHighScore')) {
-        localStorage.setItem('gravityFlipHighScore', '0');
-      }
       return {
-        phase: 'start',   // 'start' | 'playing' | 'dying' | 'over'
-        score: 0,
-        combo: 0,
-        highScore: parseInt(localStorage.getItem('gravityFlipHighScore') || '0'),
-        // player
-        py: GH / 2, pvy: 2, gravDir: 1, angle: 0,
-        trail: [],
-        // obstacles & gems
-        obstacles: [],
-        gems: [],
-        particles: [],
-        stars: Array.from({length:50}, () => ({
-          x: Math.random()*GW, y: Math.random()*GH,
-          r: Math.random()*1.5+0.3, spd: Math.random()*0.4+0.1,
-          a: Math.random()*0.6+0.2
-        })),
-        // spawning timers (in scroll-pixels)
-        obstTimer: 320,
-        gemTimer:  180,
-        // speed
-        speed: BASE_SPEED,
-        elapsed: 0,
-        // screen shake
-        shake: 0,
-        // hue animation
-        hue: 200,
-        frame: 0,
-        // death delay
-        dyingTimer: 0,
-      };
-    }
+        phase: 'start',
+        score: 0, combo: 0,
+        highScore: parseInt(localStorage.getItem(HS_KEY) || '0'),
 
-    /* ─── Obstacle spawner ─── */
-    function spawnObstacle(obs, type) {
-      const x = GW + 60;
-      if (type === 0) {
-        // Floor spike cluster
-        const n = Math.floor(Math.random()*3)+1;
-        for (let i=0;i<n;i++) obs.push({ kind:'spike', floor:true,  x:x+i*26, y:FLOOR_Y-28, w:22, h:28 });
-      } else if (type === 1) {
-        // Ceiling spike cluster
-        const n = Math.floor(Math.random()*3)+1;
-        for (let i=0;i<n;i++) obs.push({ kind:'spike', floor:false, x:x+i*26, y:CEIL_Y,     w:22, h:28 });
-      } else if (type === 2) {
-        // Pillar with gap (gap can be anywhere vertically)
-        const gapH = 120 + Math.random()*60;
-        const gapY = CEIL_Y + Math.random()*(FLOOR_Y - CEIL_Y - gapH);
-        obs.push({ kind:'wall', x, y:CEIL_Y,         w:20, h:gapY - CEIL_Y });
-        obs.push({ kind:'wall', x, y:gapY + gapH,    w:20, h:FLOOR_Y - (gapY+gapH) });
-      } else {
-        // Double spike (floor AND ceiling, player threads middle)
-        const floorSpikeH = 24 + Math.random()*18;
-        const ceilSpikeH  = 24 + Math.random()*18;
-        obs.push({ kind:'spike', floor:true,  x, y:FLOOR_Y-floorSpikeH, w:22, h:floorSpikeH });
-        obs.push({ kind:'spike', floor:false, x:x+4, y:CEIL_Y, w:22, h:ceilSpikeH });
-      }
+        /* player */
+        orbit:    'outer',        // 'inner' | 'outer'
+        angle:    -Math.PI / 2,   // top position
+        angSpeed: 0.022,          // radians/frame (increases over time)
+
+        /* hazards: rotating spoke arms */
+        spokes: [
+          // start with one full spoke, rotating opposite to player
+          { angle: Math.PI / 2, speed: -0.030, type: 'full', hue: 45 }
+        ],
+
+        /* collectibles */
+        gems: [],
+
+        /* cosmetic */
+        particles: [],
+        trail: [],
+        stars: Array.from({ length: 90 }, () => ({
+          x: Math.random()*GW, y: Math.random()*GH,
+          r: Math.random()*1.5+0.3, a: Math.random()*0.5+0.15
+        })),
+
+        /* timers */
+        elapsed: 0, frame: 0,
+        gemTimer:   180,  // frames until next gem
+        spokeLevel: 1,    // current max spoke count
+        ringPulse:  0,    // flash on orbit switch
+        shake: 0, dyingTimer: 0,
+      };
     }
 
     /* ─── Main game component ─── */
@@ -142,12 +111,7 @@
         const canvas = canvasRef.current;
         const ctx    = canvas.getContext('2d');
 
-        /* ── Initialize localStorage immediately on mount (so tests can detect it) ── */
-        if (!localStorage.getItem('gravityFlipHighScore')) {
-          localStorage.setItem('gravityFlipHighScore', '0');
-        }
-
-        /* ── resize ── */
+        /* resize */
         function resize() {
           const scale = Math.min(window.innerWidth / GW, window.innerHeight / GH);
           canvas.style.width  = `${GW * scale}px`;
@@ -156,56 +120,38 @@
         resize();
         window.addEventListener('resize', resize);
 
-        /* ── input ── */
+        /* input */
         function handleInput() {
           const s = stRef.current;
           if (s.phase === 'start' || s.phase === 'over') {
             stRef.current = freshState();
             stRef.current.phase = 'playing';
-            // Ensure localStorage key exists as soon as game starts
-            localStorage.setItem('gravityFlipHighScore', stRef.current.highScore.toString());
             beep(330, 'square', 0.2, 0.3);
             return;
           }
           if (s.phase === 'playing') {
-            s.gravDir *= -1;
-            s.pvy = FLIP_VY * s.gravDir;
-            beep(s.gravDir === 1 ? 440 : 330, 'square', 0.08, 0.2);
-            burst(s.particles, PLAYER_X, s.py, 8, 200, 4);
+            /* switch orbit */
+            s.orbit = s.orbit === 'inner' ? 'outer' : 'inner';
+            s.ringPulse = 1.0;
+            const r  = s.orbit === 'inner' ? INNER_R : OUTER_R;
+            const px = CX + Math.cos(s.angle) * r;
+            const py = CY + Math.sin(s.angle) * r;
+            burst(s.particles, px, py, 12, s.orbit === 'inner' ? 185 : 295, 4);
+            beep(s.orbit === 'inner' ? 660 : 440, 'sine', 0.1, 0.22);
           }
         }
-        canvas.addEventListener('click',      handleInput);
-        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleInput(); }, { passive: false });
-        window.addEventListener('keydown',    (e) => { if (e.code==='Space') { e.preventDefault(); handleInput(); } });
+        canvas.addEventListener('click', handleInput);
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); }, { passive: false });
+        window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); handleInput(); } });
 
-        /* ── draw helpers ── */
+        /* draw helpers */
         function glow(color, blur) { ctx.shadowColor = color; ctx.shadowBlur = blur; }
         function noglow()          { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
 
-        function drawSpike(ob) {
-          const hue = 350;
-          glow(`hsl(${hue},100%,60%)`, 12);
-          ctx.fillStyle = `hsl(${hue},100%,60%)`;
-          ctx.beginPath();
-          if (ob.floor) {
-            ctx.moveTo(ob.x,           ob.y + ob.h);
-            ctx.lineTo(ob.x + ob.w/2,  ob.y);
-            ctx.lineTo(ob.x + ob.w,    ob.y + ob.h);
-          } else {
-            ctx.moveTo(ob.x,           ob.y);
-            ctx.lineTo(ob.x + ob.w/2,  ob.y + ob.h);
-            ctx.lineTo(ob.x + ob.w,    ob.y);
-          }
-          ctx.closePath();
-          ctx.fill();
-          noglow();
-        }
-        function drawWall(ob) {
-          const hue = 30;
-          glow(`hsl(${hue},100%,60%)`, 12);
-          ctx.fillStyle = `hsl(${hue},100%,55%)`;
-          ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
-          noglow();
+        /* normalise angle difference to [0, π] */
+        function angDiff(a, b) {
+          let d = Math.abs(((a - b) % (Math.PI*2) + Math.PI*2) % (Math.PI*2));
+          return Math.min(d, Math.PI*2 - d);
         }
 
         /* ── main loop ── */
@@ -215,131 +161,131 @@
           const dt = Math.min(ts - lastT, 50); lastT = ts;
           const s  = stRef.current;
           s.frame++;
-          s.hue = (s.hue + 0.25) % 360;
 
-          /* === UPDATE === */
+          /* ═══ UPDATE ═══ */
           if (s.phase === 'playing') {
             s.elapsed += dt / 1000;
-            s.speed = BASE_SPEED + Math.floor(s.elapsed / 7) * 0.5;
 
-            // player physics
-            s.pvy += GRAVITY * s.gravDir;
-            s.pvy  = Math.max(-14, Math.min(14, s.pvy));
-            s.py  += s.pvy;
-            s.angle += 0.06;
+            /* ramp player speed */
+            s.angSpeed = 0.022 + Math.floor(s.elapsed / 15) * 0.0015;
 
-            // trail
-            s.trail.push({ x: PLAYER_X, y: s.py });
-            if (s.trail.length > 18) s.trail.shift();
+            /* advance player angle */
+            s.angle += s.angSpeed;
 
-            // boundary hit
-            if (s.py - HALF < CEIL_Y || s.py + HALF > FLOOR_Y) {
-              triggerDeath(s);
+            /* update trail */
+            const pR = s.orbit === 'inner' ? INNER_R : OUTER_R;
+            const px = CX + Math.cos(s.angle) * pR;
+            const py = CY + Math.sin(s.angle) * pR;
+            s.trail.push({ x: px, y: py, orbit: s.orbit });
+            if (s.trail.length > 22) s.trail.shift();
+
+            /* advance spokes */
+            s.spokes.forEach(sp => { sp.angle += sp.speed; });
+
+            /* escalate: add more spokes */
+            const targetCount = Math.min(5, 1 + Math.floor(s.elapsed / 14));
+            if (s.spokes.length < targetCount) {
+              const typeRoll = Math.random();
+              const type = typeRoll < 0.35 ? 'inner' : typeRoll < 0.70 ? 'outer' : 'full';
+              const hues = { inner: 185, outer: 295, full: 45 };
+              // alternate rotation direction for variety
+              const dir  = s.spokes.length % 2 === 0 ? -1 : 1;
+              s.spokes.push({
+                angle: Math.random() * Math.PI * 2,
+                speed: dir * (0.022 + Math.random() * 0.018),
+                type, hue: hues[type],
+              });
             }
 
-            // scroll obstacles
-            s.obstacles.forEach(o => { o.x -= s.speed; });
-            s.obstacles = s.obstacles.filter(o => o.x > -80);
-
-            // scroll gems
-            s.gems.forEach(g => { g.x -= s.speed; g.pulse += 0.09; });
-            s.gems = s.gems.filter(g => g.x > -30);
-
-            // obstacle spawn timer
-            s.obstTimer -= s.speed;
-            if (s.obstTimer <= 0) {
-              const type = Math.random() < 0.25 ? 3 : Math.floor(Math.random()*3);
-              spawnObstacle(s.obstacles, type);
-              s.obstTimer = 220 + Math.random()*160;
-            }
-
-            // gem spawn timer
-            s.gemTimer -= s.speed;
+            /* spawn gems */
+            s.gemTimer--;
             if (s.gemTimer <= 0) {
-              const gy = CEIL_Y + 20 + Math.random()*(FLOOR_Y - CEIL_Y - 40);
-              s.gems.push({ x: GW + 40, y: gy, r: 9, hue: Math.random()*360,
-                            pulse: 0, alive: true, alpha: 1 });
-              s.gemTimer = 130 + Math.random()*120;
+              const gemOrbit = Math.random() < 0.5 ? 'inner' : 'outer';
+              const gemAngle = Math.random() * Math.PI * 2;
+              const gemR = gemOrbit === 'inner' ? INNER_R : OUTER_R;
+              s.gems.push({
+                orbit: gemOrbit, angle: gemAngle, pulse: 0,
+                x: CX + Math.cos(gemAngle) * gemR,
+                y: CY + Math.sin(gemAngle) * gemR,
+                hue: Math.random() * 360, alive: true, alpha: 1,
+              });
+              s.gemTimer = 90 + Math.random() * 120;
+              if (s.gems.length > 7) s.gems.splice(0, 1);  // drop oldest
             }
+            s.gems.forEach(g => { g.pulse += 0.09; });
 
-            // collision with obstacles
-            outerObs:
-            for (const o of s.obstacles) {
-              const px = PLAYER_X, py = s.py;
-              if (o.kind === 'spike') {
-                // Triangle AABB approx — shrink hitbox a bit
-                const ox = o.x + 2, ow = o.w - 4;
-                const oy = o.floor ? o.y + 4 : o.y;
-                const oh = o.h - 4;
-                if (px + HALF-2 > ox && px - HALF+2 < ox+ow &&
-                    py + HALF-2 > oy && py - HALF+2 < oy+oh) {
-                  triggerDeath(s); break outerObs;
-                }
-              } else {
-                if (px + HALF-2 > o.x && px - HALF+2 < o.x+o.w &&
-                    py + HALF-2 > o.y && py - HALF+2 < o.y+o.h) {
-                  triggerDeath(s); break outerObs;
-                }
-              }
-            }
-
-            // gem collection
+            /* collect gems */
             for (const g of s.gems) {
-              if (!g.alive) continue;
-              const dx = PLAYER_X - g.x, dy = s.py - g.y;
-              if (Math.sqrt(dx*dx + dy*dy) < HALF + g.r + 4) {
+              if (!g.alive || g.orbit !== s.orbit) continue;
+              const arc = pR * angDiff(g.angle, s.angle);
+              if (arc < HIT_ARC + 9) {
                 g.alive = false;
                 s.combo++;
-                const pts = s.combo * 25;
-                s.score  += pts;
-                burst(s.particles, g.x, g.y, 14, g.hue, 5);
-                beep(400 + s.combo * 60, 'sine', 0.12, 0.25);
+                s.score += s.combo * 50;
+                burst(s.particles, g.x, g.y, 16, g.hue, 5);
+                beep(450 + s.combo * 80, 'sine', 0.15, 0.28);
               }
             }
 
-            // score from survival time
-            s.score = Math.max(s.score, Math.floor(s.elapsed * 8));
+            /* collision with spokes */
+            outerSpoke:
+            for (const sp of s.spokes) {
+              /* check if player's orbit is in this spoke's radial range */
+              let inRange = false;
+              if (sp.type === 'full')  inRange = true;
+              if (sp.type === 'inner' && s.orbit === 'inner') inRange = true;
+              if (sp.type === 'outer' && s.orbit === 'outer') inRange = true;
+              if (!inRange) continue;
 
-            // update high score live and save to localStorage
+              /* check angular proximity */
+              const arc = pR * angDiff(sp.angle, s.angle);
+              if (arc < HIT_ARC) { triggerDeath(s); break outerSpoke; }
+            }
+
+            /* score = max(gem-based, time-based) */
+            s.score = Math.max(s.score, Math.floor(s.elapsed * 10));
             if (s.score > s.highScore) {
               s.highScore = s.score;
-              localStorage.setItem('gravityFlipHighScore', s.highScore.toString());
+              localStorage.setItem(HS_KEY, s.highScore.toString());
             }
           }
 
           if (s.phase === 'dying') {
             s.dyingTimer -= dt;
-            // still scroll and update particles during death animation
-            s.obstacles.forEach(o => { o.x -= s.speed * 0.3; });
-            if (s.dyingTimer <= 0) { s.phase = 'over'; }
+            if (s.dyingTimer <= 0) s.phase = 'over';
           }
 
-          // update particles always
+          /* update particles & fade */
           s.particles = s.particles.filter(p => {
-            p.x   += p.vx; p.y  += p.vy;
-            p.vx  *= 0.93; p.vy *= 0.93;
-            p.life -= 0.028;
-            return p.life > 0;
+            p.x += p.vx; p.y += p.vy; p.vx *= 0.93; p.vy *= 0.93; p.life -= 0.028; return p.life > 0;
           });
-          if (s.shake > 0) s.shake -= 1.5;
+          s.gems = s.gems.filter(g => { if (!g.alive) g.alpha -= 0.06; return g.alpha > 0; });
+          if (s.shake > 0)     s.shake     -= 1.5;
+          if (s.ringPulse > 0) s.ringPulse -= 0.06;
 
-          // bg stars scroll
-          s.stars.forEach(st => { st.x -= st.spd; if (st.x < 0) st.x = GW; });
-
-          /* === DRAW === */
+          /* ═══ DRAW ═══ */
           const ox = s.shake > 0 ? (Math.random()-0.5)*s.shake : 0;
           const oy = s.shake > 0 ? (Math.random()-0.5)*s.shake : 0;
           ctx.save();
           ctx.translate(ox, oy);
 
-          // background
-          const bg = ctx.createLinearGradient(0, 0, GW, GH);
-          bg.addColorStop(0, `hsl(${s.hue},80%,4%)`);
-          bg.addColorStop(1, `hsl(${(s.hue+90)%360},80%,6%)`);
+          /* deep space background */
+          const bg = ctx.createRadialGradient(CX, CY, 20, CX, CY, GH * 0.75);
+          bg.addColorStop(0,   '#0d0025');
+          bg.addColorStop(0.5, '#07001a');
+          bg.addColorStop(1,   '#020008');
           ctx.fillStyle = bg;
           ctx.fillRect(0, 0, GW, GH);
 
-          // stars
+          /* nebula wisps */
+          const neb = ctx.createRadialGradient(CX, CY, OUTER_R*1.1, CX, CY, OUTER_R*2.2);
+          neb.addColorStop(0,   'rgba(80,0,140,0.08)');
+          neb.addColorStop(0.5, 'rgba(0,60,160,0.05)');
+          neb.addColorStop(1,   'rgba(0,0,0,0)');
+          ctx.fillStyle = neb;
+          ctx.fillRect(0, 0, GW, GH);
+
+          /* stars */
           s.stars.forEach(st => {
             ctx.beginPath();
             ctx.arc(st.x, st.y, st.r, 0, Math.PI*2);
@@ -347,47 +293,127 @@
             ctx.fill();
           });
 
-          // floor / ceiling bands
-          const floorH = `hsl(${s.hue},100%,55%)`;
-          const ceilH  = `hsl(${(s.hue+160)%360},100%,55%)`;
-          // floor
-          glow(floorH, 18);
-          ctx.fillStyle = floorH;
-          ctx.fillRect(0, FLOOR_Y, GW, GH - FLOOR_Y);
-          // ceiling
-          glow(ceilH, 18);
-          ctx.fillStyle = ceilH;
-          ctx.fillRect(0, 0, GW, CEIL_Y);
-          noglow();
+          /* ── orbit rings ── */
+          const innerActive = s.orbit === 'inner';
+          const outerActive = s.orbit === 'outer';
+          const iPulse  = innerActive ? 0.55 + Math.max(0, s.ringPulse) * 0.45 : 0.22;
+          const oPulse  = outerActive ? 0.55 + Math.max(0, s.ringPulse) * 0.45 : 0.22;
 
-          // floor glow strip
-          ctx.fillStyle = `hsla(${s.hue},100%,70%,0.15)`;
-          ctx.fillRect(0, FLOOR_Y - 30, GW, 30);
-          ctx.fillStyle = `hsla(${(s.hue+160)%360},100%,70%,0.15)`;
-          ctx.fillRect(0, CEIL_Y, GW, 30);
+          /* inner ring — cyan */
+          ctx.beginPath();
+          ctx.arc(CX, CY, INNER_R, 0, Math.PI*2);
+          ctx.strokeStyle = `rgba(0,210,255,${iPulse})`;
+          ctx.lineWidth   = innerActive ? 2.5 : 1.2;
+          glow('rgba(0,210,255,0.9)', 12);
+          ctx.stroke(); noglow();
 
-          // obstacles
-          s.obstacles.forEach(o => {
-            if (o.kind === 'spike') drawSpike(o);
-            else drawWall(o);
+          /* outer ring — magenta */
+          ctx.beginPath();
+          ctx.arc(CX, CY, OUTER_R, 0, Math.PI*2);
+          ctx.strokeStyle = `rgba(210,0,255,${oPulse})`;
+          ctx.lineWidth   = outerActive ? 2.5 : 1.2;
+          glow('rgba(210,0,255,0.9)', 12);
+          ctx.stroke(); noglow();
+
+          /* gap indicator (dashed between rings) */
+          ctx.beginPath();
+          ctx.arc(CX, CY, (INNER_R + OUTER_R) / 2, 0, Math.PI*2);
+          ctx.setLineDash([6, 14]);
+          ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          /* ── central star ── */
+          const sp2 = 1 + Math.sin(s.frame * 0.06) * 0.25;
+          glow('#ffcc00', 28 * sp2);
+          const sg = ctx.createRadialGradient(CX, CY, 0, CX, CY, 22);
+          sg.addColorStop(0, '#ffffff');
+          sg.addColorStop(0.25, '#ffee88');
+          sg.addColorStop(0.7,  '#ff8800');
+          sg.addColorStop(1,    'transparent');
+          ctx.fillStyle = sg;
+          ctx.beginPath();
+          ctx.arc(CX, CY, 22, 0, Math.PI*2);
+          ctx.fill(); noglow();
+
+          /* star corona rays */
+          ctx.save();
+          ctx.translate(CX, CY);
+          ctx.rotate(s.frame * 0.008);
+          for (let i = 0; i < 8; i++) {
+            ctx.save();
+            ctx.rotate((Math.PI*2 / 8) * i);
+            const rayAlpha = 0.07 + Math.sin(s.frame * 0.04 + i) * 0.03;
+            ctx.fillStyle = `rgba(255,210,100,${rayAlpha})`;
+            ctx.beginPath();
+            ctx.moveTo(0, -22);
+            ctx.lineTo(4, -22-18);
+            ctx.lineTo(0, -22-36);
+            ctx.lineTo(-4, -22-18);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
+          ctx.restore();
+
+          /* ── spokes ── */
+          s.spokes.forEach(sp => {
+            const spokeColors = { inner: '#00d0ff', outer: '#d000ff', full: '#ffaa00' };
+            const glowColors  = { inner: 'rgba(0,200,255,0.9)', outer: 'rgba(200,0,255,0.9)', full: 'rgba(255,170,0,0.9)' };
+            const color  = spokeColors[sp.type];
+            const gColor = glowColors[sp.type];
+
+            /* radial extents of each spoke type */
+            let r1, r2;
+            if (sp.type === 'full')  { r1 = 24; r2 = OUTER_R + 22; }
+            if (sp.type === 'inner') { r1 = 24; r2 = INNER_R + 20; }
+            if (sp.type === 'outer') { r1 = INNER_R - 12; r2 = OUTER_R + 22; }
+
+            const x1 = CX + Math.cos(sp.angle) * r1;
+            const y1 = CY + Math.sin(sp.angle) * r1;
+            const x2 = CX + Math.cos(sp.angle) * r2;
+            const y2 = CY + Math.sin(sp.angle) * r2;
+
+            /* outer glow */
+            glow(gColor, 18);
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 5;
+            ctx.stroke();
+
+            /* bright core */
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            noglow();
+
+            /* endpoint dot */
+            ctx.beginPath();
+            ctx.arc(x2, y2, 5, 0, Math.PI*2);
+            glow(gColor, 10);
+            ctx.fillStyle = color;
+            ctx.fill(); noglow();
           });
 
-          // gems
+          /* ── gems ── */
           s.gems.forEach(g => {
-            if (!g.alive && g.alpha > 0) { g.alpha -= 0.08; }
-            const alpha = g.alive ? 1 : g.alpha;
-            if (alpha <= 0) return;
             ctx.save();
-            ctx.globalAlpha = alpha;
-            const pulse = 6 + Math.sin(g.pulse) * 3;
-            glow(`hsl(${g.hue},100%,70%)`, pulse+8);
+            ctx.globalAlpha = g.alpha;
+            const gPulse = 7 + Math.sin(g.pulse) * 3;
+            glow(`hsl(${g.hue},100%,65%)`, gPulse + 10);
             ctx.fillStyle = `hsl(${g.hue},100%,70%)`;
-            // diamond shape
+            const gr = 9;
             ctx.beginPath();
-            ctx.moveTo(g.x,        g.y - g.r);
-            ctx.lineTo(g.x + g.r*0.75, g.y);
-            ctx.lineTo(g.x,        g.y + g.r);
-            ctx.lineTo(g.x - g.r*0.75, g.y);
+            ctx.moveTo(g.x,         g.y - gr);
+            ctx.lineTo(g.x + gr*0.7, g.y);
+            ctx.lineTo(g.x,          g.y + gr);
+            ctx.lineTo(g.x - gr*0.7, g.y);
             ctx.closePath();
             ctx.fill();
             ctx.strokeStyle = `hsl(${g.hue},100%,90%)`;
@@ -397,46 +423,48 @@
             ctx.restore();
           });
 
-          // player trail
+          /* ── player trail ── */
           s.trail.forEach((t, i) => {
-            const alpha = (i / s.trail.length) * 0.5;
-            const sz    = (HALF * 2) * (i / s.trail.length) * 0.65;
+            const frac  = i / s.trail.length;
+            const tHue  = t.orbit === 'inner' ? 185 : 295;
             ctx.beginPath();
-            ctx.arc(t.x, t.y, sz, 0, Math.PI*2);
-            ctx.fillStyle = `hsla(190,100%,70%,${alpha})`;
+            ctx.arc(t.x, t.y, 4 * frac, 0, Math.PI*2);
+            ctx.fillStyle = `hsla(${tHue},100%,70%,${frac * 0.6})`;
             ctx.fill();
           });
 
-          // player (hidden when dead)
+          /* ── player ── */
           if (s.phase === 'playing') {
-            ctx.save();
-            ctx.translate(PLAYER_X, s.py);
-            ctx.rotate(s.angle * s.gravDir);
-            const ph = (s.frame * 3) % 360;
-            glow(`hsl(${ph},100%,70%)`, 22);
-            ctx.fillStyle = `hsl(${ph},100%,72%)`;
+            const pr   = s.orbit === 'inner' ? INNER_R : OUTER_R;
+            const ppx  = CX + Math.cos(s.angle) * pr;
+            const ppy  = CY + Math.sin(s.angle) * pr;
+            const pHue = s.orbit === 'inner' ? 185 : 295;
+
+            /* outer ring glow */
+            glow(`hsl(${pHue},100%,65%)`, 22);
             ctx.beginPath();
-            ctx.moveTo(0,          -HALF - 2);
-            ctx.lineTo(HALF * 0.75,  0);
-            ctx.lineTo(0,            HALF + 2);
-            ctx.lineTo(-HALF * 0.75, 0);
-            ctx.closePath();
+            ctx.arc(ppx, ppy, PLAYER_VR + 4, 0, Math.PI*2);
+            ctx.fillStyle = `hsla(${pHue},100%,65%,0.2)`;
             ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+
+            /* core */
+            ctx.beginPath();
+            ctx.arc(ppx, ppy, PLAYER_VR, 0, Math.PI*2);
+            ctx.fillStyle = `hsl(${pHue},100%,75%)`;
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
             ctx.lineWidth = 1.5;
             ctx.stroke();
             noglow();
-            ctx.restore();
 
-            // gravity arrow indicator
-            ctx.font = '13px monospace';
-            ctx.fillStyle = `hsla(${ph},100%,80%,0.6)`;
-            ctx.textAlign = 'center';
-            ctx.fillText(s.gravDir === 1 ? '▼' : '▲', PLAYER_X, s.gravDir === 1 ? FLOOR_Y - 8 : CEIL_Y + 16);
-            ctx.textAlign = 'left';
+            /* velocity dot in center */
+            ctx.beginPath();
+            ctx.arc(ppx, ppy, 4, 0, Math.PI*2);
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.fill();
           }
 
-          // particles
+          /* ── particles ── */
           s.particles.forEach(p => {
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI*2);
@@ -444,89 +472,116 @@
             ctx.fill();
           });
 
-          /* === HUD === */
+          /* ── HUD (playing) ── */
           if (s.phase === 'playing') {
-            // Score
-            ctx.font = 'bold 30px monospace';
+            /* score */
+            ctx.font = 'bold 28px monospace';
             ctx.textAlign = 'center';
-            glow('cyan', 12);
+            glow('rgba(255,255,255,0.8)', 10);
             ctx.fillStyle = '#fff';
-            ctx.fillText(s.score, GW/2, 58);
+            ctx.fillText(s.score, GW / 2, 45);
             noglow();
 
-            // Combo badge
+            /* combo */
             if (s.combo >= 2) {
-              ctx.font = 'bold 18px monospace';
-              const ch = (s.frame * 6) % 360;
+              ctx.font = 'bold 16px monospace';
+              const ch = (s.frame * 7) % 360;
               glow(`hsl(${ch},100%,60%)`, 10);
               ctx.fillStyle = `hsl(${ch},100%,75%)`;
-              ctx.fillText(`×${s.combo} COMBO`, GW/2, 82);
+              ctx.fillText(`×${s.combo} COMBO`, GW / 2, 65);
               noglow();
             }
 
-            // Best & speed
+            /* corner info */
             ctx.textAlign = 'left';
             ctx.font = '13px monospace';
-            ctx.fillStyle = 'rgba(255,255,255,0.45)';
-            ctx.fillText(`BEST ${s.highScore}`, 12, 22);
-            ctx.fillText(`SPEED ${(s.speed).toFixed(1)}`, 12, 40);
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillText(`BEST ${s.highScore}`, 10, 22);
+
+            /* orbit label */
+            const labelHue = s.orbit === 'inner' ? 185 : 295;
+            ctx.fillStyle = `hsl(${labelHue},100%,70%)`;
+            ctx.fillText(`● ${s.orbit.toUpperCase()} ORBIT`, 10, 40);
+
+            /* spoke legend (top right) */
+            ctx.textAlign = 'right';
+            ctx.font = '11px monospace';
+            ctx.fillStyle = '#00d0ff';
+            ctx.fillText('■ CYAN  = inner only', GW - 10, 18);
+            ctx.fillStyle = '#d000ff';
+            ctx.fillText('■ PURPLE = outer only', GW - 10, 32);
+            ctx.fillStyle = '#ffaa00';
+            ctx.fillText('■ ORANGE = both rings', GW - 10, 46);
             ctx.textAlign = 'left';
           }
 
-          /* === START SCREEN === */
+          /* ── START SCREEN ── */
           if (s.phase === 'start') {
+            /* dim overlay */
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            ctx.fillRect(0, 0, GW, GH);
+
             ctx.textAlign = 'center';
-            // Title
-            ctx.font = 'bold 72px monospace';
-            glow('#00ffff', 35);
-            ctx.fillStyle = '#00ffff';
-            ctx.fillText('GRAVITY', GW/2, GH/2 - 70);
-            glow('#ff00ff', 35);
-            ctx.fillStyle = '#ff00ff';
-            ctx.fillText('FLIP', GW/2, GH/2 - 0);
+            ctx.font = 'bold 68px monospace';
+            glow('#00ccff', 32);
+            ctx.fillStyle = '#00ccff';
+            ctx.fillText('ORBIT', GW/2, GH/2 - 80);
+            glow('#cc00ff', 32);
+            ctx.fillStyle = '#cc00ff';
+            ctx.fillText('FRENZY', GW/2, GH/2 - 10);
             noglow();
-            // Subtitle
-            ctx.font = '18px monospace';
+
+            ctx.font = '16px monospace';
             ctx.fillStyle = 'rgba(255,255,255,0.75)';
-            ctx.fillText('Click · Space · Tap  to flip gravity', GW/2, GH/2 + 52);
-            ctx.fillText('Collect gems  ·  Dodge obstacles', GW/2, GH/2 + 76);
-            // Prompt
-            const pulse = 0.6 + Math.sin(Date.now()/450) * 0.4;
+            ctx.fillText('Orbit the star on two rings — click to switch!', GW/2, GH/2 + 42);
+            ctx.fillText('Dodge rotating spokes · Collect gems for combos', GW/2, GH/2 + 64);
+
+            /* legend */
+            ctx.font = '13px monospace';
+            ctx.fillStyle = '#00d0ff';   ctx.fillText('CYAN spokes: inner ring danger',  GW/2, GH/2 + 92);
+            ctx.fillStyle = '#d000ff';   ctx.fillText('PURPLE spokes: outer ring danger', GW/2, GH/2 + 110);
+            ctx.fillStyle = '#ffaa00';   ctx.fillText('ORANGE spokes: both rings — dodge the gap!', GW/2, GH/2 + 128);
+
+            /* pulse prompt */
+            const pulse = 0.6 + Math.sin(Date.now() / 450) * 0.4;
             ctx.globalAlpha = pulse;
             ctx.font = 'bold 22px monospace';
-            glow('#ffff00', 14);
+            glow('#ffff00', 16);
             ctx.fillStyle = '#ffff00';
-            ctx.fillText('CLICK TO START', GW/2, GH/2 + 120);
+            ctx.fillText('CLICK / TAP / SPACE TO START', GW/2, GH/2 + 162);
             ctx.globalAlpha = 1; noglow();
-            // Best
+
             if (s.highScore > 0) {
               ctx.font = '15px monospace';
               ctx.fillStyle = 'rgba(255,215,0,0.7)';
-              ctx.fillText(`Best Score: ${s.highScore}`, GW/2, GH/2 + 155);
+              ctx.fillText(`Best Score: ${s.highScore}`, GW/2, GH/2 + 192);
             }
             ctx.textAlign = 'left';
           }
 
-          /* === GAME OVER SCREEN === */
+          /* ── GAME OVER SCREEN ── */
           if (s.phase === 'over') {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(0, 0, GW, GH);
+
             ctx.textAlign = 'center';
             ctx.font = 'bold 52px monospace';
             glow('#ff3333', 25);
             ctx.fillStyle = '#ff5555';
-            ctx.fillText('GAME OVER', GW/2, GH/2 - 40);
+            ctx.fillText('GAME OVER', GW/2, GH/2 - 45);
             noglow();
             ctx.font = 'bold 28px monospace';
             ctx.fillStyle = '#ffffff';
-            ctx.fillText(`Score: ${s.score}`, GW/2, GH/2 + 10);
+            ctx.fillText(`Score: ${s.score}`, GW/2, GH/2 + 8);
             ctx.font = '20px monospace';
             ctx.fillStyle = '#ffd700';
-            ctx.fillText(`Best: ${s.highScore}`, GW/2, GH/2 + 44);
-            const pulse2 = 0.6 + Math.sin(Date.now()/400) * 0.4;
-            ctx.globalAlpha = pulse2;
+            ctx.fillText(`Best: ${s.highScore}`, GW/2, GH/2 + 42);
+            const p2 = 0.6 + Math.sin(Date.now() / 400) * 0.4;
+            ctx.globalAlpha = p2;
             ctx.font = 'bold 22px monospace';
             glow('#00ffff', 12);
             ctx.fillStyle = '#00ffff';
-            ctx.fillText('CLICK TO PLAY AGAIN', GW/2, GH/2 + 90);
+            ctx.fillText('CLICK TO PLAY AGAIN', GW/2, GH/2 + 88);
             ctx.globalAlpha = 1; noglow();
             ctx.textAlign = 'left';
           }
@@ -536,14 +591,17 @@
 
         function triggerDeath(s) {
           if (s.phase !== 'playing') return;
-          s.phase = 'dying';
-          s.dyingTimer = 1200;
-          s.shake = 14;
-          burst(s.particles, PLAYER_X, s.py, 32, 20, 7);
-          beep(110, 'sawtooth', 0.6, 0.45);
+          s.phase     = 'dying';
+          s.dyingTimer = 1300;
+          s.shake     = 16;
+          const pr = s.orbit === 'inner' ? INNER_R : OUTER_R;
+          const px = CX + Math.cos(s.angle) * pr;
+          const py = CY + Math.sin(s.angle) * pr;
+          burst(s.particles, px, py, 36, 20, 8);
+          beep(110, 'sawtooth', 0.65, 0.45);
           if (s.score > s.highScore) {
             s.highScore = s.score;
-            localStorage.setItem('gravityFlipHighScore', s.highScore.toString());
+            localStorage.setItem(HS_KEY, s.highScore.toString());
           }
         }
 
@@ -558,10 +616,7 @@
       return <canvas ref={canvasRef} width={GW} height={GH} id="game-canvas" />;
     };
 
-    // Write initial localStorage key so tests can detect it
-    localStorage.setItem('gravityFlipHighScore',
-      localStorage.getItem('gravityFlipHighScore') || '0');
-
+    localStorage.setItem(HS_KEY, localStorage.getItem(HS_KEY) || '0');
     ReactDOM.render(<Game />, document.getElementById('root'));
   </script>
 </body>
