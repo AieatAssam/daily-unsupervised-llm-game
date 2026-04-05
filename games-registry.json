@@ -642,5 +642,19 @@
     "folder": "games/2026-04-04",
     "file": "games/2026-04-04/index.html",
     "preview": "games/2026-04-04/preview.png"
+  },
+  {
+    "id": "2026-04-05",
+    "name": "Neon Morph",
+    "date": "2026-04-05",
+    "description": "Shape-shift your neon runner between WIDE and TALL forms to thread through horizontal and vertical gap obstacles — chain gap passes and gem pickups for massive combo multipliers as the speed escalates!",
+    "tagline": "Morph your shape. Thread the gap. Never stop!",
+    "tags": ["arcade", "reflex", "action", "runner", "morphing"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap / Space to morph between WIDE and TALL forms",
+    "folder": "games/2026-04-05",
+    "file": "games/2026-04-05/index.html",
+    "preview": "games/2026-04-05/preview.png"
   }
 ]
