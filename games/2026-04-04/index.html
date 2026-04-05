@@ -184,7 +184,15 @@
               sp.angle += sp.speed;
               if (sp.type === 'full') {
                 sp.phase = (sp.phase || 0) + 1;
-                if (sp.phase % 90 === 0) sp.activeOrbit = sp.activeOrbit === 'inner' ? 'outer' : 'inner';
+                if (sp.phase % 90 === 0) {
+                  const nextOrbit = sp.activeOrbit === 'inner' ? 'outer' : 'inner';
+                  // Only switch when spoke is far from player (> 45°) to avoid instant kills
+                  if (angDiff(sp.angle, s.angle) > Math.PI / 4) {
+                    sp.activeOrbit = nextOrbit;
+                  }
+                  // Reset phase regardless so we keep trying every 90 frames
+                  sp.phase = 0;
+                }
               }
             });
 
@@ -196,8 +204,10 @@
               const hues = { inner: 185, outer: 295, full: 45 };
               // alternate rotation direction for variety
               const dir  = s.spokes.length % 2 === 0 ? -1 : 1;
+              // spawn on opposite side from player so there's time to react
+              const spawnAngle = s.angle + Math.PI + (Math.random() - 0.5) * Math.PI * 0.5;
               s.spokes.push({
-                angle: Math.random() * Math.PI * 2,
+                angle: spawnAngle,
                 speed: dir * (0.022 + Math.random() * 0.018),
                 type, hue: hues[type],
                 ...(type === 'full' ? { phase: 0, activeOrbit: Math.random() < 0.5 ? 'inner' : 'outer' } : {}),
