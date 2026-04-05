@@ -78,7 +78,7 @@
         /* hazards: rotating spoke arms */
         spokes: [
           // start with one full spoke, rotating opposite to player
-          { angle: Math.PI / 2, speed: -0.030, type: 'full', hue: 45 }
+          { angle: Math.PI / 2, speed: -0.030, type: 'full', hue: 45, phase: 0, activeOrbit: 'outer' }
         ],
 
         /* collectibles */
@@ -180,7 +180,13 @@
             if (s.trail.length > 22) s.trail.shift();
 
             /* advance spokes */
-            s.spokes.forEach(sp => { sp.angle += sp.speed; });
+            s.spokes.forEach(sp => {
+              sp.angle += sp.speed;
+              if (sp.type === 'full') {
+                sp.phase = (sp.phase || 0) + 1;
+                if (sp.phase % 90 === 0) sp.activeOrbit = sp.activeOrbit === 'inner' ? 'outer' : 'inner';
+              }
+            });
 
             /* escalate: add more spokes */
             const targetCount = Math.min(5, 1 + Math.floor(s.elapsed / 14));
@@ -194,6 +200,7 @@
                 angle: Math.random() * Math.PI * 2,
                 speed: dir * (0.022 + Math.random() * 0.018),
                 type, hue: hues[type],
+                ...(type === 'full' ? { phase: 0, activeOrbit: Math.random() < 0.5 ? 'inner' : 'outer' } : {}),
               });
             }
 
@@ -232,7 +239,7 @@
             for (const sp of s.spokes) {
               /* check if player's orbit is in this spoke's radial range */
               let inRange = false;
-              if (sp.type === 'full')  inRange = true;
+              if (sp.type === 'full' && s.orbit === sp.activeOrbit) inRange = true;
               if (sp.type === 'inner' && s.orbit === 'inner') inRange = true;
               if (sp.type === 'outer' && s.orbit === 'outer') inRange = true;
               if (!inRange) continue;
@@ -359,46 +366,62 @@
 
           /* ── spokes ── */
           s.spokes.forEach(sp => {
-            const spokeColors = { inner: '#00d0ff', outer: '#d000ff', full: '#ffaa00' };
-            const glowColors  = { inner: 'rgba(0,200,255,0.9)', outer: 'rgba(200,0,255,0.9)', full: 'rgba(255,170,0,0.9)' };
-            const color  = spokeColors[sp.type];
-            const gColor = glowColors[sp.type];
+            if (sp.type === 'full') {
+              /* Orange "full" spokes: two halves (inner + outer) — only the active half is dangerous.
+                 Active half glows bright orange; inactive half is dim to signal it's safe. */
+              const segments = [
+                { r1: 24,          r2: INNER_R + 12, orbit: 'inner' },
+                { r1: INNER_R + 22, r2: OUTER_R + 22, orbit: 'outer' },
+              ];
+              segments.forEach(seg => {
+                const isActive = seg.orbit === sp.activeOrbit;
+                const color  = isActive ? '#ffaa00' : '#664400';
+                const gColor = isActive ? 'rgba(255,170,0,0.9)' : 'rgba(80,44,0,0.35)';
+                const sx1 = CX + Math.cos(sp.angle) * seg.r1;
+                const sy1 = CY + Math.sin(sp.angle) * seg.r1;
+                const sx2 = CX + Math.cos(sp.angle) * seg.r2;
+                const sy2 = CY + Math.sin(sp.angle) * seg.r2;
 
-            /* radial extents of each spoke type */
-            let r1, r2;
-            if (sp.type === 'full')  { r1 = 24; r2 = OUTER_R + 22; }
-            if (sp.type === 'inner') { r1 = 24; r2 = INNER_R + 20; }
-            if (sp.type === 'outer') { r1 = INNER_R - 12; r2 = OUTER_R + 22; }
+                glow(gColor, isActive ? 18 : 5);
+                ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2);
+                ctx.strokeStyle = color; ctx.lineWidth = isActive ? 5 : 2.5; ctx.stroke();
+                if (isActive) {
+                  ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2);
+                  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+                }
+                noglow();
+                /* endpoint dot only on active segment */
+                if (isActive) {
+                  ctx.beginPath(); ctx.arc(sx2, sy2, 5, 0, Math.PI*2);
+                  glow(gColor, 10); ctx.fillStyle = color; ctx.fill(); noglow();
+                }
+              });
+            } else {
+              const spokeColors = { inner: '#00d0ff', outer: '#d000ff' };
+              const glowColors  = { inner: 'rgba(0,200,255,0.9)', outer: 'rgba(200,0,255,0.9)' };
+              const color  = spokeColors[sp.type];
+              const gColor = glowColors[sp.type];
 
-            const x1 = CX + Math.cos(sp.angle) * r1;
-            const y1 = CY + Math.sin(sp.angle) * r1;
-            const x2 = CX + Math.cos(sp.angle) * r2;
-            const y2 = CY + Math.sin(sp.angle) * r2;
+              let r1, r2;
+              if (sp.type === 'inner') { r1 = 24; r2 = INNER_R + 20; }
+              if (sp.type === 'outer') { r1 = INNER_R - 12; r2 = OUTER_R + 22; }
 
-            /* outer glow */
-            glow(gColor, 18);
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 5;
-            ctx.stroke();
+              const x1 = CX + Math.cos(sp.angle) * r1;
+              const y1 = CY + Math.sin(sp.angle) * r1;
+              const x2 = CX + Math.cos(sp.angle) * r2;
+              const y2 = CY + Math.sin(sp.angle) * r2;
 
-            /* bright core */
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-            noglow();
+              glow(gColor, 18);
+              ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+              ctx.strokeStyle = color; ctx.lineWidth = 5; ctx.stroke();
 
-            /* endpoint dot */
-            ctx.beginPath();
-            ctx.arc(x2, y2, 5, 0, Math.PI*2);
-            glow(gColor, 10);
-            ctx.fillStyle = color;
-            ctx.fill(); noglow();
+              ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+              ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+              noglow();
+
+              ctx.beginPath(); ctx.arc(x2, y2, 5, 0, Math.PI*2);
+              glow(gColor, 10); ctx.fillStyle = color; ctx.fill(); noglow();
+            }
           });
 
           /* ── gems ── */
@@ -511,7 +534,7 @@
             ctx.fillStyle = '#d000ff';
             ctx.fillText('■ PURPLE = outer only', GW - 10, 32);
             ctx.fillStyle = '#ffaa00';
-            ctx.fillText('■ ORANGE = both rings', GW - 10, 46);
+            ctx.fillText('■ ORANGE = bright half = danger!', GW - 10, 46);
             ctx.textAlign = 'left';
           }
 
@@ -540,7 +563,7 @@
             ctx.font = '13px monospace';
             ctx.fillStyle = '#00d0ff';   ctx.fillText('CYAN spokes: inner ring danger',  GW/2, GH/2 + 92);
             ctx.fillStyle = '#d000ff';   ctx.fillText('PURPLE spokes: outer ring danger', GW/2, GH/2 + 110);
-            ctx.fillStyle = '#ffaa00';   ctx.fillText('ORANGE spokes: both rings — dodge the gap!', GW/2, GH/2 + 128);
+            ctx.fillStyle = '#ffaa00';   ctx.fillText('ORANGE spokes: bright half = danger — switch to dodge!', GW/2, GH/2 + 128);
 
             /* pulse prompt */
             const pulse = 0.6 + Math.sin(Date.now() / 450) * 0.4;

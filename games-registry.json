@@ -638,7 +638,7 @@
     "tags": ["arcade", "reflex", "orbital", "timing", "action"],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap / Space to switch between inner and outer orbit — dodge cyan, purple, and orange spokes",
+    "controls": "Click / Tap / Space to switch between inner and outer orbit — dodge cyan, purple, and orange spokes (orange bright half = danger!)",
     "folder": "games/2026-04-04",
     "file": "games/2026-04-04/index.html",
     "preview": "games/2026-04-04/preview.png"
