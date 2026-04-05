@@ -59,17 +59,26 @@
 
     // Constants
     const PLAYER_X = 160;
-    const WIDE_W = 80; const WIDE_H = 32;
-    const TALL_W = 32; const TALL_H = 80;
-    const OBSTACLE_W = 44;
-    const GAP_SIZE = 110; // gap in obstacle where player passes
+    const WIDE_W = 80; const WIDE_H = 32;  // WIDE: flat and wide
+    const TALL_W = 32; const TALL_H = 80;  // TALL: narrow and tall
+
+    // SQUEEZE obstacle — full-height wall with a short horizontal gap (needs WIDE form)
+    // Gap height 44px: WIDE (32px tall) fits, TALL (80px tall) crashes
+    const SQUEEZE_OB_W = 44;
+    const SQUEEZE_GAP_H = 44;
+
+    // SLOT obstacle — full-height walls flanking a narrow vertical slit (needs TALL form)
+    // Slot width 40px: TALL (32px wide) fits, WIDE (80px wide) crashes
+    const SLOT_OB_W = 100;   // total obstacle width
+    const SLOT_GAP_W = 40;   // slit width (30px wall each side of the 40px slit)
+
     const CANVAS_H = 600;
     const CANVAS_W = Math.min(window.innerWidth, 900);
 
     function makeObstacle(id, x) {
-      const isHoriz = Math.random() < 0.5; // horizontal gap = need WIDE form; vertical gap = need TALL form
-      const gapPos = 60 + Math.random() * (CANVAS_H - 220); // Y center of the gap
-      return { id, x, isHoriz, gapPos, passed: false };
+      // isSqueeze=true → WIDE form required; isSqueeze=false → TALL form required
+      const isSqueeze = Math.random() < 0.5;
+      return { id, x, isSqueeze, passed: false };
     }
 
     function makeGem(id, x) {
@@ -245,56 +254,30 @@
           // Collision: obstacles
           for (const ob of s.obstacles) {
             if (ob.passed) continue;
+            const obW = ob.isSqueeze ? SQUEEZE_OB_W : SLOT_OB_W;
             // Check if player overlaps obstacle X range
-            if (Math.abs(ob.x - px) < (OBSTACLE_W/2 + pw/2 - 4)) {
-              // Obstacle gap collision
-              if (ob.isHoriz) {
-                // Horizontal gap: gap centered at gapPos, gap is GAP_SIZE tall
-                // Top block: 0 to gapPos - GAP_SIZE/2
-                // Bottom block: gapPos + GAP_SIZE/2 to H
-                const gapTop = ob.gapPos - GAP_SIZE/2;
-                const gapBot = ob.gapPos + GAP_SIZE/2;
-                // Player must fit: player rect is py-ph/2 to py+ph/2
-                const playerTop = py - ph/2;
-                const playerBot = py + ph/2;
-                if (playerTop < gapTop || playerBot > gapBot) {
-                  // Collided!
-                  if (!s.dead) {
-                    s.dead = true;
-                    s.screenShake = 1;
-                    s.particles.push(...spawnParticles(px, py, '#ff4444', 20));
-                    playDie();
-                  }
-                }
+            if (Math.abs(ob.x - px) < (obW/2 + pw/2 - 4)) {
+              let hit = false;
+              if (ob.isSqueeze) {
+                // SQUEEZE: horizontal gap centered at H/2 — tests player HEIGHT
+                // WIDE (32px tall) fits the 44px gap; TALL (80px tall) crashes
+                const gapTop = H/2 - SQUEEZE_GAP_H/2;
+                const gapBot = H/2 + SQUEEZE_GAP_H/2;
+                if (py - ph/2 < gapTop || py + ph/2 > gapBot) hit = true;
               } else {
-                // Vertical gap: gap is a horizontal slot centered at gapPos — player Y must be near gapPos
-                // Actually: vertical gap means the obstacle has left and right parts with a vertical slit
-                // Left block: 0 to gapPos - GAP_SIZE/2 in Y
-                // Right block: gapPos + GAP_SIZE/2 to H in Y
-                // Player needs TALL form to fit through the narrow horizontal slit
-                // Re-interpret: ob.isHoriz=false means a VERTICAL cut — a slot in Y
-                const gapLeft = ob.gapPos - GAP_SIZE/2;
-                const gapRight = ob.gapPos + GAP_SIZE/2;
-                const playerTop = py - ph/2;
-                const playerBot = py + ph/2;
-                // In this gap type, the slit is centered at gapPos on the Y axis,
-                // but since the player can't move vertically, we instead treat this as:
-                // gap spans full height but is narrow (only TALL form fits)
-                // Actually let's keep it simple — player can move up/down by morphing
-                // For vertical gap: obstacle blocks except a CENTER horizontal band
-                // Player must be TALL (narrow W) to pass through
-                if (playerTop < gapLeft || playerBot > gapRight) {
-                  if (!s.dead) {
-                    s.dead = true;
-                    s.screenShake = 1;
-                    s.particles.push(...spawnParticles(px, py, '#ff4444', 20));
-                    playDie();
-                  }
-                }
+                // SLOT: narrow vertical slit — tests player WIDTH
+                // TALL (32px wide) fits the 40px slit; WIDE (80px wide) crashes
+                if (pw > SLOT_GAP_W) hit = true;
+              }
+              if (hit && !s.dead) {
+                s.dead = true;
+                s.screenShake = 1;
+                s.particles.push(...spawnParticles(px, py, '#ff4444', 20));
+                playDie();
               }
             }
             // Passed check — obstacle behind player
-            if (ob.x < px - OBSTACLE_W/2 - pw/2 && !ob.passed) {
+            if (ob.x < px - obW/2 - pw/2 && !ob.passed) {
               ob.passed = true;
               s.combo++;
               s.score += 10 * s.combo;
@@ -318,7 +301,7 @@
           }
 
           // Remove off-screen obstacles/gems and spawn new ones
-          s.obstacles = s.obstacles.filter(ob => ob.x > -OBSTACLE_W);
+          s.obstacles = s.obstacles.filter(ob => ob.x > -150);
           s.gems = s.gems.filter(g => g.x > -20);
 
           const lastOb = s.obstacles.length ? Math.max(...s.obstacles.map(o => o.x)) : W;
@@ -384,43 +367,66 @@
 
           // Draw obstacles
           for (const ob of s.obstacles) {
-            if (ob.x < -OBSTACLE_W || ob.x > W + OBSTACLE_W) continue;
-            const hue = ob.isHoriz ? 300 : 180; // magenta for horiz-gap, cyan for vert-gap
-            const gTop = ob.gapPos - GAP_SIZE/2;
-            const gBot = ob.gapPos + GAP_SIZE/2;
+            if (ob.x < -150 || ob.x > W + 150) continue;
 
-            // Glow
-            ctx.shadowColor = `hsl(${hue},100%,60%)`;
-            ctx.shadowBlur = 18;
+            if (ob.isSqueeze) {
+              // SQUEEZE obstacle (magenta): full-height wall with short horizontal gap at center
+              // WIDE form (32px tall) fits 44px gap; TALL form (80px tall) crashes
+              const hue = 300;
+              const gTop = H/2 - SQUEEZE_GAP_H/2;
+              const gBot = H/2 + SQUEEZE_GAP_H/2;
 
-            // Top block
-            ctx.fillStyle = `hsl(${hue},80%,30%)`;
-            ctx.strokeStyle = `hsl(${hue},100%,60%)`;
-            ctx.lineWidth = 2;
-            const topH = gTop;
-            ctx.fillRect(ob.x - OBSTACLE_W/2, 0, OBSTACLE_W, topH);
-            ctx.strokeRect(ob.x - OBSTACLE_W/2, 0, OBSTACLE_W, topH);
+              ctx.shadowColor = `hsl(${hue},100%,60%)`;
+              ctx.shadowBlur = 18;
+              ctx.fillStyle = `hsl(${hue},80%,30%)`;
+              ctx.strokeStyle = `hsl(${hue},100%,60%)`;
+              ctx.lineWidth = 2;
 
-            // Bottom block
-            const botH = H - gBot;
-            ctx.fillRect(ob.x - OBSTACLE_W/2, gBot, OBSTACLE_W, botH);
-            ctx.strokeRect(ob.x - OBSTACLE_W/2, gBot, OBSTACLE_W, botH);
+              // Top block
+              ctx.fillRect(ob.x - SQUEEZE_OB_W/2, 0, SQUEEZE_OB_W, gTop);
+              ctx.strokeRect(ob.x - SQUEEZE_OB_W/2, 0, SQUEEZE_OB_W, gTop);
 
-            ctx.shadowBlur = 0;
+              // Bottom block
+              ctx.fillRect(ob.x - SQUEEZE_OB_W/2, gBot, SQUEEZE_OB_W, H - gBot);
+              ctx.strokeRect(ob.x - SQUEEZE_OB_W/2, gBot, SQUEEZE_OB_W, H - gBot);
 
-            // Icon inside gap showing required shape
-            const iconX = ob.x;
-            const iconY = ob.gapPos;
-            ctx.globalAlpha = 0.5;
-            ctx.fillStyle = `hsl(${hue},100%,80%)`;
-            if (ob.isHoriz) {
-              // WIDE icon (flat rect)
-              ctx.fillRect(iconX - 22, iconY - 7, 44, 14);
+              ctx.shadowBlur = 0;
+
+              // WIDE icon inside gap
+              ctx.globalAlpha = 0.55;
+              ctx.fillStyle = `hsl(${hue},100%,80%)`;
+              ctx.fillRect(ob.x - 22, H/2 - 7, 44, 14);
+              ctx.globalAlpha = 1;
+
             } else {
-              // TALL icon (narrow rect)
-              ctx.fillRect(iconX - 8, iconY - 25, 16, 50);
+              // SLOT obstacle (cyan): two thick walls with a narrow vertical slit at center
+              // TALL form (32px wide) fits 40px slit; WIDE form (80px wide) crashes
+              const hue = 180;
+              const slotHalf = SLOT_GAP_W / 2;
+              const wallW = (SLOT_OB_W - SLOT_GAP_W) / 2; // 30px per wall
+
+              ctx.shadowColor = `hsl(${hue},100%,60%)`;
+              ctx.shadowBlur = 18;
+              ctx.fillStyle = `hsl(${hue},80%,30%)`;
+              ctx.strokeStyle = `hsl(${hue},100%,60%)`;
+              ctx.lineWidth = 2;
+
+              // Left wall
+              ctx.fillRect(ob.x - SLOT_OB_W/2, 0, wallW, H);
+              ctx.strokeRect(ob.x - SLOT_OB_W/2, 0, wallW, H);
+
+              // Right wall
+              ctx.fillRect(ob.x + slotHalf, 0, wallW, H);
+              ctx.strokeRect(ob.x + slotHalf, 0, wallW, H);
+
+              ctx.shadowBlur = 0;
+
+              // TALL icon inside slit
+              ctx.globalAlpha = 0.55;
+              ctx.fillStyle = `hsl(${hue},100%,80%)`;
+              ctx.fillRect(ob.x - 8, H/2 - 28, 16, 56);
+              ctx.globalAlpha = 1;
             }
-            ctx.globalAlpha = 1;
           }
 
           // Draw gems
@@ -536,8 +542,8 @@
             const dist = nextOb.x - px;
             const warning = Math.max(0, 1 - dist / 300);
             if (warning > 0) {
-              const needed = nextOb.isHoriz ? 'WIDE' : 'TALL';
-              const correct = (nextOb.isHoriz && !s.isTall) || (!nextOb.isHoriz && s.isTall);
+              const needed = nextOb.isSqueeze ? 'WIDE' : 'TALL';
+              const correct = (nextOb.isSqueeze && !s.isTall) || (!nextOb.isSqueeze && s.isTall);
               ctx.globalAlpha = warning;
               ctx.fillStyle = correct ? '#00ff88' : '#ff4444';
               ctx.font = `bold ${14 + warning * 4}px Courier New`;
@@ -571,17 +577,17 @@
                 NEON MORPH
               </div>
               <div style={{ color: '#aaaaff', fontSize: 16, marginBottom: 40, fontFamily: 'Courier New', textAlign: 'center', lineHeight: 1.7 }}>
-                Morph between WIDE ━ and TALL ▐ to fit through gaps!
+                Morph between WIDE ━ and TALL ▐ to squeeze through!
               </div>
               <div style={{ display: 'flex', gap: 24, marginBottom: 36 }}>
                 <div style={{ textAlign: 'center', color: '#ff00ff', fontFamily: 'Courier New' }}>
                   <div style={{ fontSize: 28, marginBottom: 8 }}>━━━</div>
-                  <div style={{ fontSize: 13 }}>WIDE fits<br/>horizontal gaps</div>
+                  <div style={{ fontSize: 13 }}>WIDE squeezes<br/>through short gaps<br/><span style={{color:'#ff88ff',fontSize:11}}>(magenta walls)</span></div>
                 </div>
                 <div style={{ textAlign: 'center', color: '#888', fontFamily: 'Courier New', fontSize: 28, alignSelf: 'center' }}>↔</div>
                 <div style={{ textAlign: 'center', color: '#00ffff', fontFamily: 'Courier New' }}>
                   <div style={{ fontSize: 28, marginBottom: 8 }}>▐</div>
-                  <div style={{ fontSize: 13 }}>TALL fits<br/>vertical gaps</div>
+                  <div style={{ fontSize: 13 }}>TALL slips<br/>through narrow slits<br/><span style={{color:'#88ffff',fontSize:11}}>(cyan walls)</span></div>
                 </div>
               </div>
               <div style={{ color: '#888', fontSize: 13, marginBottom: 32, fontFamily: 'Courier New', textAlign: 'center' }}>
