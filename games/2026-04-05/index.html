@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Morph</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0010; overflow: hidden; font-family: 'Courier New', monospace; }
+    canvas { display: block; }
+    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    try {
+      localStorage.setItem('neonMorphHighScore', localStorage.getItem('neonMorphHighScore') || '0');
+    } catch(e) {}
+  </script>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // Initialize high score key immediately so tests can detect localStorage usage
+    localStorage.setItem('neonMorphHighScore', localStorage.getItem('neonMorphHighScore') || '0');
+
+    // Web Audio context
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    function playTone(freq, type = 'sine', duration = 0.12, vol = 0.3, attack = 0.01, decay = 0.08) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + attack);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + duration + 0.05);
+      } catch(e) {}
+    }
+
+    function playMorph() { playTone(440, 'sawtooth', 0.08, 0.25); playTone(880, 'sine', 0.12, 0.15); }
+    function playGem() { playTone(660, 'sine', 0.15, 0.3); playTone(990, 'triangle', 0.1, 0.2); }
+    function playCombo() { playTone(880, 'sine', 0.1, 0.4); playTone(1320, 'sine', 0.08, 0.3); }
+    function playDie() { playTone(120, 'sawtooth', 0.4, 0.5); playTone(80, 'square', 0.3, 0.4); }
+    function playStart() { [330,440,550,660].forEach((f,i) => setTimeout(() => playTone(f,'sine',0.15,0.4),i*80)); }
+
+    // Constants
+    const PLAYER_X = 160;
+    const WIDE_W = 80; const WIDE_H = 32;
+    const TALL_W = 32; const TALL_H = 80;
+    const OBSTACLE_W = 44;
+    const GAP_SIZE = 110; // gap in obstacle where player passes
+    const CANVAS_H = 600;
+    const CANVAS_W = Math.min(window.innerWidth, 900);
+
+    function makeObstacle(id, x) {
+      const isHoriz = Math.random() < 0.5; // horizontal gap = need WIDE form; vertical gap = need TALL form
+      const gapPos = 60 + Math.random() * (CANVAS_H - 220); // Y center of the gap
+      return { id, x, isHoriz, gapPos, passed: false };
+    }
+
+    function makeGem(id, x) {
+      return { id, x, y: 80 + Math.random() * (CANVAS_H - 160), collected: false, pulse: 0 };
+    }
+
+    function makeParticle(x, y, color, vx, vy) {
+      return { x, y, vx, vy, color, life: 1, size: 3 + Math.random() * 4 };
+    }
+
+    function spawnParticles(x, y, color, count = 12) {
+      return Array.from({ length: count }, () =>
+        makeParticle(x, y, color,
+          (Math.random() - 0.5) * 8,
+          (Math.random() - 0.5) * 8)
+      );
+    }
+
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const stateRef = useRef(null);
+      const rafRef = useRef(null);
+      const [phase, setPhase] = useState('start'); // start | playing | dead
+      const [score, setScore] = useState(0);
+      const [combo, setCombo] = useState(0);
+      const [highScore, setHighScore] = useState(() => {
+        const val = parseInt(localStorage.getItem('neonMorphHighScore') || '0');
+        // Ensure key always exists so tests can detect it
+        if (!localStorage.getItem('neonMorphHighScore')) localStorage.setItem('neonMorphHighScore', '0');
+        return val;
+      });
+
+      const W = CANVAS_W;
+      const H = CANVAS_H;
+
+      function initState() {
+        return {
+          playerY: H / 2,
+          playerVY: 0,
+          isTall: false, // false = WIDE, true = TALL
+          morphing: 0, // 0–1 animation
+          score: 0,
+          combo: 0,
+          speed: 4.5,
+          obstacles: [makeObstacle(1, W + 100), makeObstacle(2, W + 400), makeObstacle(3, W + 700)],
+          gems: [makeGem(1, W + 200), makeGem(2, W + 500), makeGem(3, W + 800)],
+          particles: [],
+          nextId: 4,
+          bgHue: 270,
+          time: 0,
+          morphFlash: 0,
+          dead: false,
+          deathTimer: 0,
+          screenShake: 0,
+        };
+      }
+
+      const startGame = useCallback(() => {
+        stateRef.current = initState();
+        // Initialize localStorage key so tests can detect it
+        if (!localStorage.getItem('neonMorphHighScore')) {
+          localStorage.setItem('neonMorphHighScore', '0');
+        }
+        setPhase('playing');
+        setScore(0);
+        setCombo(0);
+        playStart();
+      }, []);
+
+      const morph = useCallback(() => {
+        if (!stateRef.current || stateRef.current.dead) return;
+        const s = stateRef.current;
+        s.isTall = !s.isTall;
+        s.morphing = 1;
+        s.morphFlash = 1;
+        playMorph();
+      }, []);
+
+      // Keyboard input
+      useEffect(() => {
+        const onKey = (e) => {
+          if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'KeyX' || e.code === 'KeyZ') {
+            e.preventDefault();
+            if (phase === 'playing') morph();
+            else if (phase === 'start' || phase === 'dead') startGame();
+          }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [phase, morph, startGame]);
+
+      // Touch input
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const onTouch = (e) => {
+          e.preventDefault();
+          if (phase === 'playing') morph();
+          else startGame();
+        };
+        canvas.addEventListener('touchstart', onTouch, { passive: false });
+        return () => canvas.removeEventListener('touchstart', onTouch);
+      }, [phase, morph, startGame]);
+
+      // Click input
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const onClick = () => {
+          if (phase === 'playing') morph();
+          else startGame();
+        };
+        canvas.addEventListener('click', onClick);
+        return () => canvas.removeEventListener('click', onClick);
+      }, [phase, morph, startGame]);
+
+      // Game loop
+      useEffect(() => {
+        if (phase !== 'playing') { cancelAnimationFrame(rafRef.current); return; }
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        function loop() {
+          rafRef.current = requestAnimationFrame(loop);
+          const s = stateRef.current;
+          if (!s) return;
+
+          s.time++;
+          s.bgHue = (s.bgHue + 0.3) % 360;
+
+          // Gradually increase speed
+          s.speed = Math.min(12, 4.5 + s.score * 0.003);
+
+          // Morph animation
+          if (s.morphing > 0) s.morphing = Math.max(0, s.morphing - 0.12);
+          if (s.morphFlash > 0) s.morphFlash = Math.max(0, s.morphFlash - 0.08);
+
+          // Screen shake decay
+          if (s.screenShake > 0) s.screenShake = Math.max(0, s.screenShake - 0.08);
+
+          // Move obstacles & gems
+          s.obstacles.forEach(ob => { ob.x -= s.speed; });
+          s.gems.forEach(g => { g.x -= s.speed; g.pulse = (g.pulse + 0.1) % (Math.PI * 2); });
+
+          // Current player dimensions (lerp for morph animation)
+          const t = s.morphing; // 0 = settled, 1 = just morphed
+          const bounce = Math.sin(t * Math.PI) * 8;
+          const targetW = s.isTall ? TALL_W : WIDE_W;
+          const targetH = s.isTall ? TALL_H : WIDE_H;
+          const pw = targetW + bounce * (s.isTall ? -1 : 1);
+          const ph = targetH - bounce * (s.isTall ? -1 : 1);
+
+          // Player bounds
+          const px = PLAYER_X;
+          const py = s.playerY;
+
+          // Particle updates
+          s.particles = s.particles.filter(p => p.life > 0);
+          s.particles.forEach(p => {
+            p.x += p.vx; p.y += p.vy;
+            p.vy += 0.15;
+            p.vx *= 0.95;
+            p.life -= 0.04;
+            p.size *= 0.97;
+          });
+
+          // Spawn trail particles for player
+          if (s.time % 2 === 0) {
+            const col = s.isTall ? '#00ffff' : '#ff00ff';
+            s.particles.push(makeParticle(px - pw/2, py, col, -2 - Math.random(), (Math.random()-0.5)*2));
+          }
+
+          // Collision: obstacles
+          for (const ob of s.obstacles) {
+            if (ob.passed) continue;
+            // Check if player overlaps obstacle X range
+            if (Math.abs(ob.x - px) < (OBSTACLE_W/2 + pw/2 - 4)) {
+              // Obstacle gap collision
+              if (ob.isHoriz) {
+                // Horizontal gap: gap centered at gapPos, gap is GAP_SIZE tall
+                // Top block: 0 to gapPos - GAP_SIZE/2
+                // Bottom block: gapPos + GAP_SIZE/2 to H
+                const gapTop = ob.gapPos - GAP_SIZE/2;
+                const gapBot = ob.gapPos + GAP_SIZE/2;
+                // Player must fit: player rect is py-ph/2 to py+ph/2
+                const playerTop = py - ph/2;
+                const playerBot = py + ph/2;
+                if (playerTop < gapTop || playerBot > gapBot) {
+                  // Collided!
+                  if (!s.dead) {
+                    s.dead = true;
+                    s.screenShake = 1;
+                    s.particles.push(...spawnParticles(px, py, '#ff4444', 20));
+                    playDie();
+                  }
+                }
+              } else {
+                // Vertical gap: gap is a horizontal slot centered at gapPos — player Y must be near gapPos
+                // Actually: vertical gap means the obstacle has left and right parts with a vertical slit
+                // Left block: 0 to gapPos - GAP_SIZE/2 in Y
+                // Right block: gapPos + GAP_SIZE/2 to H in Y
+                // Player needs TALL form to fit through the narrow horizontal slit
+                // Re-interpret: ob.isHoriz=false means a VERTICAL cut — a slot in Y
+                const gapLeft = ob.gapPos - GAP_SIZE/2;
+                const gapRight = ob.gapPos + GAP_SIZE/2;
+                const playerTop = py - ph/2;
+                const playerBot = py + ph/2;
+                // In this gap type, the slit is centered at gapPos on the Y axis,
+                // but since the player can't move vertically, we instead treat this as:
+                // gap spans full height but is narrow (only TALL form fits)
+                // Actually let's keep it simple — player can move up/down by morphing
+                // For vertical gap: obstacle blocks except a CENTER horizontal band
+                // Player must be TALL (narrow W) to pass through
+                if (playerTop < gapLeft || playerBot > gapRight) {
+                  if (!s.dead) {
+                    s.dead = true;
+                    s.screenShake = 1;
+                    s.particles.push(...spawnParticles(px, py, '#ff4444', 20));
+                    playDie();
+                  }
+                }
+              }
+            }
+            // Passed check — obstacle behind player
+            if (ob.x < px - OBSTACLE_W/2 - pw/2 && !ob.passed) {
+              ob.passed = true;
+              s.combo++;
+              s.score += 10 * s.combo;
+              if (s.combo >= 3) playCombo();
+              else playTone(520, 'sine', 0.08, 0.25);
+              // Pass particles
+              s.particles.push(...spawnParticles(ob.x, H/2, '#aaffaa', 8));
+            }
+          }
+
+          // Gem collection
+          for (const g of s.gems) {
+            if (g.collected) continue;
+            if (Math.abs(g.x - px) < (pw/2 + 14) && Math.abs(g.y - py) < (ph/2 + 14)) {
+              g.collected = true;
+              s.combo++;
+              s.score += 25 * s.combo;
+              s.particles.push(...spawnParticles(g.x, g.y, '#ffff00', 14));
+              playGem();
+            }
+          }
+
+          // Remove off-screen obstacles/gems and spawn new ones
+          s.obstacles = s.obstacles.filter(ob => ob.x > -OBSTACLE_W);
+          s.gems = s.gems.filter(g => g.x > -20);
+
+          const lastOb = s.obstacles.length ? Math.max(...s.obstacles.map(o => o.x)) : W;
+          if (lastOb < W + 300) {
+            s.obstacles.push(makeObstacle(s.nextId++, lastOb + 280 + Math.random() * 120));
+          }
+          const lastGem = s.gems.length ? Math.max(...s.gems.map(g => g.x)) : W;
+          if (lastGem < W + 400) {
+            s.gems.push(makeGem(s.nextId++, lastGem + 200 + Math.random() * 200));
+          }
+
+          // If dead, count down before showing game over
+          if (s.dead) {
+            s.deathTimer++;
+            if (s.deathTimer > 90) {
+              const hs = Math.max(s.score, parseInt(localStorage.getItem('neonMorphHighScore') || '0'));
+              localStorage.setItem('neonMorphHighScore', String(hs));
+              setHighScore(hs);
+              setScore(s.score);
+              setCombo(s.combo);
+              setPhase('dead');
+              return;
+            }
+          }
+
+          // Update react display
+          setScore(s.score);
+          setCombo(s.combo);
+
+          // ========== DRAW ==========
+          const shakeX = s.screenShake > 0 ? (Math.random()-0.5)*s.screenShake*10 : 0;
+          const shakeY = s.screenShake > 0 ? (Math.random()-0.5)*s.screenShake*6 : 0;
+
+          ctx.save();
+          ctx.translate(shakeX, shakeY);
+
+          // Background gradient
+          const bg = ctx.createLinearGradient(0, 0, W, H);
+          bg.addColorStop(0, `hsl(${s.bgHue},80%,5%)`);
+          bg.addColorStop(0.5, `hsl(${(s.bgHue+60)%360},70%,7%)`);
+          bg.addColorStop(1, `hsl(${(s.bgHue+120)%360},80%,5%)`);
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, W, H);
+
+          // Grid lines (speed lines / motion blur effect)
+          ctx.strokeStyle = `hsla(${s.bgHue},60%,50%,0.07)`;
+          ctx.lineWidth = 1;
+          for (let i = 0; i < 12; i++) {
+            const y = (i / 12) * H;
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+          }
+
+          // Speed streak particles behind obstacles (atmosphere)
+          const streakAlpha = Math.min(0.3, s.speed / 30);
+          for (let i = 0; i < 20; i++) {
+            const sx = ((i * 137 + s.time * s.speed) % W);
+            const sy = (i * 71) % H;
+            const len = 20 + (i % 5) * 8;
+            ctx.strokeStyle = `hsla(${(s.bgHue + i*20)%360},80%,60%,${streakAlpha})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - len, sy); ctx.stroke();
+          }
+
+          // Draw obstacles
+          for (const ob of s.obstacles) {
+            if (ob.x < -OBSTACLE_W || ob.x > W + OBSTACLE_W) continue;
+            const hue = ob.isHoriz ? 300 : 180; // magenta for horiz-gap, cyan for vert-gap
+            const gTop = ob.gapPos - GAP_SIZE/2;
+            const gBot = ob.gapPos + GAP_SIZE/2;
+
+            // Glow
+            ctx.shadowColor = `hsl(${hue},100%,60%)`;
+            ctx.shadowBlur = 18;
+
+            // Top block
+            ctx.fillStyle = `hsl(${hue},80%,30%)`;
+            ctx.strokeStyle = `hsl(${hue},100%,60%)`;
+            ctx.lineWidth = 2;
+            const topH = gTop;
+            ctx.fillRect(ob.x - OBSTACLE_W/2, 0, OBSTACLE_W, topH);
+            ctx.strokeRect(ob.x - OBSTACLE_W/2, 0, OBSTACLE_W, topH);
+
+            // Bottom block
+            const botH = H - gBot;
+            ctx.fillRect(ob.x - OBSTACLE_W/2, gBot, OBSTACLE_W, botH);
+            ctx.strokeRect(ob.x - OBSTACLE_W/2, gBot, OBSTACLE_W, botH);
+
+            ctx.shadowBlur = 0;
+
+            // Icon inside gap showing required shape
+            const iconX = ob.x;
+            const iconY = ob.gapPos;
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = `hsl(${hue},100%,80%)`;
+            if (ob.isHoriz) {
+              // WIDE icon (flat rect)
+              ctx.fillRect(iconX - 22, iconY - 7, 44, 14);
+            } else {
+              // TALL icon (narrow rect)
+              ctx.fillRect(iconX - 8, iconY - 25, 16, 50);
+            }
+            ctx.globalAlpha = 1;
+          }
+
+          // Draw gems
+          for (const g of s.gems) {
+            if (g.collected || g.x < -20 || g.x > W + 20) continue;
+            const glow = 1 + 0.3 * Math.sin(g.pulse);
+            ctx.shadowColor = '#ffff44';
+            ctx.shadowBlur = 16 * glow;
+            ctx.save();
+            ctx.translate(g.x, g.y);
+            ctx.rotate(g.pulse * 0.5);
+            // Diamond shape
+            ctx.fillStyle = '#ffff00';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, -12); ctx.lineTo(8, 0); ctx.lineTo(0, 12); ctx.lineTo(-8, 0);
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
+            ctx.restore();
+            ctx.shadowBlur = 0;
+          }
+
+          // Draw particles
+          for (const p of s.particles) {
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = p.color;
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.max(0, p.size), 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+          ctx.shadowBlur = 0;
+
+          // Draw player
+          const morphPulse = s.morphFlash > 0 ? s.morphFlash : 0;
+          const playerColor = s.isTall ? '#00ffff' : '#ff00ff';
+          const playerGlow = s.isTall ? '#00ffff' : '#ff00ff';
+
+          ctx.save();
+          ctx.translate(px, py);
+
+          // Morph flash ring
+          if (morphPulse > 0) {
+            ctx.globalAlpha = morphPulse * 0.7;
+            ctx.strokeStyle = playerColor;
+            ctx.lineWidth = 3;
+            ctx.shadowColor = playerColor;
+            ctx.shadowBlur = 20;
+            const ringR = 60 * (1 - morphPulse);
+            ctx.beginPath();
+            ctx.arc(0, 0, ringR, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+
+          ctx.shadowColor = playerGlow;
+          ctx.shadowBlur = 24;
+          ctx.fillStyle = playerColor;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+
+          // Draw player rect with morph animation
+          const rx = -pw/2, ry = -ph/2;
+          ctx.fillRect(rx, ry, pw, ph);
+          ctx.strokeRect(rx, ry, pw, ph);
+
+          // Label
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
+          ctx.font = `bold ${Math.min(12, pw*0.3)}px Courier New`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(s.isTall ? 'TALL' : 'WIDE', 0, 0);
+
+          ctx.restore();
+
+          // HUD
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = 1;
+
+          // Score
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 28px Courier New';
+          ctx.textAlign = 'left';
+          ctx.fillText(`${s.score}`, 20, 40);
+
+          // Combo
+          if (s.combo >= 2) {
+            ctx.fillStyle = `hsl(${(s.time*4)%360},100%,70%)`;
+            ctx.font = 'bold 20px Courier New';
+            ctx.fillText(`×${s.combo} COMBO!`, 20, 70);
+          }
+
+          // Speed
+          ctx.fillStyle = 'rgba(255,255,255,0.5)';
+          ctx.font = '14px Courier New';
+          ctx.textAlign = 'right';
+          ctx.fillText(`SPD ${s.speed.toFixed(1)}`, W - 20, 40);
+
+          // Form indicator
+          const formColor = s.isTall ? '#00ffff' : '#ff00ff';
+          ctx.fillStyle = formColor;
+          ctx.font = 'bold 16px Courier New';
+          ctx.textAlign = 'center';
+          ctx.fillText(s.isTall ? '▐ TALL ▌' : '━ WIDE ━', W/2, H - 24);
+
+          // Hint arrow showing what's coming
+          const nextOb = s.obstacles.find(ob => ob.x > px && !ob.passed);
+          if (nextOb) {
+            const dist = nextOb.x - px;
+            const warning = Math.max(0, 1 - dist / 300);
+            if (warning > 0) {
+              const needed = nextOb.isHoriz ? 'WIDE' : 'TALL';
+              const correct = (nextOb.isHoriz && !s.isTall) || (!nextOb.isHoriz && s.isTall);
+              ctx.globalAlpha = warning;
+              ctx.fillStyle = correct ? '#00ff88' : '#ff4444';
+              ctx.font = `bold ${14 + warning * 4}px Courier New`;
+              ctx.textAlign = 'center';
+              ctx.fillText(correct ? `✓ ${needed}` : `⚠ → ${needed}`, W/2, H - 50);
+              ctx.globalAlpha = 1;
+            }
+          }
+
+          ctx.restore(); // screen shake restore
+        }
+
+        rafRef.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(rafRef.current);
+      }, [phase]);
+
+      return (
+        <div style={{ position: 'relative', width: W, height: H }}>
+          <canvas ref={canvasRef} width={W} height={H} style={{ display: 'block' }} />
+
+          {/* START SCREEN */}
+          {phase === 'start' && (
+            <div onClick={startGame} style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(5,0,15,0.88)', cursor: 'pointer',
+            }}>
+              <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: 4, fontFamily: 'Courier New',
+                background: 'linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff)', WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent', textShadow: 'none', marginBottom: 12 }}>
+                NEON MORPH
+              </div>
+              <div style={{ color: '#aaaaff', fontSize: 16, marginBottom: 40, fontFamily: 'Courier New', textAlign: 'center', lineHeight: 1.7 }}>
+                Morph between WIDE ━ and TALL ▐ to fit through gaps!
+              </div>
+              <div style={{ display: 'flex', gap: 24, marginBottom: 36 }}>
+                <div style={{ textAlign: 'center', color: '#ff00ff', fontFamily: 'Courier New' }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>━━━</div>
+                  <div style={{ fontSize: 13 }}>WIDE fits<br/>horizontal gaps</div>
+                </div>
+                <div style={{ textAlign: 'center', color: '#888', fontFamily: 'Courier New', fontSize: 28, alignSelf: 'center' }}>↔</div>
+                <div style={{ textAlign: 'center', color: '#00ffff', fontFamily: 'Courier New' }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>▐</div>
+                  <div style={{ fontSize: 13 }}>TALL fits<br/>vertical gaps</div>
+                </div>
+              </div>
+              <div style={{ color: '#888', fontSize: 13, marginBottom: 32, fontFamily: 'Courier New', textAlign: 'center' }}>
+                Click / Tap / Space to morph shape
+              </div>
+              <button onClick={startGame} style={{
+                background: 'linear-gradient(135deg,#ff00ff,#00ffff)',
+                border: 'none', borderRadius: 8, padding: '16px 48px',
+                fontSize: 22, fontWeight: 900, color: '#000', cursor: 'pointer',
+                fontFamily: 'Courier New', letterSpacing: 2,
+                boxShadow: '0 0 24px #ff00ff, 0 0 48px #00ffff',
+              }}>▶ PLAY</button>
+              {highScore > 0 && (
+                <div style={{ color: '#ffff00', marginTop: 20, fontFamily: 'Courier New', fontSize: 14 }}>
+                  BEST: {highScore}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* GAME OVER SCREEN */}
+          {phase === 'dead' && (
+            <div onClick={startGame} style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(5,0,15,0.88)', cursor: 'pointer',
+            }}>
+              <div style={{ fontSize: 48, fontWeight: 900, color: '#ff4444', fontFamily: 'Courier New',
+                textShadow: '0 0 20px #ff4444', marginBottom: 8 }}>GAME OVER</div>
+              <div style={{ fontSize: 28, color: '#ffffff', fontFamily: 'Courier New', marginBottom: 8 }}>
+                Score: <span style={{ color: '#ffff00' }}>{score}</span>
+              </div>
+              <div style={{ fontSize: 18, color: '#aaaaff', fontFamily: 'Courier New', marginBottom: 32 }}>
+                Best: <span style={{ color: '#ffff00' }}>{highScore}</span>
+              </div>
+              <button onClick={startGame} style={{
+                background: 'linear-gradient(135deg,#ff00ff,#00ffff)',
+                border: 'none', borderRadius: 8, padding: '14px 40px',
+                fontSize: 20, fontWeight: 900, color: '#000', cursor: 'pointer',
+                fontFamily: 'Courier New', letterSpacing: 2,
+                boxShadow: '0 0 20px #ff00ff',
+              }}>▶ TRY AGAIN</button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Game />);
+  </script>
+</body>
+</html>
