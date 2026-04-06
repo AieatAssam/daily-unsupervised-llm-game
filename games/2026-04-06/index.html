@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Conduit</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #05000f; }
+    #root { width: 100vw; height: 100vh; }
+    @keyframes neonPulse { 0%,100%{opacity:.85} 50%{opacity:1;filter:brightness(1.4)} }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-15px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes fadeInFast { from{opacity:0} to{opacity:1} }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+  const { useState, useEffect, useRef } = React;
+
+  // ===== DIRECTIONS: 0=up, 1=right, 2=down, 3=left =====
+  const DR = [-1, 0, 1, 0];
+  const DC = [0, 1, 0, -1];
+  const OPP = [2, 3, 0, 1];
+
+  // Pipe connection definitions per type and rotation
+  const PIPE_CONNS = {
+    straight: [[1,3],[0,2]],
+    elbow:    [[0,1],[1,2],[2,3],[3,0]],
+    tee:      [[0,1,2],[1,2,3],[2,3,0],[3,0,1]],
+    cross:    [[0,1,2,3]],
+  };
+
+  // Sorted direction set → pipe type + correct rotation
+  const DIRMAP = {
+    '1,3':{type:'straight',rot:0}, '0,2':{type:'straight',rot:1},
+    '0,1':{type:'elbow',rot:0},    '1,2':{type:'elbow',rot:1},
+    '2,3':{type:'elbow',rot:2},    '0,3':{type:'elbow',rot:3},
+    '0,1,2':{type:'tee',rot:0},    '1,2,3':{type:'tee',rot:1},
+    '0,2,3':{type:'tee',rot:2},    '0,1,3':{type:'tee',rot:3},
+    '0,1,2,3':{type:'cross',rot:0},
+  };
+
+  function gc(type, rot) { return PIPE_CONNS[type][rot % PIPE_CONNS[type].length]; }
+  function dirsToType(dirs) { return DIRMAP[[...dirs].sort().join(',')] || {type:'cross',rot:0}; }
+  function dDir(r,c,nr,nc) {
+    return (nr-r===-1)?0 : (nc-c===1)?1 : (nr-r===1)?2 : 3;
+  }
+
+  // ===== PATH GENERATION (biased DFS) =====
+  function genPath(size, src, snk) {
+    const path = [src];
+    const vis = new Set([`${src[0]},${src[1]}`]);
+    function dfs(r, c) {
+      if (r===snk[0] && c===snk[1]) return true;
+      const dirs = [0,1,2,3].sort((a,b) =>
+        ( Math.abs(r+DR[a]-snk[0]) + Math.abs(c+DC[a]-snk[1]) ) -
+        ( Math.abs(r+DR[b]-snk[0]) + Math.abs(c+DC[b]-snk[1]) ) +
+        (Math.random()-0.5)*4
+      );
+      for (const d of dirs) {
+        const nr=r+DR[d], nc=c+DC[d];
+        if (nr<0||nr>=size||nc<0||nc>=size) continue;
+        const k=`${nr},${nc}`;
+        if (vis.has(k)) continue;
+        vis.add(k); path.push([nr,nc]);
+        if (dfs(nr,nc)) return true;
+        path.pop(); vis.delete(k);
+      }
+      return false;
+    }
+    return dfs(src[0],src[1]) ? path : null;
+  }
+
+  // ===== LEVEL BUILDER =====
+  function buildLevel(lvl) {
+    const size = lvl<=2?4 : lvl<=5?5 : 6;
+    const src=[0,0], snk=[size-1,size-1];
+
+    // Need a non-trivial path (length > size)
+    let path=null, tries=0;
+    while ((!path || path.length <= size) && tries++<100) {
+      path = genPath(size, src, snk);
+    }
+    if (!path || path.length<3) {
+      // Zigzag fallback
+      path=[];
+      for(let i=0;i<size;i++) path.push([i,0]);
+      for(let j=1;j<size;j++) path.push([size-1,j]);
+    }
+
+    const types = lvl<=2 ? ['straight','elbow']
+                : lvl<=5 ? ['straight','elbow','tee']
+                         : ['straight','elbow','tee','cross'];
+
+    // Grid initialised with random filler tiles
+    const grid = Array.from({length:size}, (_,r) =>
+      Array.from({length:size}, (_,c) => {
+        if (r===src[0]&&c===src[1]) return {type:'cross',rot:0,special:'src'};
+        if (r===snk[0]&&c===snk[1]) return {type:'cross',rot:0,special:'snk'};
+        const tp = types[Math.floor(Math.random()*types.length)];
+        return {type:tp, rot:Math.floor(Math.random()*PIPE_CONNS[tp].length), special:null};
+      })
+    );
+
+    // Overlay correct pipe types on intermediate path cells, with wrong rotation
+    for (let i=1; i<path.length-1; i++) {
+      const [r,c] = path[i];
+      const dirs = [
+        dDir(r,c, path[i-1][0], path[i-1][1]),
+        dDir(r,c, path[i+1][0], path[i+1][1]),
+      ];
+      const {type, rot} = dirsToType(dirs);
+      const mx = PIPE_CONNS[type].length;
+      let rr = Math.floor(Math.random()*mx);
+      if (mx>1 && rr===rot) rr=(rot+1)%mx; // guarantee wrong rotation
+      grid[r][c] = {type, rot:rr, correctRot:rot, special:null};
+    }
+
+    return {grid, size, src, snk};
+  }
+
+  // ===== CONNECTIVITY BFS =====
+  function getConnected(grid, size, src) {
+    const vis=new Set(), q=[[src[0],src[1]]];
+    vis.add(`${src[0]},${src[1]}`);
+    while (q.length) {
+      const [r,c]=q.shift();
+      for (const d of gc(grid[r][c].type, grid[r][c].rot)) {
+        const nr=r+DR[d], nc=c+DC[d];
+        if (nr<0||nr>=size||nc<0||nc>=size) continue;
+        const k=`${nr},${nc}`;
+        if (vis.has(k)) continue;
+        if (gc(grid[nr][nc].type, grid[nr][nc].rot).includes(OPP[d])) {
+          vis.add(k); q.push([nr,nc]);
+        }
+      }
+    }
+    return vis;
+  }
+
+  // ===== AUDIO =====
+  let AC=null;
+  function sfx(freq, type='sine', dur=0.1, vol=0.2) {
+    try {
+      if (!AC) AC=new(window.AudioContext||window.webkitAudioContext)();
+      const o=AC.createOscillator(), g=AC.createGain();
+      o.connect(g); g.connect(AC.destination);
+      o.type=type; o.frequency.value=freq;
+      g.gain.setValueAtTime(vol, AC.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime+dur);
+      o.start(); o.stop(AC.currentTime+dur);
+    } catch(e){}
+  }
+  function playRotate(n)  { sfx(280+n*45,'sine',0.07,0.1); }
+  function playConnect()  { sfx(660,'sine',0.15,0.2); }
+  function playSolve()    { [523,659,784,1047].forEach((f,i)=>setTimeout(()=>sfx(f,'sine',0.35,0.3),i*100)); }
+  function playFail()     { [440,330,220].forEach((f,i)=>setTimeout(()=>sfx(f,'sawtooth',0.18,0.25),i*150)); }
+
+  // ===== PARTICLES =====
+  function spawnParticles(arr, x, y, r, g, b, n=20) {
+    for (let i=0;i<n;i++) {
+      const a=Math.random()*Math.PI*2, sp=60+Math.random()*260;
+      arr.push({
+        x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-80,
+        life:0.6+Math.random()*0.7, maxLife:1.3,
+        r, g, b, size:2+Math.random()*4,
+      });
+    }
+  }
+
+  // ===== TILE RENDERER =====
+  function drawTile(ctx, cell, x, y, ts, isConn, t) {
+    ctx.fillStyle = '#070018';
+    ctx.fillRect(x+1, y+1, ts-2, ts-2);
+    ctx.strokeStyle = isConn ? '#003550' : '#110025';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x+0.5, y+0.5, ts-1, ts-1);
+
+    const cx=x+ts/2, cy=y+ts/2;
+
+    // Source node
+    if (cell.special==='src') {
+      const pulse = 0.75+0.25*Math.sin(t*3);
+      const rad = ts*0.28*pulse;
+      const gr = ctx.createRadialGradient(cx,cy,0,cx,cy,rad);
+      gr.addColorStop(0,'#afffdd'); gr.addColorStop(1,'#00cc66');
+      ctx.shadowColor='#00ff88'; ctx.shadowBlur=22*pulse;
+      ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2);
+      ctx.fillStyle=gr; ctx.fill(); ctx.shadowBlur=0;
+      ctx.fillStyle='#002a15';
+      ctx.font=`bold ${Math.round(ts*0.27)}px monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('S',cx,cy+1);
+      return;
+    }
+
+    // Sink node
+    if (cell.special==='snk') {
+      const pulse = 0.75+0.25*Math.sin(t*3+1.2);
+      const rad = ts*0.28*pulse;
+      const gr = ctx.createRadialGradient(cx,cy,0,cx,cy,rad);
+      gr.addColorStop(0,'#ffe0aa'); gr.addColorStop(1,'#cc4400');
+      ctx.shadowColor='#ff6600'; ctx.shadowBlur=22*pulse;
+      ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2);
+      ctx.fillStyle=gr; ctx.fill(); ctx.shadowBlur=0;
+      ctx.fillStyle='#2a0e00';
+      ctx.font=`bold ${Math.round(ts*0.27)}px monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('X',cx,cy+1);
+      return;
+    }
+
+    // Normal pipe tile
+    const color  = isConn ? '#00e5ff' : '#1b4060';
+    const lw     = Math.max(3, ts*0.09);
+    const armLen = ts*0.43;
+
+    ctx.lineCap='round'; ctx.lineWidth=lw; ctx.strokeStyle=color;
+    if (isConn) { ctx.shadowColor='#00e5ff'; ctx.shadowBlur=lw*2.5; }
+
+    for (const d of gc(cell.type, cell.rot)) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx+DC[d]*armLen, cy+DR[d]*armLen);
+      ctx.stroke();
+    }
+    // Center dot
+    ctx.beginPath(); ctx.arc(cx,cy,lw*0.6,0,Math.PI*2);
+    ctx.fillStyle=color; ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  // ===== GAME FACTORY =====
+  function createGame(canvas, onUpdate) {
+    const S = {
+      phase:'menu',
+      grid:null, size:4, src:[0,0], snk:[3,3],
+      connected:new Set(), particles:[],
+      level:1, score:0, lives:3, combo:1,
+      time:45, hi:parseInt(localStorage.getItem('neonConduitHi')||'0'),
+      solved:false, solveFlash:0, shake:0,
+    };
+
+    let rafId=null, timerId=null;
+
+    function emit() {
+      onUpdate({
+        phase:S.phase, score:S.score, level:S.level,
+        lives:S.lives, time:S.time, combo:S.combo, hi:S.hi,
+      });
+    }
+
+    function startLevel(lvl) {
+      clearInterval(timerId);
+      const ld = buildLevel(lvl);
+      Object.assign(S, {
+        grid:ld.grid, size:ld.size, src:ld.src, snk:ld.snk,
+        connected:getConnected(ld.grid,ld.size,ld.src),
+        solved:false, solveFlash:0,
+        time:Math.max(20, 45-lvl*2),
+        particles:[], phase:'playing',
+      });
+      emit();
+
+      timerId = setInterval(() => {
+        if (S.phase!=='playing') return;
+        S.time--;
+        if (S.time<=0) {
+          S.lives--;
+          S.combo=1;
+          playFail();
+          S.shake=0.6;
+          if (S.lives<=0) {
+            S.phase='gameover';
+            clearInterval(timerId);
+            if (S.score>S.hi) { S.hi=S.score; localStorage.setItem('neonConduitHi',S.score); }
+          } else {
+            startLevel(S.level);
+          }
+        }
+        emit();
+      }, 1000);
+    }
+
+    function startGame() {
+      S.score=0; S.level=1; S.lives=3; S.combo=1;
+      // Ensure localStorage key exists from the moment the game starts
+      if (!localStorage.getItem('neonConduitHi')) localStorage.setItem('neonConduitHi','0');
+      sfx(440,'sine',0.1,0.3);
+      startLevel(1);
+    }
+
+    function handleInteract(clientX, clientY) {
+      if (S.phase==='menu'||S.phase==='gameover') { startGame(); return; }
+      if (S.phase!=='playing'||S.solved) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const px = (clientX-rect.left)*(canvas.width/rect.width);
+      const py = (clientY-rect.top)*(canvas.height/rect.height);
+      const ts = Math.min(canvas.width,canvas.height)/S.size;
+      const offX = (canvas.width -ts*S.size)/2;
+      const offY = (canvas.height-ts*S.size)/2;
+      const c=Math.floor((px-offX)/ts), r=Math.floor((py-offY)/ts);
+      if (r<0||r>=S.size||c<0||c>=S.size) return;
+
+      const cell=S.grid[r][c];
+      if (cell.special) return;
+
+      const mx=PIPE_CONNS[cell.type].length;
+      cell.rot=(cell.rot+1)%mx;
+      playRotate(cell.rot);
+
+      const wasSolved=S.connected.has(`${S.snk[0]},${S.snk[1]}`);
+      S.connected=getConnected(S.grid,S.size,S.src);
+      const nowSolved=S.connected.has(`${S.snk[0]},${S.snk[1]}`);
+      if (!wasSolved&&nowSolved) playConnect();
+
+      if (nowSolved) {
+        S.solved=true; S.solveFlash=1;
+        clearInterval(timerId);
+        const pts=(500+500*S.level)*S.combo + S.time*10;
+        S.score+=pts; S.combo=Math.min(S.combo+1,10);
+        if (S.score>S.hi) { S.hi=S.score; localStorage.setItem('neonConduitHi',S.score); }
+
+        // Burst particles at sink
+        const snkX=offX+S.snk[1]*ts+ts/2;
+        const snkY=offY+S.snk[0]*ts+ts/2;
+        for(let i=0;i<5;i++) {
+          setTimeout(()=>{
+            spawnParticles(S.particles,snkX,snkY,255,102,0,18);
+            spawnParticles(S.particles,snkX,snkY,0,229,255,12);
+            spawnParticles(S.particles,snkX,snkY,0,255,136,10);
+          },i*160);
+        }
+        playSolve();
+        setTimeout(()=>{ S.level++; startLevel(S.level); },2000);
+        emit();
+      }
+    }
+
+    // Event listeners on canvas
+    const onClick  = e => handleInteract(e.clientX, e.clientY);
+    const onTouch  = e => { e.preventDefault(); handleInteract(e.touches[0].clientX,e.touches[0].clientY); };
+    canvas.addEventListener('click',  onClick);
+    canvas.addEventListener('touchstart', onTouch, {passive:false});
+
+    // ===== RENDER LOOP =====
+    let bgHue=270, lastTs=0;
+
+    function draw(ts) {
+      rafId = requestAnimationFrame(draw);
+      const dt = Math.min((ts-lastTs)/1000, 0.05);
+      lastTs=ts; const t=ts/1000;
+      bgHue=(bgHue+14*dt)%360;
+      if (S.shake>0) S.shake=Math.max(0,S.shake-dt*3.5);
+
+      const ctx=canvas.getContext('2d');
+      const W=canvas.width, H=canvas.height;
+      ctx.clearRect(0,0,W,H);
+
+      ctx.save();
+      if (S.shake>0) ctx.translate((Math.random()-.5)*S.shake*14,(Math.random()-.5)*S.shake*14);
+
+      // Animated background gradient
+      const bg=ctx.createRadialGradient(W*.5,H*.5,0,W*.5,H*.5,W*.8);
+      bg.addColorStop(0,`hsl(${bgHue},65%,8%)`);
+      bg.addColorStop(.5,`hsl(${(bgHue+60)%360},75%,5%)`);
+      bg.addColorStop(1,`hsl(${(bgHue+130)%360},85%,3%)`);
+      ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+
+      // Subtle grid overlay
+      ctx.strokeStyle='rgba(255,255,255,0.025)';
+      ctx.lineWidth=1;
+      for(let x=0;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+      for(let y=0;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+
+      // Draw pipe grid
+      if (S.grid && S.phase!=='menu' && S.phase!=='gameover') {
+        const ts2=Math.min(W,H)/S.size;
+        const offX=(W-ts2*S.size)/2, offY=(H-ts2*S.size)/2;
+
+        // Flash overlay when solved
+        if (S.solveFlash>0) {
+          S.solveFlash=Math.max(0,S.solveFlash-dt*1.6);
+          ctx.fillStyle=`rgba(0,229,255,${S.solveFlash*0.14})`;
+          ctx.fillRect(offX,offY,ts2*S.size,ts2*S.size);
+        }
+
+        for(let r=0;r<S.size;r++) {
+          for(let c=0;c<S.size;c++) {
+            drawTile(ctx,S.grid[r][c], offX+c*ts2, offY+r*ts2, ts2,
+                     S.connected.has(`${r},${c}`), t);
+          }
+        }
+
+        // Node labels
+        const labelSize=Math.round(ts2*0.16);
+        ctx.font=`${labelSize}px monospace`;
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillStyle='rgba(0,255,136,0.65)';
+        ctx.fillText('SOURCE', offX+S.src[1]*ts2+ts2/2, offY+S.src[0]*ts2-labelSize*0.7);
+        ctx.fillStyle='rgba(255,102,0,0.65)';
+        ctx.fillText('SINK',   offX+S.snk[1]*ts2+ts2/2, offY+(S.snk[0]+1)*ts2+labelSize*0.7);
+      }
+
+      // Particles
+      S.particles=S.particles.filter(p=>p.life>0);
+      for(const p of S.particles){
+        p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=290*dt; p.life-=dt;
+        const a=Math.max(0,p.life/p.maxLife);
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.size*a,0,Math.PI*2);
+        ctx.fillStyle=`rgba(${p.r},${p.g},${p.b},${a})`;
+        ctx.shadowColor=`rgba(${p.r},${p.g},${p.b},.6)`; ctx.shadowBlur=8;
+        ctx.fill(); ctx.shadowBlur=0;
+      }
+
+      ctx.restore();
+    }
+
+    rafId = requestAnimationFrame(draw);
+
+    return {
+      startGame,
+      cleanup() {
+        cancelAnimationFrame(rafId);
+        clearInterval(timerId);
+        canvas.removeEventListener('click',  onClick);
+        canvas.removeEventListener('touchstart', onTouch);
+      }
+    };
+  }
+
+  // ===== REACT COMPONENT =====
+  function App() {
+    const cvs = useRef(null);
+    const gameRef = useRef(null);
+    const [ui, setUi] = useState({
+      phase:'menu', score:0, level:1, lives:3, time:45, combo:1,
+      hi: parseInt(localStorage.getItem('neonConduitHi')||'0'),
+    });
+
+    useEffect(()=>{
+      const canvas=cvs.current;
+
+      function resize(){
+        const sz=Math.min(window.innerWidth*.97, window.innerHeight*.76, 580);
+        canvas.width=sz; canvas.height=sz;
+        canvas.style.width=sz+'px'; canvas.style.height=sz+'px';
+      }
+      resize();
+      window.addEventListener('resize',resize);
+
+      gameRef.current=createGame(canvas, setUi);
+      return ()=>{ gameRef.current?.cleanup(); window.removeEventListener('resize',resize); };
+    },[]);
+
+    const doStart  = () => gameRef.current?.startGame();
+    const isActive = ui.phase==='playing';
+    const timeCol  = ui.time<=8?'#ff4444': ui.time<=15?'#ffaa00': '#00ff88';
+    const hearts   = '♥'.repeat(ui.lives)+'♡'.repeat(Math.max(0,3-ui.lives));
+
+    const overlayS = {
+      position:'absolute',top:0,left:0,width:'100%',height:'100%',
+      display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+      background:'rgba(3,0,14,.93)', zIndex:20, animation:'fadeIn .35s ease',
+    };
+    const btnS = {
+      border:'none', borderRadius:8, cursor:'pointer',
+      fontWeight:'bold', fontFamily:'Courier New,monospace',
+      letterSpacing:'.12em', fontSize:'1.15rem',
+    };
+
+    return (
+      <div style={{width:'100vw',height:'100vh',overflow:'hidden',position:'relative',
+        display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+        background:'#04000e'}}>
+
+        {/* HUD */}
+        {isActive && (
+          <div style={{
+            display:'flex',gap:'clamp(6px,1.8vw,18px)',alignItems:'center',
+            padding:'5px 14px',marginBottom:6,
+            background:'rgba(0,0,0,.72)',borderRadius:8,
+            border:'1px solid rgba(0,229,255,.18)',
+            fontFamily:'Courier New,monospace',fontSize:'clamp(.65rem,1.8vw,.88rem)',
+            flexWrap:'wrap',justifyContent:'center',maxWidth:'96vw',
+          }}>
+            <span style={{color:'#9966ff'}}>LVL {ui.level}</span>
+            <span style={{color:'#00e5ff'}}>⬡ {ui.score.toLocaleString()}</span>
+            <span style={{color:'#ffaa00'}}>✕{ui.combo}</span>
+            <span style={{color:timeCol,animation:ui.time<=8?'neonPulse .5s infinite':'none'}}>
+              ⏱ {ui.time}s
+            </span>
+            <span style={{color:'#ff7799',letterSpacing:'2px'}}>{hearts}</span>
+            <span style={{color:'#555',fontSize:'.8em'}}>BEST {ui.hi.toLocaleString()}</span>
+          </div>
+        )}
+
+        <canvas ref={cvs} style={{
+          display:'block', cursor:'pointer', borderRadius:10,
+          boxShadow:'0 0 40px rgba(0,229,255,.13),0 0 80px rgba(120,0,255,.08)',
+        }}/>
+
+        {/* MENU */}
+        {ui.phase==='menu' && (
+          <div style={overlayS} onClick={doStart}>
+            <h1 style={{
+              fontSize:'clamp(2rem,9vw,4.5rem)',
+              background:'linear-gradient(135deg,#00e5ff,#aa44ff,#00ff88)',
+              WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text',
+              fontFamily:'Courier New,monospace', letterSpacing:'.18em',
+              marginBottom:10, animation:'neonPulse 2s infinite',
+            }}>NEON CONDUIT</h1>
+            <p style={{color:'#00e5ff',fontSize:'1.05rem',marginBottom:6,textAlign:'center',padding:'0 16px'}}>
+              Rotate pipe tiles · Connect <span style={{color:'#00ff88',fontWeight:'bold'}}>S</span>OURCE
+              to S<span style={{color:'#ff6600',fontWeight:'bold'}}>X</span>NK
+            </p>
+            <p style={{color:'#555',fontSize:'.85rem',marginBottom:32,textAlign:'center',padding:'0 20px'}}>
+              Click / tap tiles to rotate · Race the clock · Chain levels for combo multipliers
+            </p>
+            <button onClick={doStart} style={{
+              ...btnS, padding:'14px 52px',
+              background:'linear-gradient(135deg,#00e5ff,#0066ff)',
+              color:'#000', boxShadow:'0 0 28px rgba(0,229,255,.5)',
+              fontSize:'1.25rem',
+            }}>▶ PLAY</button>
+            {ui.hi>0 && <p style={{color:'#666',marginTop:16,fontSize:'.9rem'}}>
+              Best: <span style={{color:'#ffaa00'}}>{ui.hi.toLocaleString()}</span>
+            </p>}
+          </div>
+        )}
+
+        {/* GAME OVER */}
+        {ui.phase==='gameover' && (
+          <div style={overlayS} onClick={doStart}>
+            <h2 style={{
+              fontSize:'clamp(1.8rem,7vw,3.5rem)', color:'#ff4444',
+              fontFamily:'Courier New,monospace', textShadow:'0 0 30px #ff4444',
+              marginBottom:12,
+            }}>GAME OVER</h2>
+            <p style={{color:'#aaa',fontSize:'1rem',marginBottom:4}}>
+              Score: <span style={{color:'#00e5ff',fontSize:'1.35rem'}}>{ui.score.toLocaleString()}</span>
+            </p>
+            <p style={{color:'#888',fontSize:'.9rem',marginBottom:4}}>
+              Reached Level <span style={{color:'#9966ff'}}>{ui.level}</span>
+            </p>
+            {ui.score>0 && ui.score>=ui.hi && (
+              <p style={{color:'#00ff88',fontSize:'1.05rem',marginBottom:16,animation:'neonPulse 1s infinite'}}>
+                ★ NEW HIGH SCORE! ★
+              </p>
+            )}
+            <button onClick={doStart} style={{
+              ...btnS, marginTop:16, padding:'12px 44px',
+              background:'linear-gradient(135deg,#ff4444,#ff8800)',
+              color:'#fff', boxShadow:'0 0 24px rgba(255,68,68,.4)',
+            }}>↺ PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  ReactDOM.render(<App/>, document.getElementById('root'));
+  </script>
+</body>
+</html>
