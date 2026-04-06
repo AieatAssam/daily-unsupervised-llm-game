@@ -644,6 +644,20 @@
     "preview": "games/2026-04-04/preview.png"
   },
   {
+    "id": "2026-04-06",
+    "name": "Neon Conduit",
+    "date": "2026-04-06",
+    "description": "Rotate neon pipe tiles to connect the glowing SOURCE node to the SINK — click any tile to spin it 90°, chain level completions for massive combo multipliers, and race the countdown clock!",
+    "tagline": "Rotate the pipes. Connect the flow. Beat the clock!",
+    "tags": ["puzzle", "rotation", "logic", "strategy", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap any pipe tile to rotate it 90° clockwise — connect S to X before time runs out",
+    "folder": "games/2026-04-06",
+    "file": "games/2026-04-06/index.html",
+    "preview": "games/2026-04-06/preview.png"
+  },
+  {
     "id": "2026-04-05",
     "name": "Neon Morph",
     "date": "2026-04-05",
