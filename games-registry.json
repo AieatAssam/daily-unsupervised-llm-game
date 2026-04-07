@@ -670,5 +670,19 @@
     "folder": "games/2026-04-05",
     "file": "games/2026-04-05/index.html",
     "preview": "games/2026-04-05/preview.png"
+  },
+  {
+    "id": "2026-04-07",
+    "name": "Neon Swarm",
+    "date": "2026-04-07",
+    "description": "Blast waves of glowing alien invaders in this neon Space Invaders-style shooter — move your ship left and right to dodge enemy fire, collect power-ups for rapid-fire, shields, and spread shots, and chain kills for massive combo multipliers!",
+    "tagline": "Blast the swarm. Dodge the bullets. Survive the onslaught!",
+    "tags": ["shooter", "action", "arcade", "reflex", "space"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Move mouse / touch to aim ship · Hold click / Space to fire · ← → Arrow keys to dodge",
+    "folder": "games/2026-04-07",
+    "file": "games/2026-04-07/index.html",
+    "preview": "games/2026-04-07/preview.png"
   }
 ]
