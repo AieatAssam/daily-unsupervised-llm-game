@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swarm Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#000;overflow:hidden;font-family:'Courier New',monospace;
+      user-select:none;-webkit-user-select:none;touch-action:none}
+    canvas{position:fixed;top:0;left:0;display:block}
+    .overlay{position:fixed;inset:0;display:flex;align-items:center;
+      justify-content:center;background:rgba(0,0,12,0.72)}
+    .panel{text-align:center;padding:32px 44px;max-width:490px;width:92%}
+    .game-title{font-size:clamp(34px,9vw,62px);font-weight:900;letter-spacing:5px;
+      background:linear-gradient(135deg,#00ffff 0%,#ff00ff 52%,#ffff00 100%);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+      filter:drop-shadow(0 0 28px rgba(0,255,255,0.9));margin-bottom:8px;line-height:1.1}
+    .tagline{color:rgba(255,255,255,0.52);font-size:clamp(11px,2.6vw,14px);
+      margin-bottom:28px;letter-spacing:1px}
+    .btn{display:inline-block;padding:14px 46px;font-size:17px;
+      font-family:'Courier New',monospace;font-weight:700;background:transparent;
+      border:2px solid #00ffff;color:#00ffff;cursor:pointer;letter-spacing:2px;
+      text-transform:uppercase;transition:all .2s;box-shadow:0 0 22px rgba(0,255,255,.35)}
+    .btn:hover,.btn:active{background:rgba(0,255,255,.12);
+      box-shadow:0 0 44px rgba(0,255,255,.7);transform:scale(1.03)}
+    .instr{color:rgba(255,255,255,.44);font-size:12px;line-height:2.1;margin-top:18px}
+    .stat-line{color:rgba(255,255,255,.68);font-size:14px;margin:5px 0;letter-spacing:1px}
+    .hs-badge{color:#ffff00;text-shadow:0 0 14px #ffff00;font-size:15px;margin:6px 0}
+    .hud{position:fixed;top:0;left:0;right:0;display:flex;
+      justify-content:space-between;align-items:flex-start;
+      padding:13px 18px;pointer-events:none;z-index:5}
+    .hud-cell{text-align:center;min-width:58px}
+    .hud-lbl{font-size:9px;color:rgba(255,255,255,.38);
+      text-transform:uppercase;letter-spacing:2px}
+    .hud-val{font-size:clamp(17px,3.8vw,25px);font-weight:700;
+      text-shadow:0 0 14px currentColor}
+    .combo-bar{position:fixed;top:68px;left:50%;transform:translateX(-50%);
+      font-size:clamp(17px,4vw,25px);font-weight:700;color:#ffff00;
+      text-shadow:0 0 20px #ffff00;letter-spacing:3px;pointer-events:none;
+      z-index:5;text-transform:uppercase;white-space:nowrap}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Constants ────────────────────────────────────────────────────────────────
+const MAX_P = 30;
+const TRAIL = 10;
+const KEY   = 'swarmRushHighScore';
+const NEON  = ['#00ffff','#ff00ff','#00ff88','#ff8800','#aa77ff','#ffff00'];
+
+// ── Audio ────────────────────────────────────────────────────────────────────
+function makeAudio() {
+  let _ac = null;
+  function getAC() {
+    if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+    if (_ac.state === 'suspended') _ac.resume().catch(()=>{});
+    return _ac;
+  }
+  function tone(freq, type, dur, vol, delay, freqEnd) {
+    try {
+      const ac = getAC(), t0 = ac.currentTime + (delay||0);
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type||'sine'; o.connect(g); g.connect(ac.destination);
+      o.frequency.setValueAtTime(freq, t0);
+      if (freqEnd) o.frequency.exponentialRampToValueAtTime(freqEnd, t0+(dur||0.3));
+      g.gain.setValueAtTime(0.001, t0);
+      g.gain.linearRampToValueAtTime(vol||0.25, t0+0.018);
+      g.gain.exponentialRampToValueAtTime(0.001, t0+(dur||0.3));
+      o.start(t0); o.stop(t0+(dur||0.3)+0.06);
+    } catch(e) {}
+  }
+  return {
+    gem(c)  { tone(640+(c||1)*32,'sine',0.13,0.28,0,Math.min(1350+(c||1)*28,2500)); },
+    voidHit(){ tone(110,'sawtooth',0.22,0.16,0,40); },
+    levelUp(){ [523,659,784,1047].forEach((f,i)=>tone(f,'sine',0.38,0.2,i*0.09)); },
+    over()  { [440,330,220,110].forEach((f,i)=>tone(f,'sine',0.52,0.24,i*0.13)); },
+    start() { tone(440,'sine',0.08,0.2); tone(880,'sine',0.1,0.15,0.09); },
+  };
+}
+
+// ── Factories ────────────────────────────────────────────────────────────────
+function mkParticle(cx, cy) {
+  return {
+    x:  cx + (Math.random()-.5)*55,
+    y:  cy + (Math.random()-.5)*55,
+    vx: (Math.random()-.5)*4,
+    vy: (Math.random()-.5)*4,
+    ci: Math.floor(Math.random()*NEON.length),
+    sz: 2.3 + Math.random()*2,
+    trail: []
+  };
+}
+
+function mkGem(W, H) {
+  return {
+    x: 85 + Math.random()*(W-170),
+    y: 85 + Math.random()*(H-170),
+    t: Math.random()*Math.PI*2,
+    color: NEON[Math.floor(Math.random()*NEON.length)],
+    dead: false
+  };
+}
+
+function mkVoid(W, H, lv) {
+  const spd = 0.44 + lv*0.16;
+  const a = Math.random()*Math.PI*2;
+  return {
+    x:  110 + Math.random()*(W-220),
+    y:  110 + Math.random()*(H-220),
+    vx: Math.cos(a)*spd,
+    vy: Math.sin(a)*spd,
+    r:  26 + Math.min(lv*2.5, 22),
+    t:  Math.random()*Math.PI*2
+  };
+}
+
+// ── Component ────────────────────────────────────────────────────────────────
+function Game() {
+  const canvasRef = useRef(null);
+  const gsRef     = useRef(null);
+  const rafRef    = useRef(null);
+  const audioRef  = useRef(null);
+
+  const [ui, setUi] = useState({
+    phase:'start', score:0, highScore:0, level:1, swarmSize:MAX_P, combo:0
+  });
+
+  // Init audio + localStorage
+  useEffect(()=>{
+    audioRef.current = makeAudio();
+    const saved = localStorage.getItem(KEY);
+    const hs = parseInt(saved||'0');
+    localStorage.setItem(KEY, hs.toString()); // ensure key exists immediately
+    setUi(u=>({...u, highScore:hs}));
+  },[]);
+
+  // Start / restart
+  const startGame = useCallback(()=>{
+    const cv = canvasRef.current; if (!cv) return;
+    const W = cv.width, H = cv.height, cx = W/2, cy = H/2;
+    gsRef.current = {
+      phase:    'playing',
+      particles: Array.from({length:MAX_P}, ()=>mkParticle(cx,cy)),
+      gems:      Array.from({length:5},    ()=>mkGem(W,H)),
+      voids:     [mkVoid(W,H,1)],
+      cursor:    {x:cx, y:cy},
+      score:0, level:1, combo:0, comboTtl:0,
+      gemsGot:0, gemsNeed:5,
+      fx:[], flashTtl:0, tick:0,
+    };
+    audioRef.current?.start();
+    setUi(u=>({...u, phase:'playing', score:0, level:1, swarmSize:MAX_P, combo:0}));
+  },[]);
+
+  // Canvas setup + game loop
+  useEffect(()=>{
+    const cv = canvasRef.current; if (!cv) return;
+    const ctx = cv.getContext('2d');
+
+    const resize = ()=>{ cv.width = window.innerWidth; cv.height = window.innerHeight; };
+    resize();
+    window.addEventListener('resize', resize);
+
+    // Cursor tracking
+    const setPos = (x,y)=>{ if (gsRef.current) gsRef.current.cursor = {x,y}; };
+    const onMM = e => setPos(e.clientX, e.clientY);
+    const onTM = e => { e.preventDefault(); setPos(e.touches[0].clientX, e.touches[0].clientY); };
+    const onTS = e => { e.preventDefault(); setPos(e.touches[0].clientX, e.touches[0].clientY); };
+
+    // Click / tap to start or restart
+    const onAny = ()=>{ if (!gsRef.current || gsRef.current.phase!=='playing') startGame(); };
+    cv.addEventListener('mousemove', onMM);
+    cv.addEventListener('touchmove', onTM, {passive:false});
+    cv.addEventListener('touchstart', onTS, {passive:false});
+    cv.addEventListener('click', onAny);
+    cv.addEventListener('touchend', e=>{e.preventDefault();onAny();}, {passive:false});
+
+    let bgT = 0;
+    const loop = ()=>{
+      rafRef.current = requestAnimationFrame(loop);
+      const W = cv.width, H = cv.height;
+      bgT += 0.007;
+      drawBg(ctx, W, H, bgT);
+      const gs = gsRef.current;
+      if (!gs || gs.phase !== 'playing') return;
+      gameTick(gs, W, H, ctx, audioRef, setUi);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+
+    return ()=>{
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+      cv.removeEventListener('mousemove', onMM);
+      cv.removeEventListener('touchmove', onTM);
+      cv.removeEventListener('touchstart', onTS);
+      cv.removeEventListener('click', onAny);
+    };
+  }, [startGame]);
+
+  const {phase, score, highScore, level, swarmSize, combo} = ui;
+
+  return (<>
+    <canvas ref={canvasRef}/>
+
+    {/* HUD while playing */}
+    {phase==='playing' && (
+      <div className="hud">
+        <div className="hud-cell">
+          <div className="hud-lbl">Score</div>
+          <div className="hud-val" style={{color:'#00ffff'}}>{score.toLocaleString()}</div>
+        </div>
+        <div className="hud-cell">
+          <div className="hud-lbl">Swarm</div>
+          <div className="hud-val" style={{color:swarmSize<8?'#ff3333':'#00ff88'}}>{swarmSize}</div>
+        </div>
+        <div className="hud-cell">
+          <div className="hud-lbl">Level</div>
+          <div className="hud-val" style={{color:'#ff00ff'}}>{level}</div>
+        </div>
+        <div className="hud-cell">
+          <div className="hud-lbl">Best</div>
+          <div className="hud-val" style={{color:'rgba(255,255,255,.36)'}}>{highScore.toLocaleString()}</div>
+        </div>
+      </div>
+    )}
+
+    {phase==='playing' && combo>=2 && (
+      <div className="combo-bar">×{combo} COMBO!</div>
+    )}
+
+    {/* Start screen */}
+    {phase==='start' && (
+      <div className="overlay" onClick={startGame}>
+        <div className="panel" onClick={e=>e.stopPropagation()}>
+          <div className="game-title">SWARM RUSH</div>
+          <div className="tagline">Guide your neon swarm · collect gems · survive</div>
+          <button className="btn" onClick={startGame}>▶ PLAY</button>
+          <div className="instr">
+            Move mouse or drag to guide your particle swarm<br/>
+            Engulf glowing gems for combo-multiplied points<br/>
+            <span style={{color:'#ff4444'}}>⬤ Red VOID circles drain your swarm!</span><br/>
+            Collect gems to level up — each level adds new voids<br/>
+            <span style={{color:'#ffff00'}}>Best: {highScore.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Game over screen */}
+    {phase==='gameover' && (
+      <div className="overlay" onClick={startGame}>
+        <div className="panel" onClick={e=>e.stopPropagation()}>
+          <div className="game-title" style={{fontSize:'clamp(26px,7vw,48px)'}}>SWARM LOST</div>
+          {score>=highScore && score>0 && (
+            <div className="hs-badge">★ NEW HIGH SCORE ★</div>
+          )}
+          <div style={{fontSize:'clamp(26px,6vw,42px)',color:'#00ffff',fontWeight:700,
+            textShadow:'0 0 18px #00ffff',margin:'8px 0'}}>
+            {score.toLocaleString()}
+          </div>
+          <div className="stat-line">Level Reached: {level}</div>
+          <div className="stat-line">Best: {highScore.toLocaleString()}</div>
+          <button className="btn" style={{marginTop:18}} onClick={startGame}>↺ TRY AGAIN</button>
+          <div className="instr">Click anywhere to retry</div>
+        </div>
+      </div>
+    )}
+  </>);
+}
+
+// ── Background ───────────────────────────────────────────────────────────────
+function drawBg(ctx, W, H, t) {
+  ctx.fillStyle = 'rgba(0,0,8,0.22)';
+  ctx.fillRect(0,0,W,H);
+
+  // Subtle centre nebula
+  const grd = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.min(W,H)*0.58);
+  grd.addColorStop(0, `rgba(45,0,90,${0.17+Math.sin(t*1.2)*0.06})`);
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0,0,W,H);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(0,180,255,0.036)';
+  ctx.lineWidth = 1;
+  const gs = 58;
+  for (let x=0; x<W; x+=gs){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y=0; y<H; y+=gs){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+}
+
+// ── Main game tick ───────────────────────────────────────────────────────────
+function gameTick(gs, W, H, ctx, audioRef, setUi) {
+  const audio = audioRef.current;
+  gs.tick = (gs.tick||0) + 1;
+
+  // Destructure for this frame (particles is the live array reference)
+  const {cursor, gems, voids, fx} = gs;
+  let particles = gs.particles; // may be reassigned after void damage
+
+  // ── Particle physics ─────────────────────────────────────────────────────
+  const cx = cursor.x, cy = cursor.y;
+
+  // Compute swarm centroid for bloom repulsion
+  let sx=0, sy=0;
+  for (let i=0; i<particles.length; i++){ sx+=particles[i].x; sy+=particles[i].y; }
+  const scx = particles.length ? sx/particles.length : cx;
+  const scy = particles.length ? sy/particles.length : cy;
+
+  for (let i=0; i<particles.length; i++) {
+    const p = particles[i];
+
+    // Spring attraction toward cursor
+    const dx = cx-p.x, dy = cy-p.y;
+    const d = Math.sqrt(dx*dx+dy*dy) || 1;
+    const pull = Math.min(d*0.044, 2.8);
+    p.vx += (dx/d)*pull;
+    p.vy += (dy/d)*pull;
+
+    // Bloom: repulsion from swarm centroid
+    const bx = p.x-scx, by = p.y-scy;
+    const bd = Math.sqrt(bx*bx+by*by) || 1;
+    if (bd < 40) { p.vx += (bx/bd)*0.55; p.vy += (by/bd)*0.55; }
+
+    // Brownian noise
+    p.vx += (Math.random()-.5)*0.44;
+    p.vy += (Math.random()-.5)*0.44;
+
+    // Damping
+    p.vx *= 0.86; p.vy *= 0.86;
+
+    // Clamp speed
+    const spd = Math.sqrt(p.vx*p.vx+p.vy*p.vy);
+    if (spd > 6) { p.vx = p.vx/spd*6; p.vy = p.vy/spd*6; }
+
+    p.x += p.vx; p.y += p.vy;
+
+    // Wall bounce
+    if (p.x < 4)   { p.x=4;   p.vx=Math.abs(p.vx); }
+    if (p.x > W-4) { p.x=W-4; p.vx=-Math.abs(p.vx); }
+    if (p.y < 4)   { p.y=4;   p.vy=Math.abs(p.vy); }
+    if (p.y > H-4) { p.y=H-4; p.vy=-Math.abs(p.vy); }
+
+    // Trail
+    p.trail.push({x:p.x, y:p.y});
+    if (p.trail.length > TRAIL) p.trail.shift();
+  }
+
+  // Particle-particle separation (O n²; n≤30 → fine)
+  for (let i=0; i<particles.length; i++) {
+    for (let j=i+1; j<particles.length; j++) {
+      const dx = particles[j].x - particles[i].x;
+      const dy = particles[j].y - particles[i].y;
+      const d  = Math.sqrt(dx*dx+dy*dy) || 1;
+      if (d < 16) {
+        const f = (16-d)/16 * 0.52;
+        const fx2 = dx/d*f, fy2 = dy/d*f;
+        particles[i].vx -= fx2; particles[i].vy -= fy2;
+        particles[j].vx += fx2; particles[j].vy += fy2;
+      }
+    }
+  }
+
+  // ── Gem animation ────────────────────────────────────────────────────────
+  for (let i=0; i<gems.length; i++) { if (!gems[i].dead) gems[i].t += 0.055; }
+
+  // ── Gem collection ───────────────────────────────────────────────────────
+  let scoreInc = 0;
+  for (let gi=0; gi<gems.length; gi++) {
+    const gem = gems[gi];
+    if (gem.dead) continue;
+    let hit = false;
+    for (let pi=0; pi<particles.length; pi++) {
+      const px = particles[pi].x, py = particles[pi].y;
+      if (Math.sqrt((px-gem.x)*(px-gem.x)+(py-gem.y)*(py-gem.y)) < 24) { hit=true; break; }
+    }
+    if (hit) {
+      gem.dead = true;
+      gs.combo++;
+      gs.comboTtl = 130;
+      gs.gemsGot++;
+      const pts = 100 * Math.max(1, gs.combo);
+      scoreInc += pts;
+      audio?.gem(gs.combo);
+      // Score pop
+      fx.push({type:'text', x:gem.x, y:gem.y, text:`+${pts}`, color:gem.color, t:0, life:55, vy:-1.3});
+      // Burst
+      for (let k=0; k<10; k++) {
+        const a=(k/10)*Math.PI*2;
+        fx.push({type:'dot', x:gem.x, y:gem.y, vx:Math.cos(a)*4, vy:Math.sin(a)*4, color:gem.color, t:0, life:28});
+      }
+    }
+  }
+  gs.score += scoreInc;
+
+  // Combo timer decay
+  if (gs.comboTtl > 0) { gs.comboTtl--; if (gs.comboTtl===0) gs.combo=0; }
+
+  // Replenish dead gems gradually
+  const allDead = gems.every(g=>g.dead);
+  if (allDead) {
+    gs.gems = Array.from({length:5+Math.min(gs.level,4)}, ()=>mkGem(W,H));
+  } else {
+    for (let i=0; i<gems.length; i++) {
+      if (gems[i].dead && Math.random()<0.018) gems[i]=mkGem(W,H);
+    }
+  }
+
+  // ── Void movement ────────────────────────────────────────────────────────
+  for (let i=0; i<voids.length; i++) {
+    const v = voids[i];
+    v.t += 0.033;
+    v.x += v.vx; v.y += v.vy;
+    if (v.x < v.r+10 || v.x > W-v.r-10) v.vx *= -1;
+    if (v.y < v.r+10 || v.y > H-v.r-10) v.vy *= -1;
+  }
+
+  // ── Void damage ──────────────────────────────────────────────────────────
+  const dead = new Set();
+  for (let pi=0; pi<particles.length; pi++) {
+    const p = particles[pi];
+    for (let vi=0; vi<voids.length; vi++) {
+      const v = voids[vi];
+      const dx = p.x-v.x, dy = p.y-v.y;
+      if (Math.sqrt(dx*dx+dy*dy) < v.r*0.73) { dead.add(pi); break; }
+    }
+  }
+  if (dead.size > 0) {
+    audio?.voidHit();
+    dead.forEach(pi=>{
+      const p = particles[pi];
+      for (let k=0; k<5; k++) {
+        const a = Math.random()*Math.PI*2;
+        fx.push({type:'dot', x:p.x, y:p.y, vx:Math.cos(a)*2.5, vy:Math.sin(a)*2.5, color:NEON[p.ci], t:0, life:22});
+      }
+    });
+    gs.particles = particles.filter((_,i)=>!dead.has(i));
+    particles = gs.particles;
+  }
+
+  // ── Level up ─────────────────────────────────────────────────────────────
+  if (gs.gemsGot >= gs.gemsNeed) {
+    gs.gemsGot -= gs.gemsNeed;
+    gs.gemsNeed += 2;
+    gs.level++;
+    gs.flashTtl = 75;
+    audio?.levelUp();
+
+    // Replenish some lost particles as reward
+    const add = Math.min(7, MAX_P - gs.particles.length);
+    for (let k=0; k<add; k++) gs.particles.push(mkParticle(cursor.x, cursor.y));
+    particles = gs.particles;
+
+    // Add void if under cap
+    const voidMax = Math.min(1+Math.floor(gs.level/2), 5);
+    while (gs.voids.length < voidMax) gs.voids.push(mkVoid(W, H, gs.level));
+
+    // Speed up existing voids
+    gs.voids.forEach(v=>{
+      const s = Math.sqrt(v.vx*v.vx+v.vy*v.vy);
+      const ns = Math.min(s+0.13, 2.7);
+      const a  = Math.atan2(v.vy, v.vx);
+      v.vx = Math.cos(a)*ns; v.vy = Math.sin(a)*ns;
+    });
+
+    fx.push({type:'big', x:W/2, y:H/2-24, text:`LEVEL ${gs.level}!`, color:'#ffff00', t:0, life:80});
+  }
+  if (gs.flashTtl > 0) gs.flashTtl--;
+
+  // ── FX update ────────────────────────────────────────────────────────────
+  gs.fx = fx.filter(e=>{
+    e.t++;
+    if (e.type==='dot')  { e.x+=e.vx; e.y+=e.vy; e.vx*=0.91; e.vy*=0.91; }
+    if (e.type==='text')   e.y += e.vy;
+    return e.t < e.life;
+  });
+
+  // ── Draw frame ───────────────────────────────────────────────────────────
+  if (gs.flashTtl > 0) {
+    ctx.fillStyle = `rgba(255,255,80,${(gs.flashTtl/75)*0.1})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  drawGems(ctx, gs.gems);
+  drawVoids(ctx, gs.voids);
+  drawParticles(ctx, particles);
+  drawCursor(ctx, cursor);
+  drawFX(ctx, gs.fx);
+
+  // ── React state sync (every 5 frames to avoid excessive renders) ──────
+  if (gs.tick%5===0 || particles.length===0) {
+    setUi(u=>({
+      ...u,
+      score:     gs.score,
+      level:     gs.level,
+      swarmSize: particles.length,
+      combo:     gs.combo,
+    }));
+  }
+
+  // ── Game over ────────────────────────────────────────────────────────────
+  if (particles.length === 0) {
+    gs.phase = 'gameover';
+    audio?.over();
+    const hs = Math.max(gs.score, parseInt(localStorage.getItem(KEY)||'0'));
+    localStorage.setItem(KEY, hs.toString());
+    setUi(u=>({...u, phase:'gameover', score:gs.score, highScore:hs, level:gs.level}));
+  }
+}
+
+// ── Draw helpers ─────────────────────────────────────────────────────────────
+function drawGems(ctx, gems) {
+  gems.forEach(gem=>{
+    if (gem.dead) return;
+    const {x,y,t,color} = gem;
+    const pulse = 1 + Math.sin(t*1.85)*0.26;
+    const r     = 11 * pulse;
+
+    // Outer glow halo
+    const grd = ctx.createRadialGradient(x,y,0, x,y,r*3.6);
+    grd.addColorStop(0, color+'50');
+    grd.addColorStop(1, color+'00');
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(x,y,r*3.6,0,Math.PI*2); ctx.fill();
+
+    // Diamond body
+    ctx.save();
+    ctx.translate(x,y); ctx.rotate(t*0.37);
+    ctx.shadowColor = color; ctx.shadowBlur = 18;
+    ctx.fillStyle   = color;
+    ctx.beginPath();
+    ctx.moveTo(0,-r);      ctx.lineTo(r*0.62,0);
+    ctx.lineTo(0,r);       ctx.lineTo(-r*0.62,0);
+    ctx.closePath(); ctx.fill();
+    // Inner highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.42)';
+    ctx.beginPath();
+    ctx.moveTo(0,-r*0.46); ctx.lineTo(r*0.28,-r*0.1);
+    ctx.lineTo(0,r*0.08);  ctx.lineTo(-r*0.28,-r*0.1);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+
+    // Sparkle rays
+    ctx.strokeStyle = color+'7a'; ctx.lineWidth = 1.2;
+    for (let i=0; i<4; i++) {
+      const a = (i/4)*Math.PI*2 + t*0.44;
+      ctx.beginPath();
+      ctx.moveTo(x+Math.cos(a)*r*1.3, y+Math.sin(a)*r*1.3);
+      ctx.lineTo(x+Math.cos(a)*r*2.2, y+Math.sin(a)*r*2.2);
+      ctx.stroke();
+    }
+  });
+}
+
+function drawVoids(ctx, voids) {
+  voids.forEach(v=>{
+    const {x,y,r,t} = v;
+    const pulse = 1 + Math.sin(t*2.2)*0.1;
+
+    // Inner gradient fill
+    const grd = ctx.createRadialGradient(x,y,0, x,y,r);
+    grd.addColorStop(0,   'rgba(220,0,0,0.55)');
+    grd.addColorStop(0.55,'rgba(110,0,0,0.28)');
+    grd.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+
+    // Danger ring
+    ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 22;
+    ctx.strokeStyle = '#ff2222'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x,y,r*pulse,0,Math.PI*2); ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Rotating spokes
+    ctx.save();
+    ctx.translate(x,y); ctx.rotate(t*1.1);
+    ctx.strokeStyle = 'rgba(255,55,55,0.62)'; ctx.lineWidth = 1.5;
+    for (let i=0; i<6; i++) {
+      const a = (i/6)*Math.PI*2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*r*0.5,  Math.sin(a)*r*0.5);
+      ctx.lineTo(Math.cos(a)*r,       Math.sin(a)*r);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // VOID label
+    ctx.fillStyle    = 'rgba(255,80,80,0.88)';
+    ctx.font         = 'bold 9px "Courier New"';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('VOID', x, y);
+  });
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawParticles(ctx, particles) {
+  // Trails first (behind particles)
+  particles.forEach(p=>{
+    const color = NEON[p.ci];
+    for (let i=0; i<p.trail.length; i++) {
+      const alpha = (i/TRAIL)*0.3;
+      const rad   = p.sz*(i/TRAIL)*0.72;
+      if (rad < 0.3) continue;
+      ctx.fillStyle = color + Math.floor(alpha*255).toString(16).padStart(2,'0');
+      ctx.beginPath(); ctx.arc(p.trail[i].x, p.trail[i].y, rad, 0, Math.PI*2); ctx.fill();
+    }
+  });
+  // Glowing particle cores
+  particles.forEach(p=>{
+    const color = NEON[p.ci];
+    ctx.shadowColor = color; ctx.shadowBlur = 10;
+    ctx.fillStyle   = color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.shadowBlur = 0;
+}
+
+function drawCursor(ctx, cursor) {
+  const {x,y} = cursor;
+  // Dashed attractor ring
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = 1; ctx.setLineDash([5,5]);
+  ctx.beginPath(); ctx.arc(x,y,23,0,Math.PI*2); ctx.stroke();
+  ctx.setLineDash([]);
+  // Crosshair
+  ctx.strokeStyle = 'rgba(255,255,255,0.46)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x-7,y); ctx.lineTo(x+7,y);
+  ctx.moveTo(x,y-7); ctx.lineTo(x,y+7);
+  ctx.stroke();
+}
+
+function drawFX(ctx, fx) {
+  ctx.save();
+  fx.forEach(e=>{
+    const a = Math.max(0, 1-e.t/e.life);
+    if (e.type==='dot') {
+      ctx.globalAlpha = a*0.82;
+      ctx.fillStyle   = e.color;
+      ctx.beginPath(); ctx.arc(e.x, e.y, 3.5*a+0.5, 0, Math.PI*2); ctx.fill();
+    } else if (e.type==='text') {
+      ctx.globalAlpha = a;
+      ctx.fillStyle   = e.color;
+      ctx.shadowColor = e.color; ctx.shadowBlur = 12;
+      ctx.font        = 'bold 17px "Courier New"';
+      ctx.textAlign   = 'center';
+      ctx.fillText(e.text, e.x, e.y);
+      ctx.shadowBlur  = 0;
+    } else if (e.type==='big') {
+      ctx.globalAlpha = Math.min(1, a*1.6);
+      ctx.fillStyle   = e.color;
+      ctx.shadowColor = e.color; ctx.shadowBlur = 28;
+      ctx.font        = 'bold 34px "Courier New"';
+      ctx.textAlign   = 'center';
+      ctx.fillText(e.text, e.x, e.y + e.t*0.52);
+      ctx.shadowBlur  = 0;
+    }
+  });
+  ctx.restore();
+}
+
+ReactDOM.render(<Game/>, document.getElementById('root'));
+</script>
+</body>
+</html>

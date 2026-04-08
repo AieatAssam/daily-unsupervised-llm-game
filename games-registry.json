@@ -684,5 +684,19 @@
     "folder": "games/2026-04-07",
     "file": "games/2026-04-07/index.html",
     "preview": "games/2026-04-07/preview.png"
+  },
+  {
+    "id": "2026-04-08",
+    "name": "Swarm Rush",
+    "date": "2026-04-08",
+    "description": "Guide a cloud of 30 neon particles toward glowing gems using your mouse — the swarm follows with spring physics and natural bloom spreading. Avoid pulsing red void circles that absorb your particles, chain gem collects for massive combo multipliers, and survive as more voids spawn each level!",
+    "tagline": "Guide the swarm. Engulf the gems. Don't get absorbed!",
+    "tags": ["swarm", "physics", "action", "reflex", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse / drag to guide your neon particle swarm toward gems",
+    "folder": "games/2026-04-08",
+    "file": "games/2026-04-08/index.html",
+    "preview": "games/2026-04-08/preview.png"
   }
 ]
