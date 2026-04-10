@@ -708,7 +708,7 @@
     "tags": ["strategy", "territory", "arcade", "reflex", "action"],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Arrow Keys / WASD to move · Swipe on mobile",
+    "controls": "Arrow Keys / WASD to move · D-pad buttons on mobile",
     "folder": "games/2026-04-10",
     "file": "games/2026-04-10/index.html",
     "preview": "games/2026-04-10/preview.png"

@@ -203,24 +203,11 @@ function App() {
     resize();
     window.addEventListener('resize', resize);
 
-    // Touch swipe for mobile
-    let touchStart = null;
-    const onTouchStart = (e) => {
-      touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    };
+    // Touch: tap to start game (D-pad buttons handle in-game movement)
+    const onTouchStart = () => {};
     const onTouchEnd = (e) => {
       const gs = gsRef.current;
-      if (!gs || gs.phase !== 'playing') { startGame(); touchStart = null; return; }
-      if (!touchStart) return;
-      const dx = e.changedTouches[0].clientX - touchStart.x;
-      const dy = e.changedTouches[0].clientY - touchStart.y;
-      touchStart = null;
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      const key = Math.abs(dx) > Math.abs(dy)
-        ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft')
-        : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
-      keysRef.current.add(key);
-      setTimeout(() => keysRef.current.delete(key), 110);
+      if (!gs || gs.phase !== 'playing') { startGame(); return; }
     };
     document.addEventListener('touchstart', onTouchStart, { passive: true });
     document.addEventListener('touchend', onTouchEnd);
@@ -389,9 +376,11 @@ function App() {
           if (isClaimedAt(curR, nxtC)) { e.vx *= -1; e.x += e.vx * 1.5; }
           if (isClaimedAt(nxtR, curC)) { e.vy *= -1; e.y += e.vy * 1.5; }
 
-          // Hard clamp
-          e.x = Math.max(1.2, Math.min(COLS - 2.2, e.x));
-          e.y = Math.max(1.2, Math.min(ROWS - 2.2, e.y));
+          // Soft bounce off walls (hard clamp caused corners to stick)
+          if (e.x < 1.2)        { e.x = 1.2;        if (e.vx < 0) e.vx = -e.vx; }
+          if (e.x > COLS - 2.2) { e.x = COLS - 2.2; if (e.vx > 0) e.vx = -e.vx; }
+          if (e.y < 1.2)        { e.y = 1.2;        if (e.vy < 0) e.vy = -e.vy; }
+          if (e.y > ROWS - 2.2) { e.y = ROWS - 2.2; if (e.vy > 0) e.vy = -e.vy; }
         }
 
         // Dying flash timer
@@ -589,7 +578,7 @@ function App() {
             </div>
             <div style={{ fontSize:'clamp(11px,1.8vw,13px)', color:'#556',
                           fontFamily:'monospace', marginBottom:22 }}>
-              Arrow Keys / WASD to move · Swipe on mobile
+              Arrow Keys / WASD to move · D-pad buttons on mobile
             </div>
             <div style={{ fontSize:'clamp(14px,2.5vw,20px)', color:'#ff79c6',
                           fontFamily:'monospace', animation:'pulse 1.2s infinite',
