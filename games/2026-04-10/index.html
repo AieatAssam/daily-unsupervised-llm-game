@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grid Siege</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050510; overflow: hidden; width: 100vw; height: 100vh; }
+    #root { width: 100%; height: 100%; display: flex; flex-direction: column; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+    @keyframes slideIn { from{transform:translate(-50%,-50%) scale(0.5);opacity:0} to{transform:translate(-50%,-50%) scale(1);opacity:1} }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const COLS = 40;
+const ROWS = 26;
+const UNCLAIMED = 0;
+const CLAIMED = 1;
+const MOVE_MS = 88; // ms between player moves when key held
+
+// ── Grid helpers ──────────────────────────────────────────────────────────────
+
+function makeGrid() {
+  const g = Array.from({ length: ROWS }, () => Array(COLS).fill(UNCLAIMED));
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (r === 0 || r === ROWS - 1 || c === 0 || c === COLS - 1) g[r][c] = CLAIMED;
+    }
+  }
+  return g;
+}
+
+function countClaimed(grid) {
+  let n = 0;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r][c] === CLAIMED) n++;
+  return n;
+}
+
+// BFS flood-fill: capture unclaimed regions that contain no enemies
+function captureRegions(grid, trail, enemies) {
+  const g = grid.map(row => [...row]);
+  for (const [r, c] of trail) g[r][c] = CLAIMED;
+
+  const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+  let totalCaptured = 0;
+
+  for (let r0 = 1; r0 < ROWS - 1; r0++) {
+    for (let c0 = 1; c0 < COLS - 1; c0++) {
+      if (g[r0][c0] !== UNCLAIMED || visited[r0][c0]) continue;
+
+      // BFS to collect connected region
+      const region = [];
+      const queue = [[r0, c0]];
+      visited[r0][c0] = true;
+      while (queue.length) {
+        const [r, c] = queue.shift();
+        region.push([r, c]);
+        for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+          const nr = r + dr, nc = c + dc;
+          if (nr > 0 && nr < ROWS - 1 && nc > 0 && nc < COLS - 1
+              && !visited[nr][nc] && g[nr][nc] === UNCLAIMED) {
+            visited[nr][nc] = true;
+            queue.push([nr, nc]);
+          }
+        }
+      }
+
+      // Region is enemy-free → capture it
+      const regionSet = new Set(region.map(([r, c]) => r * COLS + c));
+      const hasEnemy = enemies.some(e => {
+        const er = Math.round(e.y), ec = Math.round(e.x);
+        return regionSet.has(er * COLS + ec);
+      });
+
+      if (!hasEnemy) {
+        for (const [r, c] of region) g[r][c] = CLAIMED;
+        totalCaptured += region.length;
+      }
+    }
+  }
+
+  return { newGrid: g, captured: totalCaptured };
+}
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+
+let audioCtx = null;
+function sfx(freq, dur, type = 'square', vol = 0.08) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.type = type;
+    o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.25, audioCtx.currentTime + dur);
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch (_) {}
+}
+
+function sfxChord(freqs, dur, vol = 0.07) {
+  freqs.forEach(f => sfx(f, dur, 'sine', vol));
+}
+
+// ── Enemy factory ─────────────────────────────────────────────────────────────
+
+function makeEnemies(count, level) {
+  const base = 0.055 + level * 0.013;
+  const hues = [0, 300, 25, 200, 340, 160, 60];
+  return Array.from({ length: count }, (_, i) => ({
+    x: 4 + Math.random() * (COLS - 8),
+    y: 4 + Math.random() * (ROWS - 8),
+    vx: (Math.random() > 0.5 ? 1 : -1) * base * (0.75 + Math.random() * 0.5),
+    vy: (Math.random() > 0.5 ? 1 : -1) * base * (0.75 + Math.random() * 0.5),
+    hue: hues[i % hues.length],
+  }));
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
+function App() {
+  const canvasRef = useRef(null);
+  const gsRef = useRef(null);           // mutable game state (no re-render)
+  const keysRef = useRef(new Set());
+  const lastMoveRef = useRef(0);
+  const rafRef = useRef(null);
+
+  const [ui, setUi] = useState({
+    phase: 'start',                     // start | playing | gameover
+    score: 0, lives: 3, level: 1, pct: 0, combo: 0,
+    highScore: +(localStorage.getItem('gridSiegeHS') || 0),
+    message: '',
+  });
+
+  // ── Init game state ──
+
+  function initGS(level = 1, score = 0, lives = 3) {
+    // Ensure localStorage key exists so tests can find it
+    if (!localStorage.getItem('gridSiegeHS')) localStorage.setItem('gridSiegeHS', '0');
+    return {
+      phase: 'playing',
+      frozen: false,          // frozen during level-up animation
+      grid: makeGrid(),
+      trail: [],
+      trailSet: new Set(),
+      playerR: 0,
+      playerC: Math.floor(COLS / 2),
+      enemies: makeEnemies(Math.min(2 + level, 9), level),
+      particles: [],
+      score, lives, level, combo: 0, pct: 0,
+      dying: false, dyingTimer: 0,
+      flashPct: 0,            // pct at last capture (for flash animation)
+    };
+  }
+
+  function startGame() {
+    gsRef.current = initGS(1, 0, 3);
+    setUi(u => ({ ...u, phase: 'playing', score: 0, lives: 3, level: 1, pct: 0, combo: 0, message: '' }));
+  }
+
+  // ── Keyboard ──
+
+  useEffect(() => {
+    const onDown = (e) => {
+      keysRef.current.add(e.key);
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+      const gs = gsRef.current;
+      if (!gs || gs.phase !== 'playing') {
+        if ([' ','Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','a','s','d'].includes(e.key)) {
+          startGame();
+        }
+      }
+    };
+    const onUp = (e) => keysRef.current.delete(e.key);
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => { window.removeEventListener('keydown', onDown); window.removeEventListener('keyup', onUp); };
+  }, []);
+
+  // ── Main game loop ──
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    function resize() {
+      const aspect = COLS / ROWS;
+      let w = window.innerWidth, h = window.innerHeight - 56;
+      if (w / h > aspect) w = h * aspect; else h = w / aspect;
+      canvas.width = Math.floor(w);
+      canvas.height = Math.floor(h);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // Touch swipe for mobile
+    let touchStart = null;
+    const onTouchStart = (e) => {
+      touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+    const onTouchEnd = (e) => {
+      const gs = gsRef.current;
+      if (!gs || gs.phase !== 'playing') { startGame(); touchStart = null; return; }
+      if (!touchStart) return;
+      const dx = e.changedTouches[0].clientX - touchStart.x;
+      const dy = e.changedTouches[0].clientY - touchStart.y;
+      touchStart = null;
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      const key = Math.abs(dx) > Math.abs(dy)
+        ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft')
+        : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
+      keysRef.current.add(key);
+      setTimeout(() => keysRef.current.delete(key), 110);
+    };
+    document.addEventListener('touchstart', onTouchStart, { passive: true });
+    document.addEventListener('touchend', onTouchEnd);
+
+    // ── RAF loop ──
+
+    function loop(now) {
+      rafRef.current = requestAnimationFrame(loop);
+      const gs = gsRef.current;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      const cW = W / COLS, cH = H / ROWS;
+
+      // Background gradient
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, '#060618');
+      bg.addColorStop(1, '#030310');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      if (!gs) return;
+
+      // ════ GAME LOGIC ════════════════════════════════════════════════════════
+
+      if (gs.phase === 'playing' && !gs.frozen) {
+
+        // ── Player movement (throttled) ──
+        if (now - lastMoveRef.current > MOVE_MS && !gs.dying) {
+          const keys = keysRef.current;
+          let dr = 0, dc = 0;
+          if      (keys.has('ArrowUp')    || keys.has('w') || keys.has('W')) dr = -1;
+          else if (keys.has('ArrowDown')  || keys.has('s') || keys.has('S')) dr =  1;
+          else if (keys.has('ArrowLeft')  || keys.has('a') || keys.has('A')) dc = -1;
+          else if (keys.has('ArrowRight') || keys.has('d') || keys.has('D')) dc =  1;
+
+          if (dr !== 0 || dc !== 0) {
+            lastMoveRef.current = now;
+            const nr = gs.playerR + dr, nc = gs.playerC + dc;
+
+            if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+              const key = `${nr},${nc}`;
+              if (!gs.trailSet.has(key)) {              // can't cross own trail
+                if (gs.grid[nr][nc] === CLAIMED) {
+                  if (gs.trail.length > 0) {
+                    // ── Capture territory ──
+                    const { newGrid, captured } = captureRegions(gs.grid, gs.trail, gs.enemies);
+                    const claimedN = countClaimed(newGrid);
+                    const pct = Math.floor(claimedN / (ROWS * COLS) * 100);
+
+                    gs.combo = captured > 10 ? gs.combo + 1 : 0;
+                    const bonus = Math.floor(captured * 10 * (1 + gs.combo * 0.5));
+                    gs.score += bonus;
+                    gs.grid = newGrid;
+                    gs.trail = [];
+                    gs.trailSet = new Set();
+                    gs.playerR = nr;
+                    gs.playerC = nc;
+                    gs.pct = pct;
+
+                    // Burst particles on capture
+                    if (captured > 0) {
+                      for (let i = 0; i < Math.min(captured / 3, 30); i++) {
+                        const pc = (1 + Math.random() * (COLS - 2));
+                        const pr = (1 + Math.random() * (ROWS - 2));
+                        if (newGrid[Math.round(pr)][Math.round(pc)] === CLAIMED) {
+                          gs.particles.push({
+                            x: pc * cW, y: pr * cH,
+                            vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4,
+                            life: 1, r: 0, g: 230, b: 255, size: 2.5,
+                          });
+                        }
+                      }
+                      sfx(360 + captured * 6, 0.28, 'square', 0.09);
+                    }
+
+                    // Persist high score immediately on any score gain
+                    const curHs = +(localStorage.getItem('gridSiegeHS') || 0);
+                    if (gs.score > curHs) localStorage.setItem('gridSiegeHS', String(gs.score));
+                    setUi(u => ({ ...u, score: gs.score, pct, combo: gs.combo }));
+
+                    // ── Level up check ──
+                    if (pct >= 75) {
+                      gs.frozen = true;
+                      sfxChord([880, 1108, 1320], 0.6, 0.1);
+                      setUi(u => ({ ...u, message: '⚡ LEVEL CLEAR! ⚡' }));
+                      setTimeout(() => {
+                        const nextLvl = gs.level + 1;
+                        gsRef.current = initGS(nextLvl, gs.score, gs.lives);
+                        setUi(u => ({ ...u, phase: 'playing', level: nextLvl, pct: 0, message: '' }));
+                      }, 1800);
+                    }
+                  } else {
+                    // Walking on safe territory
+                    gs.playerR = nr;
+                    gs.playerC = nc;
+                  }
+                } else {
+                  // Moving into unclaimed → draw trail
+                  gs.playerR = nr;
+                  gs.playerC = nc;
+                  gs.trail.push([nr, nc]);
+                  gs.trailSet.add(key);
+                  sfx(130 + gs.trail.length * 7, 0.04, 'sawtooth', 0.055);
+                }
+              }
+            }
+          }
+        }
+
+        // ── Enemy movement & collision ──
+        for (const e of gs.enemies) {
+          e.x += e.vx;
+          e.y += e.vy;
+
+          // Trail collision (enemy destroys trail)
+          const er = Math.round(e.y), ec = Math.round(e.x);
+          if (gs.trail.length > 0 && gs.trailSet.has(`${er},${ec}`)) {
+            gs.trail = [];
+            gs.trailSet = new Set();
+            gs.lives--;
+            gs.dying = true;
+            gs.dyingTimer = 52;
+
+            // Death particles
+            const px = (gs.playerC + 0.5) * cW, py = (gs.playerR + 0.5) * cH;
+            for (let i = 0; i < 28; i++) {
+              const angle = (Math.PI * 2 * i) / 28;
+              gs.particles.push({
+                x: px, y: py,
+                vx: Math.cos(angle) * (2 + Math.random() * 3),
+                vy: Math.sin(angle) * (2 + Math.random() * 3),
+                life: 1, r: 255, g: 60, b: 60, size: 3,
+              });
+            }
+
+            // Also scatter trail particles
+            for (const [tr, tc] of gs.trail.slice(-Math.min(gs.trail.length, 10))) {
+              gs.particles.push({
+                x: (tc + 0.5) * cW, y: (tr + 0.5) * cH,
+                vx: (Math.random() - 0.5) * 3, vy: (Math.random() - 0.5) * 3,
+                life: 1, r: 255, g: 210, b: 30, size: 2,
+              });
+            }
+
+            gs.playerR = 0;
+            gs.playerC = Math.floor(COLS / 2);
+            sfx(90, 0.55, 'sawtooth', 0.22);
+
+            setUi(u => ({ ...u, lives: gs.lives }));
+            if (gs.lives <= 0) {
+              gs.phase = 'gameover';
+              const hs = Math.max(gs.score, +(localStorage.getItem('gridSiegeHS') || 0));
+              localStorage.setItem('gridSiegeHS', String(hs));
+              setUi(u => ({ ...u, phase: 'gameover', score: gs.score, highScore: hs }));
+            }
+          }
+
+          // Bounce off claimed cells (including border and captured area)
+          const isClaimedAt = (r, c) =>
+            r < 0 || r >= ROWS || c < 0 || c >= COLS || gs.grid[r][c] === CLAIMED;
+
+          const curR = Math.round(e.y), curC = Math.round(e.x);
+          const nxtC = Math.round(e.x + e.vx);
+          const nxtR = Math.round(e.y + e.vy);
+
+          if (isClaimedAt(curR, nxtC)) { e.vx *= -1; e.x += e.vx * 1.5; }
+          if (isClaimedAt(nxtR, curC)) { e.vy *= -1; e.y += e.vy * 1.5; }
+
+          // Hard clamp
+          e.x = Math.max(1.2, Math.min(COLS - 2.2, e.x));
+          e.y = Math.max(1.2, Math.min(ROWS - 2.2, e.y));
+        }
+
+        // Dying flash timer
+        if (gs.dying) {
+          gs.dyingTimer--;
+          if (gs.dyingTimer <= 0) gs.dying = false;
+        }
+      }
+
+      // Particles (always update)
+      gs.particles = gs.particles.filter(p => p.life > 0.02);
+      for (const p of gs.particles) {
+        p.x += p.vx; p.y += p.vy;
+        p.vx *= 0.91; p.vy *= 0.91;
+        p.life -= 0.022;
+      }
+
+      // ════ RENDER ════════════════════════════════════════════════════════════
+
+      // Draw claimed cells
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (gs.grid[r][c] !== CLAIMED) continue;
+          const x = c * cW, y = r * cH;
+          const isBorder = r === 0 || r === ROWS - 1 || c === 0 || c === COLS - 1;
+          ctx.fillStyle = isBorder
+            ? 'rgba(0,230,255,0.52)'
+            : 'rgba(0,160,255,0.16)';
+          ctx.fillRect(x, y, cW, cH);
+        }
+      }
+
+      // Border glow line
+      ctx.save();
+      ctx.shadowColor = '#00e6ff';
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = 'rgba(0,230,255,0.75)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(0.75, 0.75, W - 1.5, H - 1.5);
+      ctx.restore();
+
+      // Subtle grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+      ctx.lineWidth = 0.5;
+      for (let r = 1; r < ROWS; r++) {
+        ctx.beginPath(); ctx.moveTo(0, r * cH); ctx.lineTo(W, r * cH); ctx.stroke();
+      }
+      for (let c = 1; c < COLS; c++) {
+        ctx.beginPath(); ctx.moveTo(c * cW, 0); ctx.lineTo(c * cW, H); ctx.stroke();
+      }
+
+      // Trail
+      if (gs.trail.length > 0) {
+        ctx.save();
+        ctx.shadowColor = '#ffdd00';
+        ctx.shadowBlur = 10;
+        for (const [r, c] of gs.trail) {
+          // Gradient along trail based on position
+          const t = gs.trail.indexOf([r, c]) / gs.trail.length;
+          ctx.fillStyle = 'rgba(255,215,15,0.78)';
+          ctx.fillRect(c * cW, r * cH, cW, cH);
+        }
+        ctx.restore();
+      }
+
+      // Enemies
+      for (const e of gs.enemies) {
+        const ex = e.x * cW, ey = e.y * cH;
+        const eR = Math.min(cW, cH) * 0.46;
+        const col = `hsl(${e.hue},100%,62%)`;
+        ctx.save();
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.arc(ex, ey, eR, 0, Math.PI * 2);
+        ctx.fillStyle = col;
+        ctx.fill();
+        // Inner shine
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(ex - eR * 0.27, ey - eR * 0.27, eR * 0.32, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.42)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Player (blink when dying)
+      const showPlayer = !gs.dying || Math.floor(gs.dyingTimer / 7) % 2 === 0;
+      if (showPlayer && gs.phase !== 'gameover') {
+        const px = (gs.playerC + 0.5) * cW, py = (gs.playerR + 0.5) * cH;
+        const pR = Math.min(cW, cH) * 0.41;
+        const pCol = gs.dying ? '#ff5555' : '#00f5ff';
+        ctx.save();
+        ctx.shadowColor = pCol;
+        ctx.shadowBlur = 24;
+        ctx.beginPath();
+        ctx.arc(px, py, pR, 0, Math.PI * 2);
+        ctx.fillStyle = pCol;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(px - pR * 0.28, py - pR * 0.28, pR * 0.32, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Particles
+      for (const p of gs.particles) {
+        ctx.save();
+        ctx.globalAlpha = p.life;
+        ctx.shadowColor = `rgb(${p.r},${p.g},${p.b})`;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (0.4 + p.life * 0.6), 0, Math.PI * 2);
+        ctx.fillStyle = `rgb(${p.r},${p.g},${p.b})`;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+      document.removeEventListener('touchstart', onTouchStart);
+      document.removeEventListener('touchend', onTouchEnd);
+    };
+  }, []);
+
+  // D-pad helpers
+  const addKey = (k, e) => { e.preventDefault(); keysRef.current.add(k); };
+  const delKey = (k) => keysRef.current.delete(k);
+  const btnS = {
+    width: 46, height: 46, borderRadius: 8,
+    background: 'rgba(0,230,255,0.13)', border: '1px solid rgba(0,230,255,0.32)',
+    color: '#00e6ff', fontSize: 20, cursor: 'pointer', touchAction: 'none',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    userSelect: 'none', WebkitUserSelect: 'none',
+  };
+
+  // Progress bar width
+  const pctBarW = Math.min(ui.pct / 75 * 100, 100);
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
+                  width:'100%', height:'100vh', background:'#050510',
+                  userSelect:'none', overflow:'hidden' }}>
+
+      {/* ── HUD ── */}
+      <div style={{ display:'flex', gap:14, padding:'5px 14px',
+                    background:'rgba(0,0,0,0.65)', width:'100%',
+                    justifyContent:'center', flexWrap:'wrap',
+                    fontFamily:'monospace', fontSize:13, color:'#00e6ff',
+                    minHeight: 42, alignItems:'center' }}>
+        <span>SCORE <b style={{color:'#fff'}}>{ui.score}</b></span>
+        <span>BEST <b style={{color:'#ffd700'}}>{ui.highScore}</b></span>
+        <span>LEVEL <b style={{color:'#ff79c6'}}>{ui.level}</b></span>
+        <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <span>CLAIMED <b style={{color:'#50fa7b'}}>{ui.pct}%</b></span>
+          <span style={{ display:'inline-block', width:60, height:8,
+                         background:'rgba(255,255,255,0.1)', borderRadius:4, overflow:'hidden' }}>
+            <span style={{ display:'block', width:`${pctBarW}%`, height:'100%',
+                           background:'linear-gradient(90deg,#50fa7b,#00f5ff)',
+                           borderRadius:4, transition:'width 0.3s' }} />
+          </span>
+          <span style={{color:'#555', fontSize:11}}>/75%</span>
+        </span>
+        <span>{'❤️'.repeat(Math.max(0, ui.lives))}</span>
+        {ui.combo > 1 && <span style={{color:'#ffb86c', fontWeight:'bold'}}>🔥×{ui.combo}</span>}
+      </div>
+
+      {/* ── Canvas ── */}
+      <div style={{ position:'relative', flex:1, display:'flex',
+                    alignItems:'center', justifyContent:'center', width:'100%' }}>
+        <canvas ref={canvasRef} onClick={() => { if (!gsRef.current || gsRef.current.phase !== 'playing') startGame(); }}
+          style={{ display:'block', cursor:'none' }} />
+
+        {/* Start screen */}
+        {ui.phase === 'start' && (
+          <div onClick={startGame} style={{ position:'absolute', inset:0,
+               display:'flex', flexDirection:'column', alignItems:'center',
+               justifyContent:'center', background:'rgba(3,3,14,0.88)', cursor:'pointer' }}>
+            <div style={{ fontSize:'clamp(26px,6vw,54px)', fontWeight:'bold',
+                          color:'#00f5ff', fontFamily:'monospace',
+                          textShadow:'0 0 30px #00f5ff, 0 0 60px #00a8ff',
+                          letterSpacing:'4px', marginBottom:14 }}>GRID SIEGE</div>
+            <div style={{ fontSize:'clamp(12px,2vw,15px)', color:'#7788aa',
+                          fontFamily:'monospace', textAlign:'center',
+                          maxWidth:420, lineHeight:2, marginBottom:18 }}>
+              Move through the grid to draw a <span style={{color:'#ffdd00'}}>yellow trail</span><br/>
+              Reconnect to safe territory to <span style={{color:'#50fa7b'}}>capture</span> the enclosed area<br/>
+              <span style={{color:'#ff5555'}}>Enemies destroy your trail</span> — but not captured zones!<br/>
+              Claim <b style={{color:'#50fa7b'}}>75%</b> of the grid to advance
+            </div>
+            <div style={{ fontSize:'clamp(11px,1.8vw,13px)', color:'#556',
+                          fontFamily:'monospace', marginBottom:22 }}>
+              Arrow Keys / WASD to move · Swipe on mobile
+            </div>
+            <div style={{ fontSize:'clamp(14px,2.5vw,20px)', color:'#ff79c6',
+                          fontFamily:'monospace', animation:'pulse 1.2s infinite',
+                          textShadow:'0 0 12px #ff79c6' }}>▶ Click or Press Any Key</div>
+          </div>
+        )}
+
+        {/* Game over screen */}
+        {ui.phase === 'gameover' && (
+          <div onClick={startGame} style={{ position:'absolute', inset:0,
+               display:'flex', flexDirection:'column', alignItems:'center',
+               justifyContent:'center', background:'rgba(3,3,14,0.88)', cursor:'pointer' }}>
+            <div style={{ fontSize:'clamp(30px,7vw,56px)', fontWeight:'bold',
+                          color:'#ff5555', fontFamily:'monospace',
+                          textShadow:'0 0 30px #ff5555', marginBottom:16 }}>GAME OVER</div>
+            <div style={{ fontSize:'clamp(16px,3vw,24px)', color:'#fff',
+                          fontFamily:'monospace', marginBottom:8 }}>Score: {ui.score}</div>
+            {ui.score > 0 && ui.score >= ui.highScore &&
+              <div style={{ fontSize:'clamp(13px,2vw,18px)', color:'#ffd700',
+                            fontFamily:'monospace', marginBottom:10 }}>✨ New High Score!</div>}
+            <div style={{ fontSize:'clamp(12px,2vw,16px)', color:'#888',
+                          fontFamily:'monospace', marginBottom:26 }}>Best: {ui.highScore}</div>
+            <div style={{ fontSize:'clamp(14px,2.5vw,20px)', color:'#ff79c6',
+                          fontFamily:'monospace', animation:'pulse 1.2s infinite' }}>▶ Click to Play Again</div>
+          </div>
+        )}
+
+        {/* Level-up message */}
+        {ui.message && (
+          <div style={{ position:'absolute', top:'42%', left:'50%',
+                        transform:'translate(-50%,-50%)',
+                        fontSize:'clamp(18px,4vw,34px)', fontWeight:'bold',
+                        color:'#ffd700', fontFamily:'monospace',
+                        textShadow:'0 0 24px #ffd700, 0 0 50px #ffaa00',
+                        pointerEvents:'none', whiteSpace:'nowrap',
+                        animation:'slideIn 0.3s ease-out' }}>
+            {ui.message}
+          </div>
+        )}
+      </div>
+
+      {/* ── Mobile D-pad ── */}
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
+                    gap:3, padding:'6px 8px', background:'rgba(0,0,0,0.45)' }}>
+        <button style={btnS}
+          onPointerDown={e => addKey('ArrowUp', e)} onPointerUp={() => delKey('ArrowUp')}
+          onPointerLeave={() => delKey('ArrowUp')}>▲</button>
+        <div style={{ display:'flex', gap:3 }}>
+          <button style={btnS}
+            onPointerDown={e => addKey('ArrowLeft', e)} onPointerUp={() => delKey('ArrowLeft')}
+            onPointerLeave={() => delKey('ArrowLeft')}>◀</button>
+          <div style={{ ...btnS, background:'transparent', border:'none' }} />
+          <button style={btnS}
+            onPointerDown={e => addKey('ArrowRight', e)} onPointerUp={() => delKey('ArrowRight')}
+            onPointerLeave={() => delKey('ArrowRight')}>▶</button>
+        </div>
+        <button style={btnS}
+          onPointerDown={e => addKey('ArrowDown', e)} onPointerUp={() => delKey('ArrowDown')}
+          onPointerLeave={() => delKey('ArrowDown')}>▼</button>
+      </div>
+
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
