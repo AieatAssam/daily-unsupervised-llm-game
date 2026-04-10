@@ -698,5 +698,19 @@
     "folder": "games/2026-04-08",
     "file": "games/2026-04-08/index.html",
     "preview": "games/2026-04-08/preview.png"
+  },
+  {
+    "id": "2026-04-10",
+    "name": "Grid Siege",
+    "date": "2026-04-10",
+    "description": "Claim territory by drawing trails through the neon grid — reconnect to safe ground to capture enclosed regions! Bouncing enemies destroy your active trail, so plan each cut carefully and claim 75% to advance each level.",
+    "tagline": "Draw trails. Claim the grid. Don't get hit!",
+    "tags": ["strategy", "territory", "arcade", "reflex", "action"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Arrow Keys / WASD to move · Swipe on mobile",
+    "folder": "games/2026-04-10",
+    "file": "games/2026-04-10/index.html",
+    "preview": "games/2026-04-10/preview.png"
   }
 ]
