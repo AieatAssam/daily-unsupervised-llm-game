@@ -712,5 +712,19 @@
     "folder": "games/2026-04-10",
     "file": "games/2026-04-10/index.html",
     "preview": "games/2026-04-10/preview.png"
+  },
+  {
+    "id": "2026-04-11",
+    "name": "Voltage Jump",
+    "date": "2026-04-11",
+    "description": "Leap between glowing hexagonal platforms that pulse with electric charge — click to jump and land when the platform is bright for PERFECT timing! Predict travel time to nail combos as platforms pulse faster each level.",
+    "tagline": "Jump when it glows. Land in the light. Chain the voltage!",
+    "tags": ["timing", "precision", "reflex", "arcade", "prediction"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a platform to jump to it — land when the charge ring is FULL for PERFECT score",
+    "folder": "games/2026-04-11",
+    "file": "games/2026-04-11/index.html",
+    "preview": "games/2026-04-11/preview.png"
   }
 ]

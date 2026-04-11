@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voltage Jump</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef, useCallback } = React;
+
+    // ── Audio ──────────────────────────────────────────────────────────────────
+    let audioCtx = null;
+    const getAudio = () => {
+      if (!audioCtx) {
+        try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+      }
+      return audioCtx;
+    };
+    const playTone = (freq, type = 'sine', dur = 0.15, vol = 0.3) => {
+      try {
+        const ctx = getAudio(); if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.5, ctx.currentTime + dur);
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    };
+    const playZap = () => {
+      try {
+        const ctx = getAudio(); if (!ctx) return;
+        const len = Math.floor(ctx.sampleRate * 0.07);
+        const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.exp(-i / (len * 0.18));
+        const src = ctx.createBufferSource(); src.buffer = buf;
+        const filt = ctx.createBiquadFilter(); filt.type = 'bandpass'; filt.frequency.value = 1200;
+        const gain = ctx.createGain();
+        src.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+        gain.gain.setValueAtTime(0.45, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.07);
+        src.start();
+      } catch(e) {}
+    };
+    const playMiss = () => {
+      try {
+        const ctx = getAudio(); if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc.start(); osc.stop(ctx.currentTime + 0.35);
+      } catch(e) {}
+    };
+
+    // ── Platform layout ────────────────────────────────────────────────────────
+    const makePlatforms = (W, H) => {
+      const cx = W / 2, cy = H / 2;
+      const m = Math.min(W, H);
+      const plats = [];
+
+      // Center platform (always starts somewhat charged)
+      plats.push({ x: cx, y: cy, phase: Math.PI * 0.5, speed: 0.38, r: 36 });
+
+      // Inner ring — 5 platforms
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+        plats.push({
+          x: cx + Math.cos(a) * m * 0.21,
+          y: cy + Math.sin(a) * m * 0.21,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.30 + Math.random() * 0.55,
+          r: 30,
+        });
+      }
+
+      // Outer ring — 7 platforms
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2 + Math.PI / 14;
+        plats.push({
+          x: cx + Math.cos(a) * m * 0.38,
+          y: cy + Math.sin(a) * m * 0.38,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.25 + Math.random() * 0.75,
+          r: 26,
+        });
+      }
+      return plats;
+    };
+
+    const getCharge = (p) => (Math.sin(p.phase) + 1) / 2;
+
+    // ── Component ──────────────────────────────────────────────────────────────
+    const VoltageJump = () => {
+      const canvasRef = useRef(null);
+      const g = useRef({
+        phase: 'start',
+        score: 0,
+        highScore: +(localStorage.getItem('voltageJump_highScore') || 0),
+        combo: 0,
+        lives: 3,
+        plats: [],
+        curPlat: 0,
+        jumping: false,
+        jStart: 0,
+        jFrom: 0,
+        jTo: 0,
+        particles: [],
+        floats: [],
+        raf: null,
+        t: 0,
+        diff: 1,
+        arcNoise: [],  // lightning arc segment offsets (re-seeded each frame)
+      });
+
+      // Ensure localStorage key exists immediately
+      if (!localStorage.getItem('voltageJump_highScore')) {
+        localStorage.setItem('voltageJump_highScore', '0');
+      }
+
+      const JUMP_MS = 460;
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const s = g.current;
+
+        const resize = () => {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          if (s.phase !== 'playing') {
+            s.plats = makePlatforms(canvas.width, canvas.height);
+          }
+        };
+        resize();
+        window.addEventListener('resize', resize);
+        s.plats = makePlatforms(canvas.width, canvas.height);
+
+        // ── Draw helpers ────────────────────────────────────────────────────────
+        const drawHex = (ctx, x, y, r) => {
+          ctx.beginPath();
+          for (let k = 0; k < 6; k++) {
+            const a = (k / 6) * Math.PI * 2 - Math.PI / 6;
+            k === 0
+              ? ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r)
+              : ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+          }
+          ctx.closePath();
+        };
+
+        const drawLightning = (ctx, x1, y1, x2, y2, segs, spread, alpha) => {
+          ctx.save();
+          ctx.strokeStyle = `rgba(160,230,255,${alpha})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          const points = [[x1, y1]];
+          for (let i = 1; i < segs; i++) {
+            const t = i / segs;
+            const bx = x1 + (x2 - x1) * t;
+            const by = y1 + (y2 - y1) * t;
+            const nx = -(y2 - y1) / Math.hypot(x2 - x1, y2 - y1);
+            const ny = (x2 - x1) / Math.hypot(x2 - x1, y2 - y1);
+            points.push([bx + nx * (Math.random()-0.5) * spread, by + ny * (Math.random()-0.5) * spread]);
+          }
+          points.push([x2, y2]);
+          ctx.moveTo(points[0][0], points[0][1]);
+          points.forEach(([px, py]) => ctx.lineTo(px, py));
+          ctx.stroke();
+          ctx.restore();
+        };
+
+        // ── Main loop ───────────────────────────────────────────────────────────
+        const loop = (ts) => {
+          s.t = ts;
+          const ctx = canvas.getContext('2d');
+          const W = canvas.width, H = canvas.height;
+
+          // Background
+          ctx.fillStyle = '#060012';
+          ctx.fillRect(0, 0, W, H);
+
+          // Grid
+          ctx.strokeStyle = 'rgba(55, 0, 160, 0.13)';
+          ctx.lineWidth = 1;
+          const GS = 52;
+          for (let x = 0; x < W; x += GS) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+          for (let y = 0; y < H; y += GS) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+          // ── Update platform phases ──────────────────────────────────────────
+          const diff = s.phase === 'playing' ? (1 + s.score / 700) : 1;
+          s.diff = diff;
+          s.plats.forEach(p => {
+            p.phase += p.speed * diff * (Math.PI * 2 / 60);
+          });
+
+          // ── Draw electric connections between nearby platforms ───────────────
+          s.plats.forEach((a, i) => {
+            s.plats.forEach((b, j) => {
+              if (j <= i) return;
+              const dist = Math.hypot(a.x - b.x, a.y - b.y);
+              if (dist > 265) return;
+              const ca = getCharge(a), cb = getCharge(b);
+              const strength = (ca + cb) / 2;
+              if (strength < 0.2) return;
+              drawLightning(ctx, a.x, a.y, b.x, b.y, 6, 12 * strength, strength * 0.22);
+            });
+          });
+
+          // ── Draw platforms ──────────────────────────────────────────────────
+          s.plats.forEach((p, i) => {
+            const charge = getCharge(p);
+            const isPlayer = i === s.curPlat && !s.jumping;
+
+            // Color lerp: dark teal (low) → bright cyan (mid) → white (perfect)
+            const rC = Math.floor(20 + charge * 200);
+            const gC = Math.floor(160 + charge * 95);
+            const bC = 255;
+
+            // Outer glow halo
+            const glowR = p.r + 28 + charge * 28;
+            const grad = ctx.createRadialGradient(p.x, p.y, p.r * 0.3, p.x, p.y, glowR);
+            grad.addColorStop(0, `rgba(${rC},${gC},${bC},${0.2 + charge * 0.4})`);
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2); ctx.fill();
+
+            // Hexagon body
+            drawHex(ctx, p.x, p.y, p.r);
+            ctx.fillStyle = `rgba(${(rC * 0.15)|0},${(gC * 0.25)|0},${(bC * 0.3)|0},${0.45 + charge * 0.4})`;
+            ctx.fill();
+            ctx.strokeStyle = `rgb(${rC},${gC},${bC})`;
+            ctx.lineWidth = 1.5 + charge * 2.5;
+            ctx.stroke();
+
+            // Charge arc ring
+            const arcStart = -Math.PI / 2;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r + 9, arcStart, arcStart + charge * Math.PI * 2);
+            if (charge >= 0.85) {
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 4;
+            } else if (charge >= 0.65) {
+              ctx.strokeStyle = '#60ffff';
+              ctx.lineWidth = 3;
+            } else {
+              ctx.strokeStyle = '#1850a0';
+              ctx.lineWidth = 2;
+            }
+            ctx.stroke();
+
+            // Perfect-zone radiant sparks
+            if (charge >= 0.85) {
+              ctx.save();
+              ctx.shadowColor = '#ffffff';
+              ctx.shadowBlur = 25;
+              for (let k = 0; k < 6; k++) {
+                const a = (k / 6) * Math.PI * 2 + ts * 0.002;
+                const d = p.r + 10 + Math.sin(ts * 0.008 + k) * 5;
+                ctx.fillStyle = `rgba(255,255,220,${0.7 + Math.sin(ts * 0.01 + k) * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(p.x + Math.cos(a)*d, p.y + Math.sin(a)*d, 3, 0, Math.PI*2);
+                ctx.fill();
+              }
+              ctx.restore();
+            }
+
+            // Player dashed ring
+            if (isPlayer) {
+              const pulse = 0.5 + 0.5 * Math.sin(ts * 0.007);
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, p.r + 17 + pulse * 4, 0, Math.PI * 2);
+              ctx.strokeStyle = `rgba(255,255,80,${0.55 + pulse * 0.35})`;
+              ctx.lineWidth = 2;
+              ctx.setLineDash([7, 7]);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+          });
+
+          // ── Jump arc / player ───────────────────────────────────────────────
+          if (s.jumping) {
+            const elapsed = ts - s.jStart;
+            const tJ = Math.min(elapsed / JUMP_MS, 1);
+
+            const fp = s.plats[s.jFrom];
+            const tp = s.plats[s.jTo];
+            const dist = Math.hypot(tp.x - fp.x, tp.y - fp.y);
+            const cpX = (fp.x + tp.x) / 2;
+            const cpY = (fp.y + tp.y) / 2 - dist * 0.38;
+
+            // Bezier position
+            const px = (1-tJ)*(1-tJ)*fp.x + 2*(1-tJ)*tJ*cpX + tJ*tJ*tp.x;
+            const py = (1-tJ)*(1-tJ)*fp.y + 2*(1-tJ)*tJ*cpY + tJ*tJ*tp.y;
+
+            // Spark trail particles
+            if (Math.random() < 0.65) {
+              s.particles.push({
+                x: px, y: py,
+                vx: (Math.random()-0.5)*3.5, vy: (Math.random()-0.5)*3.5,
+                life: 0.9, r: 2 + Math.random()*3,
+                col: Math.random() > 0.45 ? '#80ffff' : '#ffffa0',
+              });
+            }
+
+            // Dashed line to target
+            ctx.save();
+            ctx.strokeStyle = 'rgba(160,220,255,0.2)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 9]);
+            ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(tp.x, tp.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+
+            // Lightning bolt to target
+            if (Math.random() < 0.4) {
+              drawLightning(ctx, px, py, tp.x, tp.y, 8, 15, 0.35);
+            }
+
+            // Player orb
+            const og = ctx.createRadialGradient(px, py, 0, px, py, 20);
+            og.addColorStop(0, '#ffffff');
+            og.addColorStop(0.35, '#ffffa0');
+            og.addColorStop(1, 'rgba(255,200,0,0)');
+            ctx.fillStyle = og;
+            ctx.beginPath(); ctx.arc(px, py, 20, 0, Math.PI*2); ctx.fill();
+
+            // Landing check
+            if (tJ >= 1) {
+              s.jumping = false;
+              const destCharge = getCharge(s.plats[s.jTo]);
+
+              if (destCharge >= 0.65) {
+                const perfect = destCharge >= 0.85;
+                s.combo++;
+                const pts = (perfect ? 100 : 50) * Math.min(s.combo, 10);
+                s.score += pts;
+                if (s.score > s.highScore) {
+                  s.highScore = s.score;
+                  localStorage.setItem('voltageJump_highScore', s.highScore);
+                }
+                playTone(perfect ? 880 : 660, 'square', 0.18, 0.35);
+                playZap();
+
+                const count = perfect ? 38 : 18;
+                for (let k = 0; k < count; k++) {
+                  const angle = Math.random() * Math.PI * 2;
+                  const spd = 2 + Math.random() * (perfect ? 7 : 5);
+                  s.particles.push({
+                    x: s.plats[s.jTo].x, y: s.plats[s.jTo].y,
+                    vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd,
+                    life: 1, r: 2 + Math.random() * (perfect ? 5 : 3),
+                    col: perfect ? '#ffffaa' : '#60ffff',
+                  });
+                }
+                s.floats.push({
+                  x: s.plats[s.jTo].x, y: s.plats[s.jTo].y - 35,
+                  text: perfect ? '⚡ PERFECT!' : 'GOOD!',
+                  sub: s.combo > 1 ? `×${Math.min(s.combo,10)} COMBO` : null,
+                  life: 1, col: perfect ? '#ffff60' : '#60ffff', size: perfect ? 26 : 20,
+                });
+              } else {
+                // Miss
+                s.combo = 0;
+                s.lives--;
+                playMiss();
+                s.floats.push({
+                  x: s.plats[s.jTo].x, y: s.plats[s.jTo].y - 35,
+                  text: 'MISS!', sub: null,
+                  life: 1, col: '#ff4040', size: 22,
+                });
+                for (let k = 0; k < 12; k++) {
+                  const angle = Math.random() * Math.PI * 2;
+                  s.particles.push({
+                    x: s.plats[s.jTo].x, y: s.plats[s.jTo].y,
+                    vx: Math.cos(angle)*3, vy: Math.sin(angle)*3,
+                    life: 0.7, r: 2 + Math.random()*3, col: '#ff4040',
+                  });
+                }
+                if (s.lives <= 0) {
+                  s.phase = 'gameover';
+                  localStorage.setItem('voltageJump_highScore', s.highScore);
+                }
+              }
+              s.curPlat = s.jTo;
+            }
+
+          } else if (s.phase === 'playing') {
+            // Player resting on platform
+            const p = s.plats[s.curPlat];
+            const pulse = 0.5 + 0.5 * Math.sin(ts * 0.009);
+            const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 15 + pulse * 7);
+            pg.addColorStop(0, '#ffffff');
+            pg.addColorStop(0.35, '#ffffc0');
+            pg.addColorStop(1, 'rgba(255,220,0,0)');
+            ctx.fillStyle = pg;
+            ctx.beginPath(); ctx.arc(p.x, p.y, 15 + pulse * 7, 0, Math.PI*2); ctx.fill();
+          }
+
+          // ── Particles ───────────────────────────────────────────────────────
+          s.particles = s.particles.filter(p => p.life > 0);
+          s.particles.forEach(p => {
+            ctx.save();
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.col;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+            p.x += p.vx; p.y += p.vy;
+            p.vy += 0.07;
+            p.vx *= 0.97; p.vy *= 0.97;
+            p.life -= 0.020;
+          });
+
+          // ── Floating text ───────────────────────────────────────────────────
+          s.floats = s.floats.filter(f => f.life > 0);
+          s.floats.forEach(f => {
+            ctx.save();
+            ctx.globalAlpha = f.life;
+            ctx.font = `bold ${f.size}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = f.col;
+            ctx.shadowColor = f.col;
+            ctx.shadowBlur = 14;
+            ctx.fillText(f.text, f.x, f.y);
+            if (f.sub) {
+              ctx.font = 'bold 15px monospace';
+              ctx.fillStyle = '#ffdd00';
+              ctx.shadowColor = '#ffaa00';
+              ctx.fillText(f.sub, f.x, f.y + 22);
+            }
+            ctx.restore();
+            f.y -= 0.85;
+            f.life -= 0.020;
+          });
+
+          // ── HUD (playing) ───────────────────────────────────────────────────
+          if (s.phase === 'playing') {
+            ctx.save();
+            ctx.font = 'bold 27px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#00ffff';
+            ctx.shadowColor = '#00ccff';
+            ctx.shadowBlur = 10;
+            ctx.fillText(`⚡ ${s.score}`, 16, 40);
+            ctx.shadowBlur = 0;
+
+            if (s.combo > 1) {
+              ctx.font = 'bold 18px monospace';
+              ctx.fillStyle = '#ffff60';
+              ctx.shadowColor = '#ffff00';
+              ctx.shadowBlur = 8;
+              ctx.fillText(`COMBO ×${Math.min(s.combo,10)}`, 16, 66);
+              ctx.shadowBlur = 0;
+            }
+
+            ctx.textAlign = 'right';
+            ctx.font = '14px monospace';
+            ctx.fillStyle = 'rgba(160,160,255,0.75)';
+            ctx.fillText(`BEST ${s.highScore}`, W - 16, 30);
+
+            // Lives (lightning bolts)
+            for (let i = 0; i < 3; i++) {
+              ctx.font = '22px monospace';
+              ctx.fillStyle = i < s.lives ? '#80ffff' : 'rgba(60,60,100,0.5)';
+              ctx.fillText('⚡', W - 16 - i * 30, 58);
+            }
+
+            // Hint — fades out after 6s
+            if (s.score === 0 && s.combo === 0) {
+              const age = ts;
+              if (age < 6000) {
+                ctx.globalAlpha = Math.max(0, 1 - age / 6000);
+                ctx.font = '14px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = 'rgba(200,200,255,0.85)';
+                ctx.fillText("Click a platform to jump — land when it glows BRIGHT!", W/2, H - 28);
+                ctx.globalAlpha = 1;
+              }
+            }
+            ctx.restore();
+          }
+
+          // ── Start screen ────────────────────────────────────────────────────
+          if (s.phase === 'start') {
+            ctx.fillStyle = 'rgba(0,0,0,0.72)';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.save();
+            ctx.textAlign = 'center';
+
+            const titleSize = Math.min(54, W * 0.11);
+            ctx.font = `bold ${titleSize}px monospace`;
+            ctx.fillStyle = '#80ffff';
+            ctx.shadowColor = '#00ccff';
+            ctx.shadowBlur = 40;
+            ctx.fillText('VOLTAGE JUMP', W/2, H/2 - 100);
+            ctx.shadowBlur = 0;
+
+            ctx.font = `${Math.min(17, W * 0.043)}px monospace`;
+            ctx.fillStyle = '#ccd4ff';
+            ctx.fillText('Jump between platforms when they\'re CHARGED!', W/2, H/2 - 52);
+            ctx.fillText('⚡ = PERFECT timing · Predict travel time for max score', W/2, H/2 - 24);
+
+            const pp = 0.5 + 0.5 * Math.sin(ts * 0.003);
+            ctx.font = `bold ${Math.min(22, W*0.056) + pp*3}px monospace`;
+            ctx.fillStyle = `rgba(255,255,100,${0.7 + pp * 0.3})`;
+            ctx.shadowColor = '#ffff00';
+            ctx.shadowBlur = 16;
+            ctx.fillText('► TAP ANY PLATFORM TO START', W/2, H/2 + 65);
+            ctx.shadowBlur = 0;
+
+            if (s.highScore > 0) {
+              ctx.font = '16px monospace';
+              ctx.fillStyle = 'rgba(180,180,255,0.85)';
+              ctx.fillText(`Best Score: ${s.highScore}`, W/2, H/2 + 118);
+            }
+            ctx.restore();
+          }
+
+          // ── Game Over screen ────────────────────────────────────────────────
+          if (s.phase === 'gameover') {
+            ctx.fillStyle = 'rgba(0,0,0,0.78)';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.save();
+            ctx.textAlign = 'center';
+
+            ctx.font = `bold ${Math.min(46, W*0.11)}px monospace`;
+            ctx.fillStyle = '#ff4060';
+            ctx.shadowColor = '#ff0040';
+            ctx.shadowBlur = 32;
+            ctx.fillText('POWER OUT!', W/2, H/2 - 85);
+            ctx.shadowBlur = 0;
+
+            ctx.font = `${Math.min(26, W * 0.065)}px monospace`;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`Score: ${s.score}`, W/2, H/2 - 28);
+
+            if (s.score > 0 && s.score >= s.highScore) {
+              const bp = 0.5 + 0.5 * Math.sin(ts * 0.005);
+              ctx.font = `bold ${Math.min(20, W*0.05)}px monospace`;
+              ctx.fillStyle = `rgba(255,255,60,${0.8 + bp * 0.2})`;
+              ctx.shadowColor = '#ffff00';
+              ctx.shadowBlur = 14;
+              ctx.fillText('✨ NEW HIGH SCORE! ✨', W/2, H/2 + 14);
+              ctx.shadowBlur = 0;
+            } else {
+              ctx.font = '17px monospace';
+              ctx.fillStyle = 'rgba(160,160,255,0.8)';
+              ctx.fillText(`Best: ${s.highScore}`, W/2, H/2 + 14);
+            }
+
+            const rp = 0.5 + 0.5 * Math.sin(ts * 0.003);
+            ctx.font = `bold ${Math.min(21, W*0.052) + rp*2}px monospace`;
+            ctx.fillStyle = `rgba(100,220,255,${0.7 + rp*0.3})`;
+            ctx.shadowColor = '#00ffff';
+            ctx.shadowBlur = 16;
+            ctx.fillText('► TAP TO PLAY AGAIN', W/2, H/2 + 76);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+          }
+
+          s.raf = requestAnimationFrame(loop);
+        };
+
+        s.raf = requestAnimationFrame(loop);
+        return () => {
+          cancelAnimationFrame(s.raf);
+          window.removeEventListener('resize', resize);
+        };
+      }, []);
+
+      // ── Input handler ──────────────────────────────────────────────────────
+      const handleInput = useCallback((clientX, clientY) => {
+        const s = g.current;
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const mx = clientX - rect.left;
+        const my = clientY - rect.top;
+
+        if (s.phase === 'start' || s.phase === 'gameover') {
+          s.score = 0; s.combo = 0; s.lives = 3;
+          s.jumping = false; s.particles = []; s.floats = [];
+          s.curPlat = 0;
+          s.plats = makePlatforms(canvas.width, canvas.height);
+          s.phase = 'playing';
+          return;
+        }
+
+        if (s.phase !== 'playing' || s.jumping) return;
+
+        // Find closest platform to the click (excluding current)
+        let bestIdx = -1, bestDist = Infinity;
+        s.plats.forEach((p, i) => {
+          if (i === s.curPlat) return;
+          const d = Math.hypot(p.x - mx, p.y - my);
+          if (d <= p.r + 20 && d < bestDist) {
+            bestDist = d;
+            bestIdx = i;
+          }
+        });
+
+        if (bestIdx >= 0) {
+          s.jumping = true;
+          s.jStart = performance.now();
+          s.jFrom = s.curPlat;
+          s.jTo = bestIdx;
+          playZap();
+        }
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          style={{ display: 'block', cursor: 'crosshair' }}
+          onClick={e => handleInput(e.clientX, e.clientY)}
+          onTouchStart={e => { e.preventDefault(); handleInput(e.touches[0].clientX, e.touches[0].clientY); }}
+        />
+      );
+    };
+
+    ReactDOM.render(<VoltageJump />, document.getElementById('root'));
+  </script>
+</body>
+</html>
