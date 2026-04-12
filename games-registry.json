@@ -714,6 +714,20 @@
     "preview": "games/2026-04-10/preview.png"
   },
   {
+    "id": "2026-04-12",
+    "name": "Sprint Surge",
+    "date": "2026-04-12",
+    "description": "Alternate A/D keys (or tap left/right) as fast as possible to build running speed — then time Space or a center tap to leap over glowing neon hurdles! Speed decays if you stop stepping, so keep the rhythm going and chain hurdle clears for massive combo multipliers!",
+    "tagline": "Alternate your feet. Build the surge. Clear every hurdle!",
+    "tags": ["reflex", "rhythm", "action", "arcade", "sprint"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "A / ← then D / → alternate to sprint · Space / ↑ to jump | Tap L · Center · R on mobile",
+    "folder": "games/2026-04-12",
+    "file": "games/2026-04-12/index.html",
+    "preview": "games/2026-04-12/preview.png"
+  },
+  {
     "id": "2026-04-11",
     "name": "Voltage Jump",
     "date": "2026-04-11",

@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sprint Surge</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #050010; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; -webkit-user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ── Audio ──────────────────────────────────────────────────────────────────
+    let _audioCtx = null;
+    function getAudio() {
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return _audioCtx;
+    }
+    function playTone(freq, dur, type = 'sine', vol = 0.15) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.type = type; osc.frequency.value = freq;
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+    function sndStep(left) { playTone(left ? 200 : 260, 0.07, 'square', 0.07); }
+    function sndJump()  { playTone(440, 0.12, 'sine', 0.18); setTimeout(() => playTone(660, 0.08, 'sine', 0.1), 60); }
+    function sndLand()  { playTone(180, 0.09, 'triangle', 0.14); }
+    function sndHit()   { playTone(120, 0.25, 'sawtooth', 0.2); playTone(80, 0.3, 'sawtooth', 0.15); }
+    function sndCombo(n){ const f=[440,550,660,770,880]; playTone(f[Math.min(n-1,4)],0.18,'sine',0.22); }
+    function sndStart() { [260,330,440,550].forEach((f,i) => setTimeout(() => playTone(f, 0.12, 'sine', 0.15), i*80)); }
+
+    // ── Round rect helper ──────────────────────────────────────────────────────
+    function rrect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x+r, y);
+      ctx.lineTo(x+w-r, y); ctx.arcTo(x+w, y, x+w, y+r, r);
+      ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+      ctx.lineTo(x+r, y+h); ctx.arcTo(x, y+h, x, y+h-r, r);
+      ctx.lineTo(x, y+r); ctx.arcTo(x, y, x+r, y, r);
+      ctx.closePath();
+    }
+
+    // ── Draw player ────────────────────────────────────────────────────────────
+    function drawPlayer(ctx, x, groundY, jumpY, dist, speed, time, alive) {
+      const py = groundY - jumpY;
+      const hue = alive ? Math.min(120 + (speed / 14) * 200, 320) : 0;
+      const col = `hsl(${hue},100%,60%)`;
+      const glow = `hsl(${hue},100%,75%)`;
+      ctx.shadowColor = glow; ctx.shadowBlur = 18;
+
+      // Speed trail
+      if (speed > 4) {
+        const tl = Math.min((speed - 4) * 9, 90);
+        const tr = ctx.createLinearGradient(x - tl - 10, 0, x, 0);
+        tr.addColorStop(0, 'rgba(0,0,0,0)');
+        tr.addColorStop(1, glow + '30');
+        ctx.fillStyle = tr;
+        ctx.fillRect(x - tl - 10, py - 50, tl + 10, 52);
+      }
+
+      const cycle = dist * 0.22;
+      const la = Math.sin(cycle) * 0.75;
+
+      // Torso
+      ctx.fillStyle = col;
+      rrect(ctx, x - 8, py - 38, 16, 20, 3);
+      ctx.fill();
+
+      // Head
+      ctx.beginPath(); ctx.arc(x, py - 46, 10, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+
+      // Eyes
+      ctx.shadowBlur = 6; ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(x + 4, py - 47, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(x + 5, py - 47, 1.5, 0, Math.PI * 2); ctx.fill();
+
+      // Arms
+      ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.shadowBlur = 8;
+      const aa = Math.sin(cycle + Math.PI);
+      ctx.beginPath(); ctx.moveTo(x - 8, py - 32);
+      ctx.lineTo(x - 8 - 13 * Math.cos(aa * 0.6 + 0.2), py - 32 + 11 * Math.abs(Math.sin(aa)));
+      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + 8, py - 32);
+      ctx.lineTo(x + 8 + 13 * Math.cos(la * 0.6 + 0.2), py - 32 + 11 * Math.abs(Math.sin(la)));
+      ctx.stroke();
+
+      // Legs
+      const lk = { x: x - 5 + Math.sin(la) * 11, y: py - 20 + Math.cos(la) * 9 + 9 };
+      const lf = { x: lk.x + Math.sin(la * 1.4) * 9, y: py - 2 };
+      ctx.beginPath(); ctx.moveTo(x - 4, py - 18); ctx.lineTo(lk.x, lk.y); ctx.lineTo(lf.x, lf.y); ctx.stroke();
+
+      const rk = { x: x + 5 - Math.sin(la) * 11, y: py - 20 - Math.cos(la) * 9 + 9 };
+      const rf = { x: rk.x - Math.sin(la * 1.4) * 9, y: py - 2 };
+      ctx.beginPath(); ctx.moveTo(x + 4, py - 18); ctx.lineTo(rk.x, rk.y); ctx.lineTo(rf.x, rf.y); ctx.stroke();
+
+      ctx.shadowBlur = 0;
+    }
+
+    // ── Particle helpers ───────────────────────────────────────────────────────
+    function spawnParticles(arr, x, y, color, n, speedMul = 1) {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = (Math.random() * 4 + 2) * speedMul;
+        arr.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 3, color, size: Math.random()*4+2, life: 1 });
+      }
+    }
+
+    // ── Main component ─────────────────────────────────────────────────────────
+    const SprintSurge = () => {
+      const canvasRef = useRef(null);
+      const wrapRef   = useRef(null);
+      const G = useRef({
+        state: 'idle',
+        score: 0, dist: 0, speed: 0, targetSpeed: 0,
+        lastStep: null, lastStepTime: 0, stepTimes: [],
+        jumping: false, jumpStart: 0, jumpY: 0,
+        hurdles: [], nextHurdleDist: 400,
+        combo: 0, particles: [],
+        lives: 3, maxLives: 3,
+        flashColor: null, flashAt: 0,
+        stars: Array.from({length:80},()=>({
+          x: Math.random()*1200, y: Math.random()*500,
+          r: Math.random()*1.5+0.4, b: Math.random()
+        })),
+        highScore: parseInt(localStorage.getItem('sprintSurge_highScore')||'0'),
+        raf: null, lastTs: 0,
+        bgOffset: 0,
+      });
+      const [ui, setUi] = useState({
+        state: 'idle', score: 0, combo: 0, speed: 0, lives: 3,
+        highScore: parseInt(localStorage.getItem('sprintSurge_highScore')||'0'),
+        nextFoot: 'L',
+      });
+
+      // Ensure localStorage key exists from page load
+      useEffect(() => {
+        if (!localStorage.getItem('sprintSurge_highScore')) {
+          localStorage.setItem('sprintSurge_highScore', '0');
+        }
+      }, []);
+
+      // ── Game loop ────────────────────────────────────────────────────────────
+      const loop = useCallback((ts) => {
+        const g = G.current;
+        const canvas = canvasRef.current;
+        if (!canvas) { g.raf = requestAnimationFrame(loop); return; }
+        const dt = Math.min(ts - (g.lastTs||ts), 50);
+        g.lastTs = ts;
+
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height;
+        const trackY = H * 0.66;
+        const PLYR_X = W * 0.15;
+        const HURDLEH = Math.min(H * 0.14, 60);
+        const JUMP_H  = HURDLEH * 1.5;
+        const JUMP_MS = 480;
+
+        // ── BG ────────────────────────────────────────────────────────────────
+        const bgG = ctx.createLinearGradient(0,0,0,H);
+        bgG.addColorStop(0,'#040010'); bgG.addColorStop(0.55,'#0b0022'); bgG.addColorStop(1,'#120028');
+        ctx.fillStyle = bgG; ctx.fillRect(0,0,W,H);
+
+        // Stars
+        g.stars.forEach(s => {
+          const tw = 0.5 + 0.5*Math.sin(ts*0.001 + s.b*12);
+          ctx.beginPath(); ctx.arc(s.x % W, s.y % (H*0.6), s.r, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(255,255,255,${0.25+0.5*tw})`; ctx.fill();
+        });
+
+        // Distance markers (scrolling)
+        ctx.strokeStyle = 'rgba(0,255,200,0.08)'; ctx.lineWidth = 1;
+        for (let i = 0; i < 8; i++) {
+          const lx = ((W * 0.125 * i) - (g.bgOffset % (W*0.125))) % W;
+          ctx.beginPath(); ctx.moveTo(lx, trackY - H*0.3); ctx.lineTo(lx + 80, trackY); ctx.stroke();
+        }
+
+        // ── Track ─────────────────────────────────────────────────────────────
+        const tg = ctx.createLinearGradient(0, trackY-4, 0, trackY+28);
+        tg.addColorStop(0,'rgba(0,255,200,0.18)'); tg.addColorStop(1,'rgba(0,255,200,0)');
+        ctx.fillStyle = tg; ctx.fillRect(0, trackY-4, W, 32);
+
+        ctx.shadowColor = '#00ffc8'; ctx.shadowBlur = 10;
+        ctx.strokeStyle = '#00ffc8'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, trackY); ctx.lineTo(W, trackY); ctx.stroke();
+
+        ctx.shadowBlur = 5; ctx.strokeStyle = 'rgba(0,255,200,0.25)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(0, trackY+22); ctx.lineTo(W, trackY+22); ctx.stroke();
+
+        // Dashes
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(0,255,200,0.15)'; ctx.setLineDash([22,14]);
+        ctx.lineDashOffset = -(g.bgOffset % 36);
+        ctx.beginPath(); ctx.moveTo(0, trackY+11); ctx.lineTo(W, trackY+11); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // ── Update & physics ─────────────────────────────────────────────────
+        if (g.state === 'running') {
+          g.bgOffset += g.speed * dt * 0.06;
+          g.dist     += g.speed * dt * 0.06;
+          g.score     = Math.floor(g.dist / 8);
+
+          // Speed decay when not stepping
+          const now = performance.now();
+          if (now - g.lastStepTime > 280) {
+            g.targetSpeed = Math.max(1.5, g.targetSpeed - dt * 0.008);
+          }
+          g.speed += (g.targetSpeed - g.speed) * 0.09;
+
+          // Spawn hurdles
+          if (g.dist > g.nextHurdleDist) {
+            g.hurdles.push({ x: W + 40, done: false });
+            const gap = Math.max(200, 380 + Math.random()*220 - g.speed*12);
+            g.nextHurdleDist = g.dist + gap;
+          }
+          g.hurdles = g.hurdles.filter(h => h.x > -60);
+          g.hurdles.forEach(h => { h.x -= g.speed * dt * 0.06; });
+
+          // Jump arc
+          if (g.jumping) {
+            const t = (ts - g.jumpStart) / JUMP_MS;
+            if (t >= 1) { g.jumping = false; g.jumpY = 0; sndLand(); }
+            else g.jumpY = JUMP_H * Math.sin(Math.PI * t);
+          }
+
+          // Collision
+          const pLeft  = PLYR_X - 11;
+          const pRight = PLYR_X + 11;
+          const pTop   = trackY - g.jumpY - 48;
+          const pBot   = trackY - g.jumpY;
+          const HW = 12;
+
+          g.hurdles.forEach(h => {
+            if (h.done) return;
+            // Cleared (passed safely)
+            if (h.x + HW < pLeft && !h.done) {
+              h.done = true;
+              g.combo++;
+              const bonus = 50 * g.combo;
+              g.score += bonus;
+              sndCombo(g.combo);
+              spawnParticles(g.particles, h.x + HW, trackY - HURDLEH*0.5, '#00ff88', 14);
+              setUi(u => ({ ...u, combo: g.combo, score: g.score }));
+            }
+            // Hit detection
+            const hL = h.x - HW, hR = h.x + HW;
+            const hTop = trackY - HURDLEH, hBot = trackY;
+            if (pRight > hL && pLeft < hR && pTop < hBot && pBot > hTop && !h.done) {
+              h.done = true;
+              g.lives = Math.max(0, g.lives - 1);
+              g.combo = 0;
+              g.targetSpeed = Math.max(1.5, g.targetSpeed - 2.5);
+              g.flashColor = '#ff0044'; g.flashAt = ts;
+              sndHit();
+              spawnParticles(g.particles, PLYR_X, trackY - 20, '#ff2266', 22);
+              if (g.lives <= 0) {
+                g.state = 'dying';
+                setTimeout(() => {
+                  g.state = 'gameover';
+                  if (g.score > g.highScore) {
+                    g.highScore = g.score;
+                    localStorage.setItem('sprintSurge_highScore', String(g.score));
+                  }
+                  setUi(u => ({ ...u, state:'gameover', score: g.score, highScore: g.highScore }));
+                }, 1200);
+              }
+              setUi(u => ({ ...u, lives: g.lives, combo: 0 }));
+            }
+          });
+        }
+
+        if (g.state === 'running' || g.state === 'dying') {
+          // Particles
+          g.particles = g.particles.filter(p => p.life > 0);
+          g.particles.forEach(p => {
+            p.x += p.vx * dt * 0.06; p.y += p.vy * dt * 0.06;
+            p.vy += 0.32; p.life -= dt * 0.055; p.size = Math.max(0, p.size - dt*0.0018);
+          });
+          g.particles.forEach(p => {
+            const alpha = Math.floor(Math.max(0,Math.min(1,p.life))*255).toString(16).padStart(2,'0');
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+            ctx.fillStyle = p.color + alpha;
+            ctx.shadowColor = p.color; ctx.shadowBlur = 6; ctx.fill();
+          });
+          ctx.shadowBlur = 0;
+
+          // Hurdles
+          g.hurdles.forEach(h => {
+            if (h.done && h.x < PLYR_X - 20) return;
+            const hue = (ts*0.15 + h.x*0.4) % 360;
+            const hCol = `hsl(${hue},100%,62%)`;
+            ctx.strokeStyle = hCol; ctx.lineWidth = 5;
+            ctx.shadowColor = hCol; ctx.shadowBlur = 14;
+            const HW2 = 14;
+            // Posts
+            ctx.beginPath(); ctx.moveTo(h.x-HW2, trackY); ctx.lineTo(h.x-HW2, trackY-HURDLEH); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(h.x+HW2, trackY); ctx.lineTo(h.x+HW2, trackY-HURDLEH); ctx.stroke();
+            // Bar
+            ctx.beginPath(); ctx.moveTo(h.x-HW2-4, trackY-HURDLEH*0.68); ctx.lineTo(h.x+HW2+4, trackY-HURDLEH*0.68); ctx.stroke();
+            // Base feet
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(h.x-HW2-6, trackY); ctx.lineTo(h.x-HW2+6, trackY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(h.x+HW2-6, trackY); ctx.lineTo(h.x+HW2+6, trackY); ctx.stroke();
+            ctx.shadowBlur = 0;
+          });
+
+          // Player
+          const bob = g.state==='running' ? Math.sin(g.dist*0.18)*2.5 : 0;
+          drawPlayer(ctx, PLYR_X, trackY + bob, g.jumpY, g.dist, g.speed, ts, g.state==='running');
+
+          // Flash overlay
+          if (g.flashColor && ts - g.flashAt < 320) {
+            const a = 1 - (ts - g.flashAt) / 320;
+            ctx.fillStyle = g.flashColor + Math.floor(a*70).toString(16).padStart(2,'0');
+            ctx.fillRect(0,0,W,H);
+          }
+
+          // Live score update
+          if (g.state === 'running') {
+            const spd = Math.round(g.speed * 10);
+            const nextFoot = g.lastStep === 'L' ? 'R' : 'L';
+            setUi(u => u.score !== g.score || u.speed !== spd
+              ? { ...u, score: g.score, speed: spd, nextFoot }
+              : u);
+          }
+        }
+
+        // Idle animation
+        if (g.state === 'idle') {
+          drawPlayer(ctx, W*0.5, trackY, 0, ts*0.04, 5, ts, true);
+        }
+
+        g.raf = requestAnimationFrame(loop);
+      }, []);
+
+      useEffect(() => {
+        const resize = () => {
+          const c = canvasRef.current, w = wrapRef.current;
+          if (c && w) { c.width = w.clientWidth; c.height = w.clientHeight; }
+        };
+        resize();
+        window.addEventListener('resize', resize);
+        G.current.raf = requestAnimationFrame(loop);
+        return () => {
+          window.removeEventListener('resize', resize);
+          if (G.current.raf) cancelAnimationFrame(G.current.raf);
+        };
+      }, [loop]);
+
+      // ── Start game ────────────────────────────────────────────────────────────
+      const startGame = useCallback(() => {
+        const g = G.current;
+        Object.assign(g, {
+          state:'running', score:0, dist:0, speed:2.5, targetSpeed:2.5,
+          lastStep:null, lastStepTime:0, stepTimes:[],
+          jumping:false, jumpStart:0, jumpY:0,
+          hurdles:[], nextHurdleDist:380,
+          combo:0, particles:[], lives:3,
+          flashColor:null, flashAt:0, bgOffset:0,
+        });
+        sndStart();
+        setUi(u => ({ ...u, state:'running', score:0, combo:0, speed:25, lives:3, nextFoot:'L' }));
+      }, []);
+
+      // ── Step input ────────────────────────────────────────────────────────────
+      const doStep = useCallback((side) => {
+        const g = G.current;
+        if (g.state !== 'running') return;
+        if (side === 'jump') {
+          if (!g.jumping) {
+            g.jumping = true; g.jumpStart = performance.now(); g.jumpY = 0;
+            sndJump();
+          }
+          return;
+        }
+        const now = performance.now();
+        const alternate = g.lastStep === null || g.lastStep !== side;
+        if (alternate) {
+          g.lastStep = side;
+          g.lastStepTime = now;
+          g.stepTimes.push(now);
+          g.stepTimes = g.stepTimes.filter(t => now - t < 900);
+          const rate = g.stepTimes.length;
+          g.targetSpeed = Math.min(13, rate * 0.65 + 2);
+          sndStep(side === 'L');
+          const c = canvasRef.current;
+          const trackY = c ? c.height * 0.66 : 300;
+          spawnParticles(g.particles, (c ? c.width * 0.15 : 120) + (side==='L'?-14:14), trackY-3, '#00ffc8', 3);
+          setUi(u => ({ ...u, nextFoot: side === 'L' ? 'R' : 'L' }));
+        }
+      }, []);
+
+      // ── Keyboard ──────────────────────────────────────────────────────────────
+      useEffect(() => {
+        const kd = (e) => {
+          const g = G.current;
+          if (g.state === 'idle' || g.state === 'gameover') {
+            startGame(); return;
+          }
+          if (e.key==='ArrowLeft'  || e.key==='a' || e.key==='A') doStep('L');
+          if (e.key==='ArrowRight' || e.key==='d' || e.key==='D') doStep('R');
+          if (e.key===' ' || e.key==='ArrowUp' || e.key==='w' || e.key==='W') {
+            e.preventDefault(); doStep('jump');
+          }
+        };
+        window.addEventListener('keydown', kd);
+        return () => window.removeEventListener('keydown', kd);
+      }, [doStep, startGame]);
+
+      // ── Touch ─────────────────────────────────────────────────────────────────
+      const onTouch = useCallback((e) => {
+        e.preventDefault();
+        const g = G.current;
+        if (g.state === 'idle' || g.state === 'gameover') { startGame(); return; }
+        const c = canvasRef.current;
+        const W = c ? c.width : window.innerWidth;
+        Array.from(e.changedTouches).forEach(t => {
+          const x = t.clientX;
+          if (x < W * 0.33)      doStep('L');
+          else if (x > W * 0.67) doStep('R');
+          else                    doStep('jump');
+        });
+      }, [doStep, startGame]);
+
+      const onClick = useCallback(() => {
+        const g = G.current;
+        if (g.state === 'idle' || g.state === 'gameover') startGame();
+      }, [startGame]);
+
+      const { state, score, combo, speed, lives, highScore, nextFoot } = ui;
+
+      return (
+        <div ref={wrapRef} style={{ width:'100vw', height:'100vh', position:'relative', overflow:'hidden' }}>
+          <canvas ref={canvasRef}
+            style={{ width:'100%', height:'100%' }}
+            onTouchStart={onTouch}
+            onClick={onClick}
+          />
+
+          {/* HUD */}
+          {state === 'running' && (
+            <div style={{
+              position:'absolute', top:0, left:0, right:0, padding:'10px 18px',
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+              pointerEvents:'none',
+            }}>
+              <div style={{ color:'#00ffc8', fontSize:'clamp(18px,4vw,26px)', fontWeight:'bold', textShadow:'0 0 12px #00ffc8' }}>
+                {score.toLocaleString()}
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                {Array.from({length:3}).map((_,i) => (
+                  <div key={i} style={{
+                    width:14, height:14, borderRadius:'50%',
+                    background: i < lives ? '#ff4488' : '#2a0020',
+                    boxShadow: i < lives ? '0 0 8px #ff4488' : 'none',
+                    transition:'background 0.2s',
+                  }}/>
+                ))}
+              </div>
+              <div style={{ textAlign:'right' }}>
+                {combo > 1 && (
+                  <div style={{ color:'#ffaa00', fontSize:'13px', fontWeight:'bold', textShadow:'0 0 8px #ffaa00' }}>
+                    ×{combo} COMBO!
+                  </div>
+                )}
+                <div style={{ color:'#888', fontSize:'11px' }}>SPD {speed}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Speed bar */}
+          {state === 'running' && (
+            <div style={{
+              position:'absolute', bottom:'12%', left:'50%', transform:'translateX(-50%)',
+              pointerEvents:'none', textAlign:'center',
+            }}>
+              <div style={{
+                width:180, height:7, background:'#111', borderRadius:4,
+                border:'1px solid #222', overflow:'hidden',
+              }}>
+                <div style={{
+                  height:'100%',
+                  width:`${Math.min((speed/130)*100,100)}%`,
+                  background:`hsl(${Math.max(0,120-(speed/130)*120)},100%,55%)`,
+                  boxShadow:`0 0 7px hsl(${Math.max(0,120-(speed/130)*120)},100%,55%)`,
+                  transition:'width 0.1s, background 0.2s',
+                  borderRadius:4,
+                }}/>
+              </div>
+              <div style={{ color:'#444', fontSize:'9px', marginTop:3, letterSpacing:2 }}>SPEED</div>
+            </div>
+          )}
+
+          {/* Next foot indicator */}
+          {state === 'running' && (
+            <div style={{
+              position:'absolute', bottom:'18%', left:'50%', transform:'translateX(-50%)',
+              pointerEvents:'none', display:'flex', gap:10, alignItems:'center',
+            }}>
+              {['L','R'].map(f => (
+                <div key={f} style={{
+                  width:32, height:32, borderRadius:6, fontWeight:'bold', fontSize:'14px',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  background: f===nextFoot ? 'rgba(0,255,200,0.2)' : 'rgba(255,255,255,0.04)',
+                  border: f===nextFoot ? '1.5px solid #00ffc8' : '1.5px solid #222',
+                  color: f===nextFoot ? '#00ffc8' : '#333',
+                  boxShadow: f===nextFoot ? '0 0 10px #00ffc8' : 'none',
+                  transition:'all 0.08s',
+                }}>{f}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Mobile touch zones */}
+          {state === 'running' && (
+            <div style={{
+              position:'absolute', bottom:12, left:0, right:0,
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+              padding:'0 24px', pointerEvents:'none',
+            }}>
+              <div style={{ color:'rgba(0,255,200,0.25)', fontSize:'clamp(24px,6vw,36px)', fontWeight:'bold' }}>◄</div>
+              <div style={{ color:'rgba(255,220,0,0.25)', fontSize:'clamp(12px,3vw,18px)', fontWeight:'bold' }}>▲ JUMP</div>
+              <div style={{ color:'rgba(0,255,200,0.25)', fontSize:'clamp(24px,6vw,36px)', fontWeight:'bold' }}>►</div>
+            </div>
+          )}
+
+          {/* Idle screen */}
+          {state === 'idle' && (
+            <div style={{
+              position:'absolute', inset:0, display:'flex', flexDirection:'column',
+              alignItems:'center', justifyContent:'center',
+              background:'linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(5,0,20,0.7) 100%)',
+            }}>
+              <div style={{
+                fontSize:'clamp(32px,8vw,68px)', fontWeight:'bold', letterSpacing:'5px',
+                color:'#00ffc8', textShadow:'0 0 30px #00ffc8,0 0 60px #00aaff',
+                marginBottom:6,
+              }}>SPRINT SURGE</div>
+              <div style={{
+                color:'#ff44aa', fontSize:'clamp(11px,2.5vw,17px)', marginBottom:28,
+                textShadow:'0 0 10px #ff44aa', letterSpacing:1,
+              }}>Alternate feet to run. Jump the hurdles!</div>
+              <div style={{ color:'#666', fontSize:'clamp(11px,2vw,14px)', textAlign:'center', lineHeight:2.0, marginBottom:24 }}>
+                <span style={{color:'#00ffc8'}}>A / ←</span> then <span style={{color:'#00ffc8'}}>D / →</span> alternate to sprint<br/>
+                <span style={{color:'#ffaa00'}}>Space / ↑ / W</span> to jump over hurdles<br/>
+                <span style={{color:'#ff6688'}}>Mobile:</span> Tap ◄ · Center · ► to run &amp; jump
+              </div>
+              <div style={{
+                background:'linear-gradient(135deg,#00ffc8,#00aaff)',
+                color:'#000', fontWeight:'bold', fontSize:'clamp(14px,3vw,20px)',
+                padding:'13px 44px', borderRadius:32, cursor:'pointer',
+                boxShadow:'0 0 24px #00ffc8, 0 4px 15px rgba(0,255,200,0.4)',
+                letterSpacing:2,
+              }} onClick={startGame}>
+                SPRINT!
+              </div>
+              {highScore > 0 && (
+                <div style={{ color:'#ffaa00', marginTop:16, fontSize:'13px', textShadow:'0 0 8px #ffaa00' }}>
+                  Best: {highScore.toLocaleString()}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Game over screen */}
+          {state === 'gameover' && (
+            <div style={{
+              position:'absolute', inset:0, display:'flex', flexDirection:'column',
+              alignItems:'center', justifyContent:'center',
+              background:'rgba(0,0,0,0.72)',
+            }}>
+              <div style={{
+                fontSize:'clamp(26px,6vw,52px)', fontWeight:'bold', letterSpacing:'4px',
+                color:'#ff3355', textShadow:'0 0 24px #ff3355', marginBottom:12,
+              }}>WIPED OUT!</div>
+              <div style={{ color:'#00ffc8', fontSize:'clamp(28px,7vw,48px)', fontWeight:'bold', textShadow:'0 0 16px #00ffc8' }}>
+                {score.toLocaleString()}
+              </div>
+              {score > 0 && score >= highScore && (
+                <div style={{ color:'#ffaa00', fontSize:'15px', marginTop:4, textShadow:'0 0 8px #ffaa00', letterSpacing:1 }}>
+                  NEW BEST!
+                </div>
+              )}
+              <div style={{ color:'#555', fontSize:'13px', marginTop:6, marginBottom:26 }}>
+                Best: {highScore.toLocaleString()}
+              </div>
+              <div style={{
+                background:'linear-gradient(135deg,#00ffc8,#00aaff)',
+                color:'#000', fontWeight:'bold', fontSize:'clamp(14px,3vw,20px)',
+                padding:'13px 44px', borderRadius:32, cursor:'pointer',
+                boxShadow:'0 0 24px #00ffc8',
+                letterSpacing:2,
+              }} onClick={startGame}>
+                RUN AGAIN
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<SprintSurge />);
+  </script>
+</body>
+</html>
