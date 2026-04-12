@@ -75,10 +75,12 @@
     const makePlatforms = (W, H) => {
       const cx = W / 2, cy = H / 2;
       const m = Math.min(W, H);
+      // Scale up platform sizes on small / mobile screens for easier tapping
+      const scale = m < 500 ? 1.35 : 1;
       const plats = [];
 
       // Center platform (always starts somewhat charged)
-      plats.push({ x: cx, y: cy, phase: Math.PI * 0.5, speed: 0.38, r: 36 });
+      plats.push({ x: cx, y: cy, phase: Math.PI * 0.5, speed: 0.24, r: Math.round(36 * scale) });
 
       // Inner ring — 5 platforms
       for (let i = 0; i < 5; i++) {
@@ -87,8 +89,8 @@
           x: cx + Math.cos(a) * m * 0.21,
           y: cy + Math.sin(a) * m * 0.21,
           phase: Math.random() * Math.PI * 2,
-          speed: 0.30 + Math.random() * 0.55,
-          r: 30,
+          speed: 0.18 + Math.random() * 0.22,   // was 0.30 + 0.55 — much slower
+          r: Math.round(30 * scale),
         });
       }
 
@@ -99,8 +101,8 @@
           x: cx + Math.cos(a) * m * 0.38,
           y: cy + Math.sin(a) * m * 0.38,
           phase: Math.random() * Math.PI * 2,
-          speed: 0.25 + Math.random() * 0.75,
-          r: 26,
+          speed: 0.14 + Math.random() * 0.24,   // was 0.25 + 0.75 — much slower
+          r: Math.round(26 * scale),
         });
       }
       return plats;
@@ -204,7 +206,8 @@
           for (let y = 0; y < H; y += GS) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
 
           // ── Update platform phases ──────────────────────────────────────────
-          const diff = s.phase === 'playing' ? (1 + s.score / 700) : 1;
+          // Slower ramp: 1× at 0pts → 2× at 2800pts → capped at 2.5× (~7000pts)
+          const diff = s.phase === 'playing' ? Math.min(1 + s.score / 2800, 2.5) : 1;
           s.diff = diff;
           s.plats.forEach(p => {
             p.phase += p.speed * diff * (Math.PI * 2 / 60);
@@ -256,7 +259,7 @@
             if (charge >= 0.85) {
               ctx.strokeStyle = '#ffffff';
               ctx.lineWidth = 4;
-            } else if (charge >= 0.65) {
+            } else if (charge >= 0.55) {  // widened good window: was 0.65
               ctx.strokeStyle = '#60ffff';
               ctx.lineWidth = 3;
             } else {
@@ -347,7 +350,7 @@
               s.jumping = false;
               const destCharge = getCharge(s.plats[s.jTo]);
 
-              if (destCharge >= 0.65) {
+              if (destCharge >= 0.55) {  // widened good window: was 0.65
                 const perfect = destCharge >= 0.85;
                 s.combo++;
                 const pts = (perfect ? 100 : 50) * Math.min(s.combo, 10);
@@ -607,11 +610,13 @@
         if (s.phase !== 'playing' || s.jumping) return;
 
         // Find closest platform to the click (excluding current)
+        // Generous hit radius for mobile tap accuracy
+        const hitPad = canvas.width < 500 ? 38 : 24;
         let bestIdx = -1, bestDist = Infinity;
         s.plats.forEach((p, i) => {
           if (i === s.curPlat) return;
           const d = Math.hypot(p.x - mx, p.y - my);
-          if (d <= p.r + 20 && d < bestDist) {
+          if (d <= p.r + hitPad && d < bestDist) {
             bestDist = d;
             bestIdx = i;
           }
