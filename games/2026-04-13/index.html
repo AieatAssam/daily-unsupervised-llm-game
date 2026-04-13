@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lasso Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #05000d; overflow: hidden; font-family: 'Arial', sans-serif; user-select: none; -webkit-user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+    canvas { display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    /* ── constants ── */
+    const GAME_DURATION = 90;
+    const ENEMY_COLORS = ['#ff006e','#00f5ff','#39ff14','#ff9500','#bf00ff','#ffff00','#ff4d4d','#00ffaa'];
+    const LS_KEY = 'lassoRushHighScore';
+
+    /* ── pure helpers (stable references, safe in closures) ── */
+    function spawnEnemy(W, H) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.7 + Math.random() * 1.4;
+      return {
+        x: 60 + Math.random() * (W - 120),
+        y: 90 + Math.random() * (H - 130),
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        radius: 13 + Math.random() * 9,
+        color: ENEMY_COLORS[Math.floor(Math.random() * ENEMY_COLORS.length)],
+        tail: [],
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: 0.025 + Math.random() * 0.04,
+      };
+    }
+
+    function createAudio() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const tone = (freq, type, dur, gain = 0.28) => {
+          if (ctx.state === 'suspended') ctx.resume();
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.connect(g); g.connect(ctx.destination);
+          osc.frequency.value = freq;
+          osc.type = type;
+          g.gain.setValueAtTime(gain, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + dur);
+        };
+        return {
+          resume: () => ctx.state === 'suspended' && ctx.resume(),
+          lasso:   () => tone(180, 'sine', 0.25, 0.12),
+          capture: (n) => { tone(420 + n*60, 'square', 0.18, 0.35); setTimeout(() => tone(630 + n*60, 'sine', 0.22, 0.25), 90); },
+          combo:   () => [440,550,660,880].forEach((f,i) => setTimeout(() => tone(f,'square',0.15,0.45), i*55)),
+          miss:    () => tone(140, 'sawtooth', 0.18, 0.18),
+          gameover:() => [440,330,220,110].forEach((f,i) => setTimeout(() => tone(f,'sine',0.35,0.38), i*190)),
+        };
+      } catch(e) {
+        return { resume:()=>{}, lasso:()=>{}, capture:()=>{}, combo:()=>{}, miss:()=>{}, gameover:()=>{} };
+      }
+    }
+
+    /* ── canvas renderers ── */
+    function renderScene(ctx, state, W, H, now) {
+      // Animated background
+      state.bgHue = ((state.bgHue || 0) + 0.18) % 360;
+      const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.75);
+      bg.addColorStop(0, `hsla(${state.bgHue},50%,7%,1)`);
+      bg.addColorStop(1, `hsla(${(state.bgHue+180)%360},60%,2%,1)`);
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      // Subtle grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x,65); ctx.lineTo(x,H); ctx.stroke(); }
+      for (let y = 65; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+      // Enemy tails
+      ctx.lineCap = 'round';
+      for (const e of state.enemies) {
+        if (e.tail.length > 1) {
+          ctx.beginPath();
+          ctx.moveTo(e.tail[0].x, e.tail[0].y);
+          for (let i = 1; i < e.tail.length; i++) ctx.lineTo(e.tail[i].x, e.tail[i].y);
+          ctx.strokeStyle = e.color + '30';
+          ctx.lineWidth = 5;
+          ctx.stroke();
+        }
+      }
+
+      // Particles
+      for (const p of state.particles) {
+        const a = p.life / p.maxLife;
+        const hex = Math.floor(a * 255).toString(16).padStart(2,'0');
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius * a + 0.5, 0, Math.PI*2);
+        ctx.fillStyle = p.color + hex;
+        ctx.fill();
+      }
+
+      // Enemies
+      for (const e of state.enemies) {
+        // Glow halo
+        const grd = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.radius * 3.2);
+        grd.addColorStop(0,   e.color + 'bb');
+        grd.addColorStop(0.4, e.color + '30');
+        grd.addColorStop(1,   e.color + '00');
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.radius * 3.2, 0, Math.PI*2);
+        ctx.fillStyle = grd;
+        ctx.fill();
+
+        // Body
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.radius, 0, Math.PI*2);
+        ctx.fillStyle = e.color;
+        ctx.shadowColor = e.color;
+        ctx.shadowBlur = 14;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Specular highlight
+        ctx.beginPath();
+        ctx.arc(e.x - e.radius*0.28, e.y - e.radius*0.28, e.radius*0.32, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fill();
+      }
+
+      // Lasso
+      if (state.lasso && state.lasso.active) {
+        const l = state.lasso;
+        const pulse = 0.82 + 0.18 * Math.sin(now * 0.009);
+
+        const inside = state.enemies.filter(e => {
+          const dx = e.x - l.x, dy = e.y - l.y;
+          return Math.sqrt(dx*dx+dy*dy) <= l.radius + 4;
+        });
+        const lc = inside.length > 0 ? '#ffff22' : '#ffffff';
+
+        // Outer glow
+        ctx.beginPath();
+        ctx.arc(l.x, l.y, l.radius, 0, Math.PI*2);
+        ctx.strokeStyle = lc + '44';
+        ctx.lineWidth = 18;
+        ctx.stroke();
+
+        // Animated dashed ring
+        ctx.save();
+        ctx.setLineDash([18, 7]);
+        ctx.lineDashOffset = -(now * 0.13) % 25;
+        ctx.beginPath();
+        ctx.arc(l.x, l.y, l.radius, 0, Math.PI*2);
+        ctx.strokeStyle = lc;
+        ctx.lineWidth = 3.5;
+        ctx.shadowColor = lc;
+        ctx.shadowBlur = 10;
+        ctx.globalAlpha = pulse;
+        ctx.stroke();
+        ctx.restore();
+
+        // Center crosshair
+        ctx.strokeStyle = lc + 'bb';
+        ctx.lineWidth = 1.5;
+        const cs = 10;
+        ctx.beginPath();
+        ctx.moveTo(l.x-cs, l.y); ctx.lineTo(l.x+cs, l.y);
+        ctx.moveTo(l.x, l.y-cs); ctx.lineTo(l.x, l.y+cs);
+        ctx.stroke();
+
+        // Count label above ring
+        if (inside.length > 0) {
+          const big = inside.length >= 3;
+          ctx.font = `bold ${big?30:22}px Arial`;
+          ctx.fillStyle = big ? '#ffff22' : '#fff';
+          ctx.textAlign = 'center';
+          ctx.shadowColor = '#ffff22';
+          ctx.shadowBlur = 12;
+          ctx.fillText(`${inside.length}`, l.x, l.y - l.radius - 14);
+          ctx.shadowBlur = 0;
+        }
+      }
+    }
+
+    function drawHUD(ctx, state, W) {
+      // Header bar
+      ctx.fillStyle = 'rgba(0,0,20,0.72)';
+      ctx.fillRect(0, 0, W, 62);
+
+      // Score
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 12px Arial';
+      ctx.fillStyle = 'rgba(0,245,255,0.65)';
+      ctx.fillText('SCORE', 20, 17);
+      ctx.font = 'bold 32px Arial';
+      ctx.fillStyle = '#00f5ff';
+      ctx.shadowColor = '#00f5ff';
+      ctx.shadowBlur = 14;
+      ctx.fillText(state.score.toLocaleString(), 20, 50);
+      ctx.shadowBlur = 0;
+
+      // Timer
+      const t = Math.ceil(state.timeLeft);
+      const tc = state.timeLeft < 15 ? '#ff006e' : state.timeLeft < 30 ? '#ff9500' : '#ffff22';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 12px Arial';
+      ctx.fillStyle = tc + 'aa';
+      ctx.fillText('TIME', W/2, 17);
+      ctx.font = `bold ${state.timeLeft < 15 ? 42 : 36}px Arial`;
+      ctx.fillStyle = tc;
+      ctx.shadowColor = tc;
+      ctx.shadowBlur = 16;
+      ctx.fillText(`${t}`, W/2, 52);
+      ctx.shadowBlur = 0;
+
+      // Combo
+      if (state.combo > 1) {
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 12px Arial';
+        ctx.fillStyle = '#ff9500aa';
+        ctx.fillText('COMBO', W-20, 17);
+        ctx.font = 'bold 30px Arial';
+        ctx.fillStyle = '#ff9500';
+        ctx.shadowColor = '#ff9500';
+        ctx.shadowBlur = 12;
+        ctx.fillText(`×${state.combo}`, W-20, 50);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    /* ── main component ── */
+    const LassoRush = () => {
+      const canvasRef = useRef(null);
+      const gameRef   = useRef(null);
+      const audioRef  = useRef(null);
+      const animRef   = useRef(null);
+      const [phase, setPhase] = useState('menu');
+
+      // Initialize localStorage key on mount so tests can find it
+      useEffect(() => {
+        if (!localStorage.getItem(LS_KEY)) localStorage.setItem(LS_KEY, '0');
+      }, []);
+
+      // Cleanup on unmount
+      useEffect(() => () => { if (animRef.current) cancelAnimationFrame(animRef.current); }, []);
+
+      const startGame = () => {
+        if (animRef.current) cancelAnimationFrame(animRef.current);
+
+        if (!audioRef.current) audioRef.current = createAudio();
+        audioRef.current.resume();
+
+        const canvas = canvasRef.current;
+        canvas.width  = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+        const W = canvas.width, H = canvas.height;
+
+        gameRef.current = {
+          enemies: Array.from({length: 12}, () => spawnEnemy(W, H)),
+          lasso: null,
+          score: 0,
+          combo: 0,
+          comboTimer: 0,
+          timeLeft: GAME_DURATION,
+          particles: [],
+          bgHue: Math.random() * 360,
+        };
+
+        setPhase('playing');
+
+        let lastTime = performance.now();
+        const loop = (now) => {
+          const dt = Math.min((now - lastTime) / 1000, 0.05);
+          lastTime = now;
+          const state = gameRef.current;
+          const ctx   = canvas.getContext('2d');
+          const W = canvas.width, H = canvas.height;
+
+          // Timer
+          state.timeLeft = Math.max(0, state.timeLeft - dt);
+
+          if (state.timeLeft <= 0) {
+            renderScene(ctx, state, W, H, now);
+            drawHUD(ctx, state, W);
+            const saved = parseInt(localStorage.getItem(LS_KEY) || '0');
+            if (state.score > saved) localStorage.setItem(LS_KEY, String(state.score));
+            audioRef.current.gameover();
+            setPhase('gameover');
+            return;
+          }
+
+          // Combo decay
+          if (state.comboTimer > 0) {
+            state.comboTimer -= dt;
+            if (state.comboTimer <= 0) state.combo = 0;
+          }
+
+          // Spawn more enemies as time passes
+          const elapsed = GAME_DURATION - state.timeLeft;
+          const target  = Math.min(12 + Math.floor(elapsed / 12) * 2, 30);
+          while (state.enemies.length < target) state.enemies.push(spawnEnemy(W, H));
+
+          // Update enemies
+          for (const e of state.enemies) {
+            e.wobble += e.wobbleSpeed;
+            e.x += e.vx + Math.cos(e.wobble) * 0.4;
+            e.y += e.vy + Math.sin(e.wobble) * 0.4;
+            if (e.x - e.radius < 0   || e.x + e.radius > W) { e.vx *= -1; e.x = Math.max(e.radius, Math.min(W-e.radius, e.x)); }
+            if (e.y - e.radius < 65  || e.y + e.radius > H) { e.vy *= -1; e.y = Math.max(65+e.radius, Math.min(H-e.radius, e.y)); }
+            e.tail.push({x: e.x, y: e.y});
+            if (e.tail.length > 14) e.tail.shift();
+          }
+
+          // Update particles
+          state.particles = state.particles.filter(p => {
+            p.life -= dt;
+            p.x += p.vx; p.y += p.vy;
+            p.vy += 0.07; p.vx *= 0.98;
+            return p.life > 0;
+          });
+
+          renderScene(ctx, state, W, H, now);
+          drawHUD(ctx, state, W);
+          animRef.current = requestAnimationFrame(loop);
+        };
+
+        animRef.current = requestAnimationFrame(loop);
+      };
+
+      /* ── input ── */
+      const getPos = (e) => {
+        const canvas = canvasRef.current;
+        const rect   = canvas.getBoundingClientRect();
+        const src    = e.touches ? e.touches[0] : e;
+        return {
+          x: (src.clientX - rect.left) * (canvas.width  / rect.width),
+          y: (src.clientY - rect.top)  * (canvas.height / rect.height),
+        };
+      };
+
+      const onDown = (e) => {
+        if (phase !== 'playing') return;
+        e.preventDefault();
+        audioRef.current?.resume();
+        const {x, y} = getPos(e);
+        if (y < 65) return;
+        gameRef.current.lasso = {x, y, radius: 22, active: true};
+        audioRef.current?.lasso();
+      };
+
+      const onMove = (e) => {
+        if (phase !== 'playing') return;
+        e.preventDefault();
+        const state = gameRef.current;
+        if (!state?.lasso?.active) return;
+        const {x, y} = getPos(e);
+        const dx = x - state.lasso.x, dy = y - state.lasso.y;
+        state.lasso.radius = Math.max(22, Math.sqrt(dx*dx+dy*dy));
+      };
+
+      const onUp = (e) => {
+        if (phase !== 'playing') return;
+        e.preventDefault();
+        const state = gameRef.current;
+        if (!state?.lasso?.active) return;
+
+        const l = state.lasso;
+        const captured = state.enemies.filter(e => {
+          const dx = e.x - l.x, dy = e.y - l.y;
+          return Math.sqrt(dx*dx+dy*dy) <= l.radius + 5;
+        });
+
+        if (captured.length > 0) {
+          state.enemies = state.enemies.filter(e => !captured.includes(e));
+
+          // Score = count × base × efficiency × combo
+          const effMult  = Math.max(1, Math.min(10, Math.round(4000 / (l.radius * l.radius))));
+          const combMult = Math.max(1, 1 + state.combo * 0.08);
+          const pts      = Math.round(captured.length * 100 * (1 + captured.length * 0.4) * effMult * combMult);
+          state.score   += pts;
+
+          state.combo      = (state.combo || 0) + captured.length;
+          state.comboTimer = 3.5;
+
+          // Update high score immediately on each capture
+          const saved = parseInt(localStorage.getItem(LS_KEY) || '0');
+          if (state.score > saved) localStorage.setItem(LS_KEY, String(state.score));
+
+          if (captured.length >= 3) audioRef.current?.combo();
+          else audioRef.current?.capture(captured.length);
+
+          // Burst particles
+          for (const e of captured) {
+            for (let i = 0; i < 18; i++) {
+              const a = (i/18)*Math.PI*2 + Math.random()*0.4;
+              const spd = 1.5 + Math.random()*3.5;
+              state.particles.push({
+                x: e.x, y: e.y,
+                vx: Math.cos(a)*spd, vy: Math.sin(a)*spd - 0.8,
+                radius: 2.5 + Math.random()*5,
+                color: e.color,
+                life: 0.5 + Math.random()*0.5,
+                maxLife: 1,
+              });
+            }
+          }
+        } else {
+          audioRef.current?.miss();
+        }
+        state.lasso = null;
+      };
+
+      /* ── overlay screens ── */
+      const highScore = parseInt(localStorage.getItem(LS_KEY) || '0');
+
+      const menuOverlay = (
+        <div
+          onClick={startGame}
+          style={{
+            position:'absolute', inset:0, zIndex:10,
+            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            background:'radial-gradient(ellipse at center, #1a0030 0%, #050008 100%)',
+            cursor:'pointer',
+          }}
+        >
+          <div style={{fontSize:'13px', color:'#bf00ff', letterSpacing:'6px', marginBottom:'10px'}}>NEON ARCADE</div>
+          <h1 style={{
+            fontSize:'clamp(46px,10vw,82px)', fontWeight:900, color:'#fff', margin:'0 0 8px',
+            textShadow:'0 0 20px #00f5ff,0 0 40px #00f5ff,0 0 80px #bf00ff', letterSpacing:'-2px',
+          }}>LASSO RUSH</h1>
+          <div style={{color:'#00f5ff', fontSize:'17px', marginBottom:'36px', letterSpacing:'2px'}}>
+            Rope the neon herd!
+          </div>
+
+          <div style={{
+            background:'rgba(0,245,255,0.08)', border:'1px solid #00f5ff33',
+            borderRadius:'14px', padding:'20px 30px', marginBottom:'36px',
+            maxWidth:'340px', textAlign:'center', lineHeight:'1.85',
+          }}>
+            <span style={{color:'#aaa', fontSize:'14px'}}>
+              <b style={{color:'#ffff22'}}>Click &amp; drag</b> to cast a lasso circle<br/>
+              <b style={{color:'#39ff14'}}>Release</b> to capture all inside<br/>
+              <b style={{color:'#ff9500'}}>Smaller circle</b> = bigger bonus<br/>
+              Catch <b style={{color:'#ff006e'}}>3+ at once</b> for a COMBO!
+            </span>
+          </div>
+
+          {highScore > 0 && (
+            <div style={{color:'#ffff22', fontSize:'17px', marginBottom:'18px'}}>
+              Best: <b>{highScore.toLocaleString()}</b>
+            </div>
+          )}
+
+          <button
+            style={{
+              background:'linear-gradient(135deg,#bf00ff,#00f5ff)',
+              border:'none', borderRadius:'50px',
+              padding:'18px 60px', fontSize:'22px', fontWeight:900,
+              color:'#fff', cursor:'pointer', letterSpacing:'3px',
+              boxShadow:'0 0 30px #bf00ff,0 0 60px #00f5ff44',
+              pointerEvents:'none',
+            }}
+          >PLAY</button>
+        </div>
+      );
+
+      const finalScore  = gameRef.current?.score || 0;
+      const savedFinal  = parseInt(localStorage.getItem(LS_KEY) || '0');
+
+      const gameOverOverlay = (
+        <div
+          onClick={startGame}
+          style={{
+            position:'absolute', inset:0, zIndex:10,
+            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            background:'rgba(0,0,0,0.86)', cursor:'pointer',
+          }}
+        >
+          <h2 style={{color:'#ff006e', fontSize:'54px', fontWeight:900,
+            textShadow:'0 0 24px #ff006e', marginBottom:'14px'}}>TIME'S UP!</h2>
+          <div style={{color:'#00f5ff', fontSize:'24px', marginBottom:'8px'}}>
+            Score: <b style={{color:'#fff'}}>{finalScore.toLocaleString()}</b>
+          </div>
+          <div style={{color:'#ffff22', fontSize:'20px', marginBottom:'42px'}}>
+            Best: <b style={{color:'#fff'}}>{savedFinal.toLocaleString()}</b>
+          </div>
+          {finalScore >= savedFinal && finalScore > 0 && (
+            <div style={{color:'#39ff14', fontSize:'17px', marginBottom:'24px',
+              textShadow:'0 0 12px #39ff14', letterSpacing:'2px'}}>
+              ★ NEW HIGH SCORE! ★
+            </div>
+          )}
+          <button
+            style={{
+              background:'linear-gradient(135deg,#bf00ff,#00f5ff)',
+              border:'none', borderRadius:'50px',
+              padding:'16px 52px', fontSize:'20px', fontWeight:900,
+              color:'#fff', cursor:'pointer', letterSpacing:'2px',
+              boxShadow:'0 0 28px #bf00ff', pointerEvents:'none',
+            }}
+          >PLAY AGAIN</button>
+        </div>
+      );
+
+      return (
+        <div style={{position:'relative', width:'100vw', height:'100vh', background:'#05000d'}}>
+          {phase === 'menu'     && menuOverlay}
+          {phase === 'gameover' && gameOverOverlay}
+          <canvas
+            ref={canvasRef}
+            style={{width:'100%', height:'100%', display:'block'}}
+            onMouseDown={onDown}
+            onMouseMove={onMove}
+            onMouseUp={onUp}
+            onMouseLeave={onUp}
+            onTouchStart={onDown}
+            onTouchMove={onMove}
+            onTouchEnd={onUp}
+          />
+        </div>
+      );
+    };
+
+    ReactDOM.render(<LassoRush />, document.getElementById('root'));
+  </script>
+</body>
+</html>

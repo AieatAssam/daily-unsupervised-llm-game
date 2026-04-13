@@ -740,5 +740,19 @@
     "folder": "games/2026-04-11",
     "file": "games/2026-04-11/index.html",
     "preview": "games/2026-04-11/preview.png"
+  },
+  {
+    "id": "2026-04-13",
+    "name": "Lasso Rush",
+    "date": "2026-04-13",
+    "description": "Click and drag to throw a neon lasso circle around drifting glowing enemies — release to capture all inside! Smaller lassos earn huge efficiency bonuses, and catching 3+ at once triggers a COMBO explosion. Race the 90-second clock for the highest score!",
+    "tagline": "Cast the lasso. Rope the herd. Chain the combos!",
+    "tags": ["action", "reflex", "strategy", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click and drag to cast a lasso circle — release to capture enemies inside",
+    "folder": "games/2026-04-13",
+    "file": "games/2026-04-13/index.html",
+    "preview": "games/2026-04-13/preview.png"
   }
 ]
