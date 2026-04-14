@@ -754,5 +754,19 @@
     "folder": "games/2026-04-13",
     "file": "games/2026-04-13/index.html",
     "preview": "games/2026-04-13/preview.png"
+  },
+  {
+    "id": "2026-04-14",
+    "name": "Neon Archer",
+    "date": "2026-04-14",
+    "description": "Hold to charge your neon bow and fire arrows at a glowing target — compensate for the wind blowing your shot sideways to nail the bullseye! Chain consecutive high-ring hits for massive combo multipliers across 12 arrows.",
+    "tagline": "Charge the bow. Read the wind. Hit the bullseye!",
+    "tags": ["precision", "timing", "reflex", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Hold mouse / touch to charge bow · Release to fire · Aim into the wind to compensate",
+    "folder": "games/2026-04-14",
+    "file": "games/2026-04-14/index.html",
+    "preview": "games/2026-04-14/preview.png"
   }
 ]
