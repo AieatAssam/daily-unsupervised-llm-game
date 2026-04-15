@@ -302,22 +302,15 @@ The `index.html` serves as the main entry page. Ensure it:
 4. ✅ Write the complete game HTML to `games/YYYY-MM-DD/index.html` (complete standalone HTML file with React from CDN)
 5. ✅ Write automated test file `games/YYYY-MM-DD/game.test.js` with all 6 required tests (loading index.html)
 6. ✅ Run new game tests: `npx playwright test games/YYYY-MM-DD/game.test.js` — fix ANY failures before continuing
-7. ✅ Run the FULL test suite: `npx playwright test`
-   - Read the output carefully — ALL games (new and existing) must pass
-   - If any test fails, diagnose the failure, fix the game or test file, and re-run
-   - Repeat the fix-and-rerun cycle until `npx playwright test` exits with **0 failures**
-   - Do NOT proceed to the next step while any test is failing
-   - Do NOT assume tests pass without actually running them and reading the result
-8. ✅ Generate preview image to `games/YYYY-MM-DD/preview.png` (screenshot mid-gameplay)
-9. ✅ Update games-registry.json with new entry
-10. ✅ Verify index.html correctly loads the new game
-11. ✅ Commit all files with message: "🎮 Daily Game: [Game Name] - [Date]"
+7. ✅ Generate preview image to `games/YYYY-MM-DD/preview.png` (screenshot mid-gameplay)
+8. ✅ Update games-registry.json with new entry
+9. ✅ Verify index.html correctly loads the new game
+10. ✅ Commit all files with message: "🎮 Daily Game: [Game Name] - [Date]"
 
 ### Quality Checklist (verify before committing):
 - [ ] Game is unique - checked registry and confirmed no duplicates
 - [ ] Core mechanic is different from last 7 games
-- [ ] All 6 automated tests written and passing
-- [ ] Full test suite (`npx playwright test`) exits with 0 failures — confirmed by reading output
+- [ ] All 6 automated tests written and passing for the new game
 - [ ] Visual aesthetics match neon/flashy standard
 - [ ] Particle effects present and visually satisfying
 - [ ] Sound effects work (test Web Audio API)
@@ -364,10 +357,10 @@ The `index.html` must provide:
 
 ### Testing is Mandatory
 - **Every game MUST have passing tests**
-- **Always run the full suite** — `npx playwright test` must exit with 0 failures before committing
-- **Fix-then-retry loop**: If any test fails (new or existing), diagnose the failure, fix the game or test, re-run. Repeat until all pass. Never stop at "the new tests pass" — all games must pass.
+- **Run the new game's tests** — `npx playwright test games/YYYY-MM-DD/game.test.js` must exit with 0 failures before committing
+- **Fix-then-retry loop**: If any test fails for the new game, diagnose the failure, fix the game or test, and re-run. Repeat until all pass.
 - **Never assume tests pass** — always run them and read the output before proceeding
-- GitHub Pages deployment ONLY happens if tests pass
+- GitHub Pages deployment ONLY happens if tests pass (full suite is run by CI)
 - Tests protect against broken games
 - Use the example test file as a template
 - All 6 tests are required, no exceptions
@@ -413,7 +406,6 @@ Files:
 - Progressive difficulty with combo scoring
 - Smooth 60fps particle effects
 - All 6 tests passing
-- Full test suite passing (npx playwright test: 0 failures)
 ```
 
 ## Failure Cases to Avoid
@@ -425,9 +417,8 @@ Files:
 - ❌ Registry JSON has syntax errors
 - ❌ Incomplete one-shot (game works but preview missing)
 - ❌ Low visual polish (looks bland or unfinished)
-- ❌ Stopping after only the new game's tests pass without running the full suite
-- ❌ Committing when `npx playwright test` has any non-zero exit code
-- ❌ Skipping the test run because "the code looks right"
+- ❌ Skipping the new game's test run because "the code looks right"
+- ❌ Committing when the new game's tests have any non-zero exit code
 - ❌ Using .jsx file extensions instead of .html
 
 ## Success Criteria
