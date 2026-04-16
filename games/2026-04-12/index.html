@@ -156,10 +156,17 @@
       }, []);
 
       // ── Game loop ────────────────────────────────────────────────────────────
-      const loop = useCallback((ts) => {
+      useEffect(() => {
+        const resize = () => {
+          const c = canvasRef.current, w = wrapRef.current;
+          if (c && w) { c.width = w.clientWidth; c.height = w.clientHeight; }
+        };
+        resize();
+        window.addEventListener('resize', resize);
+        function loop(ts) {
         const g = G.current;
         const canvas = canvasRef.current;
-        if (!canvas) { g.raf = requestAnimationFrame(loop); return; }
+        if (!canvas) { G.current.raf = requestAnimationFrame(loop); return; }
         const dt = Math.min(ts - (g.lastTs||ts), 50);
         g.lastTs = ts;
 
@@ -345,22 +352,14 @@
           drawPlayer(ctx, W*0.5, trackY, 0, ts*0.04, 5, ts, true);
         }
 
-        g.raf = requestAnimationFrame(loop);
-      }, []);
-
-      useEffect(() => {
-        const resize = () => {
-          const c = canvasRef.current, w = wrapRef.current;
-          if (c && w) { c.width = w.clientWidth; c.height = w.clientHeight; }
-        };
-        resize();
-        window.addEventListener('resize', resize);
+        G.current.raf = requestAnimationFrame(loop);
+        }
         G.current.raf = requestAnimationFrame(loop);
         return () => {
           window.removeEventListener('resize', resize);
-          if (G.current.raf) cancelAnimationFrame(G.current.raf);
+          cancelAnimationFrame(G.current.raf);
         };
-      }, [loop]);
+      }, []);
 
       // ── Start game ────────────────────────────────────────────────────────────
       const startGame = useCallback(() => {

@@ -117,8 +117,8 @@
         charge: 0,        // 0..1 (capped internally)
         charging: false,
         lastChargeSound: 0,
-        mouseX: W / 2,
-        mouseY: H / 2,
+        mouseX: TARGET_X,
+        mouseY: TARGET_Y,
         wobble: 0,        // current wobble offset (px)
         wobbleVel: 8,     // wobble speed direction
         arrow: null,      // { sx,sy,tx,ty,progress,hitX,hitY }
@@ -179,6 +179,8 @@
           charging: false,
           wobble: 0,
           wobbleVel: 8,
+          mouseX: TARGET_X,
+          mouseY: TARGET_Y,
           arrow: null,
           particles: [],
           floats: [],
@@ -604,9 +606,8 @@
           ctx.restore();
         }
 
-        // Arrow stuck in target after landing
-        if (s.arrow && s.phase === 'playing' && s.arrow.progress >= 1) {
-          // already fired, in cooldown — show stuck arrow
+        // Arrow stuck in target after landing (cooldown phase)
+        if (s.arrow && s.phase === 'cooldown') {
           const hx = s.arrow.hitX, hy = s.arrow.hitY;
           ctx.save();
           ctx.shadowColor = '#ffdd88';
@@ -618,18 +619,31 @@
           ctx.lineTo(hx + 5, hy);
           ctx.stroke();
           ctx.restore();
+
+          // "NEXT →" cooldown prompt so player knows to wait
+          const pulse = 0.6 + 0.4 * Math.abs(Math.sin(s.bgT * 6));
+          ctx.save();
+          ctx.globalAlpha = pulse;
+          ctx.shadowColor = '#00ffcc';
+          ctx.shadowBlur = 10;
+          ctx.fillStyle = '#00ffcc';
+          ctx.font = 'bold 16px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('NEXT ARROW →', W / 2, H - 54);
+          ctx.restore();
         }
 
         // ---- PARTICLES ----
         for (const p of s.particles) {
-          const a = p.life / p.maxLife;
+          const a = Math.max(0, p.life / p.maxLife);
+          if (a <= 0) continue;
           ctx.save();
           ctx.globalAlpha = a;
           ctx.shadowColor = p.color;
           ctx.shadowBlur = 8;
           ctx.fillStyle = p.color;
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size * a, 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, Math.max(0.1, p.size * a), 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
         }
