@@ -782,5 +782,19 @@
     "folder": "games/2026-04-15",
     "file": "games/2026-04-15/index.html",
     "preview": "games/2026-04-15/preview.png"
+  },
+  {
+    "id": "2026-04-16",
+    "name": "Polarity Rush",
+    "date": "2026-04-16",
+    "description": "Hold to activate your magnetic field and attract all orbs toward the center — cyan orbs score points but red orbs cost you a life! Release to repel everything safely. Time your attract bursts and chain cyan catches for massive combo multipliers!",
+    "tagline": "Hold to attract. Release to survive.",
+    "tags": ["reflex", "timing", "action", "arcade", "magnetic"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Hold mouse / touch / Space to attract orbs · Release to repel them",
+    "folder": "games/2026-04-16",
+    "file": "games/2026-04-16/index.html",
+    "preview": "games/2026-04-16/preview.png"
   }
 ]
