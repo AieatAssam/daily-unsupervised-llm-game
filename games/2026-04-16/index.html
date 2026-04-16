@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Polarity Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #08001a; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    button:focus { outline: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ── Audio ─────────────────────────────────────────────────────────── */
+    let _ac = null;
+    const ac = () => { if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)(); return _ac; };
+    const beep = (freq, type, dur, vol, ramp) => {
+      try {
+        const ctx = ac();
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = type; o.frequency.setValueAtTime(freq, ctx.currentTime);
+        if (ramp) o.frequency.exponentialRampToValueAtTime(ramp, ctx.currentTime + dur);
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(ctx.currentTime); o.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    };
+    const sndCatch = () => {
+      beep(440, 'sine', 0.06, 0.25, 660);
+      setTimeout(() => beep(880, 'sine', 0.09, 0.2, 1100), 55);
+    };
+    const sndHit = () => {
+      beep(220, 'sawtooth', 0.18, 0.45, 80);
+      setTimeout(() => beep(110, 'sawtooth', 0.15, 0.3), 60);
+    };
+    const sndToggle = (on) => beep(on ? 650 : 320, 'square', 0.06, 0.18);
+
+    /* ── Utilities ─────────────────────────────────────────────────────── */
+    const rand = (a, b) => Math.random() * (b - a) + a;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+    /* ── Game Component ────────────────────────────────────────────────── */
+    const Game = () => {
+      const cvs  = useRef(null);
+      const gs   = useRef(null);   // mutable game state (no re-render)
+      const raf  = useRef(null);
+      const hold = useRef(false);  // attract mode?
+
+      const [screen, setScreen] = useState('start'); // start | play | over
+      const [finalScore, setFinalScore] = useState(0);
+      const [hiScore, setHiScore] = useState(
+        () => parseInt(localStorage.getItem('polarityRushHighScore') || '0')
+      );
+
+      /* canvas dimensions */
+      const W = Math.min(window.innerWidth,  480);
+      const H = Math.min(window.innerHeight, 720);
+
+      /* ── Spawn an orb on the edge ─────────────────────────────────────── */
+      const mkOrb = (state) => {
+        const a = rand(0, Math.PI * 2);
+        const r = Math.max(state.W, state.H) * 0.64;
+        const blueP = clamp(0.65 - state.level * 0.025, 0.3, 0.65);
+        return {
+          x: state.cx + Math.cos(a) * r,
+          y: state.cy + Math.sin(a) * r,
+          vx: rand(-0.6, 0.6),
+          vy: rand(-0.6, 0.6),
+          type: Math.random() < blueP ? 'b' : 'r',
+          trail: [],
+          pulse: rand(0, Math.PI * 2),
+        };
+      };
+
+      /* ── Burst particles ──────────────────────────────────────────────── */
+      const mkParts = (x, y, rgb, n = 14) =>
+        Array.from({ length: n }, (_, i) => {
+          const a = (i / n) * Math.PI * 2 + rand(-0.4, 0.4);
+          const s = rand(2.5, 6.5);
+          return { x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+                   r: rand(2, 5), life: 1, dec: rand(0.022, 0.045), rgb };
+        });
+
+      /* ── Initialize fresh game state ──────────────────────────────────── */
+      const mkState = () => ({
+        W, H, cx: W/2, cy: H/2,
+        orbs: [], parts: [],
+        score: 0, combo: 0, lives: 3,
+        spawnT: 0, spawnInt: 95,
+        diffT: 0, level: 1,
+        flashT: 0, bgT: 0,
+        done: false,
+      });
+
+      /* ── Start / restart ──────────────────────────────────────────────── */
+      const startGame = useCallback(() => {
+        if (!localStorage.getItem('polarityRushHighScore'))
+          localStorage.setItem('polarityRushHighScore', '0');
+        gs.current = mkState();
+        hold.current = false;
+        setScreen('play');
+      }, [W, H]);
+
+      /* ── Main game loop ───────────────────────────────────────────────── */
+      useEffect(() => {
+        if (screen !== 'play') return;
+        const canvas = cvs.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const state = gs.current;
+        const { W, H, cx, cy } = state;
+
+        const loop = () => {
+          /* ── Update ─────────────────────────────────────────────────── */
+          state.bgT   += 0.022;
+          state.flashT = Math.max(0, state.flashT - 1);
+          state.spawnT++;
+          state.diffT++;
+
+          const attract = hold.current;
+
+          /* spawn */
+          if (state.spawnT >= state.spawnInt) {
+            state.spawnT = 0;
+            state.orbs.push(mkOrb(state));
+            if (state.spawnInt > 32) state.spawnInt -= 0.35;
+          }
+
+          /* ramp level */
+          if (state.diffT % 450 === 0 && state.level < 10) state.level++;
+
+          const af  = 0.11 + state.level * 0.009;   // force magnitude
+          const spd = 5   + state.level * 0.38;     // max speed
+
+          /* orb physics */
+          state.orbs = state.orbs.filter(orb => {
+            orb.trail.push({ x: orb.x, y: orb.y });
+            if (orb.trail.length > 10) orb.trail.shift();
+
+            const dx = cx - orb.x, dy = cy - orb.y;
+            const dist = Math.hypot(dx, dy) || 1;
+            const dir  = attract ? 1 : -1;
+            orb.vx += (dx / dist) * af * dir;
+            orb.vy += (dy / dist) * af * dir;
+            orb.vx *= 0.97; orb.vy *= 0.97;
+            const s = Math.hypot(orb.vx, orb.vy);
+            if (s > spd) { orb.vx *= spd/s; orb.vy *= spd/s; }
+            orb.x += orb.vx; orb.y += orb.vy;
+            orb.pulse += 0.11;
+
+            /* reached center? */
+            if (dist < 44) {
+              if (orb.type === 'b') {
+                state.combo++;
+                state.score += 10 * state.combo;
+                state.parts.push(...mkParts(orb.x, orb.y, '0,220,255'));
+                sndCatch();
+              } else {
+                state.lives--;
+                state.combo = 0;
+                state.flashT = 38;
+                state.parts.push(...mkParts(orb.x, orb.y, '255,40,100', 20));
+                sndHit();
+                if (state.lives <= 0) state.done = true;
+              }
+              return false;
+            }
+            /* remove if escaped far */
+            return Math.hypot(orb.x - cx, orb.y - cy) < Math.max(W, H) * 0.88;
+          });
+
+          /* particle decay */
+          state.parts = state.parts.filter(p => {
+            p.x += p.vx; p.y += p.vy;
+            p.vx *= 0.93; p.vy *= 0.93;
+            p.life -= p.dec;
+            return p.life > 0;
+          });
+
+          /* ── Draw ───────────────────────────────────────────────────── */
+          /* background */
+          ctx.fillStyle = '#08001a';
+          ctx.fillRect(0, 0, W, H);
+
+          /* flash overlay */
+          if (state.flashT > 0) {
+            ctx.fillStyle = `rgba(255,0,55,${state.flashT / 38 * 0.33})`;
+            ctx.fillRect(0, 0, W, H);
+          }
+
+          /* grid */
+          ctx.strokeStyle = 'rgba(70,0,160,0.13)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+          for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+          /* radial field lines */
+          const fRgb = attract ? '0,255,200' : '255,110,0';
+          for (let i = 0; i < 10; i++) {
+            const a = (i/10)*Math.PI*2 + state.bgT * 0.28;
+            const r1 = 68, r2 = 130;
+            const x1 = cx + Math.cos(a)*r1, y1 = cy + Math.sin(a)*r1;
+            const x2 = cx + Math.cos(a)*r2, y2 = cy + Math.sin(a)*r2;
+            const grad = ctx.createLinearGradient(x2, y2, x1, y1);
+            const pulse = 0.1 + 0.08 * Math.sin(state.bgT * 3 + i);
+            if (attract) {
+              grad.addColorStop(0, `rgba(${fRgb},0)`);
+              grad.addColorStop(1, `rgba(${fRgb},${pulse})`);
+            } else {
+              grad.addColorStop(0, `rgba(${fRgb},${pulse})`);
+              grad.addColorStop(1, `rgba(${fRgb},0)`);
+            }
+            ctx.strokeStyle = grad;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+          }
+
+          /* center catch zone */
+          const zr = 44 + Math.sin(state.bgT * 2.1) * 3;
+          const zg = ctx.createRadialGradient(cx,cy,0, cx,cy,zr);
+          zg.addColorStop(0, 'rgba(255,210,0,0.22)');
+          zg.addColorStop(0.6, 'rgba(255,180,0,0.08)');
+          zg.addColorStop(1, 'rgba(255,150,0,0)');
+          ctx.fillStyle = zg; ctx.beginPath(); ctx.arc(cx,cy,zr,0,Math.PI*2); ctx.fill();
+          ctx.strokeStyle = `rgba(255,200,0,${0.45+0.2*Math.sin(state.bgT*2.1)})`;
+          ctx.lineWidth = 1.8; ctx.setLineDash([6,5]);
+          ctx.beginPath(); ctx.arc(cx,cy,zr,0,Math.PI*2); ctx.stroke();
+          ctx.setLineDash([]);
+
+          /* orb trails */
+          state.orbs.forEach(orb => {
+            const tlen = orb.trail.length;
+            if (tlen < 2) return;
+            const rgb = orb.type === 'b' ? '0,210,255' : '255,35,100';
+            for (let i = 1; i < tlen; i++) {
+              ctx.strokeStyle = `rgba(${rgb},${(i/tlen)*0.35})`;
+              ctx.lineWidth = 2.2;
+              ctx.beginPath();
+              ctx.moveTo(orb.trail[i-1].x, orb.trail[i-1].y);
+              ctx.lineTo(orb.trail[i].x,   orb.trail[i].y);
+              ctx.stroke();
+            }
+          });
+
+          /* orbs */
+          state.orbs.forEach(orb => {
+            const g2 = 1 + Math.sin(orb.pulse) * 0.15;
+            const rad = 11 * g2;
+            const rgb = orb.type === 'b' ? '0,210,255' : '255,35,100';
+            /* glow */
+            const gl = ctx.createRadialGradient(orb.x,orb.y,0, orb.x,orb.y,rad*2.8);
+            gl.addColorStop(0, `rgba(${rgb},0.4)`);
+            gl.addColorStop(1, `rgba(${rgb},0)`);
+            ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(orb.x,orb.y,rad*2.8,0,Math.PI*2); ctx.fill();
+            /* core */
+            ctx.fillStyle = `rgb(${rgb})`; ctx.beginPath(); ctx.arc(orb.x,orb.y,rad,0,Math.PI*2); ctx.fill();
+            /* specular */
+            ctx.fillStyle = 'rgba(255,255,255,0.55)';
+            ctx.beginPath(); ctx.arc(orb.x-rad*0.28,orb.y-rad*0.28,rad*0.27,0,Math.PI*2); ctx.fill();
+          });
+
+          /* particles */
+          state.parts.forEach(p => {
+            ctx.fillStyle = `rgba(${p.rgb},${p.life})`;
+            ctx.beginPath(); ctx.arc(p.x,p.y, p.r*p.life, 0, Math.PI*2); ctx.fill();
+          });
+
+          /* player magnet (center) */
+          const pc  = attract ? '0,255,190' : '255,115,0';
+          const pr  = 21 + Math.sin(state.bgT*3)*2.5;
+          /* outer pulse ring */
+          const or2 = pr + 14 + Math.sin(state.bgT*4)*4;
+          ctx.strokeStyle = `rgba(${pc},0.28)`;
+          ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+          ctx.beginPath(); ctx.arc(cx,cy,or2,0,Math.PI*2); ctx.stroke();
+          ctx.setLineDash([]);
+          /* glow */
+          const mg = ctx.createRadialGradient(cx,cy,0, cx,cy,pr+20);
+          mg.addColorStop(0, `rgba(${pc},0.55)`);
+          mg.addColorStop(0.5, `rgba(${pc},0.2)`);
+          mg.addColorStop(1, `rgba(${pc},0)`);
+          ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(cx,cy,pr+20,0,Math.PI*2); ctx.fill();
+          /* core */
+          ctx.fillStyle = `rgb(${pc})`; ctx.beginPath(); ctx.arc(cx,cy,pr,0,Math.PI*2); ctx.fill();
+          /* symbol */
+          ctx.fillStyle = 'rgba(0,0,0,0.75)';
+          ctx.font = `bold ${Math.round(pr*1.05)}px monospace`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(attract ? '+' : '−', cx, cy + 1);
+
+          /* HUD: score */
+          ctx.font = 'bold 24px monospace';
+          ctx.fillStyle = '#00ffcc';
+          ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+          ctx.fillText(state.score, 14, 12);
+          ctx.font = '11px monospace';
+          ctx.fillStyle = 'rgba(255,255,255,0.38)';
+          ctx.fillText('SCORE', 14, 40);
+
+          /* HUD: combo */
+          if (state.combo > 1) {
+            ctx.font = 'bold 17px monospace';
+            ctx.fillStyle = '#ff00cc';
+            ctx.textAlign = 'center';
+            ctx.fillText(`×${state.combo} COMBO`, cx, 14);
+          }
+
+          /* HUD: lives */
+          ctx.font = '20px monospace';
+          ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+          ctx.fillStyle = '#ff4466';
+          ctx.fillText(
+            '♥'.repeat(clamp(state.lives,0,3)) + '♡'.repeat(clamp(3-state.lives,0,3)),
+            W - 12, 12
+          );
+
+          /* mode hint */
+          ctx.font = '11px monospace';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+          ctx.fillStyle = `rgba(${pc},0.5)`;
+          ctx.fillText(attract ? '▲ ATTRACTING — release to repel' : '▼ REPELLING — hold to attract', cx, H - 14);
+
+          /* ── Check game over ─────────────────────────────────────────── */
+          if (state.done) {
+            const best = Math.max(state.score, parseInt(localStorage.getItem('polarityRushHighScore')||'0'));
+            localStorage.setItem('polarityRushHighScore', String(best));
+            setHiScore(best);
+            setFinalScore(state.score);
+            setScreen('over');
+            return;
+          }
+
+          raf.current = requestAnimationFrame(loop);
+        };
+
+        raf.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(raf.current);
+      }, [screen]);
+
+      /* ── Input listeners ──────────────────────────────────────────────── */
+      useEffect(() => {
+        if (screen !== 'play') return;
+        const on  = () => { hold.current = true;  sndToggle(true); };
+        const off = () => { hold.current = false; sndToggle(false); };
+        const kd  = e => { if (e.code === 'Space') { e.preventDefault(); on(); } };
+        const ku  = e => { if (e.code === 'Space') off(); };
+        window.addEventListener('mousedown',  on);
+        window.addEventListener('mouseup',    off);
+        window.addEventListener('touchstart', on,  { passive: true });
+        window.addEventListener('touchend',   off, { passive: true });
+        window.addEventListener('keydown',    kd);
+        window.addEventListener('keyup',      ku);
+        return () => {
+          window.removeEventListener('mousedown',  on);
+          window.removeEventListener('mouseup',    off);
+          window.removeEventListener('touchstart', on);
+          window.removeEventListener('touchend',   off);
+          window.removeEventListener('keydown',    kd);
+          window.removeEventListener('keyup',      ku);
+        };
+      }, [screen]);
+
+      /* ── Overlay styles ───────────────────────────────────────────────── */
+      // pointerEvents:'none' lets clicks pass through overlay to container,
+      // which starts the game. Buttons re-enable pointer events.
+      const overlay = {
+        position:'absolute', inset:0,
+        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+        background:'rgba(8,0,26,0.91)',
+        color:'#fff', fontFamily:'monospace',
+        userSelect:'none',
+        pointerEvents:'none',   // pass clicks through to container div
+      };
+      const btn = (color) => ({
+        marginTop:22, padding:'13px 42px', fontSize:16, letterSpacing:4,
+        background:'transparent', border:`2px solid ${color}`, color,
+        cursor:'pointer', fontFamily:'monospace',
+        boxShadow:`0 0 20px ${color}55`,
+        transition:'box-shadow .2s',
+        pointerEvents:'all',    // re-enable on buttons
+      });
+
+      return (
+        // Clicking the container starts game when not already playing
+        <div
+          style={{ position:'relative', width:W, height:H, cursor: screen !== 'play' ? 'pointer' : 'default' }}
+          onClick={screen !== 'play' ? startGame : undefined}
+        >
+          <canvas ref={cvs} width={W} height={H} style={{ display:'block' }} />
+
+          {/* ── Start screen ─────────────────────────────────────────────── */}
+          {screen === 'start' && (
+            <div style={overlay}>
+              <div style={{
+                fontSize:54, fontWeight:'bold', color:'#00ffcc',
+                textShadow:'0 0 28px #00ffcc, 0 0 60px #00ffcc55', letterSpacing:5,
+              }}>POLARITY</div>
+              <div style={{ fontSize:22, color:'#ff00cc', letterSpacing:8, marginBottom:30, textShadow:'0 0 16px #ff00cc' }}>RUSH</div>
+
+              <div style={{
+                display:'flex', gap:32, marginBottom:22,
+              }}>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ width:22, height:22, borderRadius:'50%', background:'#00d4ff', margin:'0 auto 6px', boxShadow:'0 0 14px #00d4ff' }} />
+                  <div style={{ fontSize:11, color:'rgba(255,255,255,0.55)' }}>COLLECT</div>
+                </div>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ width:22, height:22, borderRadius:'50%', background:'#ff2264', margin:'0 auto 6px', boxShadow:'0 0 14px #ff2264' }} />
+                  <div style={{ fontSize:11, color:'rgba(255,255,255,0.55)' }}>AVOID</div>
+                </div>
+              </div>
+
+              <div style={{
+                maxWidth:260, textAlign:'center', color:'rgba(255,255,255,0.6)',
+                fontSize:13, lineHeight:1.75, marginBottom:8,
+              }}>
+                <b style={{color:'#00ffcc'}}>HOLD</b> to attract all orbs inward.<br/>
+                <b style={{color:'#ff7300'}}>RELEASE</b> to repel them outward.<br/>
+                Cyan orbs score · Red orbs kill.
+              </div>
+
+              <button style={btn('#00ffcc')} onClick={e=>{e.stopPropagation();startGame();}}>
+                PLAY
+              </button>
+              {hiScore > 0 && (
+                <div style={{ marginTop:14, color:'rgba(255,255,255,0.4)', fontSize:13 }}>
+                  BEST: <span style={{ color:'#ffcc00' }}>{hiScore}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Game over screen ──────────────────────────────────────────── */}
+          {screen === 'over' && (
+            <div style={overlay}>
+              <div style={{
+                fontSize:34, fontWeight:'bold', color:'#ff0055', letterSpacing:3,
+                textShadow:'0 0 24px #ff0055', marginBottom:8,
+              }}>GAME OVER</div>
+              <div style={{ fontSize:52, color:'#00ffcc', fontWeight:'bold', textShadow:'0 0 20px #00ffcc55' }}>
+                {finalScore}
+              </div>
+              <div style={{ color:'rgba(255,255,255,0.38)', fontSize:12, marginBottom:10 }}>SCORE</div>
+              <div style={{ fontSize:16, color:'#ffcc00' }}>BEST: {hiScore}</div>
+              <button style={btn('#00ffcc')} onClick={e=>{e.stopPropagation();startGame();}}>
+                RETRY
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
+  </script>
+</body>
+</html>
