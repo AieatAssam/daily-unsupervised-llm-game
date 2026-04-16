@@ -768,5 +768,19 @@
     "folder": "games/2026-04-14",
     "file": "games/2026-04-14/index.html",
     "preview": "games/2026-04-14/preview.png"
+  },
+  {
+    "id": "2026-04-15",
+    "name": "Neon Ripple",
+    "date": "2026-04-15",
+    "description": "Tap anywhere to launch expanding shockwave rings that destroy glowing enemies they pass through — chain kills for massive combo multipliers, and watch out for white-ringed pulse enemies that burst into chain ripples when destroyed!",
+    "tagline": "Tap to ripple. Destroy the swarm. Chain the waves!",
+    "tags": ["action", "reflex", "strategy", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap anywhere to launch an expanding shockwave ring",
+    "folder": "games/2026-04-15",
+    "file": "games/2026-04-15/index.html",
+    "preview": "games/2026-04-15/preview.png"
   }
 ]

@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Ripple</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; }
+    canvas { display: block; }
+  </style>
+  <script>
+    // Initialize localStorage key immediately so tests can detect it
+    try {
+      if (!localStorage.getItem('neonRipple_highScore')) {
+        localStorage.setItem('neonRipple_highScore', '0');
+      }
+    } catch(e) {}
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    /* ── Audio ─────────────────────────────────────────────────── */
+    const makeAudio = () => {
+      try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+    };
+    const beep = (ctx, freq, type, dur, vol = 0.25) => {
+      if (!ctx) return;
+      try {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = type;
+        o.frequency.setValueAtTime(freq, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(freq * 0.4, ctx.currentTime + dur);
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.start(); o.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    };
+
+    /* ── Constants ──────────────────────────────────────────────── */
+    const DURATION   = 90;   // seconds
+    const RIP_SPEED  = 220;  // px/s
+    const RIP_MAX    = 420;  // px
+    const RIP_W      = 9;
+    const COLS = ['#00ffff','#ff00ff','#ffff00','#00ff88','#ff4488','#8844ff','#ff8800'];
+    const rc = () => COLS[Math.floor(Math.random() * COLS.length)];
+
+    /* ── Factory helpers ────────────────────────────────────────── */
+    const mkEnemy = (w, h, id, difficulty) => {
+      const spd = (50 + Math.random() * 70) * Math.min(difficulty, 2.5);
+      const ang = Math.random() * Math.PI * 2;
+      // Spawn on edge
+      const edge = Math.floor(Math.random() * 4);
+      let x, y;
+      if (edge === 0) { x = Math.random() * w; y = -20; }
+      else if (edge === 1) { x = w + 20; y = Math.random() * h; }
+      else if (edge === 2) { x = Math.random() * w; y = h + 20; }
+      else { x = -20; y = Math.random() * h; }
+      return {
+        id, x, y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        r: 9 + Math.random() * 7,
+        color: rc(),
+        pulse: Math.random() < 0.18, // pulse enemies burst into a ripple on death
+        phase: Math.random() * Math.PI * 2,
+        alive: true,
+      };
+    };
+    const mkParticle = (x, y, color) => ({
+      x, y,
+      vx: (Math.random() - 0.5) * 300,
+      vy: (Math.random() - 0.5) * 300,
+      life: 1,
+      r: 3 + Math.random() * 4,
+      color,
+    });
+    const mkText = (x, y, text, color) => ({ x, y, text, color, life: 1 });
+
+    /* ── Game Component ─────────────────────────────────────────── */
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const G = useRef(null); // mutable game state
+
+      useEffect(() => {
+        // Ensure localStorage key exists for tests
+        if (!localStorage.getItem('neonRipple_highScore')) {
+          localStorage.setItem('neonRipple_highScore', '0');
+        }
+
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        let raf;
+
+        /* Resize */
+        const resize = () => {
+          canvas.width  = window.innerWidth;
+          canvas.height = window.innerHeight;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        /* Init state */
+        const init = () => {
+          const hs = parseInt(localStorage.getItem('neonRipple_highScore') || '0');
+          G.current = {
+            phase: 'start',   // 'start' | 'play' | 'over'
+            ripples: [],
+            enemies: [],
+            particles: [],
+            texts: [],
+            score: 0,
+            combo: 0,
+            comboTimer: 0,
+            highScore: hs,
+            timeLeft: DURATION,
+            spawnTimer: 0,
+            difficulty: 1,
+            bgHue: 200,
+            nextId: 0,
+            nextRid: 0,
+            lastTs: null,
+            audio: null,
+            // Ambient demo ripples for start screen
+            demoRipples: [],
+            demoTimer: 0,
+          };
+          localStorage.setItem('neonRipple_highScore', hs.toString());
+        };
+        init();
+
+        const startGame = () => {
+          const g = G.current;
+          if (!g.audio) g.audio = makeAudio();
+          g.phase      = 'play';
+          g.ripples    = [];
+          g.enemies    = [];
+          g.particles  = [];
+          g.texts      = [];
+          g.score      = 0;
+          g.combo      = 0;
+          g.comboTimer = 0;
+          g.timeLeft   = DURATION;
+          g.spawnTimer = 0;
+          g.difficulty = 1;
+          g.nextId     = 0;
+          g.nextRid    = 0;
+          g.lastTs     = null;
+          // Pre-populate enemies inside screen
+          const w = canvas.width, h = canvas.height;
+          for (let i = 0; i < 9; i++) {
+            const e = mkEnemy(w, h, g.nextId++, 1);
+            e.x = 60 + Math.random() * (w - 120);
+            e.y = 60 + Math.random() * (h - 120);
+            g.enemies.push(e);
+          }
+        };
+
+        const addRipple = (x, y, maxR = RIP_MAX, isPulse = false) => {
+          const g = G.current;
+          g.ripples.push({
+            id: g.nextRid++,
+            x, y,
+            radius: 0,
+            maxR,
+            color: isPulse ? '#ffffff' : rc(),
+            hit: new Set(),
+          });
+        };
+
+        /* Click / touch handler */
+        const onPointer = (e) => {
+          e.preventDefault();
+          const g = G.current;
+          if (!g) return;
+          const rect = canvas.getBoundingClientRect();
+          const sx = canvas.width  / rect.width;
+          const sy = canvas.height / rect.height;
+          let cx, cy;
+          if (e.touches) {
+            cx = (e.touches[0].clientX - rect.left) * sx;
+            cy = (e.touches[0].clientY - rect.top)  * sy;
+          } else {
+            cx = (e.clientX - rect.left) * sx;
+            cy = (e.clientY - rect.top)  * sy;
+          }
+          if (g.phase === 'start' || g.phase === 'over') { startGame(); return; }
+          if (g.phase !== 'play') return;
+          addRipple(cx, cy);
+          beep(g.audio, 280 + Math.random() * 180, 'sine', 0.35, 0.18);
+        };
+
+        canvas.addEventListener('click', onPointer);
+        canvas.addEventListener('touchstart', onPointer, { passive: false });
+
+        /* Draw rounded rect (manual for broad compat) */
+        const fillRoundRect = (x, y, w, h, r) => {
+          ctx.beginPath();
+          ctx.moveTo(x + r, y);
+          ctx.lineTo(x + w - r, y);
+          ctx.arcTo(x + w, y, x + w, y + r, r);
+          ctx.lineTo(x + w, y + h - r);
+          ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+          ctx.lineTo(x + r, y + h);
+          ctx.arcTo(x, y + h, x, y + h - r, r);
+          ctx.lineTo(x, y + r);
+          ctx.arcTo(x, y, x + r, y, r);
+          ctx.closePath();
+        };
+
+        /* Main loop */
+        const tick = (ts) => {
+          const g = G.current;
+          if (!g) { raf = requestAnimationFrame(tick); return; }
+          const dt  = g.lastTs ? Math.min((ts - g.lastTs) / 1000, 0.05) : 0;
+          g.lastTs  = ts;
+          const W   = canvas.width;
+          const H   = canvas.height;
+
+          /* ── Background ─────────────────────────────────────── */
+          g.bgHue = (g.bgHue + dt * 15) % 360;
+          const bg = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, Math.hypot(W, H) * 0.6);
+          bg.addColorStop(0, `hsl(${g.bgHue}, 60%, 4%)`);
+          bg.addColorStop(1, `hsl(${(g.bgHue + 70) % 360}, 80%, 2%)`);
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, W, H);
+
+          /* Subtle grid */
+          ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+          ctx.lineWidth = 1;
+          const GS = 55;
+          for (let x = 0; x < W; x += GS) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+          }
+          for (let y = 0; y < H; y += GS) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+          }
+
+          /* ── START SCREEN ───────────────────────────────────── */
+          if (g.phase === 'start') {
+            // Demo ambient ripples
+            g.demoTimer -= dt;
+            if (g.demoTimer <= 0) {
+              g.demoTimer = 1.2 + Math.random() * 1.5;
+              g.demoRipples.push({
+                x: 50 + Math.random() * (W - 100),
+                y: 50 + Math.random() * (H - 100),
+                radius: 0,
+                color: rc(),
+              });
+            }
+            g.demoRipples.forEach(r => { r.radius += RIP_SPEED * dt; });
+            g.demoRipples = g.demoRipples.filter(r => r.radius < RIP_MAX);
+            g.demoRipples.forEach(r => {
+              const a = 1 - r.radius / RIP_MAX;
+              ctx.save();
+              ctx.globalAlpha = a * 0.4;
+              ctx.strokeStyle = r.color;
+              ctx.lineWidth = RIP_W;
+              ctx.shadowBlur = 20; ctx.shadowColor = r.color;
+              ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2); ctx.stroke();
+              ctx.restore();
+            });
+
+            // Overlay
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.fillRect(0, 0, W, H);
+            const cx = W / 2, cy = H / 2;
+            const fsize = (f) => Math.min(W * f, f * 1400);
+            ctx.textAlign = 'center';
+
+            ctx.shadowBlur = 40; ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = '#00ffff';
+            ctx.font = `bold ${fsize(0.085)}px 'Courier New', monospace`;
+            ctx.fillText('NEON', cx, cy - 110);
+
+            ctx.shadowColor = '#ff00ff'; ctx.fillStyle = '#ff00ff';
+            ctx.font = `bold ${fsize(0.085)}px 'Courier New', monospace`;
+            ctx.fillText('RIPPLE', cx, cy - 30);
+
+            ctx.shadowBlur = 8; ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.font = `${fsize(0.038)}px 'Courier New', monospace`;
+            ctx.fillText('Tap to launch shockwaves · Destroy glowing enemies', cx, cy + 30);
+            ctx.fillText('★ White-ringed enemies burst into chain ripples!', cx, cy + 68);
+
+            const pulse = 0.75 + 0.25 * Math.sin(ts / 430);
+            ctx.globalAlpha = pulse;
+            ctx.shadowColor = '#00ffff'; ctx.fillStyle = '#00ffff';
+            ctx.font = `bold ${fsize(0.045)}px 'Courier New', monospace`;
+            ctx.fillText('[ CLICK / TAP TO START ]', cx, cy + 130);
+            ctx.globalAlpha = 1;
+
+            if (g.highScore > 0) {
+              ctx.shadowBlur = 5; ctx.fillStyle = '#888';
+              ctx.font = `${fsize(0.028)}px 'Courier New', monospace`;
+              ctx.fillText(`Best: ${g.highScore}`, cx, cy + 175);
+            }
+            ctx.restore();
+            raf = requestAnimationFrame(tick);
+            return;
+          }
+
+          /* ── GAME OVER SCREEN ───────────────────────────────── */
+          if (g.phase === 'over') {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+            const cx = W / 2, cy = H / 2;
+            const fsize = (f) => Math.min(W * f, f * 1400);
+            ctx.textAlign = 'center';
+
+            ctx.shadowBlur = 35; ctx.shadowColor = '#ff3333'; ctx.fillStyle = '#ff3333';
+            ctx.font = `bold ${fsize(0.08)}px 'Courier New', monospace`;
+            ctx.fillText('GAME OVER', cx, cy - 95);
+
+            ctx.shadowColor = '#ffff00'; ctx.fillStyle = '#ffff00';
+            ctx.font = `bold ${fsize(0.06)}px 'Courier New', monospace`;
+            ctx.fillText(`Score: ${g.score}`, cx, cy - 22);
+
+            ctx.shadowColor = '#00ffff'; ctx.fillStyle = '#00ffff';
+            ctx.font = `${fsize(0.038)}px 'Courier New', monospace`;
+            ctx.fillText(`Best: ${g.highScore}`, cx, cy + 25);
+
+            if (g.score > 0 && g.score >= g.highScore) {
+              ctx.shadowColor = '#ff00ff'; ctx.fillStyle = '#ff00ff';
+              ctx.font = `bold ${fsize(0.038)}px 'Courier New', monospace`;
+              ctx.fillText('✦ NEW HIGH SCORE! ✦', cx, cy + 65);
+            }
+
+            const pulse = 0.75 + 0.25 * Math.sin(ts / 430);
+            ctx.globalAlpha = pulse;
+            ctx.shadowColor = '#00ffff'; ctx.fillStyle = '#00ffff';
+            ctx.font = `bold ${fsize(0.042)}px 'Courier New', monospace`;
+            ctx.fillText('[ CLICK / TAP TO PLAY AGAIN ]', cx, cy + 115);
+            ctx.globalAlpha = 1;
+            ctx.restore();
+            raf = requestAnimationFrame(tick);
+            return;
+          }
+
+          /* ── PLAY PHASE ─────────────────────────────────────── */
+          /* Timer */
+          g.timeLeft -= dt;
+          if (g.timeLeft <= 0) {
+            g.timeLeft = 0;
+            g.phase = 'over';
+            if (g.score > g.highScore) {
+              g.highScore = g.score;
+              localStorage.setItem('neonRipple_highScore', g.score.toString());
+            }
+          }
+
+          /* Combo decay */
+          g.comboTimer -= dt;
+          if (g.comboTimer <= 0) g.combo = 0;
+
+          /* Difficulty escalation */
+          const elapsed = DURATION - g.timeLeft;
+          g.difficulty = 1 + elapsed / 30;
+
+          /* Enemy spawning */
+          const spawnInterval = Math.max(0.7, 2.2 - g.difficulty * 0.25);
+          g.spawnTimer -= dt;
+          if (g.spawnTimer <= 0) {
+            g.spawnTimer = spawnInterval;
+            const maxEnemies = Math.min(8 + Math.floor(g.difficulty * 4), 28);
+            if (g.enemies.length < maxEnemies) {
+              g.enemies.push(mkEnemy(W, H, g.nextId++, g.difficulty));
+            }
+          }
+
+          /* Update ripples & collision */
+          g.ripples.forEach(rip => {
+            rip.radius += RIP_SPEED * dt;
+            g.enemies.forEach(e => {
+              if (!e.alive || rip.hit.has(e.id)) return;
+              const dist = Math.hypot(e.x - rip.x, e.y - rip.y);
+              if (Math.abs(dist - rip.radius) < RIP_W * 1.2 + e.r) {
+                rip.hit.add(e.id);
+                e.alive = false;
+                // Particles
+                for (let i = 0; i < 14; i++) g.particles.push(mkParticle(e.x, e.y, e.color));
+                // Pulse chain
+                if (e.pulse) {
+                  addRipple(e.x, e.y, RIP_MAX * 0.7, true);
+                  beep(g.audio, 700, 'sawtooth', 0.35, 0.15);
+                }
+                // Score
+                g.combo++;
+                g.comboTimer = 2.8;
+                const pts = 10 * g.combo;
+                g.score += pts;
+                if (g.score > g.highScore) {
+                  g.highScore = g.score;
+                  localStorage.setItem('neonRipple_highScore', g.score.toString());
+                }
+                const col = g.combo >= 5 ? '#ffff00' : g.combo >= 3 ? '#ff88ff' : '#ffffff';
+                const label = g.combo > 1 ? `×${g.combo}  +${pts}` : `+${pts}`;
+                g.texts.push(mkText(e.x, e.y - 10, label, col));
+                beep(g.audio, 180 + g.combo * 70, 'triangle', 0.25, 0.22);
+              }
+            });
+          });
+
+          g.ripples  = g.ripples.filter(r => r.radius < r.maxR);
+          g.enemies  = g.enemies.filter(e => e.alive);
+
+          /* Update enemies */
+          g.enemies.forEach(e => {
+            e.x += e.vx * dt;
+            e.y += e.vy * dt;
+            e.phase += dt * 3.5;
+            // Bounce
+            if (e.x < e.r)     { e.x = e.r;     e.vx =  Math.abs(e.vx); }
+            if (e.x > W - e.r) { e.x = W - e.r; e.vx = -Math.abs(e.vx); }
+            if (e.y < e.r)     { e.y = e.r;     e.vy =  Math.abs(e.vy); }
+            if (e.y > H - e.r) { e.y = H - e.r; e.vy = -Math.abs(e.vy); }
+          });
+
+          /* Update particles */
+          g.particles.forEach(p => {
+            p.x += p.vx * dt; p.y += p.vy * dt;
+            p.vx *= 0.93; p.vy *= 0.93;
+            p.life -= dt * 2.2;
+          });
+          g.particles = g.particles.filter(p => p.life > 0);
+
+          /* Update floating texts */
+          g.texts.forEach(t => { t.y -= 45 * dt; t.life -= dt * 1.4; });
+          g.texts = g.texts.filter(t => t.life > 0);
+
+          /* ── DRAW ───────────────────────────────────────────── */
+
+          /* Particles */
+          g.particles.forEach(p => {
+            ctx.save();
+            ctx.globalAlpha = p.life * 0.9;
+            ctx.shadowBlur  = 12; ctx.shadowColor = p.color;
+            ctx.fillStyle   = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+          });
+
+          /* Enemies */
+          g.enemies.forEach(e => {
+            const glow = 0.5 + 0.5 * Math.sin(e.phase);
+            ctx.save();
+            ctx.shadowBlur = 18 + glow * 16; ctx.shadowColor = e.color;
+            ctx.fillStyle  = e.color;
+            ctx.globalAlpha = 0.8 + glow * 0.2;
+            ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+            if (e.pulse) {
+              // White ring indicator
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth   = 2.5;
+              ctx.globalAlpha = 0.5 + glow * 0.5;
+              ctx.shadowColor = '#ffffff';
+              ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 7, 0, Math.PI * 2); ctx.stroke();
+            }
+            ctx.restore();
+          });
+
+          /* Ripples */
+          g.ripples.forEach(rip => {
+            const t = rip.radius / rip.maxR;
+            const a = (1 - t) * 0.85;
+            ctx.save();
+            // Outer glow ring
+            ctx.globalAlpha = a * 0.3;
+            ctx.strokeStyle = rip.color;
+            ctx.lineWidth   = RIP_W * 2.5;
+            ctx.shadowBlur  = 0;
+            ctx.beginPath(); ctx.arc(rip.x, rip.y, rip.radius, 0, Math.PI * 2); ctx.stroke();
+            // Core ring
+            ctx.globalAlpha = a;
+            ctx.lineWidth   = RIP_W;
+            ctx.shadowBlur  = 25; ctx.shadowColor = rip.color;
+            ctx.beginPath(); ctx.arc(rip.x, rip.y, rip.radius, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+          });
+
+          /* Floating score texts */
+          g.texts.forEach(t => {
+            ctx.save();
+            ctx.globalAlpha = t.life;
+            ctx.fillStyle   = t.color;
+            ctx.shadowBlur  = 12; ctx.shadowColor = t.color;
+            const fs = 16 + Math.floor(g.combo * 2);
+            ctx.font = `bold ${Math.min(fs, 28)}px 'Courier New', monospace`;
+            ctx.textAlign = 'center';
+            ctx.fillText(t.text, t.x, t.y);
+            ctx.restore();
+          });
+
+          /* ── HUD ────────────────────────────────────────────── */
+          const fsize = (f) => Math.min(W * f, f * 1400);
+
+          // Timer bar (top center)
+          const barW = W * 0.58;
+          const barX = (W - barW) / 2;
+          const barY = 14;
+          const barH = 11;
+          const ratio = g.timeLeft / DURATION;
+          const tColor = ratio > 0.5 ? '#00ffff' : ratio > 0.25 ? '#ffff00' : '#ff4444';
+
+          ctx.save();
+          ctx.fillStyle = 'rgba(255,255,255,0.07)';
+          fillRoundRect(barX, barY, barW, barH, 6);
+          ctx.fill();
+
+          if (ratio > 0) {
+            ctx.shadowBlur = 8; ctx.shadowColor = tColor;
+            const timerGrad = ctx.createLinearGradient(barX, 0, barX + barW * ratio, 0);
+            timerGrad.addColorStop(0, tColor);
+            timerGrad.addColorStop(1, '#ffffff');
+            ctx.fillStyle = timerGrad;
+            fillRoundRect(barX, barY, barW * ratio, barH, 6);
+            ctx.fill();
+          }
+          ctx.restore();
+
+          // Time digits
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.shadowBlur = 6; ctx.shadowColor = tColor; ctx.fillStyle = tColor;
+          ctx.font = `bold ${fsize(0.03)}px 'Courier New', monospace`;
+          ctx.fillText(`${Math.ceil(g.timeLeft)}s`, W / 2, barY + barH + 20);
+          ctx.restore();
+
+          // Score (top-left)
+          ctx.save();
+          ctx.textAlign = 'left';
+          ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; ctx.fillStyle = '#00ffff';
+          ctx.font = `bold ${fsize(0.038)}px 'Courier New', monospace`;
+          ctx.fillText(`${g.score}`, 18, 52);
+
+          ctx.shadowBlur = 4; ctx.fillStyle = 'rgba(0,255,255,0.5)';
+          ctx.font = `${fsize(0.022)}px 'Courier New', monospace`;
+          ctx.fillText('SCORE', 18, 70);
+          ctx.restore();
+
+          // Combo (top-left, below score)
+          if (g.combo > 1) {
+            ctx.save();
+            ctx.textAlign = 'left';
+            const cScale = Math.min(1.4, 1 + g.combo * 0.06);
+            ctx.shadowBlur = 16; ctx.shadowColor = '#ff00ff'; ctx.fillStyle = '#ff00ff';
+            ctx.font = `bold ${fsize(0.04) * cScale}px 'Courier New', monospace`;
+            ctx.fillText(`×${g.combo} COMBO`, 18, 105);
+            ctx.restore();
+          }
+
+          // Best (top-right)
+          ctx.save();
+          ctx.textAlign = 'right';
+          ctx.shadowBlur = 6; ctx.shadowColor = '#ffff00'; ctx.fillStyle = '#ffff00';
+          ctx.font = `${fsize(0.026)}px 'Courier New', monospace`;
+          ctx.fillText(`Best: ${g.highScore}`, W - 16, 50);
+          ctx.restore();
+
+          raf = requestAnimationFrame(tick);
+        };
+
+        raf = requestAnimationFrame(tick);
+
+        return () => {
+          cancelAnimationFrame(raf);
+          window.removeEventListener('resize', resize);
+          canvas.removeEventListener('click', onPointer);
+          canvas.removeEventListener('touchstart', onPointer);
+        };
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          style={{ width: '100vw', height: '100vh', cursor: 'crosshair' }}
+          id="game-canvas"
+        />
+      );
+    };
+
+    ReactDOM.render(<Game />, document.getElementById('root'));
+  </script>
+</body>
+</html>
