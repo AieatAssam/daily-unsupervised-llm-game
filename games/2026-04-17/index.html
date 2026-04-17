@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Volt Chain</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #060012; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ── Dimensions ──────────────────────────────────────────────────────── */
+    const W = Math.min(window.innerWidth, 480);
+    const H = window.innerHeight;
+
+    /* ── Constants ───────────────────────────────────────────────────────── */
+    const NUM_POSTS   = 10;
+    const BASE_ENERGY = 3200;  // ms for full arc before death
+    const RANGE_RATIO = 0.38;  // fraction of min(W,H)
+    const POST_RADIUS = 40;    // click hit radius
+    const COOLDOWN    = 1500;  // ms post is inactive after chain
+    const LS_KEY      = 'voltChain_highScore';
+
+    const RANGE = Math.min(W, H) * RANGE_RATIO;
+
+    const VOLT = {
+      cyan:   { fill: '#00ffff', shadow: '#00ccff', mult: 1 },
+      gold:   { fill: '#ffcc00', shadow: '#ff9900', mult: 3 },
+      purple: { fill: '#cc44ff', shadow: '#aa00ff', mult: 2 },
+    };
+
+    /* ── Audio ───────────────────────────────────────────────────────────── */
+    let _ac = null;
+    const ac = () => {
+      if (!_ac) try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+      return _ac;
+    };
+    const beep = (freq, type, dur, vol) => {
+      try {
+        const ctx = ac(); if (!ctx) return;
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(); o.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    };
+    const sndChain = (combo) => {
+      const f = 220 + combo * 90;
+      beep(f, 'sawtooth', 0.12, 0.2);
+      setTimeout(() => beep(f * 1.5, 'sine', 0.1, 0.14), 70);
+    };
+    const sndBreak = () => beep(70, 'square', 0.5, 0.28);
+    const sndStart = () => [330,440,550,660].forEach((f,i) =>
+      setTimeout(() => beep(f, 'sine', 0.14, 0.2), i * 75)
+    );
+
+    /* ── Helpers ─────────────────────────────────────────────────────────── */
+    const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+    const randomPost = (w, h, idx) => {
+      const pad = 55, top = 90;
+      const cols = 3, rows = Math.ceil(NUM_POSTS / cols);
+      const c = idx % cols, r = Math.floor(idx / cols);
+      const bx = pad + (c + 0.5) * (w - pad * 2) / cols;
+      const by = top + (r + 0.5) * (h - top - 60) / rows;
+      const types = ['cyan', 'gold', 'purple'];
+      return {
+        id: idx,
+        x: Math.max(pad, Math.min(w - pad, bx + (Math.random() - 0.5) * 80)),
+        y: Math.max(top, Math.min(h - 60, by + (Math.random() - 0.5) * 50)),
+        cooldown: 0,
+        charged: false,
+        type: types[Math.floor(Math.random() * types.length)],
+      };
+    };
+
+    const makePosts = (w, h) =>
+      Array.from({ length: NUM_POSTS }, (_, i) => randomPost(w, h, i));
+
+    const arcPath = (x1, y1, x2, y2) => {
+      const pts = [{ x: x1, y: y1 }];
+      for (let i = 1; i < 9; i++) {
+        const t = i / 9;
+        pts.push({
+          x: x1 + (x2 - x1) * t + (Math.random() - 0.5) * 30,
+          y: y1 + (y2 - y1) * t + (Math.random() - 0.5) * 30,
+        });
+      }
+      pts.push({ x: x2, y: y2 });
+      return pts;
+    };
+
+    /* ── Drawing helpers ─────────────────────────────────────────────────── */
+    const drawHex = (ctx, x, y, r) => {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i - Math.PI / 6;
+        i === 0 ? ctx.moveTo(x + r * Math.cos(a), y + r * Math.sin(a))
+                : ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a));
+      }
+      ctx.closePath();
+    };
+
+    /* ── Game Component ──────────────────────────────────────────────────── */
+    const Game = () => {
+      const cvs  = useRef(null);
+      const gs   = useRef(null);
+      const raf  = useRef(null);
+      const [screen, setScreen] = useState('start');
+      const [hiScore, setHiScore] = useState(() => parseInt(localStorage.getItem(LS_KEY) || '0'));
+
+      /* start / restart */
+      const startGame = useCallback(() => {
+        const posts = makePosts(W, H);
+        const si = Math.floor(Math.random() * posts.length);
+        posts[si].charged = true;
+        gs.current = {
+          posts,
+          active: si,
+          energy: BASE_ENERGY,
+          energyMax: BASE_ENERGY,
+          score: 0,
+          combo: 0,
+          comboTimer: 0,
+          lives: 3,
+          level: 1,
+          chains: 0,
+          particles: [],
+          arcs: [],
+          shake: 0,
+          bgT: 0,
+          lastTs: null,
+        };
+        if (!localStorage.getItem(LS_KEY)) localStorage.setItem(LS_KEY, '0');
+        setScreen('playing');
+        sndStart();
+      }, []);
+
+      /* click / tap handler */
+      const handleInput = useCallback((cx, cy) => {
+        if (screen !== 'playing') { startGame(); return; }
+        const g = gs.current;
+        if (!g) return;
+        const canvas = cvs.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = cx * (W / rect.width);
+        const y = cy * (H / rect.height);
+
+        // find nearest tappable post
+        let best = -1, bestD = Infinity;
+        g.posts.forEach((p, i) => {
+          if (i === g.active || p.cooldown > 0) return;
+          const d = dist2(p, { x, y });
+          if (d < POST_RADIUS && d < bestD) { bestD = d; best = i; }
+        });
+
+        if (best < 0) return;
+        const ap = g.posts[g.active];
+        const bp = g.posts[best];
+        const d = dist2(ap, bp);
+        if (d > RANGE) return;
+
+        // successful chain
+        const distMult = 1 + Math.floor(d / (RANGE / 5));
+        const voltMult = VOLT[bp.type].mult;
+        g.combo++;
+        g.comboTimer = 2500;
+        const pts = 100 * distMult * voltMult * Math.min(g.combo, 8);
+        g.score += pts;
+        g.chains++;
+        if (g.chains % 8 === 0) {
+          g.level++;
+          g.energyMax = Math.max(1200, BASE_ENERGY - (g.level - 1) * 180);
+        }
+
+        // lightning arc visual
+        g.arcs.push({ pts: arcPath(ap.x, ap.y, bp.x, bp.y), life: 350, max: 350,
+          hue: bp.type === 'gold' ? 50 : bp.type === 'cyan' ? 190 : 280 });
+
+        // particles
+        const vc = VOLT[bp.type];
+        for (let i = 0; i < 18; i++) {
+          const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5;
+          g.particles.push({ x: bp.x, y: bp.y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
+            life: 500 + Math.random()*300, max: 800, col: vc.fill, sz: 2 + Math.random()*3 });
+        }
+
+        ap.charged = false;
+        ap.cooldown = COOLDOWN;
+        bp.charged = true;
+        g.active = best;
+        g.energy = g.energyMax;
+
+        if (g.score > hiScore) {
+          setHiScore(g.score);
+          localStorage.setItem(LS_KEY, String(g.score));
+        }
+        sndChain(g.combo);
+      }, [screen, startGame, hiScore]);
+
+      /* animation loop */
+      useEffect(() => {
+        const canvas = cvs.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const tick = (ts) => {
+          const g = gs.current;
+          const dt = g && g.lastTs ? Math.min(ts - g.lastTs, 50) : 0;
+          if (g) { g.lastTs = ts; g.bgT += dt * 0.0008; }
+
+          /* ── update ── */
+          if (g && screen === 'playing') {
+            g.energy -= dt;
+            if (g.energy <= 0) {
+              g.energy = 0;
+              g.lives--;
+              sndBreak();
+              g.shake = 450;
+              if (g.lives <= 0) {
+                setScreen('dead');
+              } else {
+                g.posts.forEach(p => { p.charged = false; });
+                const ni = Math.floor(Math.random() * g.posts.length);
+                g.posts[ni].charged = true;
+                g.active = ni;
+                g.energy = g.energyMax;
+                g.combo = 0;
+              }
+            }
+            if (g.combo > 0) { g.comboTimer -= dt; if (g.comboTimer <= 0) g.combo = 0; }
+            g.posts.forEach(p => { if (p.cooldown > 0) p.cooldown = Math.max(0, p.cooldown - dt); });
+          }
+          if (g) {
+            g.particles = g.particles.filter(p => {
+              p.x += p.vx; p.y += p.vy; p.vx *= 0.94; p.vy *= 0.94; p.life -= dt;
+              return p.life > 0;
+            });
+            g.arcs = g.arcs.filter(a => { a.life -= dt; return a.life > 0; });
+            if (g.shake > 0) g.shake -= dt;
+          }
+
+          /* ── background ── */
+          const bgT = g ? g.bgT : ts * 0.0008;
+          const ox = (g && g.shake > 0) ? (Math.random()-0.5)*7*(g.shake/450) : 0;
+          const oy = (g && g.shake > 0) ? (Math.random()-0.5)*7*(g.shake/450) : 0;
+          ctx.save();
+          ctx.translate(ox, oy);
+
+          const bg = ctx.createLinearGradient(0, 0, W, H);
+          bg.addColorStop(0, `hsl(${255+Math.sin(bgT)*18},80%,5%)`);
+          bg.addColorStop(0.5, `hsl(${195+Math.cos(bgT*0.8)*18},80%,7%)`);
+          bg.addColorStop(1, `hsl(${275+Math.sin(bgT*0.6)*18},80%,5%)`);
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, W, H);
+
+          ctx.strokeStyle = 'rgba(0,200,255,0.04)';
+          ctx.lineWidth = 1;
+          for (let x2 = 0; x2 < W; x2 += 36) { ctx.beginPath(); ctx.moveTo(x2,0); ctx.lineTo(x2,H); ctx.stroke(); }
+          for (let y2 = 0; y2 < H; y2 += 36) { ctx.beginPath(); ctx.moveTo(0,y2); ctx.lineTo(W,y2); ctx.stroke(); }
+
+          /* ── screens ── */
+          if (screen === 'start' || screen === 'dead') {
+            const pulse = 0.5 + 0.5 * Math.sin(bgT * 3);
+            ctx.textAlign = 'center';
+            if (screen === 'start') {
+              ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 20 + pulse*20;
+              ctx.fillStyle = `rgba(0,255,255,${0.85+pulse*0.15})`;
+              ctx.font = `bold ${Math.min(66,W*0.14)}px 'Courier New',monospace`;
+              ctx.fillText('VOLT', W/2, H*0.3);
+              ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 18+pulse*18;
+              ctx.fillStyle = `rgba(255,200,0,${0.85+pulse*0.15})`;
+              ctx.fillText('CHAIN', W/2, H*0.3 + Math.min(72,W*0.15));
+              ctx.shadowBlur = 0;
+              ctx.fillStyle = 'rgba(180,200,255,0.75)';
+              ctx.font = `${Math.min(15,W*0.034)}px 'Courier New'`;
+              ctx.fillText('Click posts to chain the arc!', W/2, H*0.54);
+              ctx.fillText('Farther = more points. Don\'t let energy run out!', W/2, H*0.54+26);
+            } else {
+              const hs = parseInt(localStorage.getItem(LS_KEY)||'0');
+              ctx.shadowColor = '#ff3366'; ctx.shadowBlur = 30;
+              ctx.fillStyle = '#ff3366';
+              ctx.font = `bold ${Math.min(52,W*0.11)}px 'Courier New',monospace`;
+              ctx.fillText('CHAIN', W/2, H*0.32);
+              ctx.fillText('BROKEN', W/2, H*0.32 + Math.min(58,W*0.12));
+              ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 10;
+              ctx.fillStyle = '#00ffff';
+              ctx.font = `${Math.min(26,W*0.056)}px 'Courier New'`;
+              if (g) ctx.fillText(`SCORE: ${g.score}`, W/2, H*0.56);
+              ctx.fillStyle = '#ffcc00';
+              ctx.font = `${Math.min(18,W*0.04)}px 'Courier New'`;
+              ctx.fillText(`BEST: ${hs}`, W/2, H*0.64);
+            }
+            ctx.shadowColor = `rgba(80,255,120,${0.6+0.4*Math.sin(bgT*4.5)})`;
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = `rgba(80,255,120,${0.65+0.35*Math.sin(bgT*4.5)})`;
+            ctx.font = `bold ${Math.min(22,W*0.048)}px 'Courier New'`;
+            ctx.fillText(screen==='start' ? 'TAP TO START' : 'TAP TO RETRY', W/2, H*0.76);
+            if (screen==='start' && hiScore>0) {
+              ctx.shadowBlur=0; ctx.fillStyle='rgba(255,200,0,0.75)';
+              ctx.font=`${Math.min(14,W*0.031)}px 'Courier New'`;
+              ctx.fillText(`BEST: ${hiScore}`, W/2, H*0.86);
+            }
+          }
+
+          if (screen === 'playing' && g) {
+            const ap = g.posts[g.active];
+
+            /* range circle */
+            ctx.save();
+            ctx.strokeStyle='rgba(0,200,255,0.1)'; ctx.lineWidth=1;
+            ctx.setLineDash([4,10]);
+            ctx.beginPath(); ctx.arc(ap.x, ap.y, RANGE, 0, Math.PI*2); ctx.stroke();
+            ctx.setLineDash([]);
+
+            /* guide lines */
+            g.posts.forEach((p, i) => {
+              if (i===g.active || p.cooldown>0) return;
+              const d = dist2(ap, p);
+              if (d<=RANGE) {
+                ctx.globalAlpha = (1 - d/RANGE)*0.3;
+                ctx.strokeStyle='#00ffff'; ctx.lineWidth=1;
+                ctx.setLineDash([3,8]);
+                ctx.beginPath(); ctx.moveTo(ap.x,ap.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+                ctx.setLineDash([]);
+              }
+            });
+            ctx.restore();
+
+            /* lightning arcs */
+            g.arcs.forEach(arc => {
+              const a = arc.life/arc.max;
+              ctx.save();
+              ctx.globalAlpha = a;
+              ctx.shadowColor = `hsl(${arc.hue},100%,70%)`; ctx.shadowBlur=14;
+              ctx.strokeStyle = `hsl(${arc.hue},100%,80%)`; ctx.lineWidth = 1.5+a*2;
+              ctx.beginPath();
+              ctx.moveTo(arc.pts[0].x, arc.pts[0].y);
+              arc.pts.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y));
+              ctx.stroke();
+              ctx.restore();
+            });
+
+            /* particles */
+            g.particles.forEach(p => {
+              const a = p.life/p.max;
+              ctx.save(); ctx.globalAlpha=a;
+              ctx.fillStyle=p.col; ctx.shadowColor=p.col; ctx.shadowBlur=8;
+              ctx.beginPath(); ctx.arc(p.x, p.y, p.sz*a, 0, Math.PI*2); ctx.fill();
+              ctx.restore();
+            });
+
+            /* posts */
+            g.posts.forEach((p, i) => {
+              const isAct = i===g.active;
+              const isCool = p.cooldown>0;
+              const d2ap = isAct ? 0 : dist2(ap, p);
+              const inRange = !isAct && !isCool && d2ap<=RANGE;
+              const vc = VOLT[p.type];
+              const pulse = Math.sin(bgT*(isAct?8:3)+i*1.3);
+              ctx.save();
+              let r;
+              if (isAct) {
+                r = 17+4*Math.abs(pulse);
+                ctx.shadowColor=vc.shadow; ctx.shadowBlur=vc.glow+10*Math.abs(pulse);
+                ctx.fillStyle=vc.fill;
+              } else if (isCool) {
+                r=11; ctx.shadowColor='#333'; ctx.shadowBlur=3;
+                ctx.fillStyle='rgba(55,55,90,0.55)';
+              } else if (inRange) {
+                r=13+3*Math.abs(pulse);
+                ctx.shadowColor=vc.shadow; ctx.shadowBlur=12+6*Math.abs(pulse);
+                ctx.fillStyle=vc.fill;
+              } else {
+                r=12; ctx.shadowColor=vc.shadow; ctx.shadowBlur=6;
+                ctx.fillStyle=vc.fill;
+              }
+              drawHex(ctx, p.x, p.y, r);
+              ctx.fill();
+              ctx.fillStyle = isAct ? 'white' : (isCool ? '#0a0a14' : 'rgba(255,255,255,0.4)');
+              ctx.shadowBlur=0;
+              ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
+
+              if (isCool) {
+                const prog = 1 - p.cooldown/COOLDOWN;
+                ctx.strokeStyle='rgba(100,100,200,0.5)'; ctx.lineWidth=2.5;
+                ctx.beginPath(); ctx.arc(p.x,p.y,20,-Math.PI/2,-Math.PI/2+Math.PI*2*prog); ctx.stroke();
+              }
+              if (isAct) {
+                const ep = g.energy/g.energyMax;
+                const ec = ep>0.5?'#00ff88':ep>0.25?'#ffaa00':'#ff2244';
+                ctx.lineWidth=4; ctx.strokeStyle='rgba(40,40,60,0.6)';
+                ctx.beginPath(); ctx.arc(p.x,p.y,28,0,Math.PI*2); ctx.stroke();
+                ctx.strokeStyle=ec; ctx.shadowColor=ec; ctx.shadowBlur=12;
+                ctx.beginPath(); ctx.arc(p.x,p.y,28,-Math.PI/2,-Math.PI/2+Math.PI*2*ep); ctx.stroke();
+              }
+              ctx.restore();
+            });
+
+            /* HUD */
+            ctx.save();
+            ctx.textAlign='left';
+            ctx.shadowColor='#00ffff'; ctx.shadowBlur=14;
+            ctx.fillStyle='#00ffff';
+            ctx.font=`bold ${Math.min(34,W*0.072)}px 'Courier New'`;
+            ctx.fillText(String(g.score), 18, 46);
+            if (g.combo>1) {
+              ctx.shadowColor='#ffcc00'; ctx.shadowBlur=10;
+              ctx.fillStyle='#ffcc00';
+              ctx.font=`bold ${Math.min(20,W*0.044)}px 'Courier New'`;
+              ctx.fillText(`×${g.combo} COMBO`, 18, 70);
+            }
+            ctx.textAlign='right';
+            ctx.shadowColor='#ff3366'; ctx.shadowBlur=10;
+            ctx.fillStyle='#ff3366';
+            ctx.font=`${Math.min(22,W*0.048)}px 'Courier New'`;
+            ctx.fillText('♥'.repeat(g.lives)+'♡'.repeat(3-g.lives), W-18, 46);
+            ctx.shadowColor='#aa44ff'; ctx.shadowBlur=8;
+            ctx.fillStyle='#cc66ff';
+            ctx.font=`${Math.min(15,W*0.033)}px 'Courier New'`;
+            ctx.fillText(`LVL ${g.level}`, W-18, 66);
+            ctx.textAlign='center';
+            ctx.shadowColor='rgba(255,200,0,0.5)'; ctx.shadowBlur=5;
+            ctx.fillStyle='rgba(255,200,0,0.7)';
+            ctx.font=`${Math.min(13,W*0.028)}px 'Courier New'`;
+            ctx.fillText(`BEST: ${hiScore}`, W/2, 22);
+            ctx.restore();
+          }
+
+          ctx.restore();
+          raf.current = requestAnimationFrame(tick);
+        };
+
+        raf.current = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf.current);
+      }, [screen, hiScore]);
+
+      /* input events */
+      useEffect(() => {
+        const canvas = cvs.current;
+        if (!canvas) return;
+        const onClick = (e) => {
+          e.preventDefault();
+          const r = canvas.getBoundingClientRect();
+          handleInput(e.clientX - r.left, e.clientY - r.top);
+        };
+        const onTouch = (e) => {
+          e.preventDefault();
+          const r = canvas.getBoundingClientRect();
+          const t = e.changedTouches[0];
+          handleInput(t.clientX - r.left, t.clientY - r.top);
+        };
+        canvas.addEventListener('click', onClick);
+        canvas.addEventListener('touchend', onTouch, { passive: false });
+        return () => {
+          canvas.removeEventListener('click', onClick);
+          canvas.removeEventListener('touchend', onTouch);
+        };
+      }, [handleInput]);
+
+      return (
+        <canvas
+          ref={cvs}
+          width={W}
+          height={H}
+          style={{ display: 'block', cursor: 'crosshair' }}
+        />
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
+  </script>
+</body>
+</html>

@@ -796,5 +796,19 @@
     "folder": "games/2026-04-16",
     "file": "games/2026-04-16/index.html",
     "preview": "games/2026-04-16/preview.png"
+  },
+  {
+    "id": "2026-04-17",
+    "name": "Volt Chain",
+    "date": "2026-04-17",
+    "description": "Click glowing hexagonal posts to chain a live electric arc before its energy ring drains — the farther the next post, the higher the risk and reward! Color-coded posts multiply your score: gold gives 3×, purple 2×, and cyan keeps the chain alive. Don't let the energy die or you lose a life!",
+    "tagline": "Chain the arc. Don't let the energy die!",
+    "tags": ["action", "reflex", "strategy", "arcade", "chaining"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a glowing hexagonal post within range to chain the electric arc",
+    "folder": "games/2026-04-17",
+    "file": "games/2026-04-17/index.html",
+    "preview": "games/2026-04-17/preview.png"
   }
 ]
