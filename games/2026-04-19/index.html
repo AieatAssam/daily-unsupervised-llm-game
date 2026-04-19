@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sync Burst</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; background: #050010; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef, useCallback } = React;
+
+    let audioCtx = null;
+    const getAudio = () => {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    };
+    const playTone = (freq, type = 'sine', dur = 0.15, vol = 0.3) => {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch (e) {}
+    };
+
+    const ZONE_COLORS = ['#00ffcc', '#ff2d78', '#ffdd00', '#a855f7', '#ff6633', '#33aaff'];
+    const ZONE_NOTES  = [523, 659, 784, 880, 1047, 440];
+    const rand = (a, b) => a + Math.random() * (b - a);
+
+    const makeZone = (id, x, y) => ({
+      id, x, y,
+      colorIdx: id % ZONE_COLORS.length,
+      period: rand(2.2, 3.8),
+      phase: Math.random(),
+      patience: 0,
+      patienceRate: 0.09 + id * 0.005,
+      flashTimer: 0,
+      flashType: null,
+      targetRadius: 44,
+      maxRadius: 68,
+    });
+
+    const zonePositions = (count, cw, ch) => {
+      const slots = [
+        [cw * 0.25, ch * 0.32], [cw * 0.75, ch * 0.32],
+        [cw * 0.50, ch * 0.68], [cw * 0.18, ch * 0.68],
+        [cw * 0.82, ch * 0.68], [cw * 0.50, ch * 0.18],
+      ];
+      return Array.from({ length: count }, (_, i) =>
+        makeZone(i, slots[i][0], slots[i][1])
+      );
+    };
+
+    const getRingR = z => Math.max(0, z.maxRadius * Math.sin(z.phase * Math.PI));
+    const getAccuracy = z => Math.abs(getRingR(z) - z.targetRadius) / z.targetRadius;
+
+    const SyncBurst = () => {
+      const canvasRef = useRef(null);
+      const gsRef = useRef({
+        phase: 'start',
+        score: 0, combo: 0, maxCombo: 0, lives: 3,
+        highScore: parseInt(localStorage.getItem('syncBurstHigh') || '0'),
+        zones: [], particles: [],
+        stars: Array.from({ length: 90 }, () => ({
+          x: Math.random(), y: Math.random(),
+          size: Math.random() * 1.5 + 0.4,
+          spd: Math.random(),
+        })),
+        lastTime: 0, bgT: 0, screenFlash: 0, flashColor: '#fff',
+        levelTimer: 0, nextZoneAt: 22,
+      });
+      const rafRef = useRef(null);
+      const gs = gsRef.current;
+
+      const spawnParts = (x, y, color, n, spd) => {
+        for (let i = 0; i < n; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const s = rand(0.8, spd);
+          gs.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+            color, size: rand(2, 6), life: 1, decay: rand(0.018, 0.038) });
+        }
+      };
+
+      const initGame = useCallback((cw, ch) => {
+        gs.phase = 'playing';
+        gs.score = 0; gs.combo = 0; gs.maxCombo = 0; gs.lives = 3;
+        gs.particles = []; gs.screenFlash = 0;
+        gs.levelTimer = 0; gs.nextZoneAt = 22;
+        gs.zones = zonePositions(3, cw, ch);
+        if (!localStorage.getItem('syncBurstHigh'))
+          localStorage.setItem('syncBurstHigh', '0');
+      }, []);
+
+      const handleClick = useCallback((e) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const mx = (e.clientX - rect.left) * scaleX;
+        const my = (e.clientY - rect.top) * scaleY;
+
+        if (gs.phase === 'start' || gs.phase === 'gameover') {
+          initGame(canvas.width, canvas.height);
+          return;
+        }
+        if (gs.phase !== 'playing') return;
+
+        // Find closest zone
+        let best = null, bestD = Infinity;
+        gs.zones.forEach(z => {
+          const d = Math.hypot(mx - z.x, my - z.y);
+          if (d < bestD) { bestD = d; best = z; }
+        });
+        if (!best || bestD > best.maxRadius + 18) return;
+
+        const z = best;
+        const acc = getAccuracy(z);
+        const color = ZONE_COLORS[z.colorIdx];
+        const note = ZONE_NOTES[z.colorIdx];
+        z.patience = 0;
+
+        if (acc < 0.09) {
+          const pts = 150 * Math.max(1, gs.combo);
+          gs.score += pts;
+          gs.combo++; gs.maxCombo = Math.max(gs.maxCombo, gs.combo);
+          z.flashType = 'perfect'; z.flashTimer = 0.65;
+          gs.screenFlash = 0.35; gs.flashColor = color;
+          spawnParts(z.x, z.y, color, 22, 5.5);
+          playTone(note, 'sine', 0.28, 0.55);
+        } else if (acc < 0.22) {
+          const pts = 80 * Math.max(1, gs.combo);
+          gs.score += pts;
+          gs.combo++; gs.maxCombo = Math.max(gs.maxCombo, gs.combo);
+          z.flashType = 'good'; z.flashTimer = 0.45;
+          spawnParts(z.x, z.y, color, 10, 3.5);
+          playTone(note * 0.92, 'sine', 0.18, 0.35);
+        } else if (acc < 0.48) {
+          gs.score += 20; gs.combo = 0;
+          z.flashType = 'ok'; z.flashTimer = 0.3;
+          spawnParts(z.x, z.y, color, 5, 2);
+          playTone(note * 0.7, 'triangle', 0.12, 0.2);
+        } else {
+          gs.combo = 0;
+          z.flashType = 'miss'; z.flashTimer = 0.3;
+          playTone(220, 'sawtooth', 0.1, 0.18);
+        }
+
+        if (gs.score > gs.highScore) {
+          gs.highScore = gs.score;
+          localStorage.setItem('syncBurstHigh', String(gs.highScore));
+        }
+      }, [initGame]);
+
+      const draw = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const cw = canvas.width, ch = canvas.height;
+        const t = Date.now() / 1000;
+
+        // Background
+        const bgGr = ctx.createRadialGradient(cw / 2, ch / 2, 0, cw / 2, ch / 2, Math.max(cw, ch) * 0.75);
+        const hue1 = 260 + Math.sin(gs.bgT) * 22;
+        const hue2 = 190 + Math.cos(gs.bgT * 0.6) * 18;
+        bgGr.addColorStop(0, `hsl(${hue2},75%,7%)`);
+        bgGr.addColorStop(1, `hsl(${hue1},80%,3%)`);
+        ctx.fillStyle = bgGr;
+        ctx.fillRect(0, 0, cw, ch);
+
+        // Stars
+        gs.stars.forEach(s => {
+          const fl = 0.5 + 0.5 * Math.sin(t * (1 + s.spd * 3) + s.x * 10);
+          ctx.fillStyle = `rgba(255,255,255,${(0.15 + s.spd * 0.45) * fl})`;
+          ctx.fillRect(s.x * cw, s.y * ch, s.size, s.size);
+        });
+
+        // Screen flash
+        if (gs.screenFlash > 0) {
+          ctx.fillStyle = gs.flashColor;
+          ctx.globalAlpha = gs.screenFlash * 0.14;
+          ctx.fillRect(0, 0, cw, ch);
+          ctx.globalAlpha = 1;
+        }
+
+        if (gs.phase === 'start') { drawTitle(ctx, cw, ch, t); return; }
+
+        // Draw zones (also visible on gameover for backdrop)
+        drawZones(ctx, t);
+
+        // Particles
+        gs.particles.forEach(p => {
+          ctx.globalAlpha = p.life;
+          ctx.shadowBlur = 8; ctx.shadowColor = p.color;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(0.1, p.size * p.life), 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+        drawHUD(ctx, cw, ch, t);
+        if (gs.phase === 'gameover') drawGameOver(ctx, cw, ch, t);
+      }, []);
+
+      const drawZones = (ctx, t) => {
+        gs.zones.forEach(z => {
+          const color = ZONE_COLORS[z.colorIdx];
+          const r = getRingR(z);
+          const cx = z.x, cy = z.y;
+          const fl = z.flashTimer > 0 ? z.flashTimer : 0;
+          const overallAcc = getAccuracy(z);
+          const nearTarget = overallAcc < 0.2;
+
+          let zColor = color;
+          if (z.flashType === 'perfect' && fl > 0.2) zColor = '#ffffff';
+          else if (z.flashType === 'good' && fl > 0.1) zColor = '#ffffaa';
+          else if (z.flashType === 'miss' && fl > 0.1) zColor = '#ff3333';
+
+          // Patience arc
+          if (gs.phase === 'playing' || gs.phase === 'gameover') {
+            const pc = z.patience > 0.72 ? '#ff2d2d' : z.patience > 0.42 ? '#ffaa00' : '#444';
+            ctx.strokeStyle = pc;
+            ctx.lineWidth = 4;
+            ctx.globalAlpha = 0.45 + z.patience * 0.55;
+            ctx.shadowBlur = z.patience > 0.72 ? 12 : 0;
+            ctx.shadowColor = '#ff2d2d';
+            ctx.beginPath();
+            ctx.arc(cx, cy, z.maxRadius + 14, -Math.PI / 2, -Math.PI / 2 + z.patience * Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+          }
+
+          // Target ring (dashed) — glows when ring is near
+          ctx.save();
+          ctx.setLineDash([9, 7]);
+          ctx.strokeStyle = color;
+          ctx.globalAlpha = nearTarget ? 0.85 : 0.35;
+          ctx.lineWidth = nearTarget ? 2.5 : 1.5;
+          ctx.shadowBlur = nearTarget ? 18 : 0;
+          ctx.shadowColor = color;
+          ctx.beginPath();
+          ctx.arc(cx, cy, z.targetRadius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+
+          // Outer glow
+          ctx.strokeStyle = zColor;
+          ctx.globalAlpha = 0.12 + fl * 0.18;
+          ctx.lineWidth = 18;
+          ctx.shadowBlur = 30; ctx.shadowColor = zColor;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Main ring
+          ctx.globalAlpha = 0.75 + fl * 0.25;
+          ctx.lineWidth = 3;
+          ctx.shadowBlur = 14;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Center dot
+          ctx.fillStyle = zColor;
+          ctx.shadowBlur = 22;
+          ctx.globalAlpha = 0.65 + 0.35 * Math.sin(t * 5 + z.id);
+          ctx.beginPath();
+          ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+          // Flash label
+          if (z.flashTimer > 0.22 && z.flashType) {
+            const labels = { perfect: 'PERFECT!', good: 'GOOD', ok: 'OK', miss: 'MISS' };
+            const fcols  = { perfect: '#fff', good: '#ffff44', ok: '#aaffaa', miss: '#ff5555' };
+            const sz = z.flashType === 'perfect' ? 18 : 14;
+            ctx.fillStyle = fcols[z.flashType];
+            ctx.font = `bold ${sz}px 'Courier New', monospace`;
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 12; ctx.shadowColor = fcols[z.flashType];
+            ctx.fillText(labels[z.flashType], cx, cy - z.maxRadius - 16);
+            ctx.shadowBlur = 0;
+          }
+        });
+      };
+
+      const drawHUD = (ctx, cw, ch, t) => {
+        ctx.shadowBlur = 0;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#00ffcc';
+        ctx.shadowBlur = 10; ctx.shadowColor = '#00ffcc';
+        ctx.font = `bold 22px 'Courier New', monospace`;
+        ctx.fillText(`SCORE: ${gs.score}`, 16, 32);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#555';
+        ctx.font = `13px 'Courier New', monospace`;
+        ctx.fillText(`BEST: ${gs.highScore}`, 16, 52);
+
+        if (gs.combo > 1) {
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ffdd00';
+          ctx.shadowBlur = 16; ctx.shadowColor = '#ffdd00';
+          ctx.font = `bold 26px 'Courier New', monospace`;
+          ctx.fillText(`×${gs.combo} COMBO`, cw / 2, 36);
+          ctx.shadowBlur = 0;
+        }
+
+        ctx.textAlign = 'right';
+        for (let i = 0; i < 3; i++) {
+          ctx.fillStyle = i < gs.lives ? '#ff2d78' : '#2a1020';
+          ctx.shadowBlur = i < gs.lives ? 10 : 0;
+          ctx.shadowColor = '#ff2d78';
+          ctx.font = `20px 'Courier New', monospace`;
+          ctx.fillText('♥', cw - 16 - i * 30, 32);
+        }
+        ctx.shadowBlur = 0; ctx.textAlign = 'left';
+
+        if (gs.levelTimer < 5.5 && gs.phase === 'playing') {
+          const alpha = Math.min(1, (5.5 - gs.levelTimer) / 2);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = `rgba(180,180,180,${alpha})`;
+          ctx.font = `12px 'Courier New', monospace`;
+          ctx.fillText('Click each zone when its ring aligns with the dashed target ring!', cw / 2, ch - 12);
+        }
+      };
+
+      const drawTitle = (ctx, cw, ch, t) => {
+        ctx.textAlign = 'center';
+        const gr = ctx.createLinearGradient(cw / 2 - 200, 0, cw / 2 + 200, 0);
+        gr.addColorStop(0, '#ff2d78'); gr.addColorStop(0.5, '#00ffcc'); gr.addColorStop(1, '#a855f7');
+        ctx.fillStyle = gr;
+        ctx.shadowBlur = 28; ctx.shadowColor = '#00ffcc';
+        const fs = Math.min(72, cw * 0.13);
+        ctx.font = `bold ${fs}px 'Courier New', monospace`;
+        ctx.fillText('SYNC', cw / 2, ch * 0.26);
+        ctx.fillText('BURST', cw / 2, ch * 0.26 + fs + 8);
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#aaa';
+        const fs2 = Math.min(16, cw * 0.034);
+        ctx.font = `${fs2}px 'Courier New', monospace`;
+        ctx.fillText('Click each zone when its pulse ring matches the dashed target', cw / 2, ch * 0.52);
+        ctx.fillText('PERFECT · GOOD · OK — all reset the impatience meter', cw / 2, ch * 0.52 + fs2 + 6);
+        ctx.fillText('Zones drain a life if you ignore them too long!', cw / 2, ch * 0.52 + fs2 * 2 + 12);
+
+        const pulse = 0.65 + 0.35 * Math.sin(t * 3.2);
+        ctx.fillStyle = `rgba(0,255,204,${pulse})`;
+        ctx.font = `bold ${Math.min(24, cw * 0.048)}px 'Courier New', monospace`;
+        ctx.fillText('CLICK TO START', cw / 2, ch * 0.73);
+
+        ctx.fillStyle = '#444';
+        ctx.font = `${Math.min(14, cw * 0.028)}px 'Courier New', monospace`;
+        ctx.fillText(`High Score: ${gs.highScore}`, cw / 2, ch * 0.86);
+      };
+
+      const drawGameOver = (ctx, cw, ch, t) => {
+        ctx.fillStyle = 'rgba(0,0,0,0.78)';
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ff2d78';
+        ctx.shadowBlur = 22; ctx.shadowColor = '#ff2d78';
+        ctx.font = `bold ${Math.min(58, cw * 0.11)}px 'Courier New', monospace`;
+        ctx.fillText('GAME OVER', cw / 2, ch * 0.32);
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#00ffcc';
+        ctx.font = `${Math.min(28, cw * 0.056)}px 'Courier New', monospace`;
+        ctx.fillText(`Score: ${gs.score}`, cw / 2, ch * 0.46);
+
+        ctx.fillStyle = '#a855f7';
+        ctx.font = `${Math.min(20, cw * 0.04)}px 'Courier New', monospace`;
+        ctx.fillText(`Best Combo: ×${gs.maxCombo}`, cw / 2, ch * 0.56);
+        ctx.fillText(`High Score: ${gs.highScore}`, cw / 2, ch * 0.63);
+
+        const pulse = 0.6 + 0.4 * Math.sin(t * 3.5);
+        ctx.fillStyle = `rgba(255,255,255,${pulse})`;
+        ctx.font = `${Math.min(20, cw * 0.04)}px 'Courier New', monospace`;
+        ctx.fillText('CLICK TO PLAY AGAIN', cw / 2, ch * 0.77);
+      };
+
+      const animate = useCallback((ts) => {
+        const dt = Math.min((ts - (gs.lastTime || ts)) / 1000, 0.05);
+        gs.lastTime = ts;
+        gs.bgT += dt * 0.12;
+
+        if (gs.phase === 'playing') {
+          gs.levelTimer += dt;
+
+          gs.zones.forEach(z => {
+            z.phase = (z.phase + dt / z.period) % 1;
+            z.patience += z.patienceRate * dt;
+            if (z.flashTimer > 0) z.flashTimer -= dt;
+
+            if (z.patience >= 1) {
+              z.patience = 0;
+              gs.lives--;
+              gs.combo = 0;
+              spawnParts(z.x, z.y, '#ff2222', 18, 5);
+              gs.screenFlash = 0.6; gs.flashColor = '#ff0000';
+              playTone(120, 'sawtooth', 0.45, 0.55);
+              if (gs.lives <= 0) {
+                gs.phase = 'gameover';
+                if (gs.score > gs.highScore) {
+                  gs.highScore = gs.score;
+                  localStorage.setItem('syncBurstHigh', String(gs.highScore));
+                }
+              }
+            }
+          });
+
+          // Add a zone every ~22s up to 6
+          if (gs.levelTimer >= gs.nextZoneAt && gs.zones.length < 6) {
+            const cw = canvasRef.current?.width || 800;
+            const ch = canvasRef.current?.height || 600;
+            const n = gs.zones.length;
+            const extras = [
+              [cw * 0.50, ch * 0.18],
+              [cw * 0.15, ch * 0.50],
+              [cw * 0.85, ch * 0.50],
+            ];
+            const [nx, ny] = extras[n - 3] || [rand(110, cw - 110), rand(90, ch - 90)];
+            const nz = makeZone(n, nx, ny);
+            nz.period = rand(1.6, 2.8);
+            nz.patienceRate = 0.10 + (n - 3) * 0.012;
+            gs.zones.push(nz);
+            gs.nextZoneAt += 20;
+            spawnParts(nx, ny, ZONE_COLORS[n % ZONE_COLORS.length], 25, 5);
+          }
+
+          // Gradually increase pressure after 40s
+          if (gs.levelTimer > 40) {
+            gs.zones.forEach(z => {
+              z.patienceRate = Math.min(0.22, z.patienceRate + 0.00008 * dt);
+            });
+          }
+
+          if (gs.screenFlash > 0) gs.screenFlash -= dt * 2.2;
+        }
+
+        // Update particles (update first, then filter so draw always sees life > 0)
+        gs.particles.forEach(p => {
+          p.x += p.vx; p.y += p.vy;
+          p.vy += 0.06;
+          p.life -= p.decay;
+          p.size *= 0.979;
+        });
+        gs.particles = gs.particles.filter(p => p.life > 0);
+
+        draw();
+        rafRef.current = requestAnimationFrame(animate);
+      }, [draw]);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        resize();
+        window.addEventListener('resize', resize);
+        rafRef.current = requestAnimationFrame(animate);
+        return () => {
+          window.removeEventListener('resize', resize);
+          cancelAnimationFrame(rafRef.current);
+        };
+      }, [animate]);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          onClick={handleClick}
+          style={{ display: 'block', cursor: 'crosshair' }}
+        />
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<SyncBurst />);
+  </script>
+</body>
+</html>

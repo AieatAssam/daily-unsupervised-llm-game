@@ -810,5 +810,19 @@
     "folder": "games/2026-04-17",
     "file": "games/2026-04-17/index.html",
     "preview": "games/2026-04-17/preview.png"
+  },
+  {
+    "id": "2026-04-19",
+    "name": "Sync Burst",
+    "date": "2026-04-19",
+    "description": "Multiple neon pulse zones fill the screen, each expanding and contracting at its own rhythm — click each zone exactly when its ring aligns with the dashed target ring for PERFECT timing! Ignore a zone too long and it drains a life; chain consecutive precise hits for massive combo multipliers as new zones appear and pressure builds!",
+    "tagline": "Time the rings. Keep all zones alive. Chain the burst!",
+    "tags": ["timing", "multitasking", "reflex", "arcade", "rhythm"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a zone when its pulse ring aligns with the dashed target ring",
+    "folder": "games/2026-04-19",
+    "file": "games/2026-04-19/index.html",
+    "preview": "games/2026-04-19/preview.png"
   }
 ]
