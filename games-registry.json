@@ -812,6 +812,20 @@
     "preview": "games/2026-04-17/preview.png"
   },
   {
+    "id": "2026-04-20",
+    "name": "Tilt Rush",
+    "date": "2026-04-20",
+    "description": "Move your mouse left and right to tilt a glowing neon balance beam — keep falling neon blocks from sliding off! More blocks balanced at once means bigger combo multipliers and higher scores.",
+    "tagline": "Tilt the beam. Keep the balance. Don't let them fall!",
+    "tags": ["balance", "physics", "reflex", "casual", "arcade"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse left/right to tilt the beam | Drag finger on mobile",
+    "folder": "games/2026-04-20",
+    "file": "games/2026-04-20/index.html",
+    "preview": "games/2026-04-20/preview.png"
+  },
+  {
     "id": "2026-04-19",
     "name": "Sync Burst",
     "date": "2026-04-19",
