@@ -826,6 +826,20 @@
     "preview": "games/2026-04-20/preview.png"
   },
   {
+    "id": "2026-04-21",
+    "name": "Storm Dash",
+    "date": "2026-04-21",
+    "description": "Tap anywhere to instantly teleport your neon orb away from incoming lightning bolts — warning lines flash before each strike so you must react fast! Collect glowing cyan gems for combo-multiplied points while dodging an ever-thickening storm.",
+    "tagline": "Teleport to survive. Collect the gems. Outrun the storm!",
+    "tags": ["reflex", "action", "dodge", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap anywhere to instantly teleport your orb — dodge lightning, collect cyan gems",
+    "folder": "games/2026-04-21",
+    "file": "games/2026-04-21/index.html",
+    "preview": "games/2026-04-21/preview.png"
+  },
+  {
     "id": "2026-04-19",
     "name": "Sync Burst",
     "date": "2026-04-19",
