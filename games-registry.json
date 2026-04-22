@@ -852,5 +852,19 @@
     "folder": "games/2026-04-19",
     "file": "games/2026-04-19/index.html",
     "preview": "games/2026-04-19/preview.png"
+  },
+  {
+    "id": "2026-04-22",
+    "name": "Neon Slide",
+    "date": "2026-04-22",
+    "description": "Slide glowing neon tiles back into order 1–8 on a 3×3 grid before the countdown expires — earn time bonuses for quick solves, chain consecutive completions for massive combo multipliers, and race through escalating levels as the puzzle shuffles deeper each round!",
+    "tagline": "Slide the chaos. Solve the grid. Beat the clock!",
+    "tags": ["puzzle", "sliding", "strategy", "casual", "logic"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a tile adjacent to the empty gap to slide it into place",
+    "folder": "games/2026-04-22",
+    "file": "games/2026-04-22/index.html",
+    "preview": "games/2026-04-22/preview.png"
   }
 ]
