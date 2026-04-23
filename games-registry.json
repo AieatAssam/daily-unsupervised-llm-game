@@ -866,5 +866,19 @@
     "folder": "games/2026-04-22",
     "file": "games/2026-04-22/index.html",
     "preview": "games/2026-04-22/preview.png"
+  },
+  {
+    "id": "2026-04-23",
+    "name": "Fuse Rush",
+    "date": "2026-04-23",
+    "description": "Multiple neon bombs tick down simultaneously — click them in order of shortest fuse first to defuse! Wrong order or letting any bomb explode costs a life. Chain defusals for massive combo multipliers as more bombs spawn and fuses shorten each level!",
+    "tagline": "Click the shortest fuse first. Don't let them blow!",
+    "tags": ["reflex", "strategy", "action", "arcade", "priority"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap the bomb with the shortest time remaining first — defuse in urgency order!",
+    "folder": "games/2026-04-23",
+    "file": "games/2026-04-23/index.html",
+    "preview": "games/2026-04-23/preview.png"
   }
 ]
