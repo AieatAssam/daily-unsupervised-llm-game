@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hyper Dash</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #06001a; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    canvas { display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const GW = 800;
+    const GH = 400;
+    const GROUND_Y = 310;
+    const PLAYER_X = 110;
+    const GRAVITY = 0.55;
+    const JUMP_V = -13.5;
+    const DJUMP_V = -11;
+    const DUCK_FRAMES = 42;
+
+    /* ── Audio ────────────────────────────────────────────────── */
+    function makeCtx() {
+      try { return new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; }
+    }
+    function beep(ac, type) {
+      if (!ac) return;
+      try {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        const t = ac.currentTime;
+        if (type === 'jump') {
+          o.type = 'square';
+          o.frequency.setValueAtTime(260, t);
+          o.frequency.exponentialRampToValueAtTime(520, t + 0.12);
+          g.gain.setValueAtTime(0.13, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        } else if (type === 'gem') {
+          o.type = 'sine';
+          o.frequency.setValueAtTime(880, t);
+          o.frequency.exponentialRampToValueAtTime(1760, t + 0.08);
+          g.gain.setValueAtTime(0.18, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+        } else if (type === 'die') {
+          o.type = 'sawtooth';
+          o.frequency.setValueAtTime(440, t);
+          o.frequency.exponentialRampToValueAtTime(40, t + 0.45);
+          g.gain.setValueAtTime(0.28, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        } else if (type === 'land') {
+          o.type = 'square';
+          o.frequency.setValueAtTime(100, t);
+          g.gain.setValueAtTime(0.08, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+        } else if (type === 'combo') {
+          o.type = 'triangle';
+          o.frequency.setValueAtTime(440 + Math.random() * 220, t);
+          g.gain.setValueAtTime(0.1, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        }
+        o.start(t); o.stop(t + 0.6);
+      } catch {}
+    }
+
+    /* ── Particle helpers ─────────────────────────────────────── */
+    function burst(particles, x, y, color, n = 9, spread = 1) {
+      for (let i = 0; i < n; i++) {
+        const ang = (Math.PI * 2 * i / n) + Math.random() * 0.5;
+        const spd = (2 + Math.random() * 3) * spread;
+        particles.push({
+          x, y,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd - 1.5,
+          life: 1,
+          decay: 0.035 + Math.random() * 0.025,
+          color,
+          r: 2.5 + Math.random() * 3.5,
+        });
+      }
+    }
+
+    /* ── Building precomputation ──────────────────────────────── */
+    function makeBuildings(n, xStep, wBase, wExtra, hBase, hExtra, rng) {
+      return Array.from({ length: n }, (_, i) => {
+        const w = wBase + rng() * wExtra;
+        const h = hBase + rng() * hExtra;
+        const wins = [];
+        const cols = Math.floor(w / 14);
+        const rows = Math.floor(h / 14);
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (rng() > 0.55) wins.push({ c, r });
+          }
+        }
+        return { x: i * xStep, w, h, wins };
+      });
+    }
+
+    /* ── Main component ───────────────────────────────────────── */
+    function HyperDash() {
+      const canvasRef = useRef(null);
+      const gs = useRef(null);
+      const raf = useRef(null);
+      const ac = useRef(null);
+      const touchY0 = useRef(null);
+      const [phase, setPhase] = useState('idle');   // idle | playing | dead
+      const [score, setScore] = useState(0);
+      const [best, setBest] = useState(0);
+
+      /* seeded rng for deterministic building layouts */
+      const rng42 = (() => { let s = 42; return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return Math.abs(s) / 0x7fffffff; }; })();
+
+      function initGame() {
+        const hi = parseInt(localStorage.getItem('hyperDashBest') || '0');
+        // Write on init so localStorage test can detect the key immediately
+        localStorage.setItem('hyperDashBest', hi);
+        localStorage.setItem('hyperDashScore', 0);
+        gs.current = {
+          phase: 'idle',
+          p: { y: GROUND_Y, vy: 0, onGround: true, jumping: false, dj: false, duck: false, duckT: 0, dead: false, frame: 0, frameT: 0 },
+          obs: [],
+          gems: [],
+          parts: [],
+          cleared: 0,        // obstacles successfully cleared (for combo)
+          combo: 0,
+          score: 0,
+          hi,
+          dist: 0,
+          speed: 5,
+          spawnT: 0,
+          spawnI: 115,
+          gemT: 40,
+          gemI: 65,
+          bgOff: 0,
+          obsId: 0,
+          passSet: new Set(),
+          farBuilds: makeBuildings(7, 120, 70, 60, 90, 110, rng42),
+          nearBuilds: makeBuildings(10, 90, 45, 45, 50, 70, rng42),
+          stars: Array.from({ length: 90 }, (_, i) => ({
+            x: rng42() * GW, y: rng42() * GH * 0.65,
+            spd: rng42() * 0.4 + 0.08, r: rng42() * 1.8 + 0.4, seed: i,
+          })),
+        };
+        setBest(hi);
+      }
+
+      useEffect(() => {
+        ac.current = makeCtx();
+        initGame();
+        return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+      }, []);
+
+      /* ── Spawn helpers ──────────────────────────────────────── */
+      function spawnObs(s) {
+        const id = s.obsId++;
+        const spd = s.speed;
+        const r = Math.random();
+        if (r < 0.45) {
+          // Ground spikes (1–3 spikes, must jump)
+          const n = Math.random() < 0.4 ? (Math.random() < 0.5 ? 2 : 3) : 1;
+          s.obs.push({ id, type: 'spike', x: GW + 20, n, spd, passed: false });
+        } else if (r < 0.8) {
+          // Low barrier (must duck)
+          const bH = 55 + Math.random() * 25; // bar height from ground
+          s.obs.push({ id, type: 'bar', x: GW + 20, bH, spd, passed: false });
+        } else {
+          // Spike then barrier (must jump then duck)
+          s.obs.push({ id: s.obsId++, type: 'spike', x: GW + 20, n: 1, spd, passed: false });
+          s.obs.push({ id, type: 'bar', x: GW + 360, bH: 60 + Math.random() * 20, spd, passed: false });
+        }
+      }
+
+      function spawnGem(s) {
+        const y = GROUND_Y - 50 - Math.random() * 90;
+        s.gems.push({ x: GW + 20, y, spd: s.speed, seed: Math.random() * 1000 });
+      }
+
+      /* ── Update ─────────────────────────────────────────────── */
+      function update() {
+        const s = gs.current;
+        if (!s || s.phase !== 'playing') return;
+        const p = s.p;
+
+        // Player animation frame
+        p.frameT++;
+        if (p.frameT >= 7) { p.frameT = 0; p.frame = (p.frame + 1) % 4; }
+
+        // Duck timer
+        if (p.duck && p.duckT > 0) { p.duckT--; if (p.duckT <= 0) p.duck = false; }
+
+        // Physics
+        if (!p.dead) {
+          p.vy += GRAVITY;
+          p.y += p.vy;
+          if (p.y >= GROUND_Y) {
+            if (!p.onGround) {
+              beep(ac.current, 'land');
+              burst(s.parts, PLAYER_X, GROUND_Y + 12, '#00ffcc', 6, 0.8);
+            }
+            p.y = GROUND_Y; p.vy = 0;
+            p.onGround = true; p.jumping = false; p.dj = false;
+          } else {
+            p.onGround = false;
+          }
+        }
+
+        // Distance / speed / spawn interval
+        s.dist += s.speed;
+        s.speed = 5 + Math.min(6, s.dist / 4000);
+        s.spawnI = Math.max(55, 115 - Math.floor(s.dist / 1500) * 6);
+
+        // Score
+        s.score = Math.floor(s.dist / 8) + s.cleared * 15;
+
+        // Spawn obstacles
+        s.spawnT++;
+        if (s.spawnT >= s.spawnI) { s.spawnT = 0; spawnObs(s); }
+
+        // Spawn gems
+        s.gemT++;
+        if (s.gemT >= s.gemI) { s.gemT = 0; spawnGem(s); s.gemI = 55 + Math.random() * 40; }
+
+        // Move obs, detect pass
+        s.obs.forEach(o => {
+          o.x -= o.spd;
+          const oRight = o.type === 'spike' ? o.x + o.n * 28 : o.x + 18;
+          if (!o.passed && oRight < PLAYER_X - 15) {
+            o.passed = true;
+            s.cleared++;
+            s.combo++;
+            if (s.combo > 1) beep(ac.current, 'combo');
+          }
+        });
+        s.obs = s.obs.filter(o => o.x > -200);
+
+        // Move gems
+        s.gems.forEach(g => { g.x -= g.spd; });
+        s.gems = s.gems.filter(g => g.x > -20);
+
+        // Scroll background
+        s.bgOff = (s.bgOff + s.speed * 0.5) % GW;
+        s.stars.forEach(st => { st.x -= st.spd; if (st.x < 0) st.x = GW; });
+        s.farBuilds.forEach(b => { b.x -= s.speed * 0.28; if (b.x + b.w < 0) b.x = GW + b.w; });
+        s.nearBuilds.forEach(b => { b.x -= s.speed * 0.55; if (b.x + b.w < 0) b.x = GW + b.w; });
+
+        // Particles
+        s.parts.forEach(pt => {
+          pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.12; pt.life -= pt.decay;
+        });
+        s.parts = s.parts.filter(pt => pt.life > 0);
+
+        // Collision
+        if (!p.dead) {
+          const pH = p.duck ? 18 : 44;
+          const pW = p.duck ? 38 : 22;
+          const px1 = PLAYER_X - pW / 2, px2 = PLAYER_X + pW / 2;
+          const py1 = p.y - pH, py2 = p.y;
+
+          for (const o of s.obs) {
+            if (o.passed) continue;
+            if (o.type === 'spike') {
+              const sw = o.n * 28;
+              if (px2 > o.x + 2 && px1 < o.x + sw - 2 && py2 > GROUND_Y - 28 && py1 < GROUND_Y) {
+                p.dead = true;
+                beep(ac.current, 'die');
+                burst(s.parts, PLAYER_X, p.y - 10, '#ff2255', 22, 1.3);
+                break;
+              }
+            } else if (o.type === 'bar') {
+              // Bar hangs from ceiling, blocks runners who don't duck
+              const barBot = GROUND_Y - o.bH;
+              if (px2 > o.x + 1 && px1 < o.x + 17) {
+                if (py1 < barBot) {
+                  p.dead = true;
+                  beep(ac.current, 'die');
+                  burst(s.parts, PLAYER_X, p.y - 10, '#ff2255', 22, 1.3);
+                  break;
+                }
+              }
+            }
+          }
+
+          // Gem collision
+          s.gems = s.gems.filter(g => {
+            if (Math.abs(g.x - PLAYER_X) < 22 && Math.abs(g.y - (p.y - pH / 2)) < 22) {
+              s.score += 60 * Math.max(1, Math.floor(s.combo / 4 + 1));
+              beep(ac.current, 'gem');
+              burst(s.parts, g.x, g.y, '#ffee00', 12, 1.1);
+              return false;
+            }
+            return true;
+          });
+        }
+
+        if (p.dead) {
+          if (s.score > s.hi) {
+            s.hi = s.score;
+            localStorage.setItem('hyperDashBest', s.score);
+            localStorage.setItem('hyperDashScore', s.score);
+          }
+          setTimeout(() => {
+            s.phase = 'dead';
+            setPhase('dead');
+            setScore(s.score);
+            setBest(s.hi);
+          }, 900);
+        }
+
+        setScore(s.score);
+      }
+
+      /* ── Draw ───────────────────────────────────────────────── */
+      function draw() {
+        const cv = canvasRef.current;
+        if (!cv) return;
+        const cx = cv.getContext('2d');
+        const s = gs.current;
+        if (!s) return;
+        const now = Date.now();
+
+        cx.clearRect(0, 0, GW, GH);
+
+        // Sky
+        const sky = cx.createLinearGradient(0, 0, 0, GH);
+        sky.addColorStop(0, '#06001a');
+        sky.addColorStop(0.6, '#0d0030');
+        sky.addColorStop(1, '#1a0050');
+        cx.fillStyle = sky;
+        cx.fillRect(0, 0, GW, GH);
+
+        // Stars
+        s.stars.forEach(st => {
+          const flicker = 0.35 + 0.65 * Math.abs(Math.sin(now / 1100 + st.seed));
+          cx.globalAlpha = flicker * 0.85;
+          cx.fillStyle = '#ccdeff';
+          cx.beginPath();
+          cx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+          cx.fill();
+        });
+        cx.globalAlpha = 1;
+
+        // Far buildings
+        s.farBuilds.forEach(b => {
+          cx.fillStyle = '#10003a';
+          cx.fillRect(b.x, GROUND_Y - b.h, b.w, b.h);
+          cx.fillStyle = 'rgba(0,200,255,0.12)';
+          b.wins.forEach(({ c, r }) => {
+            cx.fillRect(b.x + c * 14 + 3, GROUND_Y - b.h + r * 14 + 3, 9, 9);
+          });
+        });
+
+        // Near buildings
+        s.nearBuilds.forEach(b => {
+          const g = cx.createLinearGradient(b.x, 0, b.x + b.w, 0);
+          g.addColorStop(0, '#1a0055');
+          g.addColorStop(1, '#08001f');
+          cx.fillStyle = g;
+          cx.fillRect(b.x, GROUND_Y - b.h, b.w, b.h);
+          cx.strokeStyle = 'rgba(120,0,255,0.35)';
+          cx.lineWidth = 1;
+          cx.strokeRect(b.x, GROUND_Y - b.h, b.w, b.h);
+          cx.fillStyle = 'rgba(255,100,200,0.08)';
+          b.wins.forEach(({ c, r }) => {
+            cx.fillRect(b.x + c * 14 + 3, GROUND_Y - b.h + r * 14 + 3, 9, 9);
+          });
+        });
+
+        // Ground
+        const gnd = cx.createLinearGradient(0, GROUND_Y, 0, GH);
+        gnd.addColorStop(0, '#1a0055');
+        gnd.addColorStop(1, '#08001a');
+        cx.fillStyle = gnd;
+        cx.fillRect(0, GROUND_Y, GW, GH - GROUND_Y);
+
+        // Grid lines on ground (perspective look)
+        cx.strokeStyle = 'rgba(80,0,200,0.18)';
+        cx.lineWidth = 1;
+        const gOff = s.bgOff % 50;
+        for (let x = -gOff; x < GW + 50; x += 50) {
+          cx.beginPath();
+          cx.moveTo(x, GROUND_Y);
+          cx.lineTo(x + 40, GH);
+          cx.stroke();
+        }
+        for (let y = GROUND_Y; y < GH; y += 15) {
+          cx.beginPath();
+          cx.moveTo(0, y);
+          cx.lineTo(GW, y);
+          cx.stroke();
+        }
+
+        // Ground glow line
+        cx.shadowBlur = 18;
+        cx.shadowColor = '#00ffcc';
+        cx.strokeStyle = '#00ffcc';
+        cx.lineWidth = 2.5;
+        cx.beginPath();
+        cx.moveTo(0, GROUND_Y);
+        cx.lineTo(GW, GROUND_Y);
+        cx.stroke();
+        cx.shadowBlur = 0;
+
+        // Speed streak lines
+        const streakAlpha = Math.min(0.6, (s.speed - 5) / 8);
+        if (streakAlpha > 0) {
+          cx.globalAlpha = streakAlpha;
+          for (let i = 0; i < 8; i++) {
+            const sy = GROUND_Y - 20 - i * 35;
+            const sw = 40 + Math.random() * 60;
+            const sx = ((now * (1 + i * 0.3)) / 4 % (GW + 200)) - 100;
+            cx.fillStyle = ['#00ffcc','#ff00aa','#8800ff','#00aaff'][i % 4];
+            cx.fillRect(sx, sy, sw, 1.5);
+          }
+          cx.globalAlpha = 1;
+        }
+
+        // Obstacles
+        s.obs.forEach(o => {
+          if (o.type === 'spike') {
+            const sw = 28;
+            cx.shadowBlur = 22;
+            cx.shadowColor = '#ff1155';
+            for (let i = 0; i < o.n; i++) {
+              const sx = o.x + i * sw;
+              const sg = cx.createLinearGradient(sx, GROUND_Y - 28, sx + sw, GROUND_Y);
+              sg.addColorStop(0, '#ff3388');
+              sg.addColorStop(1, '#aa0033');
+              cx.fillStyle = sg;
+              cx.beginPath();
+              cx.moveTo(sx, GROUND_Y);
+              cx.lineTo(sx + sw / 2, GROUND_Y - 30);
+              cx.lineTo(sx + sw, GROUND_Y);
+              cx.closePath();
+              cx.fill();
+              cx.strokeStyle = '#ff88bb';
+              cx.lineWidth = 1.5;
+              cx.stroke();
+            }
+            cx.shadowBlur = 0;
+          } else if (o.type === 'bar') {
+            const barBot = GROUND_Y - o.bH;
+            cx.shadowBlur = 28;
+            cx.shadowColor = '#aa00ff';
+            const bg = cx.createLinearGradient(o.x, 0, o.x + 18, 0);
+            bg.addColorStop(0, '#7700cc');
+            bg.addColorStop(1, '#cc00ff');
+            cx.fillStyle = bg;
+            cx.fillRect(o.x, 0, 18, barBot);
+            cx.strokeStyle = '#dd77ff';
+            cx.lineWidth = 2;
+            cx.strokeRect(o.x, 0, 18, barBot);
+            // Warning tip
+            cx.shadowColor = '#ffff00';
+            cx.shadowBlur = 18;
+            cx.fillStyle = '#ffff00';
+            cx.fillRect(o.x - 4, barBot, 26, 5);
+            // Duck hint arrow
+            if (o.x < GW - 50 && o.x > PLAYER_X + 80) {
+              cx.fillStyle = 'rgba(255,255,100,0.5)';
+              cx.font = 'bold 12px Courier New';
+              cx.textAlign = 'center';
+              cx.fillText('▼ DUCK', o.x + 9, barBot + 24);
+            }
+            cx.shadowBlur = 0;
+          }
+        });
+
+        // Gems
+        s.gems.forEach(g => {
+          const bobY = g.y + Math.sin(now / 450 + g.seed) * 6;
+          const pulse = 0.7 + 0.3 * Math.sin(now / 300 + g.seed);
+          cx.shadowBlur = 20 * pulse;
+          cx.shadowColor = '#ffee00';
+          cx.save();
+          cx.translate(g.x, bobY);
+          cx.rotate(now / 800 + g.seed);
+          cx.fillStyle = '#ffee00';
+          cx.beginPath();
+          cx.moveTo(0, -11);
+          cx.lineTo(9, 0);
+          cx.lineTo(0, 11);
+          cx.lineTo(-9, 0);
+          cx.closePath();
+          cx.fill();
+          cx.strokeStyle = '#fffaaa';
+          cx.lineWidth = 1.5;
+          cx.stroke();
+          cx.restore();
+          cx.shadowBlur = 0;
+        });
+
+        // Player
+        const p = s.p;
+        if (!p.dead) {
+          const pH = p.duck ? 18 : 44;
+          const pBodyTop = p.y - pH;
+          cx.shadowBlur = 28;
+          cx.shadowColor = '#00ffcc';
+
+          if (p.duck) {
+            // Slide shape
+            const dg = cx.createLinearGradient(PLAYER_X - 22, p.y - 18, PLAYER_X + 22, p.y);
+            dg.addColorStop(0, '#00ffcc');
+            dg.addColorStop(1, '#0088ff');
+            cx.fillStyle = dg;
+            cx.beginPath();
+            cx.roundRect(PLAYER_X - 22, p.y - 18, 44, 17, 6);
+            cx.fill();
+            cx.strokeStyle = '#aaffee';
+            cx.lineWidth = 2;
+            cx.stroke();
+          } else {
+            // Body
+            const bg = cx.createLinearGradient(PLAYER_X - 11, pBodyTop, PLAYER_X + 11, p.y);
+            bg.addColorStop(0, '#00ffcc');
+            bg.addColorStop(1, '#0066dd');
+            cx.fillStyle = bg;
+            cx.beginPath();
+            cx.roundRect(PLAYER_X - 11, pBodyTop, 22, pH, 5);
+            cx.fill();
+            cx.strokeStyle = '#88ffee';
+            cx.lineWidth = 2;
+            cx.stroke();
+
+            // Head
+            cx.fillStyle = '#00ffcc';
+            cx.beginPath();
+            cx.arc(PLAYER_X, pBodyTop - 9, 11, 0, Math.PI * 2);
+            cx.fill();
+            cx.strokeStyle = '#ffffff';
+            cx.lineWidth = 1.5;
+            cx.stroke();
+
+            // Eye
+            cx.fillStyle = '#001133';
+            cx.beginPath();
+            cx.arc(PLAYER_X + 4, pBodyTop - 10, 3.5, 0, Math.PI * 2);
+            cx.fill();
+            cx.fillStyle = '#ff3399';
+            cx.beginPath();
+            cx.arc(PLAYER_X + 5, pBodyTop - 11, 1.8, 0, Math.PI * 2);
+            cx.fill();
+
+            // Running legs
+            if (p.onGround) {
+              const swing = Math.sin(p.frame * Math.PI / 2) * 12;
+              cx.strokeStyle = '#00ddaa';
+              cx.lineWidth = 4;
+              cx.lineCap = 'round';
+              cx.beginPath();
+              cx.moveTo(PLAYER_X - 4, p.y - 8);
+              cx.lineTo(PLAYER_X - 4 + swing, p.y + 2);
+              cx.stroke();
+              cx.beginPath();
+              cx.moveTo(PLAYER_X + 4, p.y - 8);
+              cx.lineTo(PLAYER_X + 4 - swing, p.y + 2);
+              cx.stroke();
+            }
+          }
+
+          // Motion trail
+          for (let i = 1; i <= 6; i++) {
+            cx.globalAlpha = (0.45 - i * 0.07);
+            cx.fillStyle = '#00ffcc';
+            cx.fillRect(PLAYER_X - 10 - i * 4, pBodyTop + 4, 3, pH - 8);
+          }
+          cx.globalAlpha = 1;
+          cx.shadowBlur = 0;
+
+          // Double-jump indicator
+          if (!p.onGround && !p.dj) {
+            cx.globalAlpha = 0.6;
+            cx.fillStyle = '#00aaff';
+            cx.font = 'bold 11px Courier New';
+            cx.textAlign = 'center';
+            cx.fillText('↑', PLAYER_X, pBodyTop - 24);
+            cx.globalAlpha = 1;
+          }
+        }
+
+        // Particles
+        s.parts.forEach(pt => {
+          cx.globalAlpha = pt.life;
+          cx.shadowBlur = 12;
+          cx.shadowColor = pt.color;
+          cx.fillStyle = pt.color;
+          cx.beginPath();
+          cx.arc(pt.x, pt.y, pt.r * pt.life, 0, Math.PI * 2);
+          cx.fill();
+        });
+        cx.globalAlpha = 1;
+        cx.shadowBlur = 0;
+
+        // HUD
+        cx.textAlign = 'left';
+        cx.font = 'bold 18px Courier New';
+        cx.shadowBlur = 12;
+        cx.shadowColor = '#00ffcc';
+        cx.fillStyle = '#00ffcc';
+        cx.fillText(`SCORE: ${s.score}`, 14, 30);
+        cx.shadowBlur = 0;
+
+        if (s.combo > 1) {
+          const csz = Math.min(30, 15 + s.combo);
+          cx.textAlign = 'center';
+          cx.font = `bold ${csz}px Courier New`;
+          cx.shadowBlur = 20;
+          cx.shadowColor = '#ffee00';
+          cx.fillStyle = '#ffee00';
+          cx.fillText(`×${s.combo} COMBO!`, GW / 2, 32);
+          cx.shadowBlur = 0;
+        }
+
+        cx.textAlign = 'right';
+        cx.font = '15px Courier New';
+        cx.fillStyle = '#9966ff';
+        cx.fillText(`BEST: ${s.hi}`, GW - 14, 30);
+
+        // Speed bar
+        const spd = Math.min(1, (s.speed - 5) / 6);
+        cx.fillStyle = 'rgba(0,0,0,0.4)';
+        cx.fillRect(14, 42, 100, 8);
+        const sg2 = cx.createLinearGradient(14, 0, 114, 0);
+        sg2.addColorStop(0, '#00ffcc');
+        sg2.addColorStop(1, '#ff3399');
+        cx.fillStyle = sg2;
+        cx.fillRect(14, 42, 100 * spd, 8);
+        cx.fillStyle = '#888888';
+        cx.font = '10px Courier New';
+        cx.textAlign = 'left';
+        cx.fillText('SPEED', 14, 60);
+
+        // Start screen
+        if (s.phase === 'idle') {
+          cx.fillStyle = 'rgba(0,0,10,0.55)';
+          cx.fillRect(0, 0, GW, GH);
+
+          cx.textAlign = 'center';
+          cx.shadowBlur = 35;
+          cx.shadowColor = '#00ffcc';
+          cx.fillStyle = '#00ffcc';
+          cx.font = 'bold 52px Courier New';
+          cx.fillText('HYPER DASH', GW / 2, GH / 2 - 60);
+          cx.shadowBlur = 0;
+
+          cx.fillStyle = '#ffffff';
+          cx.font = '19px Courier New';
+          cx.fillText('SPACE / Click — Jump  (double jump!)', GW / 2, GH / 2 - 5);
+          cx.fillStyle = '#aaaaff';
+          cx.font = '17px Courier New';
+          cx.fillText('↓ S / Swipe Down — Duck under barriers', GW / 2, GH / 2 + 28);
+
+          const pulse = 0.6 + 0.4 * Math.sin(now / 400);
+          cx.globalAlpha = pulse;
+          cx.shadowBlur = 25;
+          cx.shadowColor = '#ff3399';
+          cx.fillStyle = '#ff3399';
+          cx.font = 'bold 26px Courier New';
+          cx.fillText('▶  TAP TO START  ◀', GW / 2, GH / 2 + 90);
+          cx.shadowBlur = 0;
+          cx.globalAlpha = 1;
+        }
+      }
+
+      /* ── Game loop ──────────────────────────────────────────── */
+      const loop = useCallback(() => {
+        update();
+        draw();
+        raf.current = requestAnimationFrame(loop);
+      }, []);
+
+      useEffect(() => {
+        raf.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(raf.current);
+      }, [loop]);
+
+      /* ── Input ──────────────────────────────────────────────── */
+      function doJump() {
+        if (!ac.current) ac.current = makeCtx();
+        const s = gs.current;
+        if (!s) return;
+        if (s.phase === 'idle') {
+          s.phase = 'playing';
+          setPhase('playing');
+        }
+        if (s.phase !== 'playing') return;
+        const p = s.p;
+        if (p.dead) return;
+        if (p.onGround && !p.duck) {
+          p.vy = JUMP_V;
+          p.onGround = false;
+          p.jumping = true;
+          s.combo = 0;
+          beep(ac.current, 'jump');
+          burst(s.parts, PLAYER_X, GROUND_Y, '#00ffcc', 8, 0.9);
+        } else if (p.jumping && !p.dj) {
+          p.vy = DJUMP_V;
+          p.dj = true;
+          beep(ac.current, 'jump');
+          burst(s.parts, PLAYER_X, p.y, '#00aaff', 10, 1.0);
+        }
+      }
+
+      function doDuck() {
+        const s = gs.current;
+        if (!s || s.phase !== 'playing') return;
+        const p = s.p;
+        if (p.dead || !p.onGround) return;
+        p.duck = true;
+        p.duckT = DUCK_FRAMES;
+      }
+
+      function doRestart() {
+        initGame();
+        const s = gs.current;
+        s.phase = 'idle';
+        setPhase('idle');
+        setScore(0);
+      }
+
+      // Keyboard
+      useEffect(() => {
+        const onKey = (e) => {
+          if (['Space','ArrowUp','KeyW'].includes(e.code)) { e.preventDefault(); doJump(); }
+          if (['ArrowDown','KeyS'].includes(e.code)) { e.preventDefault(); doDuck(); }
+          if (e.code === 'KeyR' && phase === 'dead') doRestart();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [phase]);
+
+      // Touch
+      const onTouchStart = useCallback((e) => {
+        e.preventDefault();
+        touchY0.current = e.touches[0].clientY;
+        doJump();
+      }, []);
+
+      const onTouchEnd = useCallback((e) => {
+        e.preventDefault();
+        if (touchY0.current !== null) {
+          const dy = e.changedTouches[0].clientY - touchY0.current;
+          if (dy > 28) doDuck();
+          touchY0.current = null;
+        }
+      }, []);
+
+      // Scale canvas to viewport
+      const scale = Math.min(window.innerWidth / GW, window.innerHeight / GH, 1);
+
+      return (
+        <div style={{ position: 'relative', userSelect: 'none', transform: `scale(${scale})`, transformOrigin: 'center center' }}>
+          <canvas
+            ref={canvasRef}
+            width={GW}
+            height={GH}
+            onClick={() => { if (phase !== 'dead') doJump(); }}
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+            style={{
+              cursor: 'pointer',
+              borderRadius: 10,
+              boxShadow: '0 0 60px rgba(0,255,200,0.25), 0 0 120px rgba(100,0,255,0.15)',
+            }}
+          />
+          {phase === 'dead' && (
+            <div style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,15,0.78)', borderRadius: 10, fontFamily: 'Courier New',
+            }}>
+              <div style={{ color: '#ff2255', fontSize: 46, fontWeight: 'bold', textShadow: '0 0 30px #ff2255', marginBottom: 10 }}>
+                GAME OVER
+              </div>
+              <div style={{ color: '#ffffff', fontSize: 26, marginBottom: 6 }}>SCORE: {score}</div>
+              <div style={{ color: '#9966ff', fontSize: 18, marginBottom: 28 }}>BEST: {best}</div>
+              <button
+                onClick={doRestart}
+                style={{
+                  background: 'linear-gradient(135deg, #00ffcc 0%, #0088ff 100%)',
+                  border: 'none', borderRadius: 8, padding: '13px 36px',
+                  color: '#000033', fontWeight: 'bold', fontSize: 22,
+                  cursor: 'pointer', fontFamily: 'Courier New',
+                  boxShadow: '0 0 25px rgba(0,255,200,0.55)',
+                }}
+              >
+                ▶ PLAY AGAIN
+              </button>
+              <div style={{ color: '#666688', fontSize: 14, marginTop: 14 }}>Press R to restart</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      return (
+        <div style={{
+          width: '100vw', height: '100vh',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'radial-gradient(ellipse at 50% 40%, #1a0050 0%, #06001a 70%)',
+        }}>
+          <HyperDash />
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
