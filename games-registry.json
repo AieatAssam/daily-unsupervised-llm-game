@@ -880,5 +880,19 @@
     "folder": "games/2026-04-23",
     "file": "games/2026-04-23/index.html",
     "preview": "games/2026-04-23/preview.png"
+  },
+  {
+    "id": "2026-04-24",
+    "name": "Hyper Dash",
+    "date": "2026-04-24",
+    "description": "An auto-running neon sprinter dodges red spike clusters by jumping (with double-jump!) and slides under purple ceiling barriers — chain clean obstacle clears for massive combo multipliers and collect glowing diamonds as speed escalates to warp level!",
+    "tagline": "Jump the spikes. Duck the barriers. Never stop running!",
+    "tags": ["runner", "reflex", "action", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Space / Click to jump (double-jump available) · ↓ / S to duck | Tap to jump, swipe down to duck on mobile",
+    "folder": "games/2026-04-24",
+    "file": "games/2026-04-24/index.html",
+    "preview": "games/2026-04-24/preview.png"
   }
 ]
