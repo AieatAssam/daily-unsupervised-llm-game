@@ -894,5 +894,19 @@
     "folder": "games/2026-04-24",
     "file": "games/2026-04-24/index.html",
     "preview": "games/2026-04-24/preview.png"
+  },
+  {
+    "id": "2026-04-25",
+    "name": "Neon Puck",
+    "date": "2026-04-25",
+    "description": "Move your mouse to control a glowing cyan paddle in neon air hockey against an escalating AI — angle your shots to thread the goal, collect power-ups for wide paddles and speed boosts, and chain consecutive goals for massive combo multipliers across endless rounds!",
+    "tagline": "Slide the puck. Score the goal. Beat the AI!",
+    "tags": ["action", "physics", "arcade", "reflex", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Move mouse or drag finger to steer your paddle · W = Wide paddle · F = Fast puck · S = Slow AI (collect mid-table power-ups)",
+    "folder": "games/2026-04-25",
+    "file": "games/2026-04-25/index.html",
+    "preview": "games/2026-04-25/preview.png"
   }
 ]
