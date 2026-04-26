@@ -908,5 +908,19 @@
     "folder": "games/2026-04-25",
     "file": "games/2026-04-25/index.html",
     "preview": "games/2026-04-25/preview.png"
+  },
+  {
+    "id": "2026-04-26",
+    "name": "Chroma Shift",
+    "date": "2026-04-26",
+    "description": "A neon orb hurtles through colorful gates — switch your orb's color to match each incoming gate before it hits you! Chain correct color matches for massive combo multipliers as gates speed up and spawn faster each level!",
+    "tagline": "Shift your color. Match the gate. Chain the combos!",
+    "tags": ["reflex", "color", "reaction", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Press 1 2 3 4 to switch orb color · ↑ / ↓ arrows cycle colors | Tap color buttons on mobile",
+    "folder": "games/2026-04-26",
+    "file": "games/2026-04-26/index.html",
+    "preview": "games/2026-04-26/preview.png"
   }
 ]
