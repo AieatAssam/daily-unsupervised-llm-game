@@ -922,5 +922,19 @@
     "folder": "games/2026-04-26",
     "file": "games/2026-04-26/index.html",
     "preview": "games/2026-04-26/preview.png"
+  },
+  {
+    "id": "2026-04-27",
+    "name": "Junction Rush",
+    "date": "2026-04-27",
+    "description": "Manage a neon 4-way traffic intersection — click to toggle signals between north-south and east-west green, let cars flow safely through, and prevent perpendicular cars from crashing! Chain consecutive safe passes for massive combo multipliers as traffic grows faster each level.",
+    "tagline": "Toggle the signal. Clear the cars. Prevent the crash!",
+    "tags": ["strategy", "management", "reflex", "arcade", "traffic"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap / Space to toggle traffic signal between N-S and E-W green",
+    "folder": "games/2026-04-27",
+    "file": "games/2026-04-27/index.html",
+    "preview": "games/2026-04-27/preview.png"
   }
 ]

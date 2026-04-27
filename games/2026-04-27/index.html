@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Junction Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #06001a; overflow: hidden; }
+    canvas { display: block; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef, useCallback } = React;
+
+    // ── Audio ─────────────────────────────────────────────────────────────────
+    let actx = null;
+    const beep = (freq, type, dur, vol = 0.18) => {
+      try {
+        if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.connect(g); g.connect(actx.destination);
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol, actx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
+        o.start(); o.stop(actx.currentTime + dur);
+      } catch (_) {}
+    };
+
+    // ── Constants ─────────────────────────────────────────────────────────────
+    const LS_KEY = 'junctionRush_highScore';
+    const CAR_COLOR = { N: '#00ffff', S: '#ff44cc', E: '#ffdd00', W: '#44ff99' };
+    const TRAIL = 14;
+
+    // ── Helper: stop-line positions ───────────────────────────────────────────
+    // Returns how far from center the stop-line is (positive = before intersection)
+    const stopOffset = (roadW) => roadW * 0.68;
+
+    // Returns true if car has already entered the intersection zone
+    const isPast = (car, cx, cy, roadW) => {
+      const off = stopOffset(roadW);
+      switch (car.dir) {
+        case 'N': return car.y < cy + off;
+        case 'S': return car.y > cy - off;
+        case 'E': return car.x > cx - off;
+        case 'W': return car.x < cx + off;
+      }
+    };
+
+    // Returns the pixel value of the stop line
+    const stopVal = (car, cx, cy, roadW) => {
+      const off = stopOffset(roadW);
+      switch (car.dir) {
+        case 'N': return cy + off;
+        case 'S': return cy - off;
+        case 'E': return cx - off;
+        case 'W': return cx + off;
+      }
+    };
+
+    const isNS = (dir) => dir === 'N' || dir === 'S';
+
+    // ── Game component ────────────────────────────────────────────────────────
+    const App = () => {
+      const canvasRef = useRef(null);
+      const gs       = useRef(null);
+      const rafRef   = useRef(null);
+      const prevT    = useRef(0);
+
+      // ── Init / reset ────────────────────────────────────────────────────────
+      const init = (playing = false) => {
+        const hs = parseInt(localStorage.getItem(LS_KEY) || '0', 10);
+        gs.current = {
+          phase:    playing ? 'playing' : 'idle',
+          signal:   'NS',           // 'NS' green or 'EW' green
+          cooldown: 0,              // switch cooldown ms
+          cars:     [],
+          parts:    [],             // particles
+          floats:   [],             // floating score text
+          score:    0,
+          lives:    3,
+          combo:    0,
+          high:     hs,
+          level:    1,
+          spawnCD:  1800,           // ms until next car spawn
+          uid:      0,
+        };
+      };
+
+      // ── Spawn a car ──────────────────────────────────────────────────────────
+      const spawnCar = (W, H, roadW) => {
+        const g = gs.current;
+        const dirs = ['N','S','E','W'];
+
+        // Limit each direction to ≤2 active cars to prevent pile-ups
+        const available = dirs.filter(d => g.cars.filter(c => c.dir === d).length < 2);
+        if (!available.length) return;
+
+        const dir   = available[Math.floor(Math.random() * available.length)];
+        const cx = W / 2, cy = H / 2;
+        const lane  = (Math.random() - 0.5) * roadW * 0.28;
+        const spd   = 0.085 + Math.random() * 0.04 + g.level * 0.012; // px/ms
+
+        let x, y;
+        switch (dir) {
+          case 'N': x = cx + lane; y = H + 40; break;
+          case 'S': x = cx + lane; y = -40;    break;
+          case 'E': x = -40;       y = cy + lane; break;
+          case 'W': x = W + 40;    y = cy + lane; break;
+        }
+
+        g.cars.push({ id: g.uid++, dir, x, y, spd, color: CAR_COLOR[dir], trail: [] });
+      };
+
+      // ── Explosion ────────────────────────────────────────────────────────────
+      const boom = (x, y) => {
+        const g = gs.current;
+        const palette = ['#ff4400','#ffaa00','#ffffff','#ff0088','#00ffff'];
+        for (let i = 0; i < 40; i++) {
+          const a = Math.random() * Math.PI * 2, s = 1.5 + Math.random() * 5;
+          g.parts.push({
+            x, y,
+            vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+            life: 1, decay: 0.018 + Math.random() * 0.025,
+            color: palette[i % palette.length],
+            r: 2 + Math.random() * 4,
+          });
+        }
+      };
+
+      // ── Input handler ─────────────────────────────────────────────────────────
+      const onInput = useCallback(() => {
+        const g = gs.current;
+        if (!g) return;
+        if (g.phase === 'idle') { g.phase = 'playing'; return; }
+        if (g.phase === 'over') { init(true); return; }
+        if (g.cooldown > 0) return;
+
+        g.signal   = g.signal === 'NS' ? 'EW' : 'NS';
+        g.cooldown = 380;
+        beep(480, 'square', 0.09, 0.14);
+      }, []);
+
+      // ── Main effect: set up canvas + loop ────────────────────────────────────
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const setSize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        setSize();
+        window.addEventListener('resize', setSize);
+
+        // Seed localStorage so the test can find the key
+        if (!localStorage.getItem(LS_KEY)) localStorage.setItem(LS_KEY, '0');
+        init(false);
+
+        const onKey = (e) => { if (e.code === 'Space') { e.preventDefault(); onInput(); } };
+        window.addEventListener('keydown', onKey);
+
+        // ── Draw rounded rect util ──
+        const rRect = (ctx, x, y, w, h, r) => {
+          ctx.beginPath();
+          ctx.moveTo(x + r, y);
+          ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+          ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+          ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+          ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+          ctx.closePath();
+        };
+
+        // ── Traffic light drawing ──
+        const drawLight = (ctx, x, y, tls, greenLit) => {
+          const hw = tls * 0.55, hh = tls * 1.45;
+          ctx.fillStyle = '#08001e'; ctx.strokeStyle = 'rgba(180,150,255,0.25)'; ctx.lineWidth = 1;
+          rRect(ctx, x - hw / 2, y - hh / 2, hw, hh, 3); ctx.fill(); ctx.stroke();
+
+          // Red
+          ctx.beginPath(); ctx.arc(x, y - hh * 0.25, tls * 0.22, 0, Math.PI * 2);
+          if (!greenLit) { ctx.fillStyle = '#ff2200'; ctx.shadowBlur = 14; ctx.shadowColor = '#ff2200'; }
+          else { ctx.fillStyle = '#2a0000'; ctx.shadowBlur = 0; }
+          ctx.fill(); ctx.shadowBlur = 0;
+
+          // Green
+          ctx.beginPath(); ctx.arc(x, y + hh * 0.25, tls * 0.22, 0, Math.PI * 2);
+          if (greenLit) { ctx.fillStyle = '#00ff66'; ctx.shadowBlur = 14; ctx.shadowColor = '#00ff66'; }
+          else { ctx.fillStyle = '#002200'; ctx.shadowBlur = 0; }
+          ctx.fill(); ctx.shadowBlur = 0;
+        };
+
+        // ── Main game loop ──────────────────────────────────────────────────────
+        const loop = (ts) => {
+          const dt = Math.min(ts - prevT.current, 50);
+          prevT.current = ts;
+
+          const g  = gs.current;
+          const W  = canvas.width, H = canvas.height;
+          const rW = Math.min(W, H) * 0.14;   // road width
+          const cx = W / 2, cy = H / 2;
+          const ctx = canvas.getContext('2d');
+
+          // ── Update ────────────────────────────────────────────────────────────
+          if (g.phase === 'playing') {
+            g.cooldown = Math.max(0, g.cooldown - dt);
+
+            // Spawn
+            g.spawnCD -= dt;
+            if (g.spawnCD <= 0) {
+              spawnCar(W, H, rW);
+              const ivl = Math.max(650, 2600 - g.level * 160);
+              g.spawnCD = ivl + (Math.random() - 0.5) * 450;
+            }
+
+            // Move cars
+            for (const car of g.cars) {
+              car.trail.push({ x: car.x, y: car.y });
+              if (car.trail.length > TRAIL) car.trail.shift();
+
+              const green = isNS(car.dir) ? g.signal === 'NS' : g.signal === 'EW';
+              const past  = isPast(car, cx, cy, rW);
+
+              if (green || past) {
+                // Full speed
+                switch (car.dir) {
+                  case 'N': car.y -= car.spd * dt; break;
+                  case 'S': car.y += car.spd * dt; break;
+                  case 'E': car.x += car.spd * dt; break;
+                  case 'W': car.x -= car.spd * dt; break;
+                }
+              } else {
+                // Brake toward stop-line
+                let dist = 0;
+                switch (car.dir) {
+                  case 'N': dist = car.y - stopVal(car, cx, cy, rW); break;
+                  case 'S': dist = stopVal(car, cx, cy, rW) - car.y; break;
+                  case 'E': dist = stopVal(car, cx, cy, rW) - car.x; break;
+                  case 'W': dist = car.x - stopVal(car, cx, cy, rW); break;
+                }
+                if (dist > 1) {
+                  const v = Math.min(car.spd, dist * 0.005);
+                  switch (car.dir) {
+                    case 'N': car.y -= v * dt; break;
+                    case 'S': car.y += v * dt; break;
+                    case 'E': car.x += v * dt; break;
+                    case 'W': car.x -= v * dt; break;
+                  }
+                }
+              }
+            }
+
+            // Collision detection: perpendicular cars too close
+            const live = g.cars;
+            for (let i = 0; i < live.length; i++) {
+              for (let j = i + 1; j < live.length; j++) {
+                const a = live[i], b = live[j];
+                if (isNS(a.dir) === isNS(b.dir)) continue; // same axis
+                const dx = a.x - b.x, dy = a.y - b.y;
+                if (Math.sqrt(dx * dx + dy * dy) < 28) {
+                  boom((a.x + b.x) / 2, (a.y + b.y) / 2);
+                  g.cars = g.cars.filter(c => c !== a && c !== b);
+                  g.combo = 0;
+                  g.lives--;
+                  beep(160, 'sawtooth', 0.35, 0.35);
+                  setTimeout(() => beep(110, 'square', 0.25, 0.25), 90);
+                  g.floats.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 20, txt: 'CRASH!', color: '#ff4400', life: 1 });
+
+                  if (g.lives <= 0) {
+                    g.phase = 'over';
+                    if (g.score > g.high) {
+                      g.high = g.score;
+                      localStorage.setItem(LS_KEY, String(g.score));
+                    }
+                  }
+                  // break both loops after mutation
+                  i = live.length; break;
+                }
+              }
+            }
+
+            // Score cars that exit
+            g.cars = g.cars.filter(car => {
+              const gone = car.x < -90 || car.x > W + 90 || car.y < -90 || car.y > H + 90;
+              if (!gone) return true;
+              g.combo++;
+              const pts = 10 + Math.min(g.combo, 12) * 4;
+              g.score += pts;
+              beep(320 + Math.min(g.combo, 10) * 35, 'sine', 0.1, 0.1);
+              // float near exit edge
+              const fx = Math.max(60, Math.min(W - 60, car.x));
+              const fy = Math.max(70, Math.min(H - 50, car.y));
+              g.floats.push({ x: fx, y: fy, txt: `+${pts}`, color: car.color, life: 1 });
+              if (g.score >= g.level * 280) g.level++;
+              return false;
+            });
+          }
+
+          // Update particles
+          g.parts = g.parts.filter(p => { p.x += p.vx; p.y += p.vy; p.vx *= 0.93; p.vy *= 0.93; p.life -= p.decay; return p.life > 0; });
+
+          // Update floaters
+          g.floats = g.floats.filter(f => { f.y -= 1.2; f.life -= 0.022; return f.life > 0; });
+
+          // ── Draw ──────────────────────────────────────────────────────────────
+          ctx.clearRect(0, 0, W, H);
+
+          // Background
+          ctx.fillStyle = '#06001a';
+          ctx.fillRect(0, 0, W, H);
+
+          // Grid
+          ctx.strokeStyle = 'rgba(80, 40, 160, 0.1)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < W; x += 55) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+          for (let y = 0; y < H; y += 55) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+          const nsGreen = g.signal === 'NS';
+
+          // Road fill
+          ctx.fillStyle = nsGreen ? 'rgba(0,200,255,0.1)' : 'rgba(60,40,130,0.1)';
+          ctx.fillRect(cx - rW / 2, 0, rW, H);
+          ctx.fillStyle = !nsGreen ? 'rgba(0,200,255,0.1)' : 'rgba(60,40,130,0.1)';
+          ctx.fillRect(0, cy - rW / 2, W, rW);
+
+          // Intersection center darker
+          ctx.fillStyle = 'rgba(15, 0, 40, 0.7)';
+          ctx.fillRect(cx - rW / 2, cy - rW / 2, rW, rW);
+
+          // Road borders
+          const drawBorders = (vertical, active) => {
+            ctx.strokeStyle = active ? 'rgba(0,220,255,0.75)' : 'rgba(130,90,200,0.35)';
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = active ? 8 : 0; ctx.shadowColor = '#00ccff';
+            ctx.beginPath();
+            if (vertical) {
+              ctx.moveTo(cx - rW / 2, 0);       ctx.lineTo(cx - rW / 2, cy - rW / 2);
+              ctx.moveTo(cx - rW / 2, cy + rW / 2); ctx.lineTo(cx - rW / 2, H);
+              ctx.moveTo(cx + rW / 2, 0);       ctx.lineTo(cx + rW / 2, cy - rW / 2);
+              ctx.moveTo(cx + rW / 2, cy + rW / 2); ctx.lineTo(cx + rW / 2, H);
+            } else {
+              ctx.moveTo(0,       cy - rW / 2); ctx.lineTo(cx - rW / 2, cy - rW / 2);
+              ctx.moveTo(cx + rW / 2, cy - rW / 2); ctx.lineTo(W, cy - rW / 2);
+              ctx.moveTo(0,       cy + rW / 2); ctx.lineTo(cx - rW / 2, cy + rW / 2);
+              ctx.moveTo(cx + rW / 2, cy + rW / 2); ctx.lineTo(W, cy + rW / 2);
+            }
+            ctx.stroke(); ctx.shadowBlur = 0;
+          };
+          drawBorders(true, nsGreen);
+          drawBorders(false, !nsGreen);
+
+          // Centre dashes
+          ctx.setLineDash([14, 14]); ctx.lineWidth = 1.5;
+          ctx.strokeStyle = nsGreen ? 'rgba(0,255,180,0.45)' : 'rgba(180,130,255,0.25)';
+          ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, cy - rW / 2);
+          ctx.moveTo(cx, cy + rW / 2); ctx.lineTo(cx, H); ctx.stroke();
+          ctx.strokeStyle = !nsGreen ? 'rgba(0,255,180,0.45)' : 'rgba(180,130,255,0.25)';
+          ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(cx - rW / 2, cy);
+          ctx.moveTo(cx + rW / 2, cy); ctx.lineTo(W, cy); ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Stop lines
+          const stopLine = (dir, alpha) => {
+            ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+            ctx.lineWidth = 2.5;
+            const sv = stopVal({ dir }, cx, cy, rW);
+            ctx.beginPath();
+            if (dir === 'N' || dir === 'S') { ctx.moveTo(cx - rW / 2 + 4, sv); ctx.lineTo(cx + rW / 2 - 4, sv); }
+            else { ctx.moveTo(sv, cy - rW / 2 + 4); ctx.lineTo(sv, cy + rW / 2 - 4); }
+            ctx.stroke();
+          };
+          stopLine('N', nsGreen ? 0.08 : 0.45);
+          stopLine('S', nsGreen ? 0.08 : 0.45);
+          stopLine('E', !nsGreen ? 0.08 : 0.45);
+          stopLine('W', !nsGreen ? 0.08 : 0.45);
+
+          // Traffic lights (4 positions around intersection)
+          const tls = Math.max(14, Math.min(rW * 0.3, 24));
+          const pad = tls * 1.1;
+          drawLight(ctx, cx - rW / 2 - pad, cy - rW / 4, tls, nsGreen);
+          drawLight(ctx, cx + rW / 2 + pad, cy + rW / 4, tls, nsGreen);
+          drawLight(ctx, cx - rW / 4,       cy - rW / 2 - pad, tls, !nsGreen);
+          drawLight(ctx, cx + rW / 4,       cy + rW / 2 + pad, tls, !nsGreen);
+
+          // Cars
+          for (const car of g.cars) {
+            // Trail
+            for (let i = 0; i < car.trail.length; i++) {
+              const t  = car.trail[i];
+              const a  = (i / car.trail.length) * 0.45;
+              ctx.globalAlpha = a;
+              ctx.fillStyle = car.color;
+              ctx.beginPath(); ctx.arc(t.x, t.y, 2.5 + (i / car.trail.length) * 2.5, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.save();
+            ctx.translate(car.x, car.y);
+            if (!isNS(car.dir)) ctx.rotate(Math.PI / 2);
+
+            const cw = rW * 0.22, ch = rW * 0.37;
+            ctx.shadowBlur = 18; ctx.shadowColor = car.color;
+            ctx.fillStyle = car.color;
+            ctx.fillRect(-cw / 2, -ch / 2, cw, ch);
+
+            // windshield
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.shadowBlur = 0;
+            ctx.fillRect(-cw / 2 + 2, -ch / 2 + 3, cw - 4, ch * 0.28);
+
+            // headlights
+            ctx.fillStyle = '#fff'; ctx.shadowBlur = 8; ctx.shadowColor = '#fff';
+            ctx.fillRect(-cw / 2 + 1, -ch / 2,     3, 2.5);
+            ctx.fillRect(cw / 2 - 4,  -ch / 2,     3, 2.5);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+          }
+
+          // Particles
+          for (const p of g.parts) {
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+            ctx.fillStyle = p.color; ctx.globalAlpha = p.life; ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+
+          // Floating text
+          ctx.textAlign = 'center';
+          for (const f of g.floats) {
+            ctx.font = 'bold 20px Courier New';
+            ctx.fillStyle = f.color; ctx.globalAlpha = f.life;
+            ctx.shadowBlur = 8; ctx.shadowColor = f.color;
+            ctx.fillText(f.txt, f.x, f.y);
+            ctx.shadowBlur = 0;
+          }
+          ctx.globalAlpha = 1;
+
+          // ── HUD ───────────────────────────────────────────────────────────────
+          // Top bar
+          ctx.fillStyle = 'rgba(0,0,0,0.55)';
+          ctx.fillRect(0, 0, W, 68);
+
+          // Score
+          ctx.textAlign = 'left'; ctx.font = 'bold 38px Courier New';
+          ctx.fillStyle = '#fff'; ctx.shadowBlur = 6; ctx.shadowColor = '#00ffff';
+          ctx.fillText(String(g.score), 18, 50); ctx.shadowBlur = 0;
+
+          // Combo
+          if (g.combo > 1) {
+            ctx.font = 'bold 16px Courier New'; ctx.fillStyle = '#ff88ff';
+            ctx.shadowBlur = 6; ctx.shadowColor = '#ff88ff';
+            ctx.fillText(`×${g.combo} COMBO`, 18, 68); ctx.shadowBlur = 0;
+          }
+
+          // Title
+          ctx.textAlign = 'center'; ctx.font = 'bold 17px Courier New';
+          ctx.fillStyle = '#00ccff'; ctx.shadowBlur = 5; ctx.shadowColor = '#00ccff';
+          ctx.fillText('JUNCTION RUSH', W / 2, 26); ctx.shadowBlur = 0;
+          ctx.font = '13px Courier New'; ctx.fillStyle = '#aa88ff';
+          ctx.fillText(`LVL ${g.level}`, W / 2, 48);
+
+          // High + lives
+          ctx.textAlign = 'right'; ctx.font = '13px Courier New';
+          ctx.fillStyle = '#777'; ctx.fillText(`BEST: ${g.high}`, W - 16, 24);
+          ctx.font = '22px Courier New';
+          for (let i = 0; i < 3; i++) {
+            ctx.fillStyle = i < g.lives ? '#ff4488' : '#2a2a2a';
+            ctx.shadowBlur = i < g.lives ? 7 : 0; ctx.shadowColor = '#ff4488';
+            ctx.fillText('♥', W - 16 - i * 32, 56); ctx.shadowBlur = 0;
+          }
+
+          // ── Signal pill (bottom) ──────────────────────────────────────────────
+          if (g.phase === 'playing') {
+            const pw = 210, ph = 38, px = (W - pw) / 2, py = H - ph - 12;
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            rRect(ctx, px, py, pw, ph, 19); ctx.fill();
+
+            ctx.textAlign = 'center'; ctx.font = 'bold 14px Courier New';
+            ctx.fillStyle = nsGreen ? '#00ff88' : '#333';
+            ctx.shadowBlur = nsGreen ? 8 : 0; ctx.shadowColor = '#00ff88';
+            ctx.fillText('↑↓ N-S', W / 2 - 52, py + 25); ctx.shadowBlur = 0;
+
+            ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillText('|', W / 2, py + 25);
+
+            ctx.fillStyle = !nsGreen ? '#00ff88' : '#333';
+            ctx.shadowBlur = !nsGreen ? 8 : 0; ctx.shadowColor = '#00ff88';
+            ctx.fillText('E-W ↔', W / 2 + 52, py + 25); ctx.shadowBlur = 0;
+
+            // Cooldown bar
+            if (g.cooldown > 0) {
+              const bw = (g.cooldown / 380) * (pw - 20);
+              ctx.fillStyle = 'rgba(0,200,255,0.5)';
+              rRect(ctx, px + 10, py + ph - 6, bw, 4, 2); ctx.fill();
+            }
+
+            ctx.font = '11px Courier New'; ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(180,140,255,0.5)';
+            ctx.fillText('CLICK / SPACE to switch signal', W / 2, py - 7);
+          }
+
+          // ── Overlay screens ───────────────────────────────────────────────────
+          if (g.phase === 'idle') {
+            ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
+
+            ctx.textAlign = 'center'; ctx.font = 'bold 46px Courier New';
+            ctx.fillStyle = '#00ccff'; ctx.shadowBlur = 22; ctx.shadowColor = '#00ccff';
+            ctx.fillText('JUNCTION RUSH', W / 2, H / 2 - 80); ctx.shadowBlur = 0;
+
+            ctx.font = '17px Courier New'; ctx.fillStyle = '#cc88ff';
+            ctx.fillText('Manage the traffic signal.', W / 2, H / 2 - 28);
+            ctx.fillText('Let cars through — prevent crashes!', W / 2, H / 2 + 2);
+
+            ctx.font = 'bold 20px Courier New'; ctx.fillStyle = '#00ff88';
+            ctx.shadowBlur = 12; ctx.shadowColor = '#00ff88';
+            ctx.fillText('CLICK / TAP / SPACE to start', W / 2, H / 2 + 60); ctx.shadowBlur = 0;
+
+            ctx.font = '14px Courier New'; ctx.fillStyle = 'rgba(200,150,255,0.55)';
+            ctx.fillText(`Best: ${g.high}`, W / 2, H / 2 + 94);
+          }
+
+          if (g.phase === 'over') {
+            ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0, 0, W, H);
+
+            ctx.textAlign = 'center'; ctx.font = 'bold 54px Courier New';
+            ctx.fillStyle = '#ff2244'; ctx.shadowBlur = 26; ctx.shadowColor = '#ff2244';
+            ctx.fillText('GAME OVER', W / 2, H / 2 - 80); ctx.shadowBlur = 0;
+
+            ctx.font = 'bold 30px Courier New'; ctx.fillStyle = '#ffffff';
+            ctx.fillText(`Score: ${g.score}`, W / 2, H / 2 - 20);
+
+            if (g.score > 0 && g.score >= g.high) {
+              ctx.font = 'bold 22px Courier New'; ctx.fillStyle = '#ffdd00';
+              ctx.shadowBlur = 14; ctx.shadowColor = '#ffdd00';
+              ctx.fillText('NEW HIGH SCORE!', W / 2, H / 2 + 22); ctx.shadowBlur = 0;
+            }
+
+            ctx.font = '18px Courier New'; ctx.fillStyle = '#00ccff';
+            ctx.shadowBlur = 8; ctx.shadowColor = '#00ccff';
+            ctx.fillText('Click / Tap to play again', W / 2, H / 2 + 78); ctx.shadowBlur = 0;
+          }
+
+          rafRef.current = requestAnimationFrame(loop);
+        };
+
+        rafRef.current = requestAnimationFrame(loop);
+
+        return () => {
+          cancelAnimationFrame(rafRef.current);
+          window.removeEventListener('resize', setSize);
+          window.removeEventListener('keydown', onKey);
+        };
+      }, [onInput]);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          onClick={onInput}
+          onTouchStart={(e) => { e.preventDefault(); onInput(); }}
+        />
+      );
+    };
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
