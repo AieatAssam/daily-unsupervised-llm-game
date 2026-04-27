@@ -103,15 +103,16 @@
 
         const dir   = available[Math.floor(Math.random() * available.length)];
         const cx = W / 2, cy = H / 2;
-        const lane  = (Math.random() - 0.5) * roadW * 0.28;
+        // Each direction gets its own lane (right-hand traffic rules)
+        const laneOff = roadW * 0.25 + (Math.random() - 0.5) * roadW * 0.08;
         const spd   = 0.085 + Math.random() * 0.04 + g.level * 0.012; // px/ms
 
         let x, y;
         switch (dir) {
-          case 'N': x = cx + lane; y = H + 40; break;
-          case 'S': x = cx + lane; y = -40;    break;
-          case 'E': x = -40;       y = cy + lane; break;
-          case 'W': x = W + 40;    y = cy + lane; break;
+          case 'N': x = cx + laneOff; y = H + 40; break; // east side of road (right for northbound)
+          case 'S': x = cx - laneOff; y = -40;    break; // west side of road (right for southbound)
+          case 'E': x = -40;          y = cy + laneOff; break; // south side (right for eastbound)
+          case 'W': x = W + 40;       y = cy - laneOff; break; // north side (right for westbound)
         }
 
         g.cars.push({ id: g.uid++, dir, x, y, spd, color: CAR_COLOR[dir], trail: [] });
@@ -377,10 +378,12 @@
           // Traffic lights (4 positions around intersection)
           const tls = Math.max(14, Math.min(rW * 0.3, 24));
           const pad = tls * 1.1;
-          drawLight(ctx, cx - rW / 2 - pad, cy - rW / 4, tls, nsGreen);
-          drawLight(ctx, cx + rW / 2 + pad, cy + rW / 4, tls, nsGreen);
-          drawLight(ctx, cx - rW / 4,       cy - rW / 2 - pad, tls, !nsGreen);
-          drawLight(ctx, cx + rW / 4,       cy + rW / 2 + pad, tls, !nsGreen);
+          // Side lights (left/right of N-S road) face E-W approaching traffic → show EW signal
+          drawLight(ctx, cx - rW / 2 - pad, cy - rW / 4, tls, !nsGreen);
+          drawLight(ctx, cx + rW / 2 + pad, cy + rW / 4, tls, !nsGreen);
+          // Top/bottom lights (above/below E-W road) face N-S approaching traffic → show NS signal
+          drawLight(ctx, cx - rW / 4,       cy - rW / 2 - pad, tls, nsGreen);
+          drawLight(ctx, cx + rW / 4,       cy + rW / 2 + pad, tls, nsGreen);
 
           // Cars
           for (const car of g.cars) {
