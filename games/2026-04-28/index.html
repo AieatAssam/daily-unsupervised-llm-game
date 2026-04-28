@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wall Breach</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050010; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; position: relative; }
+    @keyframes pulseAnim { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    @keyframes comboAnim { 0%{transform:scale(0.8);opacity:0} 50%{transform:scale(1.15)} 100%{transform:scale(1);opacity:1} }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+  const { useState, useEffect, useRef, useCallback } = React;
+
+  const ROWS = 4, COLS = 4, GAP = 4;
+  const HS_KEY = 'wallBreachHS';
+  // Initialize localStorage key on load so tests can find it
+  if (!localStorage.getItem(HS_KEY)) localStorage.setItem(HS_KEY, '0');
+
+  let _audioCtx = null;
+  const getAudioCtx = () => {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return _audioCtx;
+  };
+
+  const playTone = (freq, type, dur, vol = 0.25) => {
+    try {
+      const ctx = getAudioCtx();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      o.start(); o.stop(ctx.currentTime + dur);
+    } catch(e) {}
+  };
+
+  const sfx = {
+    click: () => playTone(700, 'square', 0.04, 0.08),
+    pass: () => {
+      playTone(440, 'sine', 0.12);
+      setTimeout(() => playTone(660, 'sine', 0.12), 70);
+      setTimeout(() => playTone(880, 'sine', 0.18), 140);
+    },
+    fail: () => {
+      playTone(180, 'sawtooth', 0.15, 0.3);
+      setTimeout(() => playTone(100, 'sawtooth', 0.25, 0.2), 100);
+    },
+    levelup: () => {
+      [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => playTone(f, 'sine', 0.15), i * 80));
+    },
+  };
+
+  const mkPlayer = () => Array.from({length: ROWS}, () => Array(COLS).fill(false));
+
+  const generateWall = (level) => {
+    const total = ROWS * COLS;
+    // More holes = easier; fewer holes = harder
+    const numHoles = Math.max(3, Math.min(10, 9 - Math.floor(level * 0.4)));
+    const pos = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) pos.push([r, c]);
+    for (let i = pos.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pos[i], pos[j]] = [pos[j], pos[i]];
+    }
+    const cells = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+    const count = Math.min(numHoles, total - 2);
+    for (let i = 0; i < count; i++) cells[pos[i][0]][pos[i][1]] = true;
+    return cells; // true = hole (player must fill), false = solid wall
+  };
+
+  const checkMatch = (player, wall) => {
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (player[r][c] !== wall[r][c]) return false;
+    return true;
+  };
+
+  const getCellSize = () =>
+    Math.max(40, Math.min(68, Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.105)));
+
+  const Game = () => {
+    const canvasRef = useRef(null);
+    const gs = useRef({
+      phase: 'start',
+      score: 0, lives: 3, level: 1, combo: 0,
+      highScore: +(localStorage.getItem(HS_KEY) || 0),
+      player: mkPlayer(),
+      wall: null,
+      wallSpeed: 110,
+      particles: [],
+      flashType: null, flashTimer: 0,
+      pendingWall: 0,
+      wallsCleared: 0,
+      bgTime: 0,
+    });
+    const [ui, setUi] = useState({
+      phase: 'start', score: 0, lives: 3, level: 1, combo: 0,
+      hs: +(localStorage.getItem(HS_KEY) || 0),
+      player: mkPlayer(), shakeTimer: 0,
+    });
+    const rafRef = useRef(null);
+    const lastTRef = useRef(null);
+
+    const triggerUi = (s, extra = {}) => setUi({
+      phase: s.phase, score: s.score, lives: s.lives, level: s.level,
+      combo: s.combo, hs: s.highScore,
+      player: s.player.map(r => [...r]), ...extra,
+    });
+
+    const startGame = useCallback(() => {
+      const s = gs.current;
+      const cs = getCellSize();
+      const gw = cs * COLS + GAP * (COLS - 1);
+      s.phase = 'playing';
+      s.score = 0; s.lives = 3; s.level = 1; s.combo = 0;
+      s.player = mkPlayer();
+      s.wall = { cells: generateWall(1), x: window.innerWidth + gw * 0.5 };
+      s.wallSpeed = 110;
+      s.particles = [];
+      s.flashType = null; s.flashTimer = 0;
+      s.pendingWall = 0;
+      s.wallsCleared = 0;
+      triggerUi(s);
+    }, []);
+
+    const toggleCell = useCallback((r, c) => {
+      const s = gs.current;
+      if (s.phase !== 'playing' || s.flashType || s.pendingWall > 0) return;
+      sfx.click();
+      s.player[r][c] = !s.player[r][c];
+      setUi(prev => ({ ...prev, player: s.player.map(row => [...row]) }));
+    }, []);
+
+    // Main game loop via canvas
+    useEffect(() => {
+      const loop = (ts) => {
+        if (!lastTRef.current) lastTRef.current = ts;
+        const dt = Math.min((ts - lastTRef.current) / 1000, 0.05);
+        lastTRef.current = ts;
+        const s = gs.current;
+        s.bgTime += dt;
+
+        const canvas = canvasRef.current;
+        if (!canvas) { rafRef.current = requestAnimationFrame(loop); return; }
+        const W = window.innerWidth, H = window.innerHeight;
+        canvas.width = W; canvas.height = H;
+        const ctx = canvas.getContext('2d');
+
+        const cs = getCellSize();
+        const gw = cs * COLS + GAP * (COLS - 1);
+        const gh = cs * ROWS + GAP * (ROWS - 1);
+        const px = 18; // player left edge
+        const py = (H - gh) / 2;
+
+        // Animated background
+        const hue = (s.bgTime * 10) % 360;
+        const bg = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, Math.max(W, H));
+        bg.addColorStop(0, `hsla(${260 + Math.sin(s.bgTime * 0.3) * 20}, 60%, 8%, 1)`);
+        bg.addColorStop(1, `hsla(${220 + Math.sin(s.bgTime * 0.2) * 15}, 80%, 3%, 1)`);
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        // Subtle grid
+        ctx.strokeStyle = 'rgba(0,200,255,0.03)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < W; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+        for (let y = 0; y < H; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+        if (s.phase !== 'playing') {
+          rafRef.current = requestAnimationFrame(loop);
+          return;
+        }
+
+        // Flash overlay
+        if (s.flashTimer > 0) {
+          s.flashTimer = Math.max(0, s.flashTimer - dt);
+          const alpha = (s.flashTimer / 0.45) * 0.2;
+          ctx.fillStyle = s.flashType === 'pass'
+            ? `rgba(0,255,100,${alpha})`
+            : `rgba(255,0,60,${alpha * 1.5})`;
+          ctx.fillRect(0, 0, W, H);
+          if (s.flashTimer <= 0) s.flashType = null;
+        }
+
+        // Pending wall delay
+        if (s.pendingWall > 0) {
+          s.pendingWall = Math.max(0, s.pendingWall - dt);
+          if (s.pendingWall <= 0) {
+            s.wall = { cells: generateWall(s.level), x: W + gw * 0.5 };
+          }
+        }
+
+        // Wall movement and drawing
+        if (s.wall && !s.flashType) {
+          s.wall.x -= s.wallSpeed * dt;
+
+          // Impact when wall left edge reaches player left edge
+          if (s.wall.x <= px) {
+            const matched = checkMatch(s.player, s.wall.cells);
+            s.wall = null;
+
+            if (matched) {
+              s.combo++;
+              s.score += 100 * s.combo;
+              s.wallsCleared++;
+              if (s.wallsCleared % 5 === 0) {
+                s.level++;
+                s.wallSpeed = Math.min(320, 110 + s.level * 14);
+                sfx.levelup();
+              }
+              if (s.score > s.highScore) {
+                s.highScore = s.score;
+                localStorage.setItem(HS_KEY, s.score);
+              }
+              // Burst particles
+              const cx = px + gw / 2, cy = H / 2;
+              for (let i = 0; i < 50; i++) {
+                const a = (Math.PI * 2 * i) / 50 + Math.random() * 0.2;
+                const spd = 2 + Math.random() * 6;
+                s.particles.push({
+                  x: cx + (Math.random() - 0.5) * gw,
+                  y: cy + (Math.random() - 0.5) * gh,
+                  vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 0.5,
+                  life: 1, decay: 0.018 + Math.random() * 0.01,
+                  color: `hsl(${160 + Math.random() * 80}, 100%, ${60 + Math.random() * 20}%)`,
+                  size: 2 + Math.random() * 4,
+                });
+              }
+              sfx.pass();
+              s.flashType = 'pass'; s.flashTimer = 0.45;
+              s.player = mkPlayer();
+              s.pendingWall = 0.65;
+            } else {
+              s.combo = 0;
+              s.lives--;
+              sfx.fail();
+              s.flashType = 'fail'; s.flashTimer = 0.45;
+              s.player = mkPlayer();
+              s.pendingWall = 0.95;
+              if (s.lives <= 0) s.phase = 'gameover';
+            }
+
+            triggerUi(s, { shakeTimer: s.flashType === 'fail' ? Date.now() : 0 });
+          }
+
+          // Draw wall
+          if (s.wall) {
+            const lvl = s.level;
+            const wc = lvl < 5 ? '#ff2288' : lvl < 10 ? '#ff7700' : '#ff2200';
+            const wy = (H - gh) / 2;
+            s.wall.cells.forEach((row, r) => {
+              row.forEach((isHole, c) => {
+                const wx = s.wall.x + c * (cs + GAP);
+                const wy2 = wy + r * (cs + GAP);
+                if (isHole) {
+                  // Hole: dashed cyan border
+                  ctx.save();
+                  ctx.strokeStyle = 'rgba(0,255,220,0.75)';
+                  ctx.lineWidth = 2;
+                  ctx.setLineDash([5, 4]);
+                  ctx.strokeRect(wx + 1, wy2 + 1, cs - 2, cs - 2);
+                  ctx.setLineDash([]);
+                  ctx.fillStyle = 'rgba(0,255,220,0.06)';
+                  ctx.fillRect(wx, wy2, cs, cs);
+                  ctx.restore();
+                } else {
+                  // Solid wall block
+                  ctx.save();
+                  ctx.shadowColor = wc;
+                  ctx.shadowBlur = 14;
+                  ctx.fillStyle = wc;
+                  ctx.fillRect(wx, wy2, cs, cs);
+                  // Inner sheen
+                  const shine = ctx.createLinearGradient(wx, wy2, wx + cs, wy2 + cs);
+                  shine.addColorStop(0, 'rgba(255,255,255,0.18)');
+                  shine.addColorStop(1, 'rgba(0,0,0,0.15)');
+                  ctx.fillStyle = shine;
+                  ctx.fillRect(wx, wy2, cs, cs);
+                  ctx.restore();
+                }
+              });
+            });
+
+            // Distance warning glow on player side when close
+            const proximity = Math.max(0, 1 - (s.wall.x - px) / (W * 0.55));
+            if (proximity > 0.3) {
+              const warnAlpha = (proximity - 0.3) / 0.7 * 0.35;
+              ctx.fillStyle = `rgba(255,30,80,${warnAlpha})`;
+              ctx.fillRect(0, 0, (px + gw) * 1.2, H);
+            }
+          }
+        }
+
+        // Impact guide line
+        ctx.save();
+        ctx.strokeStyle = 'rgba(0,255,200,0.12)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 9]);
+        ctx.beginPath();
+        ctx.moveTo(px + gw * 0.5, 60);
+        ctx.lineTo(px + gw * 0.5, H - 40);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Update & draw particles
+        s.particles = s.particles
+          .map(p => ({ ...p, x: p.x + p.vx, y: p.y + p.vy, vy: p.vy + 0.12, life: p.life - p.decay }))
+          .filter(p => p.life > 0);
+        s.particles.forEach(p => {
+          ctx.save();
+          ctx.globalAlpha = p.life;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+
+        rafRef.current = requestAnimationFrame(loop);
+      };
+
+      rafRef.current = requestAnimationFrame(loop);
+      return () => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        lastTRef.current = null;
+      };
+    }, []);
+
+    const cs = getCellSize();
+    const gw = cs * COLS + GAP * (COLS - 1);
+    const gh = cs * ROWS + GAP * (ROWS - 1);
+    const px = 18;
+    const py = `calc(50vh - ${gh / 2}px)`;
+    const isShaking = ui.shakeTimer && Date.now() - ui.shakeTimer < 350;
+    const lvlColor = ui.level < 5 ? '#ff2288' : ui.level < 10 ? '#ff7700' : '#ff2200';
+
+    const overlayStyle = {
+      position: 'absolute', inset: 0,
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      zIndex: 20, fontFamily: "'Courier New', monospace",
+    };
+
+    return (
+      <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden',
+        animation: isShaking ? 'none' : undefined,
+        transform: isShaking ? `translate(${(Math.random()-0.5)*10}px,${(Math.random()-0.5)*5}px)` : undefined,
+      }}>
+        <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0 }} />
+
+        {/* START SCREEN */}
+        {ui.phase === 'start' && (
+          <div style={overlayStyle}>
+            <div style={{ textAlign: 'center', padding: '0 20px', zIndex: 1 }}>
+              <div style={{ fontSize: 'clamp(2.2rem,9vw,4.5rem)', color: '#00ffdd', fontWeight: 'bold',
+                textShadow: '0 0 30px #00ffdd, 0 0 60px #00aaaa, 0 0 90px rgba(0,200,200,0.4)',
+                letterSpacing: 6, lineHeight: 1.1, marginBottom: 12 }}>
+                WALL BREACH
+              </div>
+              <div style={{ color: '#ff66cc', fontSize: 'clamp(1rem,3.5vw,1.4rem)',
+                textShadow: '0 0 12px #ff66cc', marginBottom: 10 }}>
+                Match your shape to the gap — break through!
+              </div>
+              <div style={{ color: 'rgba(180,220,255,0.55)', fontSize: 'clamp(0.75rem,2.2vw,0.95rem)',
+                marginBottom: 36, lineHeight: 1.7 }}>
+                A neon wall scrolls toward you with a cut-out pattern.<br/>
+                Click the <span style={{color:'#00ffdd'}}>cyan tiles</span> to toggle them ON — match the dashed holes!
+              </div>
+
+              {/* Demo grid */}
+              <div style={{ display: 'inline-grid', gridTemplateRows: `repeat(${ROWS},36px)`,
+                gridTemplateColumns: `repeat(${COLS},36px)`, gap: 3, marginBottom: 28,
+                opacity: 0.7 }}>
+                {[1,0,1,0, 0,1,0,1, 1,0,0,1, 0,1,1,0].map((v, i) => (
+                  <div key={i} style={{
+                    width: 36, height: 36, borderRadius: 4,
+                    background: v ? 'rgba(0,255,220,0.75)' : 'rgba(0,255,220,0.06)',
+                    border: v ? '1.5px solid #00ffdd' : '1.5px solid rgba(0,255,220,0.2)',
+                    boxShadow: v ? '0 0 10px rgba(0,255,220,0.5)' : 'none',
+                  }} />
+                ))}
+              </div>
+
+              <div>
+                <button onClick={startGame} style={{
+                  background: 'transparent', border: '2px solid #00ffdd',
+                  color: '#00ffdd', fontSize: 'clamp(1.1rem,3vw,1.5rem)',
+                  padding: '13px 52px', cursor: 'pointer', borderRadius: 8,
+                  textShadow: '0 0 12px #00ffdd',
+                  boxShadow: '0 0 24px rgba(0,255,220,0.3), inset 0 0 12px rgba(0,255,220,0.05)',
+                  letterSpacing: 4, fontFamily: 'inherit', transition: 'all 0.15s',
+                }}>
+                  PLAY
+                </button>
+              </div>
+              <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: '0.8rem', marginTop: 20 }}>
+                Best: {ui.hs}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* GAME OVER SCREEN */}
+        {ui.phase === 'gameover' && (
+          <div style={overlayStyle}>
+            <div style={{ textAlign: 'center', padding: '0 20px', zIndex: 1 }}>
+              <div style={{ fontSize: 'clamp(2rem,8vw,3.8rem)', color: '#ff2266', fontWeight: 'bold',
+                textShadow: '0 0 30px #ff2266, 0 0 60px rgba(255,0,80,0.4)', letterSpacing: 4, marginBottom: 16 }}>
+                GAME OVER
+              </div>
+              <div style={{ color: '#00ffdd', fontSize: 'clamp(1.3rem,4.5vw,2.2rem)',
+                textShadow: '0 0 12px #00ffdd', marginBottom: 8 }}>
+                {ui.score.toLocaleString()} pts
+              </div>
+              {ui.score >= ui.hs && ui.score > 0 && (
+                <div style={{ color: '#ffdd00', fontSize: '1rem', textShadow: '0 0 10px #ffdd00', marginBottom: 8 }}>
+                  ★ NEW BEST! ★
+                </div>
+              )}
+              <div style={{ color: 'rgba(255,255,255,0.4)', marginBottom: 32, fontSize: '0.9rem' }}>
+                Best: {ui.hs.toLocaleString()} · Level {ui.level}
+              </div>
+              <button onClick={startGame} style={{
+                background: 'transparent', border: '2px solid #ff2266',
+                color: '#ff2266', fontSize: 'clamp(1.1rem,3vw,1.5rem)',
+                padding: '13px 52px', cursor: 'pointer', borderRadius: 8,
+                textShadow: '0 0 12px #ff2266',
+                boxShadow: '0 0 24px rgba(255,0,80,0.3)',
+                letterSpacing: 4, fontFamily: 'inherit',
+              }}>
+                RETRY
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* PLAYING HUD */}
+        {ui.phase === 'playing' && (
+          <>
+            {/* Top HUD */}
+            <div style={{
+              position: 'absolute', top: 14, left: 0, right: 0,
+              display: 'flex', justifyContent: 'space-around', alignItems: 'center',
+              zIndex: 15, fontFamily: 'inherit',
+            }}>
+              <div style={{ color: '#ff3399', fontSize: 'clamp(1rem,3vw,1.5rem)', textShadow: '0 0 10px #ff3399', letterSpacing: 2 }}>
+                {Array.from({length: 3}, (_, i) => (
+                  <span key={i} style={{ opacity: i < ui.lives ? 1 : 0.2 }}>♥</span>
+                ))}
+              </div>
+              <div style={{ color: '#00ffdd', fontSize: 'clamp(1.3rem,4vw,2rem)', fontWeight: 'bold',
+                textShadow: '0 0 12px #00ffdd' }}>
+                {ui.score.toLocaleString()}
+              </div>
+              <div style={{ color: lvlColor, fontSize: 'clamp(0.85rem,2.5vw,1.1rem)',
+                textShadow: `0 0 8px ${lvlColor}` }}>
+                LV {ui.level}
+              </div>
+            </div>
+
+            {/* Combo */}
+            {ui.combo > 1 && (
+              <div style={{
+                position: 'absolute', top: 64, left: 0, right: 0, textAlign: 'center',
+                color: '#ffcc00', fontSize: 'clamp(1rem,3.5vw,1.5rem)',
+                textShadow: '0 0 16px #ffcc00, 0 0 30px rgba(255,200,0,0.4)',
+                zIndex: 15, animation: 'comboAnim 0.25s ease',
+                fontFamily: 'inherit', letterSpacing: 2,
+              }}>
+                ×{ui.combo} COMBO!
+              </div>
+            )}
+
+            {/* Player grid */}
+            <div style={{
+              position: 'absolute', left: px, top: py, zIndex: 15,
+              display: 'grid',
+              gridTemplateRows: `repeat(${ROWS}, ${cs}px)`,
+              gridTemplateColumns: `repeat(${COLS}, ${cs}px)`,
+              gap: GAP,
+            }}>
+              {ui.player.map((row, r) => row.map((on, c) => (
+                <div key={`${r}-${c}`}
+                  onClick={() => toggleCell(r, c)}
+                  onTouchEnd={e => { e.preventDefault(); toggleCell(r, c); }}
+                  style={{
+                    width: cs, height: cs,
+                    background: on ? 'rgba(0,255,220,0.85)' : 'rgba(0,255,220,0.06)',
+                    border: on ? '2px solid #00ffdd' : '2px solid rgba(0,255,220,0.22)',
+                    borderRadius: 7,
+                    cursor: 'pointer',
+                    boxShadow: on ? '0 0 16px #00ffdd, 0 0 30px rgba(0,255,220,0.4), inset 0 0 8px rgba(0,255,255,0.3)' : 'none',
+                    transition: 'background 0.06s, box-shadow 0.06s, border-color 0.06s',
+                    userSelect: 'none', WebkitTapHighlightColor: 'transparent',
+                    touchAction: 'manipulation',
+                  }}
+                />
+              )))}
+            </div>
+
+            {/* Label */}
+            <div style={{
+              position: 'absolute', left: px, top: `calc(50vh + ${gh / 2 + 6}px)`,
+              color: 'rgba(0,255,220,0.35)', fontSize: '0.65rem', zIndex: 15,
+              fontFamily: 'inherit', letterSpacing: 1,
+            }}>
+              YOUR SHAPE
+            </div>
+
+            {/* Arrow hint */}
+            <div style={{
+              position: 'absolute',
+              left: px + gw + 12,
+              top: '50%', transform: 'translateY(-50%)',
+              color: 'rgba(255,255,255,0.2)', fontSize: 22, zIndex: 15,
+              animation: 'pulseAnim 1.2s infinite',
+            }}>
+              ▶
+            </div>
+
+            {/* Bottom hint */}
+            <div style={{
+              position: 'absolute', bottom: 12, right: 14,
+              color: 'rgba(255,255,255,0.25)', fontSize: '0.7rem',
+              zIndex: 15, fontFamily: 'inherit',
+            }}>
+              BEST: {ui.hs.toLocaleString()}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<Game />);
+  </script>
+</body>
+</html>
