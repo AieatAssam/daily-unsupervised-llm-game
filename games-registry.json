@@ -936,5 +936,19 @@
     "folder": "games/2026-04-27",
     "file": "games/2026-04-27/index.html",
     "preview": "games/2026-04-27/preview.png"
+  },
+  {
+    "id": "2026-04-28",
+    "name": "Wall Breach",
+    "date": "2026-04-28",
+    "description": "A neon wall scrolls toward you with a cut-out hole pattern — click tiles on your 4×4 grid to toggle them ON and match the dashed cyan gaps before impact! Chain successful passes for massive combo multipliers as walls speed up each level.",
+    "tagline": "Match your shape. Break through the wall!",
+    "tags": ["puzzle", "reflex", "pattern", "timing", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap tiles to toggle them ON — match the cyan dashed hole pattern in the incoming wall",
+    "folder": "games/2026-04-28",
+    "file": "games/2026-04-28/index.html",
+    "preview": "games/2026-04-28/preview.png"
   }
 ]
