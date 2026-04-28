@@ -442,7 +442,7 @@
         };
         const onTouchEnd = () => { touchRef.current = null; };
 
-        canvas.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mousemove', onMouseMove);
         canvas.addEventListener('click', onClick);
         canvas.addEventListener('touchstart', onTouchStart, { passive: false });
         canvas.addEventListener('touchmove',  onTouchMove,  { passive: false });
@@ -450,7 +450,7 @@
 
         return () => {
           cancelAnimationFrame(rafRef.current);
-          canvas.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mousemove', onMouseMove);
           canvas.removeEventListener('click', onClick);
           canvas.removeEventListener('touchstart', onTouchStart);
           canvas.removeEventListener('touchmove',  onTouchMove);
