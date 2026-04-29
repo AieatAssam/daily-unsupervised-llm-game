@@ -950,5 +950,19 @@
     "folder": "games/2026-04-28",
     "file": "games/2026-04-28/index.html",
     "preview": "games/2026-04-28/preview.png"
+  },
+  {
+    "id": "2026-04-29",
+    "name": "Neon Boomerang",
+    "date": "2026-04-29",
+    "description": "Click to aim and throw a glowing neon boomerang — it curves along a bezier arc to your target and sweeps back! Hit multiple targets in one throw for explosive combo multipliers, and chain consecutive successful throws for even bigger scores!",
+    "tagline": "Aim. Throw. Curve through the targets. Chain the combos!",
+    "tags": ["action", "precision", "arcade", "reflex", "physics"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap anywhere to throw boomerang toward that point — preview arc shown on hover",
+    "folder": "games/2026-04-29",
+    "file": "games/2026-04-29/index.html",
+    "preview": "games/2026-04-29/preview.png"
   }
 ]

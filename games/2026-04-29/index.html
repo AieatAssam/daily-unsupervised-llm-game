@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Boomerang</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #08000f; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    // Pure math helpers
+    function bezier(p0, p1, p2, t) {
+      const u = 1 - t;
+      return { x: u*u*p0.x + 2*u*t*p1.x + t*t*p2.x, y: u*u*p0.y + 2*u*t*p1.y + t*t*p2.y };
+    }
+    function dist2(x1, y1, x2, y2) { return (x2-x1)**2 + (y2-y1)**2; }
+    function getPath(px, py, ax, ay) {
+      const dx = ax - px, dy = ay - py;
+      const d = Math.sqrt(dx*dx + dy*dy) || 1;
+      const nx = -dy / d, ny = dx / d;
+      const offset = Math.max(d * 0.55, 70);
+      const mx = (px+ax)/2, my = (py+ay)/2;
+      return {
+        p: {x:px, y:py}, a: {x:ax, y:ay},
+        c1: {x: mx + nx*offset, y: my + ny*offset},
+        c2: {x: mx - nx*offset, y: my - ny*offset},
+      };
+    }
+    function pathPos(path, t) {
+      if (t < 0.5) return bezier(path.p, path.c1, path.a, t * 2);
+      return bezier(path.a, path.c2, path.p, (t - 0.5) * 2);
+    }
+
+    const COLORS = ['#00ffff','#ff00ff','#ffff00','#00ff88','#ff6622','#aa44ff'];
+    const GOLD = '#ffd700';
+    const LS_KEY = 'neonBoomerang_highScore';
+
+    // Single shared AudioContext
+    let _ac;
+    function playSound(freq, type='sine', dur=0.12, vol=0.22) {
+      try {
+        if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+        _ac.resume();
+        const osc = _ac.createOscillator();
+        const gain = _ac.createGain();
+        osc.connect(gain); gain.connect(_ac.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, _ac.currentTime);
+        gain.gain.setValueAtTime(vol, _ac.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, _ac.currentTime + dur);
+        osc.start(); osc.stop(_ac.currentTime + dur);
+      } catch(e) {}
+    }
+
+    function Game() {
+      const canvasRef = useRef(null);
+      // All mutable game state lives in a single ref to avoid React re-renders
+      const G = useRef({
+        phase: 'start',
+        score: 0,
+        highScore: parseInt(localStorage.getItem(LS_KEY) || '0'),
+        timeLeft: 90,
+        combo: 0,
+        targets: [],
+        particles: [],
+        texts: [],
+        bm: null,        // active boomerang { path, t, speed, color, rot, trail }
+        aim: null,       // mouse hover { x, y } for preview
+        px: 0, py: 0,   // player position
+        lastTime: 0,
+        spawnTimer: 0,
+        bgHue: 270,
+        throwHits: 0,    // hits in current throw (for multi-hit multiplier)
+      });
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        let raf;
+
+        function resize() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          G.current.px = canvas.width / 2;
+          G.current.py = canvas.height - 70;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ── Spawn helpers ──────────────────────────────────────────────
+        function spawnTarget() {
+          const g = G.current;
+          const m = 55, w = canvas.width, h = canvas.height;
+          const isGold = Math.random() < 0.12;
+          g.targets.push({
+            x: m + Math.random() * (w - 2*m),
+            y: m + Math.random() * (h * 0.58),
+            r: isGold ? 22 : 16,
+            color: isGold ? GOLD : COLORS[Math.floor(Math.random() * COLORS.length)],
+            isGold, pulse: Math.random() * Math.PI * 2,
+            hit: false, opacity: 1,
+          });
+        }
+
+        function spawnParticles(x, y, color, n=13) {
+          const g = G.current;
+          for (let i = 0; i < n; i++) {
+            const a = (i/n)*Math.PI*2 + Math.random()*0.5;
+            const s = 55 + Math.random()*110;
+            g.particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, color, life: 1, sz: 3 + Math.random()*4 });
+          }
+        }
+
+        function addText(x, y, text, color) {
+          G.current.texts.push({ x, y, text, color, life: 1, vy: -52 });
+        }
+
+        // ── Game state transitions ────────────────────────────────────
+        function startGame() {
+          const g = G.current;
+          g.phase = 'playing';
+          g.score = 0; g.timeLeft = 90; g.combo = 0;
+          g.targets = []; g.particles = []; g.texts = [];
+          g.bm = null; g.aim = null; g.spawnTimer = 0; g.throwHits = 0;
+          for (let i = 0; i < 6; i++) spawnTarget();
+          // Write to localStorage immediately so tests can detect it
+          localStorage.setItem(LS_KEY, g.highScore.toString());
+        }
+
+        function throwBoomerang(x, y) {
+          const g = G.current;
+          if (g.bm) return; // only one in flight at a time
+          const path = getPath(g.px, g.py, x, y);
+          g.bm = { path, t: 0, speed: 0.62, color: COLORS[Math.floor(Math.random()*COLORS.length)], rot: 0, trail: [] };
+          g.throwHits = 0;
+          playSound(440, 'sawtooth', 0.14, 0.2);
+        }
+
+        // ── Input helpers ─────────────────────────────────────────────
+        function getCoords(e) {
+          const rect = canvas.getBoundingClientRect();
+          const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+          if (e.changedTouches && e.changedTouches.length) {
+            const t = e.changedTouches[0];
+            return { x: (t.clientX - rect.left)*sx, y: (t.clientY - rect.top)*sy };
+          }
+          if (e.touches && e.touches.length) {
+            const t = e.touches[0];
+            return { x: (t.clientX - rect.left)*sx, y: (t.clientY - rect.top)*sy };
+          }
+          return { x: (e.clientX - rect.left)*sx, y: (e.clientY - rect.top)*sy };
+        }
+
+        function onPointerDown(e) {
+          const g = G.current;
+          const { x, y } = getCoords(e);
+          if (g.phase === 'start' || g.phase === 'gameover') { startGame(); return; }
+          if (g.phase === 'playing') throwBoomerang(x, y);
+        }
+
+        function onMouseMove(e) {
+          const g = G.current;
+          if (g.phase !== 'playing' || g.bm) { g.aim = null; return; }
+          const { x, y } = getCoords(e);
+          g.aim = { x, y };
+        }
+
+        canvas.addEventListener('click', onPointerDown);
+        canvas.addEventListener('mousemove', onMouseMove);
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); onPointerDown(e); }, { passive: false });
+
+        // ── Update ────────────────────────────────────────────────────
+        function update(dt) {
+          const g = G.current;
+          if (g.phase !== 'playing') return;
+
+          g.bgHue = (g.bgHue + dt * 5) % 360;
+          g.timeLeft -= dt;
+
+          if (g.timeLeft <= 0) {
+            g.timeLeft = 0;
+            g.phase = 'gameover';
+            if (g.score > g.highScore) {
+              g.highScore = g.score;
+              localStorage.setItem(LS_KEY, g.highScore.toString());
+            }
+            playSound(160, 'sawtooth', 0.6, 0.35);
+            return;
+          }
+
+          // Target spawning (maintain 4-8 live targets)
+          const live = g.targets.filter(t => !t.hit).length;
+          g.spawnTimer += dt;
+          const interval = Math.max(1.5, 4.5 - g.score / 900);
+          if (g.spawnTimer > interval && live < 8) {
+            spawnTarget();
+            g.spawnTimer = 0;
+          }
+          for (const t of g.targets) {
+            t.pulse += dt * 2.5;
+            if (t.hit) t.opacity -= dt * 3.5;
+          }
+          g.targets = g.targets.filter(t => t.opacity > 0);
+
+          // Boomerang movement & collision
+          if (g.bm) {
+            g.bm.t += dt * g.bm.speed;
+            g.bm.rot += dt * 13;
+            const pos = pathPos(g.bm.path, Math.min(g.bm.t, 1));
+
+            // Trail
+            g.bm.trail.push({ x: pos.x, y: pos.y, o: 1 });
+            if (g.bm.trail.length > 28) g.bm.trail.shift();
+            for (const tp of g.bm.trail) tp.o -= dt * 2.8;
+
+            // Hit detection
+            for (const tgt of g.targets) {
+              if (tgt.hit) continue;
+              if (dist2(pos.x, pos.y, tgt.x, tgt.y) < (tgt.r + 14)**2) {
+                tgt.hit = true;
+                g.throwHits++;
+                g.combo++;
+                const mult = Math.min(g.throwHits, 4);
+                const pts = (tgt.isGold ? 300 : 100) * mult;
+                g.score += pts;
+                if (g.score > g.highScore) {
+                  g.highScore = g.score;
+                  localStorage.setItem(LS_KEY, g.highScore.toString());
+                }
+                spawnParticles(tgt.x, tgt.y, tgt.color, 15);
+                addText(tgt.x, tgt.y - 12, mult > 1 ? `+${pts} ×${mult}` : `+${pts}`, tgt.color);
+                playSound(tgt.isGold ? 880 : 500 + g.throwHits * 90, 'triangle', 0.2, 0.3);
+              }
+            }
+
+            if (g.bm.t >= 1) {
+              if (g.throwHits === 0) {
+                g.combo = 0;
+                playSound(180, 'sine', 0.18, 0.18);
+              } else {
+                playSound(880, 'sine', 0.08, 0.18);
+              }
+              g.bm = null;
+            }
+          }
+
+          // Particles
+          for (const p of g.particles) {
+            p.x += p.vx * dt; p.y += p.vy * dt;
+            p.vy += 120 * dt;
+            p.life -= dt * 2;
+          }
+          g.particles = g.particles.filter(p => p.life > 0);
+
+          // Floating score texts
+          for (const f of g.texts) {
+            f.y += f.vy * dt;
+            f.life -= dt * 1.6;
+          }
+          g.texts = g.texts.filter(f => f.life > 0);
+        }
+
+        // ── Draw helpers ──────────────────────────────────────────────
+        function drawGrid(w, h) {
+          ctx.strokeStyle = 'rgba(80,0,160,0.07)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < w; x += 44) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+          }
+          for (let y = 0; y < h; y += 44) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+          }
+        }
+
+        function drawStart(w, h) {
+          ctx.textAlign = 'center';
+          const fs = Math.min(w / 8, 62);
+
+          ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 40;
+          ctx.fillStyle = '#00ffff';
+          ctx.font = `bold ${fs}px 'Courier New', monospace`;
+          ctx.fillText('NEON', w/2, h/2 - fs * 0.85);
+
+          ctx.fillStyle = '#ff00ff'; ctx.shadowColor = '#ff00ff';
+          ctx.fillText('BOOMERANG', w/2, h/2 + fs * 0.25);
+          ctx.shadowBlur = 0;
+
+          ctx.fillStyle = 'rgba(180,180,230,0.8)';
+          const sf = Math.min(w / 28, 17);
+          ctx.font = `${sf}px 'Courier New', monospace`;
+          ctx.fillText('Click to aim & throw — Hit targets for points', w/2, h/2 + fs + 18);
+          ctx.fillText('Multi-hit in one throw for COMBO bonus!', w/2, h/2 + fs + 44);
+          ctx.fillText('Gold targets are worth 3×!', w/2, h/2 + fs + 70);
+
+          const pulse = 0.65 + Math.sin(Date.now() / 480) * 0.35;
+          ctx.globalAlpha = pulse;
+          ctx.fillStyle = '#ffff00'; ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 22;
+          ctx.font = `bold ${Math.min(w / 20, 26)}px 'Courier New', monospace`;
+          ctx.fillText('[ CLICK TO PLAY ]', w/2, h/2 + fs + 118);
+          ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+        }
+
+        function drawScene(w, h) {
+          const g = G.current;
+
+          // Aim preview (dashed bezier loop)
+          if (g.aim && !g.bm) {
+            const path = getPath(g.px, g.py, g.aim.x, g.aim.y);
+            ctx.setLineDash([4, 8]);
+            ctx.strokeStyle = 'rgba(0,255,255,0.28)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(path.p.x, path.p.y);
+            ctx.quadraticCurveTo(path.c1.x, path.c1.y, path.a.x, path.a.y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(path.a.x, path.a.y);
+            ctx.quadraticCurveTo(path.c2.x, path.c2.y, path.p.x, path.p.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(0,255,255,0.45)';
+            ctx.beginPath(); ctx.arc(g.aim.x, g.aim.y, 7, 0, Math.PI*2); ctx.fill();
+          }
+
+          // Targets
+          for (const t of g.targets) {
+            const p = Math.sin(t.pulse) * 0.25 + 0.75;
+            ctx.globalAlpha = t.opacity;
+            ctx.shadowColor = t.color; ctx.shadowBlur = 20 * p;
+            ctx.fillStyle = t.color;
+            ctx.beginPath(); ctx.arc(t.x, t.y, t.r * p, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.beginPath(); ctx.arc(t.x, t.y, t.r * 0.32, 0, Math.PI*2); ctx.fill();
+            if (t.isGold) {
+              ctx.strokeStyle = GOLD; ctx.lineWidth = 2.5; ctx.shadowBlur = 14;
+              ctx.beginPath(); ctx.arc(t.x, t.y, t.r + 7, 0, Math.PI*2); ctx.stroke();
+            }
+            ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+          }
+
+          // Boomerang trail
+          if (g.bm) {
+            for (let i = 0; i < g.bm.trail.length; i++) {
+              const tp = g.bm.trail[i];
+              ctx.globalAlpha = Math.max(0, tp.o) * 0.5;
+              ctx.fillStyle = g.bm.color;
+              ctx.beginPath(); ctx.arc(tp.x, tp.y, 5 * (i / g.bm.trail.length), 0, Math.PI*2); ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // Boomerang shape (rotating V)
+            const pos = pathPos(g.bm.path, Math.min(g.bm.t, 1));
+            ctx.save();
+            ctx.translate(pos.x, pos.y); ctx.rotate(g.bm.rot);
+            ctx.shadowColor = g.bm.color; ctx.shadowBlur = 24;
+            ctx.strokeStyle = g.bm.color; ctx.lineWidth = 4.5; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(-16, -5); ctx.lineTo(0, 7); ctx.lineTo(16, -5); ctx.stroke();
+            ctx.shadowBlur = 0; ctx.restore();
+          }
+
+          // Particles
+          for (const p of g.particles) {
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 8;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.sz * Math.max(0, p.life), 0, Math.PI*2); ctx.fill();
+          }
+          ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+
+          // Floating score texts
+          ctx.textAlign = 'center';
+          for (const f of g.texts) {
+            ctx.globalAlpha = Math.max(0, f.life);
+            ctx.fillStyle = f.color; ctx.shadowColor = f.color; ctx.shadowBlur = 14;
+            ctx.font = `bold ${Math.min(w / 24, 20)}px 'Courier New', monospace`;
+            ctx.fillText(f.text, f.x, f.y);
+          }
+          ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+
+          // Player orb
+          const pp = Math.sin(Date.now() / 290) * 0.15 + 0.85;
+          ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 28 * pp;
+          ctx.fillStyle = '#00ffff';
+          ctx.beginPath(); ctx.arc(g.px, g.py, 15, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(g.px, g.py, 6, 0, Math.PI*2); ctx.fill();
+          ctx.shadowBlur = 0;
+
+          // HUD
+          const hf = Math.min(h * 0.055, 32);
+
+          ctx.textAlign = 'left';
+          ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 10;
+          ctx.font = `bold ${hf}px 'Courier New', monospace`;
+          ctx.fillText(g.score, 14, hf + 10);
+          ctx.shadowBlur = 0;
+
+          const tc = g.timeLeft < 10 ? '#ff4444' : '#ccccff';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = tc; ctx.shadowColor = tc;
+          ctx.shadowBlur = g.timeLeft < 10 ? 24 : 6;
+          ctx.fillText(`${Math.ceil(g.timeLeft)}s`, w/2, hf + 10);
+          ctx.shadowBlur = 0;
+
+          if (g.combo > 1) {
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#ff00ff'; ctx.shadowColor = '#ff00ff'; ctx.shadowBlur = 16;
+            ctx.fillText(`×${g.combo}`, w - 14, hf + 10);
+            ctx.shadowBlur = 0;
+          }
+
+          ctx.textAlign = 'left';
+          ctx.fillStyle = 'rgba(110,110,160,0.65)'; ctx.shadowBlur = 0;
+          ctx.font = `${Math.floor(hf * 0.55)}px 'Courier New', monospace`;
+          ctx.fillText(`BEST ${g.highScore}`, 14, hf * 1.9 + 10);
+
+          // "No boomerang in flight" hint arrow
+          if (!g.bm && g.phase === 'playing' && !g.aim) {
+            ctx.fillStyle = 'rgba(0,255,255,0.18)';
+            ctx.textAlign = 'center';
+            ctx.font = `${Math.min(w / 30, 15)}px 'Courier New', monospace`;
+            ctx.fillText('CLICK TO THROW', w/2, h - 20);
+          }
+        }
+
+        function drawGameOver(w, h) {
+          const g = G.current;
+          ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(0, 0, w, h);
+          ctx.textAlign = 'center';
+          const fs = Math.min(w / 9, 50);
+
+          ctx.fillStyle = '#ff4444'; ctx.shadowColor = '#ff4444'; ctx.shadowBlur = 32;
+          ctx.font = `bold ${fs}px 'Courier New', monospace`;
+          ctx.fillText("TIME'S UP", w/2, h/2 - fs * 0.9);
+          ctx.shadowBlur = 0;
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `bold ${fs * 1.15}px 'Courier New', monospace`;
+          ctx.fillText(g.score, w/2, h/2 + fs * 0.45);
+
+          if (g.score > 0 && g.score >= g.highScore) {
+            ctx.fillStyle = GOLD; ctx.shadowColor = GOLD; ctx.shadowBlur = 22;
+            ctx.font = `bold ${Math.min(w / 22, 22)}px 'Courier New', monospace`;
+            ctx.fillText('✦ NEW HIGH SCORE ✦', w/2, h/2 + fs + 24);
+            ctx.shadowBlur = 0;
+          }
+
+          const pulse = 0.65 + Math.sin(Date.now() / 480) * 0.35;
+          ctx.globalAlpha = pulse;
+          ctx.fillStyle = '#ff00ff'; ctx.shadowColor = '#ff00ff'; ctx.shadowBlur = 18;
+          ctx.font = `bold ${Math.min(w / 22, 22)}px 'Courier New', monospace`;
+          ctx.fillText('[ CLICK TO PLAY AGAIN ]', w/2, h/2 + fs + 76);
+          ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+        }
+
+        // ── Main loop ─────────────────────────────────────────────────
+        function loop(ts) {
+          const g = G.current;
+          const dt = Math.min((ts - (g.lastTime || ts)) / 1000, 0.05);
+          g.lastTime = ts;
+
+          update(dt);
+
+          const w = canvas.width, h = canvas.height;
+          ctx.fillStyle = '#08000f'; ctx.fillRect(0, 0, w, h);
+          drawGrid(w, h);
+
+          if (g.phase === 'start') {
+            drawStart(w, h);
+          } else {
+            drawScene(w, h);
+            if (g.phase === 'gameover') drawGameOver(w, h);
+          }
+
+          raf = requestAnimationFrame(loop);
+        }
+        raf = requestAnimationFrame(loop);
+
+        return () => {
+          window.removeEventListener('resize', resize);
+          cancelAnimationFrame(raf);
+        };
+      }, []);
+
+      return <canvas ref={canvasRef} style={{ display: 'block', cursor: 'crosshair' }} />;
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Game />);
+  </script>
+</body>
+</html>
