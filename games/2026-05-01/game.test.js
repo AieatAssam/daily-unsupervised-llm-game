@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('2026-05-01 Neon Flood', () => {
+test.describe('2026-05-01 Neon Pairs', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/games/2026-05-01/index.html');
     await page.waitForLoadState('networkidle');
@@ -18,49 +18,26 @@ test.describe('2026-05-01 Neon Flood', () => {
     const body = await page.textContent('body');
     expect(body).toBeTruthy();
     expect(body.length).toBeGreaterThan(10);
-
     // Title visible
-    const title = page.locator('h1');
-    await expect(title).toBeVisible();
-    const titleText = await title.textContent();
-    expect(titleText.toLowerCase()).toContain('flood');
-
-    // Color buttons present
-    const buttons = page.locator('button');
-    const count = await buttons.count();
-    expect(count).toBeGreaterThanOrEqual(6);
+    const bodyText = body.toUpperCase();
+    expect(bodyText).toContain('NEON PAIRS');
   });
 
   test('game responds to user input', async ({ page }) => {
-    await page.click('body');
+    await page.click('body', { position: { x: 200, y: 200 } });
     await page.waitForTimeout(500);
-
-    const gameContainer = await page.locator('#game-container').count();
-    const hasGame = await page.locator('[id*="game"], [class*="game"]').count();
-    expect(gameContainer + hasGame).toBeGreaterThan(0);
+    const hasReactRoot = await page.locator('#root').count();
+    expect(hasReactRoot).toBeGreaterThan(0);
   });
 
   test('game handles rapid interactions', async ({ page }) => {
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
-
-    // Rapidly click different color buttons
-    const buttons = page.locator('button');
-    const count = await buttons.count();
-    if (count > 0) {
-      for (let i = 0; i < 10; i++) {
-        const idx = i % Math.max(1, count);
-        await buttons.nth(idx).click({ force: true }).catch(() => {});
-        await page.waitForTimeout(40);
-      }
-    } else {
-      for (let i = 0; i < 10; i++) {
-        await page.click('body');
-        await page.waitForTimeout(40);
-      }
+    for (let i = 0; i < 10; i++) {
+      await page.click('body', { position: { x: 150 + i * 25, y: 200 + (i % 3) * 20 } });
+      await page.waitForTimeout(80);
     }
-
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
     expect(errors).toHaveLength(0);
   });
 
@@ -69,24 +46,21 @@ test.describe('2026-05-01 Neon Flood', () => {
     await page.reload();
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1500);
-
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
-
-    // Click interaction on mobile viewport
     await page.click('body');
     await page.waitForTimeout(500);
-
     const body = await page.textContent('body');
     expect(body.length).toBeGreaterThan(10);
     expect(errors).toHaveLength(0);
   });
 
   test('localStorage high score works', async ({ page }) => {
-    // High score key is initialized on load
+    await page.click('body', { position: { x: 200, y: 200 } });
+    await page.waitForTimeout(1000);
     const storage = await page.evaluate(() =>
       Object.keys(localStorage).filter(k =>
-        k.includes('highScore') || k.includes('score') || k.includes('best') || k.includes('Best')
+        k.includes('highScore') || k.includes('score') || k.includes('best') || k.includes('Pairs')
       )
     );
     expect(storage.length).toBeGreaterThan(0);

@@ -1372,20 +1372,20 @@
   },
   {
     "id": "2026-05-01",
-    "name": "Neon Flood",
+    "name": "Neon Pairs",
     "date": "2026-05-01",
-    "description": "Flood-fill the entire neon grid by choosing colors to expand your glowing region \u2014 beat par to score big!",
-    "tagline": "One color to rule them all!",
+    "description": "Flip neon cards to find matching symbol pairs \u2014 chain consecutive matches for explosive combo multipliers and clear every pair before the countdown expires!",
+    "tagline": "Flip. Match. Chain the combos!",
     "tags": [
+      "memory",
       "puzzle",
-      "strategy",
       "casual",
-      "color",
-      "logic"
+      "matching",
+      "reflex"
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click a color button to flood your region outward",
+    "controls": "Click / Tap any face-down card to flip it \u2014 find its matching pair to score",
     "folder": "games/2026-05-01",
     "file": "games/2026-05-01/index.html",
     "preview": "games/2026-05-01/preview.png"
