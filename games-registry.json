@@ -1372,20 +1372,20 @@
   },
   {
     "id": "2026-05-01",
-    "name": "Neon Flood",
+    "name": "Nova Barrage",
     "date": "2026-05-01",
-    "description": "Flood-fill the entire neon grid by choosing colors to expand your glowing region \u2014 beat par to score big!",
-    "tagline": "One color to rule them all!",
+    "description": "Defend your glowing neon bases from waves of incoming enemy missiles \u2014 click anywhere to fire a counter-missile that detonates on impact! Chain multiple kills in one explosion for massive combo multipliers as enemy waves grow faster and more numerous each round!",
+    "tagline": "Click to detonate. Defend the bases. Chain the kills!",
     "tags": [
-      "puzzle",
+      "action",
+      "reflex",
       "strategy",
-      "casual",
-      "color",
-      "logic"
+      "arcade",
+      "defense"
     ],
     "difficulty": "medium",
-    "avgPlayTime": "3 minutes",
-    "controls": "Click a color button to flood your region outward",
+    "avgPlayTime": "4 minutes",
+    "controls": "Click / Tap anywhere to fire a counter-missile toward that point",
     "folder": "games/2026-05-01",
     "file": "games/2026-05-01/index.html",
     "preview": "games/2026-05-01/preview.png"
