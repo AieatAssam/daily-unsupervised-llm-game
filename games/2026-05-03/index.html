@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chromawave</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; }
+    #game-title { position: fixed; top: -9999px; left: -9999px; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <span id="game-title">Chromawave</span>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    const COLORS = ['#00ffff', '#ff00ff', '#ff8800', '#00ff88'];
+    const NAMES  = ['CYAN', 'MAGENTA', 'ORANGE', 'GREEN'];
+    const DARKS  = ['#001818', '#180018', '#180c00', '#001810'];
+
+    const sfx = (() => {
+      let ctx = null;
+      const ac = () => {
+        if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+        return ctx;
+      };
+      const tone = (freq, type, dur, vol) => {
+        try {
+          const c = ac();
+          const o = c.createOscillator();
+          const g = c.createGain();
+          o.connect(g); g.connect(c.destination);
+          o.type = type; o.frequency.value = freq;
+          g.gain.setValueAtTime(vol, c.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+          o.start(); o.stop(c.currentTime + dur);
+        } catch (e) {}
+      };
+      return {
+        hit:   (combo) => { tone(380 + combo * 45, 'sine', 0.14, 0.4); setTimeout(() => tone(570 + combo * 45, 'sine', 0.09, 0.3), 65); },
+        miss:  ()      => { tone(110, 'sawtooth', 0.3, 0.5); },
+        move:  ()      => { tone(280, 'square', 0.05, 0.12); },
+        start: ()      => { [220, 330, 440].forEach((f, i) => setTimeout(() => tone(f, 'sine', 0.12, 0.35), i * 100)); },
+      };
+    })();
+
+    function Game() {
+      const canvasRef = useRef(null);
+      const rafRef    = useRef(null);
+      const gs = useRef({
+        phase: 'menu',
+        pZone: 1,
+        waves: [],
+        parts: [],
+        score: 0,
+        combo: 0,
+        lives: 3,
+        best:  0,
+        frame: 0,
+        nextIn: 90,
+        interval: 90,
+        speed: 1.8,
+        flash: null,
+      });
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+
+        // Init localStorage
+        const saved = parseInt(localStorage.getItem('chromawave_highScore') || '0');
+        gs.current.best = saved;
+        localStorage.setItem('chromawave_highScore', String(saved));
+
+        canvas.width  = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        /* ---------- helpers ---------- */
+
+        function resetGame() {
+          const s = gs.current;
+          s.phase    = 'playing';
+          s.pZone    = 1;
+          s.waves    = [];
+          s.parts    = [];
+          s.score    = 0;
+          s.combo    = 0;
+          s.lives    = 3;
+          s.frame    = 0;
+          s.nextIn   = 90;
+          s.interval = 90;
+          s.speed    = 1.8;
+          s.flash    = null;
+          sfx.start();
+        }
+
+        function spawnWave(W, BOTTOM) {
+          const s = gs.current;
+          const recent = s.waves.filter(w => w.y > BOTTOM - 220).map(w => w.zone);
+          let zone = Math.floor(Math.random() * 4);
+          for (let i = 0; i < 10 && recent.includes(zone); i++) zone = Math.floor(Math.random() * 4);
+          s.waves.push({ zone, y: -60, speed: s.speed });
+        }
+
+        function burst(x, y, color, n) {
+          const s = gs.current;
+          for (let i = 0; i < n; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const v = 2.5 + Math.random() * 7;
+            s.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 2, color, alpha: 1, r: 2 + Math.random() * 4, life: 32 + Math.random() * 22 });
+          }
+        }
+
+        function zoneFromX(clientX) {
+          const rect  = canvas.getBoundingClientRect();
+          const scaleX = canvas.width / rect.width;
+          const cx = (clientX - rect.left) * scaleX;
+          return Math.max(0, Math.min(3, Math.floor(cx / (canvas.width / 4))));
+        }
+
+        /* ---------- event handlers ---------- */
+
+        function onResize() {
+          canvas.width  = window.innerWidth;
+          canvas.height = window.innerHeight;
+        }
+
+        function onKey(e) {
+          const s = gs.current;
+          if (['ArrowLeft', 'KeyA'].includes(e.code)) {
+            e.preventDefault();
+            if (s.phase === 'playing' && s.pZone > 0) { s.pZone--; sfx.move(); }
+          } else if (['ArrowRight', 'KeyD'].includes(e.code)) {
+            e.preventDefault();
+            if (s.phase === 'playing' && s.pZone < 3) { s.pZone++; sfx.move(); }
+          } else if (['Space', 'Enter'].includes(e.code)) {
+            e.preventDefault();
+            if (s.phase !== 'playing') resetGame();
+          } else if (e.code === 'Digit1') { if (s.phase === 'playing') { s.pZone = 0; sfx.move(); } }
+          else if   (e.code === 'Digit2') { if (s.phase === 'playing') { s.pZone = 1; sfx.move(); } }
+          else if   (e.code === 'Digit3') { if (s.phase === 'playing') { s.pZone = 2; sfx.move(); } }
+          else if   (e.code === 'Digit4') { if (s.phase === 'playing') { s.pZone = 3; sfx.move(); } }
+        }
+
+        function onClick(e) {
+          const s = gs.current;
+          if (s.phase !== 'playing') { resetGame(); return; }
+          const z = zoneFromX(e.clientX);
+          if (z !== s.pZone) { s.pZone = z; sfx.move(); }
+        }
+
+        function onTouch(e) {
+          e.preventDefault();
+          const s = gs.current;
+          const touch = e.touches[0] || e.changedTouches[0];
+          if (!touch) return;
+          if (s.phase !== 'playing') { resetGame(); return; }
+          const z = zoneFromX(touch.clientX);
+          if (z !== s.pZone) { s.pZone = z; sfx.move(); }
+        }
+
+        window.addEventListener('resize',  onResize);
+        window.addEventListener('keydown', onKey);
+        canvas.addEventListener('click',      onClick);
+        canvas.addEventListener('touchstart', onTouch, { passive: false });
+        canvas.addEventListener('touchmove',  onTouch, { passive: false });
+
+        /* ---------- main loop ---------- */
+
+        function loop() {
+          const s   = gs.current;
+          const ctx = canvas.getContext('2d');
+          const W   = canvas.width;
+          const H   = canvas.height;
+          const zW  = W / 4;
+          const BOTTOM  = H - 115;
+          const ZONE_H  = 115;
+          const WAVE_H  = 56;
+
+          // Background
+          ctx.fillStyle = '#030308';
+          ctx.fillRect(0, 0, W, H);
+
+          // Zone column tints
+          for (let i = 0; i < 4; i++) {
+            ctx.fillStyle = DARKS[i];
+            ctx.fillRect(i * zW, 0, zW, BOTTOM);
+            if (i > 0) {
+              ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+              ctx.lineWidth = 1;
+              ctx.beginPath(); ctx.moveTo(i * zW, 0); ctx.lineTo(i * zW, BOTTOM); ctx.stroke();
+            }
+          }
+
+          // Screen flash
+          if (s.flash) {
+            const hex = Math.max(0, Math.floor(s.flash.a * 70)).toString(16).padStart(2, '0');
+            ctx.fillStyle = s.flash.c + hex;
+            ctx.fillRect(0, 0, W, H);
+            s.flash.a -= 0.055;
+            if (s.flash.a <= 0) s.flash = null;
+          }
+
+          // Zone bases at bottom
+          for (let i = 0; i < 4; i++) {
+            const x   = i * zW;
+            const col = COLORS[i];
+            const act = s.pZone === i && s.phase === 'playing';
+
+            const bg = ctx.createLinearGradient(x, BOTTOM, x, H);
+            bg.addColorStop(0, col + (act ? 'cc' : '2e'));
+            bg.addColorStop(1, col + '0d');
+            ctx.fillStyle = bg;
+            ctx.fillRect(x, BOTTOM, zW, ZONE_H);
+
+            if (act) {
+              ctx.shadowColor = col; ctx.shadowBlur = 28;
+              ctx.strokeStyle = col; ctx.lineWidth = 3;
+              ctx.strokeRect(x + 2, BOTTOM + 2, zW - 4, ZONE_H - 4);
+              ctx.shadowBlur = 0;
+            }
+
+            const fz = Math.floor(Math.min(zW * 0.13, 19));
+            ctx.fillStyle    = col;
+            ctx.textAlign    = 'center';
+            ctx.font         = `bold ${fz}px 'Courier New', monospace`;
+            ctx.fillText(NAMES[i], x + zW / 2, BOTTOM + ZONE_H * 0.55);
+
+            ctx.fillStyle = col + '55';
+            ctx.font      = `${Math.floor(fz * 0.75)}px 'Courier New', monospace`;
+            ctx.fillText(`[${i + 1}]`, x + zW / 2, BOTTOM + ZONE_H * 0.82);
+          }
+
+          // Separator line
+          ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+          ctx.lineWidth   = 2;
+          ctx.beginPath(); ctx.moveTo(0, BOTTOM); ctx.lineTo(W, BOTTOM); ctx.stroke();
+
+          /* ===== PLAYING ===== */
+          if (s.phase === 'playing') {
+            s.frame++;
+
+            // Difficulty ramp
+            const lvl  = Math.floor(s.score / 800);
+            s.speed    = Math.min(5.5, 1.8 + lvl * 0.28);
+            s.interval = Math.max(36, 90 - lvl * 6);
+
+            // Spawn
+            s.nextIn--;
+            if (s.nextIn <= 0) {
+              spawnWave(W, BOTTOM);
+              s.nextIn = s.interval + Math.floor(Math.random() * 18) - 9;
+            }
+
+            // Update + draw waves
+            s.waves = s.waves.filter(w => {
+              w.y += w.speed;
+
+              const x   = w.zone * zW;
+              const col = COLORS[w.zone];
+
+              // Collision check
+              if (w.y + WAVE_H >= BOTTOM) {
+                if (s.pZone === w.zone) {
+                  s.combo++;
+                  const pts = 100 * Math.min(s.combo, 10);
+                  s.score  += pts;
+                  if (s.score > s.best) {
+                    s.best = s.score;
+                    localStorage.setItem('chromawave_highScore', String(s.best));
+                  }
+                  sfx.hit(s.combo);
+                  s.flash = { c: col, a: 0.38 };
+                  burst(x + zW / 2, BOTTOM, col, 20);
+                } else {
+                  s.lives--;
+                  s.combo = 0;
+                  sfx.miss();
+                  s.flash = { c: '#ff0000', a: 0.42 };
+                  burst(x + zW / 2, BOTTOM, '#ff4455', 14);
+                  if (s.lives <= 0) s.phase = 'over';
+                }
+                return false;
+              }
+
+              // Draw wave rectangle
+              const near = w.y + WAVE_H > BOTTOM - 90;
+              ctx.globalAlpha = near ? 1 : 0.88;
+              ctx.shadowColor = col;
+              ctx.shadowBlur  = near ? 28 : 14;
+
+              const wg = ctx.createLinearGradient(x, w.y, x + zW, w.y);
+              wg.addColorStop(0,    col + '22');
+              wg.addColorStop(0.15, col + 'ee');
+              wg.addColorStop(0.85, col + 'ee');
+              wg.addColorStop(1,    col + '22');
+              ctx.fillStyle = wg;
+              ctx.fillRect(x + 5, w.y, zW - 10, WAVE_H);
+
+              ctx.strokeStyle = col;
+              ctx.lineWidth   = near ? 3 : 2;
+              ctx.strokeRect(x + 5, w.y, zW - 10, WAVE_H);
+
+              ctx.shadowBlur  = 0;
+              ctx.globalAlpha = 1;
+
+              // Label
+              const wf = Math.floor(Math.min(zW * 0.11, 15));
+              ctx.fillStyle = '#fff';
+              ctx.textAlign = 'center';
+              ctx.font      = `bold ${wf}px 'Courier New', monospace`;
+              ctx.fillText(NAMES[w.zone], x + zW / 2, w.y + WAVE_H / 2 + wf * 0.38);
+
+              return true;
+            });
+
+            // Player diamond
+            const px  = s.pZone * zW + zW / 2;
+            const py  = BOTTOM + ZONE_H / 2;
+            const ds  = Math.min(zW * 0.22, 36) + Math.sin(s.frame * 0.1) * 3;
+            const pcol = COLORS[s.pZone];
+
+            ctx.shadowColor = '#fff'; ctx.shadowBlur = 22;
+            ctx.beginPath();
+            ctx.moveTo(px,           py - ds);
+            ctx.lineTo(px + ds * 0.65, py);
+            ctx.lineTo(px,           py + ds);
+            ctx.lineTo(px - ds * 0.65, py);
+            ctx.closePath();
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+
+            ctx.shadowColor = pcol; ctx.shadowBlur = 32;
+            ctx.strokeStyle = pcol; ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // HUD — score
+            const hf = Math.min(W * 0.042, 26);
+            ctx.textAlign   = 'left';
+            ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 8;
+            ctx.fillStyle   = '#ffffff';
+            ctx.font        = `bold ${hf}px 'Courier New', monospace`;
+            ctx.fillText(`SCORE: ${s.score}`, 16, hf + 12);
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = '#ffcc00';
+            ctx.font      = `${Math.floor(hf * 0.68)}px 'Courier New', monospace`;
+            ctx.fillText(`BEST: ${s.best}`, 16, hf * 2 + 8);
+
+            // HUD — combo
+            if (s.combo > 1) {
+              ctx.textAlign   = 'center';
+              ctx.shadowColor = '#ff00ff'; ctx.shadowBlur = 22;
+              ctx.fillStyle   = '#ff00ff';
+              ctx.font        = `bold ${Math.min(W * 0.05, 30)}px 'Courier New', monospace`;
+              ctx.fillText(`×${s.combo} COMBO!`, W / 2, hf + 12);
+              ctx.shadowBlur = 0;
+            }
+
+            // HUD — lives
+            ctx.textAlign = 'right';
+            for (let i = 0; i < 3; i++) {
+              const alive = i < s.lives;
+              ctx.shadowColor = alive ? '#ff0055' : 'transparent';
+              ctx.shadowBlur  = alive ? 14 : 0;
+              ctx.fillStyle   = alive ? '#ff0055' : '#1a1a1a';
+              ctx.font        = `${Math.min(W * 0.038, 24)}px 'Courier New', monospace`;
+              ctx.fillText('♦', W - 14 - i * 34, hf + 12);
+            }
+            ctx.shadowBlur = 0;
+
+          /* ===== MENU ===== */
+          } else if (s.phase === 'menu') {
+            s.frame++;
+
+            // Animated demo waves
+            for (let i = 0; i < 4; i++) {
+              const x   = i * zW;
+              const col = COLORS[i];
+              const demoY = ((s.frame * 1.3 + i * (BOTTOM / 5.2)) % (BOTTOM + WAVE_H)) - WAVE_H;
+              if (demoY < BOTTOM) {
+                const dg = ctx.createLinearGradient(x, demoY, x + zW, demoY);
+                dg.addColorStop(0,   col + '11');
+                dg.addColorStop(0.5, col + '55');
+                dg.addColorStop(1,   col + '11');
+                ctx.fillStyle = dg;
+                ctx.fillRect(x + 5, demoY, zW - 10, WAVE_H);
+              }
+            }
+
+            ctx.textAlign = 'center';
+            const tf = Math.min(W * 0.09, 64);
+            ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 38;
+            ctx.fillStyle   = '#ffffff';
+            ctx.font        = `bold ${tf}px 'Courier New', monospace`;
+            ctx.fillText('CHROMAWAVE', W / 2, H * 0.27);
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font      = `${Math.min(W * 0.032, 20)}px 'Courier New', monospace`;
+            ctx.fillText('Move to the matching zone when the wave hits!', W / 2, H * 0.37);
+
+            ctx.fillStyle = '#666666';
+            ctx.font      = `${Math.min(W * 0.025, 15)}px 'Courier New', monospace`;
+            ctx.fillText('← → or A D to move  ·  1 2 3 4 for instant zone  ·  Tap zone on mobile', W / 2, H * 0.44);
+
+            ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 22;
+            ctx.fillStyle   = '#00ff88';
+            ctx.font        = `bold ${Math.min(W * 0.042, 27)}px 'Courier New', monospace`;
+            ctx.fillText('CLICK  OR  PRESS  SPACE  TO  START', W / 2, H * 0.57);
+            ctx.shadowBlur = 0;
+
+            if (s.best > 0) {
+              ctx.fillStyle = '#ffcc00';
+              ctx.font      = `${Math.min(W * 0.03, 18)}px 'Courier New', monospace`;
+              ctx.fillText(`BEST SCORE: ${s.best}`, W / 2, H * 0.65);
+            }
+
+          /* ===== GAME OVER ===== */
+          } else if (s.phase === 'over') {
+            ctx.textAlign   = 'center';
+            ctx.shadowColor = '#ff0055'; ctx.shadowBlur = 42;
+            ctx.fillStyle   = '#ff0055';
+            ctx.font        = `bold ${Math.min(W * 0.09, 64)}px 'Courier New', monospace`;
+            ctx.fillText('GAME OVER', W / 2, H * 0.3);
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font      = `${Math.min(W * 0.055, 38)}px 'Courier New', monospace`;
+            ctx.fillText(`SCORE: ${s.score}`, W / 2, H * 0.42);
+
+            if (s.score > 0 && s.score >= s.best) {
+              ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 22;
+              ctx.fillStyle   = '#ffcc00';
+              ctx.font        = `bold ${Math.min(W * 0.04, 26)}px 'Courier New', monospace`;
+              ctx.fillText('NEW HIGH SCORE!', W / 2, H * 0.52);
+              ctx.shadowBlur = 0;
+            } else {
+              ctx.fillStyle = '#888888';
+              ctx.font      = `${Math.min(W * 0.035, 22)}px 'Courier New', monospace`;
+              ctx.fillText(`BEST: ${s.best}`, W / 2, H * 0.52);
+            }
+
+            ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 22;
+            ctx.fillStyle   = '#00ff88';
+            ctx.font        = `bold ${Math.min(W * 0.038, 24)}px 'Courier New', monospace`;
+            ctx.fillText('CLICK  OR  PRESS  SPACE  TO  RETRY', W / 2, H * 0.64);
+            ctx.shadowBlur = 0;
+          }
+
+          /* ===== PARTICLES (all phases) ===== */
+          s.parts = s.parts.filter(p => {
+            p.x  += p.vx; p.y  += p.vy;
+            p.vx *= 0.93; p.vy  = p.vy * 0.93 + 0.18;
+            p.alpha -= 1 / p.life;
+            if (p.alpha <= 0) return false;
+            ctx.globalAlpha = p.alpha;
+            ctx.shadowColor = p.color; ctx.shadowBlur = 9;
+            ctx.fillStyle   = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.alpha, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+            return true;
+          });
+
+          rafRef.current = requestAnimationFrame(loop);
+        }
+
+        rafRef.current = requestAnimationFrame(loop);
+
+        return () => {
+          cancelAnimationFrame(rafRef.current);
+          window.removeEventListener('resize',  onResize);
+          window.removeEventListener('keydown', onKey);
+          canvas.removeEventListener('click',      onClick);
+          canvas.removeEventListener('touchstart', onTouch);
+          canvas.removeEventListener('touchmove',  onTouch);
+        };
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          style={{ display: 'block', width: '100vw', height: '100vh', cursor: 'pointer' }}
+        />
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
+  </script>
+</body>
+</html>
