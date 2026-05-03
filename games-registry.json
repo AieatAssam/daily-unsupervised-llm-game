@@ -1389,5 +1389,25 @@
     "folder": "games/2026-05-01",
     "file": "games/2026-05-01/index.html",
     "preview": "games/2026-05-01/preview.png"
+  },
+  {
+    "id": "2026-05-03",
+    "name": "Chromawave",
+    "date": "2026-05-03",
+    "description": "Colorful waves surge down four neon lanes — dash to the matching colored zone before each wave crashes! Chain consecutive correct catches for explosive combo multipliers as waves speed up and multiply.",
+    "tagline": "Dash to your color. Catch the wave. Chain the combos!",
+    "tags": [
+      "reflex",
+      "color",
+      "action",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "← → or A D to move between zones · 1 2 3 4 for instant zone jump | Tap a zone on mobile",
+    "folder": "games/2026-05-03",
+    "file": "games/2026-05-03/index.html",
+    "preview": "games/2026-05-03/preview.png"
   }
 ]
