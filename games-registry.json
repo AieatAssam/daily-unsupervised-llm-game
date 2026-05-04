@@ -1409,5 +1409,25 @@
     "folder": "games/2026-05-03",
     "file": "games/2026-05-03/index.html",
     "preview": "games/2026-05-03/preview.png"
+  },
+  {
+    "id": "2026-05-04",
+    "name": "Neon Drift",
+    "date": "2026-05-04",
+    "description": "Steer a glowing neon car along a procedurally curving road — stay on the tarmac, collect diamond gems for combo multipliers, and survive as the road narrows and the speed climbs to warp level!",
+    "tagline": "Stay on the road. Collect gems. Survive the speed!",
+    "tags": [
+      "driving",
+      "reflex",
+      "action",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "← → or A / D to steer | Tap left / right side on mobile",
+    "folder": "games/2026-05-04",
+    "file": "games/2026-05-04/index.html",
+    "preview": "games/2026-05-04/preview.png"
   }
 ]
