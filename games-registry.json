@@ -1429,5 +1429,25 @@
     "folder": "games/2026-05-04",
     "file": "games/2026-05-04/index.html",
     "preview": "games/2026-05-04/preview.png"
+  },
+  {
+    "id": "2026-05-05",
+    "name": "Whip Rush",
+    "date": "2026-05-05",
+    "description": "A neon ball orbits a glowing hub on a tether — click to instantly reverse its orbit direction and smash incoming enemies before they breach the center! Chain consecutive kills for massive combo multipliers as enemies grow faster and more numerous each level.",
+    "tagline": "Reverse the orbit. Smash the enemies. Chain the kills!",
+    "tags": [
+      "action",
+      "reflex",
+      "orbital",
+      "arcade",
+      "timing"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap / Space to reverse orbit direction — smash enemies with the whipping ball",
+    "folder": "games/2026-05-05",
+    "file": "games/2026-05-05/index.html",
+    "preview": "games/2026-05-05/preview.png"
   }
 ]
