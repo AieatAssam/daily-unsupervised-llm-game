@@ -40,7 +40,36 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "Daily Game Bot"
-          
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install agent-browser
+        run: |
+          echo "📦 Installing agent-browser from Vercel Labs..."
+          npm install -g agent-browser
+          agent-browser install --with-deps
+          echo "✅ agent-browser ready"
+          agent-browser --version
+
+      - name: Install agent-browser skill via skills CLI
+        run: |
+          echo "🧠 Installing agent-browser skill for Claude Code..."
+          npx skills add vercel-labs/agent-browser --skill agent-browser -a claude-code -y
+          echo "📋 Installed skills:"
+          ls .claude/skills/ 2>/dev/null || echo "(installed globally)"
+
+      - name: Start local HTTP server
+        run: |
+          echo "🌐 Starting HTTP server on port 8080..."
+          npm install -g http-server
+          http-server . -p 8080 --cors -c-1 &
+          echo "HTTP_SERVER_PID=$!" >> $GITHUB_ENV
+          sleep 3
+          curl -sf http://localhost:8080/ > /dev/null && echo "✅ HTTP server is up" || echo "⚠️ HTTP server check failed"
+
       - name: Generate Daily Game with Claude Code
         uses: anthropics/claude-code-action@beta
         with:
@@ -57,6 +86,15 @@ jobs:
             IMPORTANT: Work in the current directory. All file paths must be relative.
             Do NOT use /tmp or absolute paths.
 
+            A local HTTP server is already running at http://localhost:8080.
+            The agent-browser skill is installed — read .claude/skills/agent-browser/SKILL.md for full command reference.
+
+            Key agent-browser commands:
+              agent-browser open <url>          # navigate to a page
+              agent-browser snapshot            # get accessibility tree and interactive elements
+              agent-browser screenshot <path>   # save PNG screenshot to file
+              agent-browser wait <ms>           # wait for rendering/animations
+
             CRITICAL REQUIREMENTS:
             1. Read and analyze games-registry.json to see all existing games
             2. Ensure the new game is mechanically unique and different from the last 7 games
@@ -69,10 +107,31 @@ jobs:
             5. Create the test file: games/YYYY-MM-DD/game.test.js
                - Tests MUST load /games/YYYY-MM-DD/index.html (NOT .jsx or .js)
                - Include all 6 required tests (load, render, input, rapid input, mobile, localStorage)
-            6. Update games-registry.json with the new entry
+            6. Verify playability with agent-browser BEFORE generating the preview:
+               - agent-browser open http://localhost:8080/games/YYYY-MM-DD/index.html
+               - agent-browser wait 3000
+               - agent-browser screenshot /tmp/check.png   (read it — must not be blank/white)
+               - agent-browser snapshot                     (confirm interactive elements exist)
+               - Click or interact with the game and confirm it responds
+               - If the game is broken, fix it and re-verify before continuing
+            7. Generate the preview via agent-browser (mid-action, score visible):
+               - agent-browser open http://localhost:8080/games/YYYY-MM-DD/index.html
+               - agent-browser wait 3000
+               - agent-browser screenshot games/YYYY-MM-DD/preview.png
+            8. Update games-registry.json with the new entry
                - Set "file" to "games/YYYY-MM-DD/index.html"
+               - Set "preview" to "games/YYYY-MM-DD/preview.png"
 
             Complete the full workflow in one shot. Follow the quality checklist in Claude.md.
+            The game is NOT done until agent-browser confirms it renders and responds to input.
+
+      - name: Stop HTTP server
+        if: always()
+        run: |
+          if [ -n "$HTTP_SERVER_PID" ]; then
+            kill $HTTP_SERVER_PID 2>/dev/null || true
+            echo "🛑 HTTP server stopped"
+          fi
 
       - name: Debug - Check git state
         run: |

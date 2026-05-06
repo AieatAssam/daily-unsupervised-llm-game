@@ -258,7 +258,39 @@ test.describe('YYYY-MM-DD Game Name', () => {
 - localStorage must work for high scores
 - Must be responsive on mobile (375px width)
 
-### 7. Gallery UI Update
+### 7. Agent Browser Playability Check
+**CRITICAL: The game is NOT done until it passes a live playability check.**
+
+With http-server running on port 8080, use the agent-browser skill to verify the game actually works:
+
+```bash
+# Open the game
+agent-browser open http://localhost:8080/games/YYYY-MM-DD/index.html
+agent-browser wait 3000
+
+# Verify it rendered (not blank/white) — read the screenshot
+agent-browser screenshot /tmp/check-initial.png
+
+# Inspect interactive elements
+agent-browser snapshot
+
+# Simulate player input
+agent-browser click <start-button-ref>   # or click the game canvas
+agent-browser wait 1000
+
+# Confirm the game responds (score changes, elements move, etc.)
+agent-browser screenshot /tmp/check-playing.png
+```
+
+**All of these must pass before committing:**
+- [ ] Game renders visually — no blank/white screen
+- [ ] Start screen or immediate gameplay is clearly visible
+- [ ] Clicking/tapping the game area triggers a visible response
+- [ ] Score or feedback elements update when the player interacts
+
+If any check fails: diagnose from the snapshot, fix the HTML, and re-run the agent-browser checks.
+
+### 8. Gallery UI Update
 The `index.html` serves as the main entry page. Ensure it:
 - Reads `games-registry.json` and displays all games
 - Shows preview images in a responsive grid
@@ -302,15 +334,17 @@ The `index.html` serves as the main entry page. Ensure it:
 4. ✅ Write the complete game HTML to `games/YYYY-MM-DD/index.html` (complete standalone HTML file with React from CDN)
 5. ✅ Write automated test file `games/YYYY-MM-DD/game.test.js` with all 6 required tests (loading index.html)
 6. ✅ Run new game tests: `npx playwright test games/YYYY-MM-DD/game.test.js` — fix ANY failures before continuing
-7. ✅ Generate preview image to `games/YYYY-MM-DD/preview.png` (screenshot mid-gameplay)
-8. ✅ Update games-registry.json with new entry
-9. ✅ Verify index.html correctly loads the new game
-10. ✅ Commit all files with message: "🎮 Daily Game: [Game Name] - [Date]"
+7. ✅ **Verify playability with agent-browser** — open the game, screenshot it, interact with it; fix any issues before continuing
+8. ✅ Generate preview image to `games/YYYY-MM-DD/preview.png` (screenshot mid-gameplay via agent-browser)
+9. ✅ Update games-registry.json with new entry
+10. ✅ Verify index.html correctly loads the new game
+11. ✅ Commit all files with message: "🎮 Daily Game: [Game Name] - [Date]"
 
 ### Quality Checklist (verify before committing):
 - [ ] Game is unique - checked registry and confirmed no duplicates
 - [ ] Core mechanic is different from last 7 games
 - [ ] All 6 automated tests written and passing for the new game
+- [ ] **agent-browser confirmed game renders visually and responds to input**
 - [ ] Visual aesthetics match neon/flashy standard
 - [ ] Particle effects present and visually satisfying
 - [ ] Sound effects work (test Web Audio API)
