@@ -18,7 +18,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   
   // Limit workers on CI for stability
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 8 : undefined,
   
   // Reporter to use
   reporter: [
