@@ -1449,5 +1449,25 @@
     "folder": "games/2026-05-05",
     "file": "games/2026-05-05/index.html",
     "preview": "games/2026-05-05/preview.png"
+  },
+  {
+    "id": "2026-05-07",
+    "name": "Surge Line",
+    "date": "2026-05-07",
+    "description": "Move your mouse to aim a horizontal electric zap line across the full screen — click to fire a surge that destroys every enemy at that height! Wait for enemies to align for x2, x3, or x4 combo multipliers as waves grow faster each level.",
+    "tagline": "Aim the surge. Zap the row. Chain the combos!",
+    "tags": [
+      "action",
+      "reflex",
+      "timing",
+      "arcade",
+      "strategy"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse / drag to aim the horizontal zap line · Click / Tap to fire the electric surge",
+    "folder": "games/2026-05-07",
+    "file": "games/2026-05-07/index.html",
+    "preview": "games/2026-05-07/preview.png"
   }
 ]
