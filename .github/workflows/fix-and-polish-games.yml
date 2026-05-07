@@ -91,13 +91,10 @@ jobs:
 
       - name: Run Fix and Polish pass with Claude Code
         uses: anthropics/claude-code-action@v1
-        env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
             --model claude-sonnet-4-6
-            --max-tokens 65536
             --dangerously-skip-permissions
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
