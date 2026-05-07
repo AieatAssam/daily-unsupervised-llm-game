@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Surge Line</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0014; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef, useCallback } = React;
+
+    const CW = 480;
+    const CH = 700;
+    const ENEMY_R = 16;
+    const ZAP_HIT = 22;
+    const CHARGE_TIME = 1.4;
+
+    function SurgeLine() {
+      const canvasRef = useRef(null);
+      const gs = useRef({
+        phase: 'start',
+        score: 0,
+        highScore: parseInt(localStorage.getItem('surgeLineHighScore') || '0'),
+        lives: 3,
+        enemies: [],
+        particles: [],
+        floatTexts: [],
+        zapLine: null,
+        zapFlash: 0,
+        charge: 1.0,
+        mouseY: CH / 2,
+        level: 1,
+        spawnTimer: 0,
+        frameCount: 0,
+      });
+      const audioCtx = useRef(null);
+
+      function audio() {
+        if (!audioCtx.current) {
+          audioCtx.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return audioCtx.current;
+      }
+
+      function playZap() {
+        try {
+          const ctx = audio();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.setValueAtTime(900, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + 0.18);
+          g.gain.setValueAtTime(0.35, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+          o.start(); o.stop(ctx.currentTime + 0.18);
+        } catch(e) {}
+      }
+
+      function playBlast(n) {
+        try {
+          const ctx = audio();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = 'sawtooth';
+          o.frequency.setValueAtTime(150 + n * 40, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.25);
+          g.gain.setValueAtTime(0.4, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+          o.start(); o.stop(ctx.currentTime + 0.25);
+        } catch(e) {}
+      }
+
+      function playMiss() {
+        try {
+          const ctx = audio();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.setValueAtTime(280, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.3);
+          g.gain.setValueAtTime(0.45, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+          o.start(); o.stop(ctx.currentTime + 0.3);
+        } catch(e) {}
+      }
+
+      function spawnEnemy(s) {
+        const palette = ['#00ffff','#ff00ff','#ffff00','#ff6600','#00ff88','#ff4488','#aa88ff'];
+        s.enemies.push({
+          x: 40 + Math.random() * (CW - 80),
+          y: -ENEMY_R,
+          color: palette[Math.floor(Math.random() * palette.length)],
+          speed: 0.6 + s.level * 0.18 + Math.random() * 0.4,
+          id: Math.random(),
+        });
+      }
+
+      function fireZap(s) {
+        if (s.charge < 1.0) return;
+        s.charge = 0;
+        const zy = s.mouseY;
+        const hits = s.enemies.filter(e => Math.abs(e.y - zy) < ZAP_HIT + ENEMY_R);
+
+        let pts = 0;
+        let mult = 1;
+        if (hits.length >= 6) mult = 4;
+        else if (hits.length >= 4) mult = 3;
+        else if (hits.length >= 2) mult = 2;
+
+        pts = hits.length * 100 * mult;
+
+        if (hits.length > 0) {
+          s.score += pts;
+          playBlast(hits.length);
+
+          hits.forEach(e => {
+            for (let i = 0; i < 12; i++) {
+              const a = Math.random() * Math.PI * 2;
+              const sp = 1.5 + Math.random() * 5;
+              s.particles.push({
+                x: e.x, y: e.y,
+                vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+                color: e.color,
+                life: 1.0,
+                size: 2.5 + Math.random() * 4,
+              });
+            }
+          });
+
+          if (mult > 1) {
+            s.floatTexts.push({
+              text: `x${mult} COMBO!`,
+              x: CW / 2, y: zy - 30,
+              color: '#ffff00',
+              life: 1.4,
+            });
+          } else if (hits.length > 0) {
+            s.floatTexts.push({
+              text: `+${pts}`,
+              x: CW / 2, y: zy - 20,
+              color: '#00ffff',
+              life: 0.9,
+            });
+          }
+
+          s.enemies = s.enemies.filter(e => !hits.includes(e));
+          localStorage.setItem('surgeLineScore', String(s.score));
+          if (s.score > s.highScore) {
+            s.highScore = s.score;
+            localStorage.setItem('surgeLineHighScore', String(s.score));
+          }
+        }
+
+        s.zapLine = { y: zy, life: 0.55 };
+        s.zapFlash = 1.0;
+        playZap();
+      }
+
+      function resetGame(s) {
+        localStorage.setItem('surgeLineScore', '0');
+        s.score = 0;
+        s.lives = 3;
+        s.enemies = [];
+        s.particles = [];
+        s.floatTexts = [];
+        s.zapLine = null;
+        s.zapFlash = 0;
+        s.charge = 1.0;
+        s.level = 1;
+        s.spawnTimer = 0;
+        s.frameCount = 0;
+      }
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        let last = 0;
+        let raf;
+
+        const COLORS_BG = ['rgba(100,0,200,0.1)', 'rgba(0,100,200,0.1)'];
+
+        function draw(ts) {
+          const dt = Math.min((ts - last) / 1000, 0.05);
+          last = ts;
+          const s = gs.current;
+
+          // Update
+          if (s.phase === 'playing') {
+            s.charge = Math.min(1.0, s.charge + dt / CHARGE_TIME);
+
+            const spawnInterval = Math.max(0.3, 1.6 - s.level * 0.12);
+            s.spawnTimer -= dt;
+            if (s.spawnTimer <= 0) {
+              spawnEnemy(s);
+              // occasional double spawn at higher levels
+              if (s.level >= 4 && Math.random() < 0.3) spawnEnemy(s);
+              s.spawnTimer = spawnInterval;
+            }
+
+            s.frameCount++;
+            if (s.frameCount % 360 === 0) {
+              s.level = Math.min(12, s.level + 1);
+            }
+
+            // Move enemies
+            const toDie = [];
+            s.enemies.forEach(e => {
+              e.y += e.speed;
+              if (e.y > CH + ENEMY_R) toDie.push(e);
+            });
+            toDie.forEach(e => {
+              s.enemies = s.enemies.filter(x => x !== e);
+              s.lives--;
+              playMiss();
+              s.floatTexts.push({ text: '-LIFE', x: e.x, y: CH - 40, color: '#ff3344', life: 1.2 });
+              if (s.lives <= 0) {
+                s.phase = 'gameover';
+                if (s.score > s.highScore) {
+                  s.highScore = s.score;
+                  localStorage.setItem('surgeLineHighScore', String(s.score));
+                }
+              }
+            });
+
+            // Particles
+            s.particles = s.particles.filter(p => {
+              p.x += p.vx; p.y += p.vy; p.vy += 0.12;
+              p.life -= dt * 2.2;
+              return p.life > 0;
+            });
+
+            // Zap
+            if (s.zapLine) { s.zapLine.life -= dt * 2.8; if (s.zapLine.life <= 0) s.zapLine = null; }
+            s.zapFlash = Math.max(0, s.zapFlash - dt * 6);
+
+            // Float texts
+            s.floatTexts = s.floatTexts.filter(t => {
+              t.y -= dt * 45; t.life -= dt;
+              return t.life > 0;
+            });
+          }
+
+          // Render
+          ctx.fillStyle = '#0a0014';
+          ctx.fillRect(0, 0, CW, CH);
+
+          // Grid
+          ctx.lineWidth = 1;
+          for (let y = 0; y < CH; y += 50) {
+            ctx.strokeStyle = `rgba(90,0,160,${0.13 + 0.05 * Math.sin(ts/1500 + y)})`;
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CW, y); ctx.stroke();
+          }
+          for (let x = 0; x < CW; x += 50) {
+            ctx.strokeStyle = 'rgba(80,0,140,0.10)';
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CH); ctx.stroke();
+          }
+
+          if (s.phase === 'start') {
+            drawStart(ctx, s, ts);
+          } else {
+            drawGame(ctx, s, ts);
+            if (s.phase === 'gameover') drawOver(ctx, s, ts);
+          }
+
+          raf = requestAnimationFrame(draw);
+        }
+
+        function drawStart(ctx, s, ts) {
+          ctx.save();
+          ctx.textAlign = 'center';
+
+          // Title glow
+          const t = ts / 1000;
+          const grd = ctx.createLinearGradient(0, 0, CW, 0);
+          grd.addColorStop(0, '#00ffff');
+          grd.addColorStop(0.5, '#ff00ff');
+          grd.addColorStop(1, '#00ffff');
+          ctx.fillStyle = grd;
+          ctx.shadowBlur = 30 + 10 * Math.sin(t * 2);
+          ctx.shadowColor = '#00ffff';
+          ctx.font = 'bold 54px monospace';
+          ctx.fillText('SURGE LINE', CW / 2, CH * 0.28);
+
+          ctx.shadowColor = '#aa88ff';
+          ctx.shadowBlur = 12;
+          ctx.fillStyle = '#ccccff';
+          ctx.font = '17px monospace';
+          ctx.fillText('Move mouse · aim the horizontal zap line', CW / 2, CH * 0.40);
+          ctx.fillText('Click to fire an electric surge', CW / 2, CH * 0.455);
+          ctx.fillText('Let enemies ALIGN for chain combos!', CW / 2, CH * 0.51);
+          ctx.fillText('Hit 2+ enemies = x2  ·  4+ = x3  ·  6+ = x4', CW / 2, CH * 0.555);
+
+          // Demo aim line
+          const demoY = CH * 0.63 + 20 * Math.sin(t * 1.8);
+          ctx.setLineDash([8, 6]);
+          ctx.strokeStyle = 'rgba(0,255,136,0.35)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(30, demoY); ctx.lineTo(CW - 30, demoY); ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Button
+          const pulse = 0.85 + 0.15 * Math.sin(t * 3);
+          ctx.shadowBlur = 25 * pulse;
+          ctx.shadowColor = '#ff00ff';
+          ctx.fillStyle = `rgba(255,0,255,${0.18 * pulse})`;
+          ctx.fillRect(CW / 2 - 110, CH * 0.73, 220, 52);
+          ctx.strokeStyle = '#ff00ff';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(CW / 2 - 110, CH * 0.73, 220, 52);
+          ctx.fillStyle = '#ff88ff';
+          ctx.font = 'bold 22px monospace';
+          ctx.fillText('CLICK TO PLAY', CW / 2, CH * 0.73 + 35);
+
+          if (s.highScore > 0) {
+            ctx.shadowColor = '#ffff00';
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = '#ffff00';
+            ctx.font = '15px monospace';
+            ctx.fillText(`HIGH SCORE: ${s.highScore}`, CW / 2, CH * 0.87);
+          }
+          ctx.restore();
+        }
+
+        function drawGame(ctx, s, ts) {
+          // Flash overlay
+          if (s.zapFlash > 0) {
+            ctx.fillStyle = `rgba(180,230,255,${s.zapFlash * 0.09})`;
+            ctx.fillRect(0, 0, CW, CH);
+          }
+
+          // Aim line
+          if (s.phase === 'playing') {
+            const ready = s.charge >= 1.0;
+            ctx.save();
+            ctx.setLineDash([10, 7]);
+            ctx.strokeStyle = ready ? 'rgba(0,255,136,0.5)' : 'rgba(130,130,180,0.2)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(0, s.mouseY); ctx.lineTo(CW, s.mouseY); ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Cursor arrow
+            if (ready) {
+              ctx.fillStyle = '#00ff88';
+              ctx.shadowBlur = 12; ctx.shadowColor = '#00ff88';
+              ctx.beginPath();
+              ctx.moveTo(4, s.mouseY);
+              ctx.lineTo(18, s.mouseY - 9);
+              ctx.lineTo(18, s.mouseY + 9);
+              ctx.closePath();
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+
+          // Zap line
+          if (s.zapLine) {
+            const a = Math.min(1, s.zapLine.life * 2.5);
+            ctx.save();
+            ctx.shadowBlur = 35;
+            ctx.shadowColor = '#ffffff';
+            ctx.strokeStyle = `rgba(255,255,210,${a})`;
+            ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(0, s.zapLine.y); ctx.lineTo(CW, s.zapLine.y); ctx.stroke();
+            // Jagged overlay
+            ctx.strokeStyle = `rgba(160,210,255,${a * 0.7})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(0, s.zapLine.y);
+            for (let x = 0; x <= CW; x += 12) {
+              ctx.lineTo(x + 6, s.zapLine.y + (Math.random() - 0.5) * 10);
+              ctx.lineTo(x + 12, s.zapLine.y);
+            }
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Particles
+          s.particles.forEach(p => {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.fillStyle = p.color;
+            ctx.shadowBlur = 8; ctx.shadowColor = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * Math.max(0, p.life), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          });
+
+          // Enemies
+          s.enemies.forEach(e => {
+            ctx.save();
+            ctx.shadowBlur = 22;
+            ctx.shadowColor = e.color;
+            ctx.fillStyle = e.color;
+            ctx.globalAlpha = 0.85;
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, ENEMY_R, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.restore();
+
+            // Glow ring
+            ctx.save();
+            ctx.globalAlpha = 0.25;
+            ctx.strokeStyle = e.color;
+            ctx.shadowBlur = 15; ctx.shadowColor = e.color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, ENEMY_R + 5, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          });
+
+          // Float texts
+          s.floatTexts.forEach(t => {
+            ctx.save();
+            ctx.globalAlpha = Math.min(1, t.life * 1.5);
+            ctx.textAlign = 'center';
+            ctx.font = `bold 22px monospace`;
+            ctx.fillStyle = t.color;
+            ctx.shadowBlur = 18; ctx.shadowColor = t.color;
+            ctx.fillText(t.text, t.x, t.y);
+            ctx.restore();
+          });
+
+          // HUD
+          drawHUD(ctx, s, ts);
+        }
+
+        function drawHUD(ctx, s, ts) {
+          ctx.save();
+
+          // Score
+          ctx.textAlign = 'left';
+          ctx.font = 'bold 26px monospace';
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowBlur = 12; ctx.shadowColor = '#00ffff';
+          ctx.fillText(String(s.score), 15, 36);
+
+          ctx.font = '13px monospace';
+          ctx.fillStyle = '#aaaaee';
+          ctx.shadowBlur = 0;
+          ctx.fillText(`LV ${s.level}`, 15, 55);
+
+          // High score
+          ctx.textAlign = 'right';
+          ctx.font = '14px monospace';
+          ctx.fillStyle = '#ffff00';
+          ctx.shadowBlur = 8; ctx.shadowColor = '#ffff00';
+          ctx.fillText(`BEST ${s.highScore}`, CW - 15, 36);
+
+          // Lives
+          for (let i = 0; i < 3; i++) {
+            const alive = i < s.lives;
+            ctx.fillStyle = alive ? '#ff4488' : '#2a1133';
+            ctx.shadowBlur = alive ? 14 : 0;
+            ctx.shadowColor = '#ff4488';
+            ctx.beginPath();
+            ctx.arc(CW - 18 - i * 28, 58, 9, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Charge bar
+          const bx = CW / 2 - 90;
+          const by = CH - 28;
+          const bw = 180;
+          const bh = 11;
+          const chargeCol = s.charge >= 1.0 ? '#00ff88' : s.charge > 0.5 ? '#aaff00' : '#ff8800';
+
+          ctx.fillStyle = 'rgba(0,0,0,0.55)';
+          ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+          ctx.fillStyle = chargeCol;
+          ctx.shadowBlur = 10; ctx.shadowColor = chargeCol;
+          ctx.fillRect(bx, by, bw * s.charge, bh);
+          ctx.strokeStyle = 'rgba(200,200,255,0.5)';
+          ctx.lineWidth = 1;
+          ctx.shadowBlur = 0;
+          ctx.strokeRect(bx - 2, by - 2, bw + 4, bh + 4);
+
+          ctx.textAlign = 'center';
+          ctx.font = '11px monospace';
+          ctx.fillStyle = s.charge >= 1.0 ? '#00ff88' : '#888899';
+          ctx.fillText(s.charge >= 1.0 ? '⚡ READY ⚡' : 'CHARGING...', CW / 2, by - 5);
+
+          ctx.restore();
+        }
+
+        function drawOver(ctx, s, ts) {
+          const t = ts / 1000;
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,15,0.8)';
+          ctx.fillRect(0, 0, CW, CH);
+
+          ctx.textAlign = 'center';
+          ctx.shadowBlur = 35;
+          ctx.shadowColor = '#ff00ff';
+          ctx.fillStyle = '#ff44ff';
+          ctx.font = 'bold 50px monospace';
+          ctx.fillText('GAME OVER', CW / 2, CH * 0.37);
+
+          ctx.shadowColor = '#00ffff';
+          ctx.fillStyle = '#00ffff';
+          ctx.font = 'bold 30px monospace';
+          ctx.fillText(`Score: ${s.score}`, CW / 2, CH * 0.49);
+
+          if (s.score >= s.highScore && s.score > 0) {
+            ctx.fillStyle = '#ffff00';
+            ctx.shadowColor = '#ffff00';
+            ctx.font = 'bold 20px monospace';
+            ctx.fillText('NEW HIGH SCORE!', CW / 2, CH * 0.565);
+          } else {
+            ctx.fillStyle = '#ffff00';
+            ctx.shadowColor = '#ffff00';
+            ctx.font = '17px monospace';
+            ctx.fillText(`Best: ${s.highScore}`, CW / 2, CH * 0.565);
+          }
+
+          const pulse = 0.85 + 0.15 * Math.sin(t * 3);
+          ctx.shadowBlur = 22 * pulse;
+          ctx.shadowColor = '#00ff88';
+          ctx.fillStyle = '#00ff88';
+          ctx.font = 'bold 21px monospace';
+          ctx.fillText('CLICK TO PLAY AGAIN', CW / 2, CH * 0.69);
+
+          ctx.restore();
+        }
+
+        raf = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(raf);
+      }, []);
+
+      const onMouseMove = useCallback((e) => {
+        const rect = canvasRef.current.getBoundingClientRect();
+        gs.current.mouseY = (e.clientY - rect.top) * (CH / rect.height);
+      }, []);
+
+      const onTouchMove = useCallback((e) => {
+        e.preventDefault();
+        const rect = canvasRef.current.getBoundingClientRect();
+        gs.current.mouseY = (e.touches[0].clientY - rect.top) * (CH / rect.height);
+      }, []);
+
+      const onClick = useCallback(() => {
+        const s = gs.current;
+        if (s.phase === 'start') {
+          resetGame(s);
+          s.phase = 'playing';
+        } else if (s.phase === 'playing') {
+          fireZap(s);
+        } else if (s.phase === 'gameover') {
+          resetGame(s);
+          s.phase = 'playing';
+        }
+      }, []);
+
+      const onTouchEnd = useCallback((e) => {
+        e.preventDefault();
+        onClick();
+      }, [onClick]);
+
+      return (
+        <div style={{ display:'flex', justifyContent:'center', alignItems:'center', minHeight:'100vh', background:'#0a0014' }}>
+          <canvas
+            ref={canvasRef}
+            width={CW}
+            height={CH}
+            style={{ maxWidth:'100vw', maxHeight:'100vh', objectFit:'contain', cursor:'crosshair', touchAction:'none' }}
+            onMouseMove={onMouseMove}
+            onClick={onClick}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          />
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<SurgeLine />);
+  </script>
+</body>
+</html>
