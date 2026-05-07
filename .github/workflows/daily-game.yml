@@ -71,7 +71,7 @@ jobs:
           curl -sf http://localhost:8080/ > /dev/null && echo "✅ HTTP server is up" || echo "⚠️ HTTP server check failed"
 
       - name: Generate Daily Game with Claude Code
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
@@ -79,7 +79,6 @@ jobs:
             --max-tokens 65536
             --dangerously-skip-permissions
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          mode: agent
           prompt: |
             Generate today's daily game following all instructions in Claude.md.
 
