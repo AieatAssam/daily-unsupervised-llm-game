@@ -1469,5 +1469,25 @@
     "folder": "games/2026-05-07",
     "file": "games/2026-05-07/index.html",
     "preview": "games/2026-05-07/preview.png"
+  },
+  {
+    "id": "2026-05-08",
+    "name": "Cluster Pop",
+    "date": "2026-05-08",
+    "description": "Click connected groups of 2+ same-colored neon blocks to pop them — larger clusters score exponentially more points, blocks fall and columns collapse after each pop, and chain combos for massive multipliers before the 90-second timer runs out!",
+    "tagline": "Click connected groups. Pop the clusters. Chain the colors!",
+    "tags": [
+      "puzzle",
+      "strategy",
+      "casual",
+      "color",
+      "cluster"
+    ],
+    "difficulty": "easy",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap any block connected to 2+ same-colored neighbors to pop the whole group",
+    "folder": "games/2026-05-08",
+    "file": "games/2026-05-08/index.html",
+    "preview": "games/2026-05-08/preview.png"
   }
 ]

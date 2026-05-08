@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cluster Pop</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050010; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const COLORS = [
+      { fill: '#00ffff', dark: '#005566' },
+      { fill: '#ff00ff', dark: '#550055' },
+      { fill: '#ffff00', dark: '#555500' },
+      { fill: '#00ff88', dark: '#005533' },
+      { fill: '#ff6600', dark: '#553300' },
+    ];
+    const HS_KEY = 'clusterpop-highscore-v1';
+
+    function createGrid(cols, rows) {
+      return Array.from({ length: rows }, () =>
+        Array.from({ length: cols }, () => Math.floor(Math.random() * COLORS.length))
+      );
+    }
+
+    function findGroup(grid, row, col, rows, cols) {
+      const target = grid[row][col];
+      if (target === null) return [];
+      const visited = new Set();
+      const result = [];
+      const stack = [[row, col]];
+      while (stack.length) {
+        const [r, c] = stack.pop();
+        const key = r * cols + c;
+        if (visited.has(key)) continue;
+        if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
+        if (grid[r][c] !== target) continue;
+        visited.add(key);
+        result.push([r, c]);
+        stack.push([r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]);
+      }
+      return result;
+    }
+
+    function applyGravity(grid, rows, cols) {
+      const g = grid.map(r => [...r]);
+      for (let c = 0; c < cols; c++) {
+        let write = rows - 1;
+        for (let r = rows - 1; r >= 0; r--) {
+          if (g[r][c] !== null) { g[write][c] = g[r][c]; if (write !== r) g[r][c] = null; write--; }
+        }
+        while (write >= 0) { g[write][c] = null; write--; }
+      }
+      const validCols = [];
+      for (let c = 0; c < cols; c++) { if (g.some(r => r[c] !== null)) validCols.push(c); }
+      const result = Array.from({ length: rows }, () => Array(cols).fill(null));
+      validCols.forEach((oc, nc) => { for (let r = 0; r < rows; r++) result[r][nc] = g[r][oc]; });
+      return result;
+    }
+
+    function hasValidMoves(grid, rows, cols) {
+      const visited = new Set();
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (grid[r][c] === null) continue;
+          const key = r * cols + c;
+          if (visited.has(key)) continue;
+          const group = findGroup(grid, r, c, rows, cols);
+          group.forEach(([gr, gc]) => visited.add(gr * cols + gc));
+          if (group.length >= 2) return true;
+        }
+      }
+      return false;
+    }
+
+    // Audio
+    let audioCtx;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+    function beep(freq, dur, type = 'sine', vol = 0.25) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.type = type; osc.frequency.value = freq;
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+    function playPop(size, ci) {
+      const base = 280 + ci * 55;
+      beep(base, 0.08, 'sine');
+      if (size >= 5) setTimeout(() => beep(base * 1.4, 0.12, 'sine'), 50);
+      if (size >= 9) setTimeout(() => beep(base * 2, 0.18, 'triangle'), 100);
+    }
+    function playGameOver() {
+      [350, 280, 220, 160].forEach((f, i) => setTimeout(() => beep(f, 0.35, 'sawtooth', 0.18), i * 140));
+    }
+    function playStart() {
+      [220, 330, 440, 660].forEach((f, i) => setTimeout(() => beep(f, 0.1, 'sine', 0.2), i * 70));
+    }
+    function playCombo(combo) {
+      beep(400 + combo * 80, 0.15, 'triangle', 0.2);
+    }
+
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const [ui, setUi] = useState({
+        score: 0,
+        highScore: parseInt(localStorage.getItem(HS_KEY) || '0'),
+        timeLeft: 90,
+        combo: 1,
+        phase: 'idle',
+      });
+
+      const g = useRef({
+        grid: null, rows: 10, cols: 10, cellSize: 44,
+        offsetX: 0, offsetY: 0,
+        score: 0,
+        highScore: parseInt(localStorage.getItem(HS_KEY) || '0'),
+        timeLeft: 90, combo: 1, comboTimer: null,
+        phase: 'idle',
+        hoverGroup: new Set(), hoverColor: -1,
+        particles: [], popups: [],
+        bgAngle: 0, lastTs: 0,
+        comboFlash: 0,
+      });
+      const timerRef = useRef(null);
+      const rafRef = useRef(null);
+
+      // Initialize localStorage key on mount
+      useEffect(() => {
+        if (!localStorage.getItem(HS_KEY)) localStorage.setItem(HS_KEY, '0');
+      }, []);
+
+      function resize() {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const W = window.innerWidth, H = window.innerHeight;
+        canvas.width = W; canvas.height = H;
+        const HUD = 90, PAD = 12;
+        const availW = W - PAD * 2, availH = H - HUD - PAD * 2;
+        const cols = 10, rows = 10;
+        const cs = Math.min(Math.floor(availW / cols), Math.floor(availH / rows), 52);
+        g.current.cols = cols; g.current.rows = rows; g.current.cellSize = cs;
+        g.current.offsetX = Math.floor((W - cols * cs) / 2);
+        g.current.offsetY = HUD + Math.floor((availH - rows * cs) / 2);
+      }
+
+      function startGame() {
+        const { rows, cols } = g.current;
+        clearInterval(timerRef.current);
+        clearTimeout(g.current.comboTimer);
+        g.current.grid = createGrid(cols, rows);
+        g.current.score = 0; g.current.timeLeft = 90; g.current.combo = 1;
+        g.current.phase = 'playing';
+        g.current.hoverGroup = new Set(); g.current.hoverColor = -1;
+        g.current.particles = []; g.current.popups = [];
+        g.current.comboFlash = 0;
+        setUi(prev => ({ ...prev, score: 0, timeLeft: 90, combo: 1, phase: 'playing' }));
+
+        timerRef.current = setInterval(() => {
+          if (g.current.phase !== 'playing') { clearInterval(timerRef.current); return; }
+          g.current.timeLeft--;
+          const noMoves = !hasValidMoves(g.current.grid, g.current.rows, g.current.cols);
+          if (g.current.timeLeft <= 0 || noMoves) {
+            endGame();
+          } else {
+            setUi(prev => ({ ...prev, timeLeft: g.current.timeLeft }));
+          }
+        }, 1000);
+        playStart();
+      }
+
+      function endGame() {
+        if (g.current.phase !== 'playing') return;
+        clearInterval(timerRef.current);
+        g.current.phase = 'gameover';
+        const s = g.current.score;
+        const newHigh = Math.max(s, g.current.highScore);
+        g.current.highScore = newHigh;
+        localStorage.setItem(HS_KEY, String(newHigh));
+        setUi(prev => ({ ...prev, phase: 'gameover', score: s, highScore: newHigh, timeLeft: 0 }));
+        playGameOver();
+      }
+
+      function getCellAt(px, py) {
+        const { offsetX, offsetY, cellSize, rows, cols } = g.current;
+        const col = Math.floor((px - offsetX) / cellSize);
+        const row = Math.floor((py - offsetY) / cellSize);
+        if (col < 0 || col >= cols || row < 0 || row >= rows) return null;
+        return { row, col };
+      }
+
+      function handleClick(e) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const src = e.touches ? e.touches[0] : e;
+        const px = src.clientX - rect.left, py = src.clientY - rect.top;
+
+        if (g.current.phase === 'idle' || g.current.phase === 'gameover') {
+          startGame(); return;
+        }
+        if (g.current.phase !== 'playing') return;
+
+        const cell = getCellAt(px, py);
+        if (!cell || g.current.grid[cell.row][cell.col] === null) return;
+        const { row, col } = cell;
+        const ci = g.current.grid[row][col];
+        const group = findGroup(g.current.grid, row, col, g.current.rows, g.current.cols);
+        if (group.length < 2) return;
+
+        const size = group.length;
+        const earned = Math.floor(size * size * 10 * g.current.combo);
+        g.current.score += earned;
+
+        const newCombo = Math.min(g.current.combo + Math.ceil(size / 4), 10);
+        g.current.combo = newCombo;
+        g.current.comboFlash = 0.8;
+        clearTimeout(g.current.comboTimer);
+        g.current.comboTimer = setTimeout(() => {
+          g.current.combo = 1;
+          setUi(prev => ({ ...prev, combo: 1 }));
+        }, 3000);
+
+        const { cellSize, offsetX, offsetY } = g.current;
+        const avgRow = group.reduce((s, [r]) => s + r, 0) / size;
+        const avgCol = group.reduce((s, [, c]) => s + c, 0) / size;
+        const popX = offsetX + (avgCol + 0.5) * cellSize;
+        const popY = offsetY + (avgRow + 0.5) * cellSize;
+
+        g.current.popups.push({
+          x: popX, y: popY,
+          text: newCombo > 1 ? `+${earned} ×${newCombo}` : `+${earned}`,
+          life: 1.3, color: COLORS[ci].fill,
+        });
+
+        group.forEach(([r, c]) => {
+          for (let i = 0; i < 6; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            const sp = 2.5 + Math.random() * 5;
+            g.current.particles.push({
+              x: offsetX + (c + 0.5) * cellSize,
+              y: offsetY + (r + 0.5) * cellSize,
+              vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 1.5,
+              color: COLORS[ci].fill, life: 1, sz: 3 + Math.random() * 4,
+            });
+          }
+        });
+
+        group.forEach(([r, c]) => { g.current.grid[r][c] = null; });
+        g.current.grid = applyGravity(g.current.grid, g.current.rows, g.current.cols);
+        g.current.hoverGroup = new Set(); g.current.hoverColor = -1;
+
+        playPop(size, ci);
+        if (newCombo > 1) playCombo(newCombo);
+        setUi(prev => ({ ...prev, score: g.current.score, combo: newCombo }));
+
+        const remaining = g.current.grid.flat().filter(v => v !== null).length;
+        if (remaining === 0) {
+          const bonus = 5000 * g.current.combo;
+          g.current.score += bonus;
+          g.current.popups.push({
+            x: canvasRef.current.width / 2, y: canvasRef.current.height / 2 - 30,
+            text: `CLEAR! +${bonus}`, life: 2, color: '#ffffff',
+          });
+          setUi(prev => ({ ...prev, score: g.current.score }));
+          setTimeout(() => endGame(), 1200);
+        } else if (!hasValidMoves(g.current.grid, g.current.rows, g.current.cols)) {
+          setTimeout(() => endGame(), 600);
+        }
+      }
+
+      function handleMove(e) {
+        if (g.current.phase !== 'playing') return;
+        const rect = canvasRef.current.getBoundingClientRect();
+        const src = e.touches ? e.touches[0] : e;
+        const px = src.clientX - rect.left, py = src.clientY - rect.top;
+        const cell = getCellAt(px, py);
+        if (!cell || g.current.grid[cell.row][cell.col] === null) {
+          g.current.hoverGroup = new Set(); g.current.hoverColor = -1; return;
+        }
+        const { row, col } = cell;
+        const group = findGroup(g.current.grid, row, col, g.current.rows, g.current.cols);
+        if (group.length >= 2) {
+          g.current.hoverGroup = new Set(group.map(([r, c]) => r * g.current.cols + c));
+          g.current.hoverColor = g.current.grid[row][col];
+        } else {
+          g.current.hoverGroup = new Set(); g.current.hoverColor = -1;
+        }
+      }
+
+      useEffect(() => {
+        resize();
+        window.addEventListener('resize', resize);
+
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        function rr(x, y, w, h, r) {
+          ctx.beginPath();
+          ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+          ctx.arcTo(x + w, y, x + w, y + r, r); ctx.lineTo(x + w, y + h - r);
+          ctx.arcTo(x + w, y + h, x + w - r, y + h, r); ctx.lineTo(x + r, y + h);
+          ctx.arcTo(x, y + h, x, y + h - r, r); ctx.lineTo(x, y + r);
+          ctx.arcTo(x, y, x + r, y, r); ctx.closePath();
+        }
+
+        function render(ts) {
+          const dt = Math.min(ts - (g.current.lastTs || ts), 50) / 1000;
+          g.current.lastTs = ts;
+          g.current.bgAngle = (g.current.bgAngle + dt * 15) % 360;
+          if (g.current.comboFlash > 0) g.current.comboFlash -= dt * 3;
+
+          const W = canvas.width, H = canvas.height;
+          const { grid, rows, cols, cellSize, offsetX, offsetY, phase, hoverGroup, bgAngle } = g.current;
+
+          // Background
+          const hue1 = bgAngle, hue2 = (bgAngle + 130) % 360;
+          const bg = ctx.createLinearGradient(0, 0, W, H);
+          bg.addColorStop(0, `hsl(${hue1},80%,5%)`);
+          bg.addColorStop(0.5, `hsl(${hue2},60%,4%)`);
+          bg.addColorStop(1, `hsl(${hue1},80%,5%)`);
+          ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+          if (!grid) { rafRef.current = requestAnimationFrame(render); return; }
+
+          // Grid shadow
+          ctx.save();
+          ctx.shadowBlur = 25;
+          ctx.shadowColor = `hsla(${hue1},100%,50%,0.4)`;
+          ctx.strokeStyle = `hsla(${hue1},100%,60%,0.2)`;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(offsetX - 2, offsetY - 2, cols * cellSize + 4, rows * cellSize + 4);
+          ctx.restore();
+
+          // Cells
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const ci = grid[r][c];
+              if (ci === null) continue;
+              const x = offsetX + c * cellSize, y = offsetY + r * cellSize;
+              const key = r * cols + c;
+              const hov = hoverGroup.has(key);
+              const col_ = COLORS[ci];
+              const pad = hov ? 1 : 3;
+
+              ctx.save();
+              ctx.shadowBlur = hov ? 22 : 7;
+              ctx.shadowColor = col_.fill;
+              rr(x + pad, y + pad, cellSize - pad * 2, cellSize - pad * 2, 5);
+
+              const cg = ctx.createRadialGradient(
+                x + cellSize * 0.4, y + cellSize * 0.35, 0,
+                x + cellSize * 0.5, y + cellSize * 0.5, cellSize * 0.65
+              );
+              if (hov) {
+                cg.addColorStop(0, '#ffffff');
+                cg.addColorStop(0.3, col_.fill);
+                cg.addColorStop(1, col_.dark);
+              } else {
+                cg.addColorStop(0, col_.fill + 'cc');
+                cg.addColorStop(1, col_.dark + 'aa');
+              }
+              ctx.fillStyle = cg; ctx.fill();
+              ctx.strokeStyle = hov ? '#ffffff55' : col_.fill + '44';
+              ctx.lineWidth = 1; ctx.stroke();
+              ctx.restore();
+            }
+          }
+
+          // Particles
+          g.current.particles = g.current.particles.filter(p => p.life > 0);
+          for (const p of g.current.particles) {
+            p.x += p.vx; p.y += p.vy; p.vy += 0.22; p.vx *= 0.97; p.life -= dt * 1.8;
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.sz * Math.max(0, p.life), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Popups
+          g.current.popups = g.current.popups.filter(p => p.life > 0);
+          for (const p of g.current.popups) {
+            p.y -= 0.9; p.life -= dt;
+            ctx.save();
+            ctx.globalAlpha = Math.min(1, p.life * 1.5);
+            ctx.shadowBlur = 18; ctx.shadowColor = p.color;
+            ctx.fillStyle = p.color;
+            ctx.font = `bold 20px Courier New`;
+            ctx.textAlign = 'center';
+            ctx.fillText(p.text, p.x, p.y);
+            ctx.restore();
+          }
+
+          // Dim overlay for non-playing
+          if (phase !== 'playing') {
+            ctx.fillStyle = 'rgba(0,0,0,0.72)';
+            ctx.fillRect(0, 0, W, H);
+          }
+
+          rafRef.current = requestAnimationFrame(render);
+        }
+
+        rafRef.current = requestAnimationFrame(render);
+        return () => { cancelAnimationFrame(rafRef.current); window.removeEventListener('resize', resize); };
+      }, []);
+
+      const { score, highScore, timeLeft, combo, phase } = ui;
+      const timerColor = timeLeft <= 10 ? '#ff3333' : '#ffff00';
+
+      return (
+        <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+          <canvas
+            ref={canvasRef}
+            onClick={handleClick}
+            onMouseMove={handleMove}
+            onTouchStart={e => { e.preventDefault(); handleClick(e); }}
+            onTouchMove={e => { e.preventDefault(); handleMove(e); }}
+            style={{ position: 'absolute', top: 0, left: 0, touchAction: 'none', cursor: phase === 'playing' ? 'crosshair' : 'pointer' }}
+          />
+
+          {/* HUD */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: 90,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '0 20px', pointerEvents: 'none',
+          }}>
+            <div style={{ textAlign: 'center', minWidth: 90 }}>
+              <div style={{ color: '#444', fontSize: 10, letterSpacing: 2 }}>SCORE</div>
+              <div style={{ color: '#00ffff', fontSize: 24, fontWeight: 'bold', textShadow: '0 0 12px #00ffff' }}>
+                {score.toLocaleString()}
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: 22, fontWeight: 'bold', letterSpacing: 4,
+                color: '#fff', textShadow: '0 0 20px #00ffff, 0 0 40px #ff00ff',
+              }}>CLUSTER POP</div>
+              <div style={{ color: '#333', fontSize: 10, letterSpacing: 1 }}>
+                Click 2+ connected blocks to pop · Bigger = More Points
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'center', minWidth: 90 }}>
+              <div style={{ color: '#444', fontSize: 10, letterSpacing: 2 }}>BEST</div>
+              <div style={{ color: '#ff8800', fontSize: 24, fontWeight: 'bold', textShadow: '0 0 12px #ff8800' }}>
+                {highScore.toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom HUD */}
+          <div style={{
+            position: 'absolute', bottom: 14, left: 0, right: 0,
+            display: 'flex', justifyContent: 'center', gap: 50,
+            pointerEvents: 'none',
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#333', fontSize: 10, letterSpacing: 2 }}>TIME</div>
+              <div style={{ color: timerColor, fontSize: 28, fontWeight: 'bold', textShadow: `0 0 14px ${timerColor}` }}>
+                {timeLeft}s
+              </div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#333', fontSize: 10, letterSpacing: 2 }}>COMBO</div>
+              <div style={{
+                color: combo > 1 ? '#ff00ff' : '#333',
+                fontSize: 28, fontWeight: 'bold',
+                textShadow: combo > 1 ? '0 0 14px #ff00ff' : 'none',
+                transition: 'color 0.2s',
+              }}>
+                ×{combo}
+              </div>
+            </div>
+          </div>
+
+          {/* Start/GameOver overlay */}
+          {phase !== 'playing' && (
+            <div style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              pointerEvents: 'all',
+            }}>
+              <div style={{
+                color: phase === 'gameover' ? '#ff3333' : '#00ffff',
+                fontSize: 40, fontWeight: 'bold', letterSpacing: 4,
+                textShadow: `0 0 30px ${phase === 'gameover' ? '#ff3333' : '#00ffff'}`,
+                marginBottom: 18,
+              }}>
+                {phase === 'gameover' ? 'GAME OVER' : 'CLUSTER POP'}
+              </div>
+
+              {phase === 'gameover' && (
+                <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                  <div style={{ color: '#888', fontSize: 16, marginBottom: 6 }}>
+                    Final Score: <span style={{ color: '#00ffff', fontWeight: 'bold', fontSize: 20 }}>{score.toLocaleString()}</span>
+                  </div>
+                  {score > 0 && score >= highScore && (
+                    <div style={{ color: '#ffff00', fontSize: 15, textShadow: '0 0 12px #ffff00' }}>
+                      ★ NEW HIGH SCORE!
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {phase === 'idle' && (
+                <div style={{ color: '#444', fontSize: 13, textAlign: 'center', marginBottom: 24, lineHeight: 1.8, maxWidth: 280 }}>
+                  Click connected groups of 2+ same-colored blocks to pop them.<br />
+                  Larger groups = exponential points · Build combos for massive scores!
+                </div>
+              )}
+
+              <button
+                onClick={startGame}
+                style={{
+                  background: 'transparent',
+                  border: `2px solid ${phase === 'gameover' ? '#ff3333' : '#00ffff'}`,
+                  color: phase === 'gameover' ? '#ff3333' : '#00ffff',
+                  fontSize: 18, padding: '14px 50px',
+                  cursor: 'pointer', borderRadius: 8,
+                  fontFamily: 'Courier New, monospace',
+                  letterSpacing: 4,
+                  boxShadow: `0 0 25px ${phase === 'gameover' ? '#ff333366' : '#00ffff66'}`,
+                  marginTop: 10,
+                }}
+              >
+                {phase === 'gameover' ? 'PLAY AGAIN' : 'START'}
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<Game />, document.getElementById('root'));
+  </script>
+</body>
+</html>
