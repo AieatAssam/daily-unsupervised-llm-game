@@ -1469,5 +1469,25 @@
     "folder": "games/2026-05-07",
     "file": "games/2026-05-07/index.html",
     "preview": "games/2026-05-07/preview.png"
+  },
+  {
+    "id": "2026-05-09",
+    "name": "Neon Dunk",
+    "date": "2026-05-09",
+    "description": "Shoot a glowing neon basketball through a moving hoop — click to launch a fixed-arc shot that always reaches your target, but the hoop drifts left and right so you must aim where it WILL be! Chain baskets for massive combo multipliers across 10 shots.",
+    "tagline": "Aim ahead. Arc it. Chain the dunks!",
+    "tags": [
+      "precision",
+      "timing",
+      "arcade",
+      "sports",
+      "prediction"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse to aim arc trajectory · Click / Tap anywhere to shoot toward that point",
+    "folder": "games/2026-05-09",
+    "file": "games/2026-05-09/index.html",
+    "preview": "games/2026-05-09/preview.png"
   }
 ]

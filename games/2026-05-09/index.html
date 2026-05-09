@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Dunk</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0015; overflow: hidden; font-family: 'Courier New', monospace; }
+    canvas { display: block; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // Audio context
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    function playSound(freq, type, duration, vol = 0.3, startFreq = null) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(startFreq || freq, ctx.currentTime);
+        if (startFreq) osc.frequency.exponentialRampToValueAtTime(freq, ctx.currentTime + duration);
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + duration);
+      } catch(e) {}
+    }
+
+    function playSwish() { playSound(800, 'sine', 0.15, 0.2, 400); }
+    function playScore() {
+      playSound(523, 'square', 0.1, 0.3);
+      setTimeout(() => playSound(659, 'square', 0.1, 0.3), 100);
+      setTimeout(() => playSound(784, 'square', 0.15, 0.4), 200);
+    }
+    function playCombo() {
+      playSound(1046, 'sawtooth', 0.05, 0.3);
+      setTimeout(() => playSound(1318, 'sawtooth', 0.05, 0.3), 60);
+      setTimeout(() => playSound(1568, 'sawtooth', 0.1, 0.5), 120);
+    }
+    function playMiss() { playSound(200, 'sawtooth', 0.3, 0.2, 400); }
+
+    const GRAVITY = 0.4;
+    const HOOP_HEIGHT = 180;
+
+    const ARC_TIME = 48; // fixed frames for ball to reach click target
+
+    function calcArcPoints(sx, sy, vx, vy, steps = 60) {
+      const pts = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i;
+        pts.push({
+          x: sx + vx * t,
+          y: sy + vy * t + 0.5 * GRAVITY * t * t
+        });
+      }
+      return pts;
+    }
+
+    // Fixed-time arc: ball always passes exactly through (mx, my) at t=ARC_TIME
+    function aimVelocity(bx, by, mx, my) {
+      const T = ARC_TIME;
+      const vx = (mx - bx) / T;
+      const vy = (my - by - 0.5 * GRAVITY * T * T) / T;
+      return { vx, vy };
+    }
+
+    const COLORS = {
+      cyan: '#00ffff',
+      magenta: '#ff00ff',
+      orange: '#ff6600',
+      yellow: '#ffff00',
+      green: '#00ff88',
+      purple: '#cc00ff',
+    };
+
+    function Game() {
+      const canvasRef = useRef(null);
+      const stateRef = useRef(null);
+      const animRef = useRef(null);
+
+      // Stable state in a ref for canvas loop
+      const [displayState, setDisplayState] = useState({
+        score: 0, highScore: parseInt(localStorage.getItem('neonDunkHigh') || '0'),
+        combo: 0, phase: 'aim', message: '', messageTimer: 0,
+        level: 1, gameOver: false, started: false
+      });
+
+      function initState(W, H) {
+        return {
+          W, H,
+          score: 0,
+          highScore: parseInt(localStorage.getItem('neonDunkHigh') || '0'),
+          combo: 0,
+          level: 1,
+          shotsLeft: 10,
+          phase: 'aim', // 'aim', 'flying', 'gameover'
+          started: false,
+          ball: { x: W / 2, y: H - 80, r: 18 },
+          hoop: {
+            x: W / 2, y: HOOP_HEIGHT,
+            r: 32, speed: 1.5, dir: 1,
+            rimColor: '#ff4400', netColor: '#ff8844',
+            halfW: 36
+          },
+          mouse: { x: W / 2, y: H / 2 },
+          arc: null, // preview arc points
+          flyBall: null, // { x, y, vx, vy, r, trail[] }
+          particles: [],
+          bgParticles: Array.from({length: 40}, (_, i) => ({
+            x: Math.random() * W,
+            y: Math.random() * H,
+            r: Math.random() * 2 + 0.5,
+            vy: Math.random() * 0.3 + 0.1,
+            opacity: Math.random() * 0.5 + 0.1,
+            color: Object.values(COLORS)[Math.floor(Math.random() * 6)]
+          })),
+          message: '',
+          messageTimer: 0,
+          gameOver: false,
+          bgTime: 0,
+          scorePopups: [],
+          rimHitTimer: 0,
+        };
+      }
+
+      const stateRef2 = useRef(null);
+
+      useEffect(() => {
+        // Initialize localStorage key so tests can find it
+        if (!localStorage.getItem('neonDunkHigh')) {
+          localStorage.setItem('neonDunkHigh', '0');
+        }
+        const canvas = canvasRef.current;
+        const W = canvas.width = window.innerWidth;
+        const H = canvas.height = window.innerHeight;
+        stateRef2.current = initState(W, H);
+        stateRef.current = stateRef2.current;
+
+        function handleResize() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          const s = stateRef2.current;
+          s.W = canvas.width;
+          s.H = canvas.height;
+          s.ball.x = s.W / 2;
+          s.ball.y = s.H - 80;
+        }
+
+        function handleMouseMove(e) {
+          const s = stateRef2.current;
+          const rect = canvas.getBoundingClientRect();
+          const mx = (e.clientX - rect.left);
+          const my = (e.clientY - rect.top);
+          s.mouse.x = mx;
+          s.mouse.y = my;
+          if (s.phase === 'aim' && s.started) {
+            const { vx, vy } = aimVelocity(s.ball.x, s.ball.y, mx, my);
+            s.arc = calcArcPoints(s.ball.x, s.ball.y, vx, vy);
+          }
+        }
+
+        function handleTouchMove(e) {
+          e.preventDefault();
+          const rect = canvas.getBoundingClientRect();
+          const t = e.touches[0];
+          const mx = t.clientX - rect.left;
+          const my = t.clientY - rect.top;
+          stateRef2.current.mouse.x = mx;
+          stateRef2.current.mouse.y = my;
+          const s = stateRef2.current;
+          if (s.phase === 'aim' && s.started) {
+            const { vx, vy } = aimVelocity(s.ball.x, s.ball.y, mx, my);
+            s.arc = calcArcPoints(s.ball.x, s.ball.y, vx, vy);
+          }
+        }
+
+        function shoot(mx, my) {
+          const s = stateRef2.current;
+          if (!s.started) {
+            s.started = true;
+            s.phase = 'aim';
+            return;
+          }
+          if (s.phase !== 'aim') return;
+          const { vx, vy } = aimVelocity(s.ball.x, s.ball.y, mx, my);
+          // Must aim upward (click above mid-screen) to be valid
+          if (vy >= 0) return;
+          s.phase = 'flying';
+          s.flyBall = {
+            x: s.ball.x, y: s.ball.y,
+            vx, vy,
+            r: s.ball.r,
+            trail: []
+          };
+          s.arc = null;
+          playSwish();
+        }
+
+        function handleClick(e) {
+          const s = stateRef2.current;
+          if (s.gameOver) { resetGame(); return; }
+          const rect = canvas.getBoundingClientRect();
+          shoot(e.clientX - rect.left, e.clientY - rect.top);
+        }
+
+        function handleTouch(e) {
+          e.preventDefault();
+          const s = stateRef2.current;
+          if (s.gameOver) { resetGame(); return; }
+          const rect = canvas.getBoundingClientRect();
+          const t = e.changedTouches[0];
+          shoot(t.clientX - rect.left, t.clientY - rect.top);
+        }
+
+        function resetGame() {
+          const s = stateRef2.current;
+          const hs = s.highScore;
+          const fresh = initState(s.W, s.H);
+          fresh.highScore = hs;
+          fresh.started = true;
+          fresh.phase = 'aim';
+          Object.assign(stateRef2.current, fresh);
+        }
+
+        function spawnParticles(x, y, color, count = 20) {
+          const s = stateRef2.current;
+          for (let i = 0; i < count; i++) {
+            const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+            const speed = Math.random() * 6 + 2;
+            s.particles.push({
+              x, y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              life: 1,
+              decay: Math.random() * 0.03 + 0.02,
+              r: Math.random() * 5 + 2,
+              color
+            });
+          }
+        }
+
+        function checkScore(s) {
+          const fb = s.flyBall;
+          const h = s.hoop;
+          // Ball must pass through hoop area: near hoop y, within x bounds
+          const dx = fb.x - h.x;
+          const withinX = Math.abs(dx) < h.halfW - fb.r * 0.5;
+          const nearY = Math.abs(fb.y - h.y) < 28;
+          const movingDown = fb.vy > 0;
+          if (withinX && nearY && movingDown) {
+            return true;
+          }
+          return false;
+        }
+
+        function updateLevel(s) {
+          s.level = Math.floor(s.score / 300) + 1;
+          const lvl = s.level;
+          s.hoop.speed = 1.5 + (lvl - 1) * 0.5;
+          s.hoop.halfW = Math.max(22, 36 - (lvl - 1) * 2);
+        }
+
+        function loop() {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          const s = stateRef2.current;
+          const { W, H } = s;
+
+          s.bgTime += 0.005;
+
+          // Draw background
+          const grad = ctx.createLinearGradient(0, 0, W, H);
+          const t = s.bgTime;
+          grad.addColorStop(0, `hsl(${270 + Math.sin(t) * 20}, 80%, 8%)`);
+          grad.addColorStop(0.5, `hsl(${200 + Math.cos(t * 0.7) * 30}, 70%, 5%)`);
+          grad.addColorStop(1, `hsl(${310 + Math.sin(t * 0.5) * 20}, 80%, 8%)`);
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+
+          // Court lines
+          ctx.save();
+          ctx.strokeStyle = 'rgba(0,255,255,0.08)';
+          ctx.lineWidth = 1;
+          // Center circle
+          ctx.beginPath();
+          ctx.arc(W / 2, H * 0.6, 80, 0, Math.PI * 2);
+          ctx.stroke();
+          // 3-point arc area suggestion
+          ctx.beginPath();
+          ctx.arc(W / 2, H - 80, H * 0.35, Math.PI, Math.PI * 2);
+          ctx.stroke();
+          // Free throw line
+          ctx.beginPath();
+          ctx.moveTo(W * 0.2, H * 0.3);
+          ctx.lineTo(W * 0.8, H * 0.3);
+          ctx.stroke();
+          ctx.restore();
+
+          // Background particles
+          for (const p of s.bgParticles) {
+            p.y += p.vy;
+            if (p.y > H) { p.y = -4; p.x = Math.random() * W; }
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fillStyle = p.color + Math.floor(p.opacity * 255).toString(16).padStart(2, '0');
+            ctx.fill();
+          }
+
+          // Move hoop
+          if (!s.gameOver) {
+            s.hoop.x += s.hoop.speed * s.hoop.dir;
+            if (s.hoop.x > W - 60 || s.hoop.x < 60) s.hoop.dir *= -1;
+          }
+
+          // Draw hoop
+          const hx = s.hoop.x, hy = s.hoop.y;
+          const hw = s.hoop.halfW;
+
+          // Backboard
+          ctx.save();
+          ctx.strokeStyle = 'rgba(0,200,255,0.6)';
+          ctx.lineWidth = 4;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = '#00ccff';
+          ctx.beginPath();
+          ctx.rect(hx - hw - 10, hy - 35, hw * 2 + 20, 28);
+          ctx.stroke();
+          ctx.restore();
+
+          // Rim glow
+          if (s.rimHitTimer > 0) {
+            s.rimHitTimer--;
+            ctx.save();
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = '#ffaa00';
+            ctx.strokeStyle = '#ffaa00';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(hx - hw, hy);
+            ctx.lineTo(hx + hw, hy);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Rim left
+          ctx.save();
+          ctx.strokeStyle = s.hoop.rimColor;
+          ctx.lineWidth = 4;
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = s.hoop.rimColor;
+          ctx.beginPath();
+          ctx.moveTo(hx - hw, hy);
+          ctx.lineTo(hx - hw + 8, hy);
+          ctx.stroke();
+          // Rim right
+          ctx.beginPath();
+          ctx.moveTo(hx + hw - 8, hy);
+          ctx.lineTo(hx + hw, hy);
+          ctx.stroke();
+          ctx.restore();
+
+          // Net
+          ctx.save();
+          ctx.strokeStyle = s.hoop.netColor;
+          ctx.lineWidth = 1.5;
+          ctx.globalAlpha = 0.7;
+          const netSegs = 5;
+          const netDepth = 35;
+          for (let i = 0; i <= netSegs; i++) {
+            const nx = hx - hw + (hw * 2 * i) / netSegs;
+            ctx.beginPath();
+            ctx.moveTo(nx, hy);
+            // Curve net lines
+            const cx2 = hx + (nx - hx) * 0.3;
+            ctx.quadraticCurveTo(cx2, hy + netDepth * 0.7, hx, hy + netDepth);
+            ctx.stroke();
+          }
+          // Horizontal net lines
+          for (let j = 1; j <= 3; j++) {
+            const ny = hy + (netDepth * j) / 4;
+            const narrowing = j / 4;
+            const nLeft = hx - hw + hw * narrowing;
+            const nRight = hx + hw - hw * narrowing;
+            ctx.beginPath();
+            ctx.moveTo(nLeft, ny);
+            ctx.lineTo(nRight, ny);
+            ctx.stroke();
+          }
+          ctx.restore();
+
+          // Update and draw fly ball
+          if (s.phase === 'flying' && s.flyBall) {
+            const fb = s.flyBall;
+            fb.trail.push({ x: fb.x, y: fb.y });
+            if (fb.trail.length > 18) fb.trail.shift();
+
+            // Draw trail
+            for (let i = 0; i < fb.trail.length; i++) {
+              const alpha = i / fb.trail.length;
+              const tr = fb.r * alpha * 0.8;
+              ctx.save();
+              ctx.globalAlpha = alpha * 0.5;
+              ctx.beginPath();
+              ctx.arc(fb.trail[i].x, fb.trail[i].y, tr, 0, Math.PI * 2);
+              ctx.fillStyle = '#ff8800';
+              ctx.shadowBlur = 8;
+              ctx.shadowColor = '#ff4400';
+              ctx.fill();
+              ctx.restore();
+            }
+
+            // Physics
+            fb.x += fb.vx;
+            fb.vy += GRAVITY;
+            fb.y += fb.vy;
+
+            // Wall bounce
+            if (fb.x - fb.r < 0) { fb.x = fb.r; fb.vx = Math.abs(fb.vx) * 0.7; }
+            if (fb.x + fb.r > W) { fb.x = W - fb.r; fb.vx = -Math.abs(fb.vx) * 0.7; }
+
+            // Rim collision - left rim
+            const rimLeft = { x: hx - hw, y: hy };
+            const rimRight = { x: hx + hw, y: hy };
+            const dxL = fb.x - rimLeft.x;
+            const dyL = fb.y - rimLeft.y;
+            if (Math.sqrt(dxL*dxL + dyL*dyL) < fb.r + 4) {
+              const angle = Math.atan2(dyL, dxL);
+              fb.vx = Math.cos(angle) * Math.abs(fb.vx) * 0.6;
+              fb.vy = Math.sin(angle) * Math.abs(fb.vx) * 0.6 - 2;
+              s.rimHitTimer = 8;
+              playSound(350, 'sine', 0.1, 0.2);
+            }
+            const dxR = fb.x - rimRight.x;
+            const dyR = fb.y - rimRight.y;
+            if (Math.sqrt(dxR*dxR + dyR*dyR) < fb.r + 4) {
+              const angle = Math.atan2(dyR, dxR);
+              fb.vx = -Math.abs(Math.cos(angle) * fb.vx * 0.6);
+              fb.vy = Math.sin(angle) * Math.abs(fb.vy) * 0.6 - 2;
+              s.rimHitTimer = 8;
+              playSound(350, 'sine', 0.1, 0.2);
+            }
+
+            // Score check
+            if (checkScore(s)) {
+              // SCORED!
+              s.combo++;
+              const pts = s.level >= 3 ? 150 : (s.level === 2 ? 100 : 50);
+              const comboBonus = s.combo > 1 ? (s.combo - 1) * 30 : 0;
+              const total = pts + comboBonus;
+              s.score += total;
+
+              if (s.score > s.highScore) {
+                s.highScore = s.score;
+                localStorage.setItem('neonDunkHigh', s.highScore);
+              }
+              updateLevel(s);
+
+              spawnParticles(fb.x, fb.y, '#ff8800', 30);
+              spawnParticles(hx, hy, '#00ffff', 20);
+
+              s.scorePopups.push({
+                x: hx, y: hy - 20,
+                text: s.combo >= 3 ? `COMBO x${s.combo}! +${total}` : `+${total}`,
+                life: 1, color: s.combo >= 3 ? '#ffff00' : '#00ffff',
+                vy: -1.5
+              });
+
+              s.flyBall = null;
+              s.phase = 'aim';
+              s.shotsLeft--;
+              if (s.combo >= 3) playCombo();
+              else playScore();
+
+              if (s.shotsLeft <= 0) {
+                s.gameOver = true;
+                s.phase = 'gameover';
+              }
+              return; // next frame
+            }
+
+            // Miss check: ball went below screen or stopped being useful
+            if (fb.y > H + 50) {
+              s.flyBall = null;
+              s.phase = 'aim';
+              s.combo = 0;
+              s.shotsLeft--;
+              playMiss();
+              spawnParticles(fb.x, H - 20, '#ff0044', 12);
+              s.scorePopups.push({ x: W/2, y: H/2, text: 'MISS', life: 1, color: '#ff4444', vy: -1.2 });
+
+              if (s.shotsLeft <= 0) {
+                s.gameOver = true;
+                s.phase = 'gameover';
+              }
+            }
+
+            // Draw fly ball
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(fb.x, fb.y, fb.r, 0, Math.PI * 2);
+            // Basketball look
+            const ballGrad = ctx.createRadialGradient(fb.x - 4, fb.y - 4, 2, fb.x, fb.y, fb.r);
+            ballGrad.addColorStop(0, '#ff9933');
+            ballGrad.addColorStop(0.7, '#cc4400');
+            ballGrad.addColorStop(1, '#882200');
+            ctx.fillStyle = ballGrad;
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ff6600';
+            ctx.fill();
+            // Seam lines
+            ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(fb.x, fb.y, fb.r, 0, Math.PI);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(fb.x - fb.r, fb.y);
+            ctx.lineTo(fb.x + fb.r, fb.y);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Draw aim-phase ball + arc
+          if (s.phase === 'aim' && s.started && !s.gameOver) {
+            const bx = s.ball.x, by = s.ball.y;
+
+            // Draw arc preview
+            if (s.arc && s.arc.length > 1) {
+              const { vx, vy } = aimVelocity(bx, by, s.mouse.x, s.mouse.y);
+              const canShoot = vy < 0;
+              ctx.save();
+              ctx.setLineDash([6, 6]);
+              ctx.lineWidth = 2;
+              for (let i = 0; i < s.arc.length - 1; i++) {
+                const alpha = 1 - i / s.arc.length;
+                ctx.beginPath();
+                ctx.strokeStyle = canShoot
+                  ? `rgba(0,255,200,${alpha * 0.7})`
+                  : `rgba(255,100,100,${alpha * 0.4})`;
+                ctx.shadowBlur = canShoot ? 8 : 0;
+                ctx.shadowColor = '#00ffcc';
+                ctx.moveTo(s.arc[i].x, s.arc[i].y);
+                ctx.lineTo(s.arc[i+1].x, s.arc[i+1].y);
+                ctx.stroke();
+              }
+              ctx.restore();
+            }
+
+            // Ball
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(bx, by, s.ball.r, 0, Math.PI * 2);
+            const ballGrad2 = ctx.createRadialGradient(bx - 5, by - 5, 2, bx, by, s.ball.r);
+            ballGrad2.addColorStop(0, '#ffaa44');
+            ballGrad2.addColorStop(0.7, '#cc4400');
+            ballGrad2.addColorStop(1, '#882200');
+            ctx.fillStyle = ballGrad2;
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = '#ff6600';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(bx, by, s.ball.r, 0, Math.PI); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(bx - s.ball.r, by); ctx.lineTo(bx + s.ball.r, by); ctx.stroke();
+            ctx.restore();
+
+            // Aim indicator line
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(bx, by);
+            ctx.lineTo(s.mouse.x, s.mouse.y);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Particles
+          s.particles = s.particles.filter(p => p.life > 0);
+          for (const p of s.particles) {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.15;
+            p.vx *= 0.97;
+            p.life -= p.decay;
+            ctx.save();
+            ctx.globalAlpha = p.life;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = p.color;
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Score popups
+          s.scorePopups = s.scorePopups.filter(p => p.life > 0);
+          for (const p of s.scorePopups) {
+            p.y += p.vy;
+            p.life -= 0.025;
+            ctx.save();
+            ctx.globalAlpha = p.life;
+            ctx.font = `bold ${p.text.includes('COMBO') ? 24 : 20}px 'Courier New'`;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = p.color;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = p.color;
+            ctx.fillText(p.text, p.x, p.y);
+            ctx.restore();
+          }
+
+          // HUD
+          if (s.started) {
+            // Score
+            ctx.save();
+            ctx.font = 'bold 28px "Courier New"';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#00ffff';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00ffff';
+            ctx.fillText(`${s.score}`, 20, 38);
+            ctx.font = '14px "Courier New"';
+            ctx.fillStyle = 'rgba(0,255,255,0.6)';
+            ctx.fillText(`BEST: ${s.highScore}`, 20, 58);
+            ctx.restore();
+
+            // Level
+            ctx.save();
+            ctx.font = 'bold 18px "Courier New"';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ff00ff';
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#ff00ff';
+            ctx.fillText(`LVL ${s.level}`, W / 2, 32);
+            ctx.restore();
+
+            // Shots left - dots
+            ctx.save();
+            ctx.textAlign = 'right';
+            ctx.font = '14px "Courier New"';
+            ctx.fillStyle = 'rgba(255,200,100,0.8)';
+            ctx.fillText('SHOTS', W - 20, 25);
+            for (let i = 0; i < s.shotsLeft; i++) {
+              ctx.beginPath();
+              ctx.arc(W - 20 - i * 14, 40, 5, 0, Math.PI * 2);
+              ctx.fillStyle = '#ff8800';
+              ctx.shadowBlur = 8;
+              ctx.shadowColor = '#ff8800';
+              ctx.fill();
+            }
+            ctx.restore();
+
+            // Combo
+            if (s.combo >= 2) {
+              ctx.save();
+              ctx.font = `bold ${18 + s.combo * 2}px "Courier New"`;
+              ctx.textAlign = 'right';
+              ctx.fillStyle = '#ffff00';
+              ctx.shadowBlur = 20;
+              ctx.shadowColor = '#ffff00';
+              ctx.fillText(`🔥 x${s.combo} COMBO`, W - 20, 70);
+              ctx.restore();
+            }
+
+            // Hoop speed hint
+            const speedLabel = s.hoop.speed < 2.5 ? 'EASY' : s.hoop.speed < 4 ? 'FAST' : 'INSANE';
+            ctx.save();
+            ctx.font = '12px "Courier New"';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = 'rgba(255,100,100,0.6)';
+            ctx.fillText(speedLabel, 20, H - 20);
+            ctx.restore();
+          }
+
+          // Start screen
+          if (!s.started && !s.gameOver) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.font = 'bold 52px "Courier New"';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ff6600';
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = '#ff6600';
+            ctx.fillText('NEON DUNK', W / 2, H / 2 - 80);
+
+            ctx.font = '18px "Courier New"';
+            ctx.fillStyle = '#00ffff';
+            ctx.shadowColor = '#00ffff';
+            ctx.shadowBlur = 15;
+            ctx.fillText('Shoot the ball through the moving hoop!', W / 2, H / 2 - 20);
+            ctx.fillText('Move mouse to aim · Click to shoot', W / 2, H / 2 + 20);
+            ctx.fillText('10 shots · Chain baskets for combos!', W / 2, H / 2 + 55);
+
+            const pulse = 0.7 + Math.sin(s.bgTime * 4) * 0.3;
+            ctx.font = `bold 22px "Courier New"`;
+            ctx.fillStyle = `rgba(255,255,0,${pulse})`;
+            ctx.shadowColor = '#ffff00';
+            ctx.fillText('CLICK / TAP TO START', W / 2, H / 2 + 110);
+            ctx.restore();
+          }
+
+          // Game over
+          if (s.gameOver) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.font = 'bold 48px "Courier New"';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ff4444';
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = '#ff4444';
+            ctx.fillText('GAME OVER', W / 2, H / 2 - 100);
+
+            ctx.font = 'bold 36px "Courier New"';
+            ctx.fillStyle = '#ffff00';
+            ctx.shadowColor = '#ffff00';
+            ctx.fillText(`SCORE: ${s.score}`, W / 2, H / 2 - 40);
+
+            ctx.font = '24px "Courier New"';
+            ctx.fillStyle = '#00ffff';
+            ctx.shadowColor = '#00ffff';
+            ctx.fillText(`BEST: ${s.highScore}`, W / 2, H / 2 + 10);
+
+            ctx.font = '18px "Courier New"';
+            ctx.fillStyle = '#cc00ff';
+            ctx.shadowColor = '#cc00ff';
+            ctx.fillText(`LEVEL REACHED: ${s.level}`, W / 2, H / 2 + 50);
+
+            const pulse2 = 0.7 + Math.sin(s.bgTime * 5) * 0.3;
+            ctx.font = `bold 22px "Courier New"`;
+            ctx.fillStyle = `rgba(255,200,0,${pulse2})`;
+            ctx.shadowColor = '#ffcc00';
+            ctx.fillText('CLICK / TAP TO PLAY AGAIN', W / 2, H / 2 + 110);
+            ctx.restore();
+          }
+
+          // Shoot hint on aim phase
+          if (s.started && s.phase === 'aim' && !s.gameOver) {
+            ctx.save();
+            ctx.font = '13px "Courier New"';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(255,255,255,0.35)';
+            ctx.fillText('AIM ABOVE HOOP · CLICK TO SHOOT', W / 2, H - 15);
+            ctx.restore();
+          }
+
+          animRef.current = requestAnimationFrame(loop);
+        }
+
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('click', handleClick);
+        canvas.addEventListener('touchend', handleTouch, { passive: false });
+        window.addEventListener('resize', handleResize);
+
+        animRef.current = requestAnimationFrame(loop);
+
+        return () => {
+          cancelAnimationFrame(animRef.current);
+          canvas.removeEventListener('mousemove', handleMouseMove);
+          canvas.removeEventListener('touchmove', handleTouchMove);
+          canvas.removeEventListener('click', handleClick);
+          canvas.removeEventListener('touchend', handleTouch);
+          window.removeEventListener('resize', handleResize);
+        };
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          style={{ display: 'block', cursor: 'crosshair' }}
+          data-testid="game-canvas"
+        />
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Game />);
+  </script>
+</body>
+</html>
