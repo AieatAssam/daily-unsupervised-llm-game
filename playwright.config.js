@@ -17,8 +17,9 @@ export default defineConfig({
   // Retry on CI only
   retries: process.env.CI ? 2 : 0,
   
-  // Limit workers on CI for stability
-  workers: process.env.CI ? 8 : undefined,
+  // Limit workers on CI for stability — 4 workers prevents CDN rate-limiting
+  // when 60+ games simultaneously load React/Babel from unpkg.com
+  workers: process.env.CI ? 4 : undefined,
   
   // Reporter to use
   reporter: [
@@ -29,13 +30,17 @@ export default defineConfig({
   use: {
     // Base URL for tests
     baseURL: 'http://localhost:8080',
-    
+
+    // Give pages enough time to load CDN resources (React, Babel) even under load
+    navigationTimeout: 60000,
+    actionTimeout: 15000,
+
     // Collect trace when retrying the failed test
     trace: 'on-first-retry',
-    
+
     // Take screenshot on failure
     screenshot: 'only-on-failure',
-    
+
     // Video on failure
     video: 'retain-on-failure',
   },
