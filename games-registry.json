@@ -1469,5 +1469,25 @@
     "folder": "games/2026-05-07",
     "file": "games/2026-05-07/index.html",
     "preview": "games/2026-05-07/preview.png"
+  },
+  {
+    "id": "2026-05-10",
+    "name": "Volt Trail",
+    "date": "2026-05-10",
+    "description": "A Tron-style neon lightcycle arena — leave a glowing electric trail as you race, and outlast AI opponents who do the same! Crash into any trail or wall and it's over; eliminate all AIs to clear the wave and face faster, more numerous challengers!",
+    "tagline": "Leave your trail. Outlast the AI. Don't crash!",
+    "tags": [
+      "arcade",
+      "reflex",
+      "action",
+      "strategy",
+      "tron"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow Keys / WASD to steer · Swipe on mobile",
+    "folder": "games/2026-05-10",
+    "file": "games/2026-05-10/index.html",
+    "preview": "games/2026-05-10/preview.png"
   }
 ]

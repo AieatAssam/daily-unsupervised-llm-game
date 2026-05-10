@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Volt Trail</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050010; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    // Initialize localStorage key on first load
+    if (!localStorage.getItem('voltTrail_highScore')) {
+      localStorage.setItem('voltTrail_highScore', '0');
+    }
+
+    const { useEffect, useRef, useCallback } = React;
+
+    const CELL = 20;
+    const COLS = 32;
+    const ROWS = 24;
+    const W = COLS * CELL;
+    const H = ROWS * CELL;
+
+    const DIR = {
+      UP: { x: 0, y: -1 },
+      DOWN: { x: 0, y: 1 },
+      LEFT: { x: -1, y: 0 },
+      RIGHT: { x: 1, y: 0 }
+    };
+
+    const COLORS = ['#00ffff', '#ff00ff', '#ff8800', '#00ff88'];
+    const GLOW = ['rgba(0,255,255,0.25)', 'rgba(255,0,255,0.25)', 'rgba(255,136,0,0.25)', 'rgba(0,255,136,0.25)'];
+
+    function aiChooseDir(head, curDir, allTrails) {
+      const safe = (nx, ny) => {
+        if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return false;
+        for (const trail of Object.values(allTrails)) {
+          for (const c of trail) {
+            if (c.x === nx && c.y === ny) return false;
+          }
+        }
+        return true;
+      };
+
+      const flood = (dx, dy) => {
+        let nx = head.x + dx, ny = head.y + dy, n = 0;
+        while (safe(nx, ny) && n < 12) { n++; nx += dx; ny += dy; }
+        return n;
+      };
+
+      const options = [
+        curDir,
+        { x: -curDir.y, y: curDir.x },
+        { x: curDir.y, y: -curDir.x },
+        { x: -curDir.x, y: -curDir.y }
+      ];
+
+      let best = null, bestScore = -1;
+      for (const d of options) {
+        if (!safe(head.x + d.x, head.y + d.y)) continue;
+        const score = flood(d.x, d.y) + Math.random() * 2.5;
+        if (score > bestScore) { bestScore = score; best = d; }
+      }
+      return best || curDir;
+    }
+
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const stRef = useRef({
+        phase: 'start',
+        score: 0,
+        highScore: parseInt(localStorage.getItem('voltTrail_highScore') || '0'),
+        combo: 1,
+        wave: 1,
+        frame: 0,
+        speed: 10,
+        players: [],
+        trails: {},
+        particles: [],
+        pendingDir: null,
+        touchStart: null,
+        clearTimer: 0
+      });
+      const rafRef = useRef(null);
+      const audioRef = useRef(null);
+
+      const getAudio = () => {
+        if (!audioRef.current) {
+          audioRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return audioRef.current;
+      };
+
+      const beep = (freq, dur, type = 'square', vol = 0.15) => {
+        try {
+          const ctx = getAudio();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = type;
+          o.frequency.setValueAtTime(freq, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(freq * 0.4, ctx.currentTime + dur);
+          g.gain.setValueAtTime(vol, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+          o.start(); o.stop(ctx.currentTime + dur);
+        } catch(e) {}
+      };
+
+      const burst = (x, y, color, n = 26) => {
+        const s = stRef.current;
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI * 2 * i / n) + Math.random() * 0.5;
+          const spd = 1.5 + Math.random() * 4;
+          s.particles.push({
+            x: x * CELL + CELL / 2, y: y * CELL + CELL / 2,
+            vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+            color, life: 1, fade: 0.018 + Math.random() * 0.022
+          });
+        }
+      };
+
+      const initRound = useCallback(() => {
+        const s = stRef.current;
+        const numAI = Math.min(s.wave, 3);
+
+        s.players = [
+          { id: 0, x: 4, y: Math.floor(ROWS / 2), dir: DIR.RIGHT, alive: true, human: true }
+        ];
+        const aiStarts = [
+          { x: COLS - 5, y: Math.floor(ROWS / 2), dir: DIR.LEFT },
+          { x: Math.floor(COLS / 2), y: 3, dir: DIR.DOWN },
+          { x: Math.floor(COLS / 2), y: ROWS - 4, dir: DIR.UP }
+        ];
+        for (let i = 0; i < numAI; i++) {
+          s.players.push({ id: i + 1, ...aiStarts[i], alive: true, human: false });
+        }
+
+        s.trails = {};
+        s.players.forEach(p => { s.trails[p.id] = [{ x: p.x, y: p.y }]; });
+        s.speed = Math.max(5, 10 - (s.wave - 1));
+        s.frame = 0;
+        s.pendingDir = null;
+        s.particles = [];
+        s.phase = 'playing';
+      }, []);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        const render = () => {
+          const s = stRef.current;
+          const t = Date.now() / 1000;
+
+          ctx.fillStyle = '#050010';
+          ctx.fillRect(0, 0, W, H);
+
+          // Subtle grid dots
+          ctx.fillStyle = 'rgba(0,140,255,0.07)';
+          for (let gx = 0; gx < COLS; gx++) {
+            for (let gy = 0; gy < ROWS; gy++) {
+              ctx.fillRect(gx * CELL + 9, gy * CELL + 9, 2, 2);
+            }
+          }
+
+          // Draw trails
+          s.players.forEach(p => {
+            const trail = s.trails[p.id];
+            if (!trail || trail.length < 2) return;
+            const col = COLORS[p.id];
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // Wide glow layer
+            ctx.strokeStyle = GLOW[p.id];
+            ctx.lineWidth = CELL * 0.85;
+            ctx.shadowBlur = 18;
+            ctx.shadowColor = col;
+            ctx.beginPath();
+            trail.forEach((pt, i) => {
+              const cx = pt.x * CELL + CELL / 2, cy = pt.y * CELL + CELL / 2;
+              i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+            });
+            ctx.stroke();
+
+            // Core bright line
+            ctx.strokeStyle = col;
+            ctx.lineWidth = CELL * 0.32;
+            ctx.shadowBlur = 6;
+            ctx.beginPath();
+            trail.forEach((pt, i) => {
+              const cx = pt.x * CELL + CELL / 2, cy = pt.y * CELL + CELL / 2;
+              i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+            });
+            ctx.stroke();
+
+            ctx.restore();
+          });
+
+          // Draw heads
+          s.players.forEach(p => {
+            if (!p.alive) return;
+            const col = COLORS[p.id];
+            const hx = p.x * CELL, hy = p.y * CELL;
+            ctx.save();
+            ctx.shadowBlur = 28;
+            ctx.shadowColor = col;
+            ctx.fillStyle = col;
+            ctx.fillRect(hx + 2, hy + 2, CELL - 4, CELL - 4);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'white';
+            ctx.fillRect(hx + 7, hy + 7, CELL - 14, CELL - 14);
+            ctx.restore();
+          });
+
+          // Particles
+          s.particles.forEach(pt => {
+            ctx.save();
+            ctx.globalAlpha = pt.life;
+            ctx.fillStyle = pt.color;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = pt.color;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 2.5 * pt.life, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          });
+
+          // HUD
+          if (s.phase === 'playing' || s.phase === 'waveclear') {
+            ctx.fillStyle = 'rgba(0,0,20,0.72)';
+            ctx.fillRect(0, 0, W, 38);
+
+            ctx.shadowBlur = 8;
+            ctx.font = 'bold 16px "Courier New"';
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = COLORS[0];
+            ctx.shadowColor = COLORS[0];
+            ctx.fillText(`SCORE: ${s.score}`, 12, 25);
+
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ff00ff';
+            ctx.shadowColor = '#ff00ff';
+            ctx.fillText(`— WAVE ${s.wave} —`, W / 2, 25);
+
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#ffcc00';
+            ctx.shadowColor = '#ffcc00';
+            ctx.fillText(`BEST: ${s.highScore}`, W - 12, 25);
+            ctx.shadowBlur = 0;
+
+            if (s.combo > 1) {
+              const pulse = 0.75 + Math.sin(t * 9) * 0.25;
+              ctx.save();
+              ctx.globalAlpha = pulse;
+              ctx.textAlign = 'center';
+              ctx.font = `bold ${17 + s.combo}px "Courier New"`;
+              ctx.fillStyle = '#ff8800';
+              ctx.shadowBlur = 14;
+              ctx.shadowColor = '#ff8800';
+              ctx.fillText(`⚡ ×${s.combo} COMBO!`, W / 2, H - 14);
+              ctx.restore();
+            }
+          }
+
+          // Wave clear overlay
+          if (s.phase === 'waveclear') {
+            const p = 0.72 + Math.sin(t * 5) * 0.28;
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,10,5,0.8)';
+            ctx.fillRect(W * 0.12, H * 0.35, W * 0.76, H * 0.3);
+            ctx.textAlign = 'center';
+            ctx.globalAlpha = p;
+            ctx.shadowBlur = 28;
+            ctx.shadowColor = '#00ff88';
+            ctx.fillStyle = '#00ff88';
+            ctx.font = 'bold 38px "Courier New"';
+            ctx.fillText(`WAVE ${s.wave - 1} CLEARED!`, W / 2, H / 2 - 8);
+            ctx.font = '17px "Courier New"';
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#aaffcc';
+            ctx.fillText(`Next wave in ${Math.ceil(s.clearTimer / 60)}…`, W / 2, H / 2 + 28);
+            ctx.restore();
+          }
+
+          // Start screen
+          if (s.phase === 'start') {
+            ctx.fillStyle = 'rgba(5,0,16,0.9)';
+            ctx.fillRect(0, 0, W, H);
+            const pulse = 0.8 + Math.sin(t * 1.6) * 0.2;
+            ctx.save();
+            ctx.textAlign = 'center';
+
+            ctx.shadowBlur = 38;
+            ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = `rgba(0,255,255,${pulse})`;
+            ctx.font = 'bold 58px "Courier New"';
+            ctx.fillText('VOLT TRAIL', W / 2, H / 2 - 90);
+
+            ctx.shadowColor = '#ff00ff';
+            ctx.fillStyle = '#ff00ff';
+            ctx.font = '18px "Courier New"';
+            ctx.shadowBlur = 12;
+            ctx.fillText('NEON LIGHTCYCLE ARENA', W / 2, H / 2 - 42);
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#8899bb';
+            ctx.font = '13px "Courier New"';
+            ctx.fillText("Leave a glowing trail · Don't crash · Outlast all AI riders", W / 2, H / 2 + 5);
+
+            ctx.shadowBlur = 16;
+            ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = `rgba(0,255,255,${pulse})`;
+            ctx.font = 'bold 18px "Courier New"';
+            ctx.fillText('[ CLICK OR PRESS ANY KEY TO START ]', W / 2, H / 2 + 62);
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#445566';
+            ctx.font = '12px "Courier New"';
+            ctx.fillText('Arrow / WASD to steer  ·  Swipe on mobile', W / 2, H / 2 + 95);
+
+            // Color legend
+            const legendY = H / 2 + 128;
+            [['■ YOU', 0], ['■ AI-1', 1], ['■ AI-2', 2], ['■ AI-3', 3]].forEach(([lbl, i]) => {
+              const lx = W / 2 - 150 + i * 100;
+              ctx.shadowBlur = 8;
+              ctx.shadowColor = COLORS[i];
+              ctx.fillStyle = COLORS[i];
+              ctx.font = '13px "Courier New"';
+              ctx.fillText(lbl, lx, legendY);
+            });
+
+            if (s.highScore > 0) {
+              ctx.shadowBlur = 10;
+              ctx.shadowColor = '#ffcc00';
+              ctx.fillStyle = '#ffcc00';
+              ctx.font = '14px "Courier New"';
+              ctx.fillText(`BEST SCORE: ${s.highScore}`, W / 2, H / 2 + 158);
+            }
+            ctx.restore();
+          }
+
+          // Game over screen
+          if (s.phase === 'gameover') {
+            ctx.fillStyle = 'rgba(5,0,16,0.88)';
+            ctx.fillRect(0, 0, W, H);
+            const pulse = 0.75 + Math.sin(t * 2.5) * 0.25;
+            ctx.save();
+            ctx.textAlign = 'center';
+
+            ctx.shadowBlur = 32;
+            ctx.shadowColor = '#ff2244';
+            ctx.fillStyle = '#ff2244';
+            ctx.font = 'bold 52px "Courier New"';
+            ctx.fillText('CRASHED!', W / 2, H / 2 - 88);
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#00ffff';
+            ctx.font = 'bold 30px "Courier New"';
+            ctx.fillText(`SCORE: ${s.score}`, W / 2, H / 2 - 28);
+
+            ctx.fillStyle = '#7788aa';
+            ctx.font = '17px "Courier New"';
+            ctx.fillText(`Wave ${s.wave}  ·  Best: ${s.highScore}`, W / 2, H / 2 + 18);
+
+            if (s.score > 0 && s.score >= s.highScore) {
+              ctx.shadowBlur = 20;
+              ctx.shadowColor = '#ffcc00';
+              ctx.fillStyle = '#ffcc00';
+              ctx.font = 'bold 20px "Courier New"';
+              ctx.fillText('⚡ NEW HIGH SCORE! ⚡', W / 2, H / 2 + 52);
+            }
+
+            ctx.shadowBlur = 14;
+            ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = `rgba(0,255,255,${pulse})`;
+            ctx.font = 'bold 16px "Courier New"';
+            ctx.fillText('[ CLICK OR SPACE TO PLAY AGAIN ]', W / 2, H / 2 + 100);
+            ctx.restore();
+          }
+        };
+
+        const update = () => {
+          const s = stRef.current;
+
+          if (s.phase === 'waveclear') {
+            s.clearTimer--;
+            if (s.clearTimer <= 0) initRound();
+            s.particles = s.particles.filter(p => {
+              p.x += p.vx; p.y += p.vy;
+              p.vx *= 0.94; p.vy *= 0.94;
+              p.life -= p.fade;
+              return p.life > 0;
+            });
+            return;
+          }
+
+          if (s.phase !== 'playing') return;
+
+          s.frame++;
+
+          s.particles = s.particles.filter(p => {
+            p.x += p.vx; p.y += p.vy;
+            p.vx *= 0.94; p.vy *= 0.94;
+            p.life -= p.fade;
+            return p.life > 0;
+          });
+
+          // Passive survival score
+          if (s.frame % 30 === 0) s.score += s.wave;
+
+          if (s.frame % s.speed !== 0) return;
+
+          // Apply queued turn for human
+          const human = s.players[0];
+          if (s.pendingDir && human && human.alive) {
+            const { x: cx, y: cy } = human.dir;
+            const { x: nx, y: ny } = s.pendingDir;
+            if (!(nx === -cx && ny === -cy)) human.dir = s.pendingDir;
+            s.pendingDir = null;
+          }
+
+          // Snapshot trails before moving (collision detection uses pre-move state)
+          const snap = {};
+          s.players.forEach(p => { snap[p.id] = s.trails[p.id].slice(); });
+
+          let aiKills = 0;
+
+          s.players.forEach(p => {
+            if (!p.alive) return;
+            if (!p.human) p.dir = aiChooseDir(p, p.dir, snap);
+
+            const nx = p.x + p.dir.x, ny = p.y + p.dir.y;
+            let crash = nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS;
+            if (!crash) {
+              for (const trail of Object.values(snap)) {
+                if (trail.some(c => c.x === nx && c.y === ny)) { crash = true; break; }
+              }
+            }
+
+            if (crash) {
+              p.alive = false;
+              burst(p.x, p.y, COLORS[p.id], 28);
+              beep(160 - p.id * 15, 0.5, 'sawtooth', 0.18);
+              if (p.human) {
+                s.score += Math.floor(s.frame * s.wave * 0.5);
+                if (s.score > s.highScore) {
+                  s.highScore = s.score;
+                  localStorage.setItem('voltTrail_highScore', s.highScore);
+                }
+                s.phase = 'gameover';
+              } else {
+                aiKills++;
+              }
+            } else {
+              p.x = nx; p.y = ny;
+              s.trails[p.id].push({ x: nx, y: ny });
+            }
+          });
+
+          if (aiKills > 0) {
+            s.score += 100 * s.wave * s.combo * aiKills;
+            s.combo = Math.min(s.combo + aiKills, 12);
+            beep(380 + s.combo * 45, 0.22, 'square', 0.18);
+          }
+
+          // Wave clear check
+          if (s.phase === 'playing') {
+            const humanAlive = s.players[0]?.alive;
+            const anyAIAlive = s.players.slice(1).some(p => p.alive);
+            if (humanAlive && !anyAIAlive) {
+              s.wave++;
+              s.score += 500 * (s.wave - 1);
+              s.combo = Math.min(s.combo + 2, 12);
+              s.phase = 'waveclear';
+              s.clearTimer = 120;
+              beep(880, 0.15, 'square', 0.2);
+              setTimeout(() => beep(1100, 0.2, 'square', 0.18), 160);
+            }
+          }
+        };
+
+        let lastTs = 0;
+        const loop = (ts) => {
+          if (ts - lastTs >= 16) {
+            update();
+            render();
+            lastTs = ts;
+          }
+          rafRef.current = requestAnimationFrame(loop);
+        };
+        rafRef.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(rafRef.current);
+      }, [initRound]);
+
+      // Keyboard
+      useEffect(() => {
+        const onKey = (e) => {
+          const s = stRef.current;
+          if (s.phase === 'start' || s.phase === 'gameover') {
+            s.score = 0; s.wave = 1; s.combo = 1;
+            initRound();
+            return;
+          }
+          if (s.phase !== 'playing') return;
+          const map = {
+            ArrowUp: DIR.UP, w: DIR.UP, W: DIR.UP,
+            ArrowDown: DIR.DOWN, s: DIR.DOWN, S: DIR.DOWN,
+            ArrowLeft: DIR.LEFT, a: DIR.LEFT, A: DIR.LEFT,
+            ArrowRight: DIR.RIGHT, d: DIR.RIGHT, D: DIR.RIGHT,
+            ' ': null
+          };
+          if (e.key in map) {
+            if (map[e.key]) s.pendingDir = map[e.key];
+            e.preventDefault();
+          }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [initRound]);
+
+      const handleClick = useCallback(() => {
+        const s = stRef.current;
+        if (s.phase === 'start' || s.phase === 'gameover') {
+          s.score = 0; s.wave = 1; s.combo = 1;
+          initRound();
+        }
+      }, [initRound]);
+
+      const handleTouchStart = useCallback((e) => {
+        stRef.current.touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        handleClick();
+      }, [handleClick]);
+
+      const handleTouchEnd = useCallback((e) => {
+        const s = stRef.current;
+        if (s.phase !== 'playing' || !s.touchStart) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - s.touchStart.x;
+        const dy = t.clientY - s.touchStart.y;
+        const ax = Math.abs(dx), ay = Math.abs(dy);
+        if (Math.max(ax, ay) < 15) return;
+        s.pendingDir = ax > ay ? (dx > 0 ? DIR.RIGHT : DIR.LEFT) : (dy > 0 ? DIR.DOWN : DIR.UP);
+        s.touchStart = null;
+      }, []);
+
+      return (
+        <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050010' }}>
+          <canvas
+            ref={canvasRef}
+            width={W}
+            height={H}
+            style={{ maxWidth: '100vw', maxHeight: '100vh', display: 'block', cursor: 'crosshair', touchAction: 'none' }}
+            onClick={handleClick}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          />
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Game />);
+  </script>
+</body>
+</html>
