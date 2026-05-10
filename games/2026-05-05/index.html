@@ -133,8 +133,7 @@
 
       const handleInput = useCallback(() => {
         const s = stateRef.current;
-        if (!s) return;
-        if (s.phase === 'start' || s.phase === 'gameover') {
+        if (!s || s.phase === 'start' || s.phase === 'gameover') {
           const canvas = canvasRef.current;
           if (!canvas) return;
           stateRef.current = initState(canvas);
