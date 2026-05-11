@@ -1469,5 +1469,25 @@
     "folder": "games/2026-05-07",
     "file": "games/2026-05-07/index.html",
     "preview": "games/2026-05-07/preview.png"
+  },
+  {
+    "id": "2026-05-11",
+    "name": "Ring Roll",
+    "date": "2026-05-11",
+    "description": "A glowing ball rolls inside a rotating neon ring under gravity — click to reverse the ring's direction and guide the ball to collect every diamond gem while avoiding electrified red hazard zones on the wall!",
+    "tagline": "Reverse the ring. Roll the ball. Collect the gems!",
+    "tags": [
+      "physics",
+      "timing",
+      "reflex",
+      "arcade",
+      "rotation"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap / Space to reverse the ring rotation direction",
+    "folder": "games/2026-05-11",
+    "file": "games/2026-05-11/index.html",
+    "preview": "games/2026-05-11/preview.png"
   }
 ]
