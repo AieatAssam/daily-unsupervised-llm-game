@@ -1489,5 +1489,25 @@
     "folder": "games/2026-05-11",
     "file": "games/2026-05-11/index.html",
     "preview": "games/2026-05-11/preview.png"
+  },
+  {
+    "id": "2026-05-12",
+    "name": "Neon Sweep",
+    "date": "2026-05-12",
+    "description": "A neon minesweeper blitz — click cells to reveal safe zones, use glowing number hints to dodge mines, and chain cascade reveals for massive combo multipliers before the timer runs out!",
+    "tagline": "Reveal the safe cells. Dodge the mines. Chain the combos!",
+    "tags": [
+      "puzzle",
+      "logic",
+      "reflex",
+      "casual",
+      "deduction"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap any cell to reveal it — numbers show adjacent mine count",
+    "folder": "games/2026-05-12",
+    "file": "games/2026-05-12/index.html",
+    "preview": "games/2026-05-12/preview.png"
   }
 ]

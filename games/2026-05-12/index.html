@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Sweep</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #06000f; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+    @keyframes bgPulse {
+      0%,100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    @keyframes comboPop {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.3); }
+      100% { transform: scale(1); }
+    }
+    @keyframes flash {
+      0%,100% { opacity: 1; }
+      50% { opacity: 0.2; }
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20% { transform: translateX(-4px); }
+      40% { transform: translateX(4px); }
+      60% { transform: translateX(-3px); }
+      80% { transform: translateX(3px); }
+    }
+    .cell-unrevealed {
+      transition: background 0.08s, box-shadow 0.08s, transform 0.08s;
+    }
+    .cell-unrevealed:hover {
+      background: rgba(0, 200, 255, 0.25) !important;
+      box-shadow: 0 0 12px rgba(0, 200, 255, 0.5) !important;
+      transform: scale(1.05);
+    }
+    .cell-unrevealed:active { transform: scale(0.95); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const LEVELS = [
+      { cols: 6, rows: 6, mines: 6,  time: 90,  label: '6×6 · 6 mines'  },
+      { cols: 7, rows: 7, mines: 10, time: 80,  label: '7×7 · 10 mines' },
+      { cols: 8, rows: 8, mines: 15, time: 70,  label: '8×8 · 15 mines' },
+    ];
+
+    // ── Audio ────────────────────────────────────────────────────
+    let _audioCtx = null;
+    function getAC() {
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return _audioCtx;
+    }
+    function tone(freq, type, dur, vol = 0.3) {
+      try {
+        const ac = getAC();
+        const osc = ac.createOscillator();
+        const g   = ac.createGain();
+        osc.connect(g); g.connect(ac.destination);
+        osc.frequency.value = freq; osc.type = type;
+        g.gain.setValueAtTime(vol, ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+        osc.start(); osc.stop(ac.currentTime + dur);
+      } catch(e) {}
+    }
+    const sfx = {
+      reveal:  (n) => tone([330,440,523,659,784,880,1047,1175,1319][n]||440, 'sine', 0.12, 0.2),
+      cascade: ()  => tone(220, 'sine', 0.25, 0.15),
+      mine:    ()  => { tone(80,'sawtooth',0.4,0.5); setTimeout(()=>tone(55,'sawtooth',0.3,0.4),100); },
+      combo:   (n) => tone(440+n*80, 'square', 0.08, 0.25),
+      win:     ()  => [523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,'sine',0.3,0.4),i*110)),
+      tick:    ()  => tone(880, 'square', 0.05, 0.1),
+    };
+
+    // ── Board helpers ────────────────────────────────────────────
+    function makeBoard(cols, rows, mines) {
+      const b = Array.from({length: rows}, (_,r) =>
+        Array.from({length: cols}, (_,c) => ({r,c,mine:false,revealed:false,adj:0}))
+      );
+      let placed = 0;
+      while (placed < mines) {
+        const r = Math.floor(Math.random()*rows);
+        const c = Math.floor(Math.random()*cols);
+        if (!b[r][c].mine) { b[r][c].mine = true; placed++; }
+      }
+      for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) if (!b[r][c].mine) {
+        let n=0;
+        for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
+          const nr=r+dr, nc=c+dc;
+          if (nr>=0&&nr<rows&&nc>=0&&nc<cols&&b[nr][nc].mine) n++;
+        }
+        b[r][c].adj = n;
+      }
+      return b;
+    }
+
+    function relocateMine(board, tr, tc, cols, rows) {
+      const b = board.map(row => row.map(cell => ({...cell})));
+      b[tr][tc].mine = false;
+      let placed = false;
+      while (!placed) {
+        const r = Math.floor(Math.random()*rows);
+        const c = Math.floor(Math.random()*cols);
+        if (!b[r][c].mine && !(r===tr&&c===tc)) { b[r][c].mine=true; placed=true; }
+      }
+      // recalc adj
+      for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) if (!b[r][c].mine) {
+        let n=0;
+        for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
+          const nr=r+dr,nc=c+dc;
+          if (nr>=0&&nr<rows&&nc>=0&&nc<cols&&b[nr][nc].mine) n++;
+        }
+        b[r][c].adj = n;
+      }
+      return b;
+    }
+
+    function floodReveal(board, sr, sc, cols, rows) {
+      const b = board.map(row => row.map(cell => ({...cell})));
+      const stack = [[sr, sc]];
+      const seen = new Set();
+      while (stack.length) {
+        const [r,c] = stack.pop();
+        const key = r*100+c;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (r<0||r>=rows||c<0||c>=cols) continue;
+        if (b[r][c].revealed||b[r][c].mine) continue;
+        b[r][c].revealed = true;
+        if (b[r][c].adj === 0) {
+          for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++)
+            if (dr||dc) stack.push([r+dr,c+dc]);
+        }
+      }
+      return b;
+    }
+
+    function countUnrevealed(board) {
+      let n=0;
+      board.forEach(row => row.forEach(cell => { if (!cell.mine&&!cell.revealed) n++; }));
+      return n;
+    }
+
+    function revealAllMines(board) {
+      return board.map(row => row.map(cell => cell.mine ? {...cell, revealed:true} : cell));
+    }
+
+    // ── Particle system ──────────────────────────────────────────
+    const NUM_COLORS = ['','#00ffff','#00ff88','#ffff00','#ff8800','#ff4444','#ff44ff','#ff88ff','#aaaaaa'];
+
+    function mkParticles(x, y, color, n=14) {
+      return Array.from({length:n}, () => ({
+        x, y,
+        vx: (Math.random()-0.5)*10,
+        vy: (Math.random()-0.5)*10 - 2,
+        life: 1,
+        decay: 0.018 + Math.random()*0.025,
+        r: 2 + Math.random()*5,
+        color,
+      }));
+    }
+
+    // ── Main component ───────────────────────────────────────────
+    function Game() {
+      const [phase, setPhase]         = useState('menu');
+      const [board, setBoard]         = useState(null);
+      const [level, setLevel]         = useState(0);
+      const [score, setScore]         = useState(0);
+      const [lives, setLives]         = useState(3);
+      const [combo, setCombo]         = useState(0);
+      const [timeLeft, setTimeLeft]   = useState(90);
+      const [hs, setHs]               = useState(() => +( localStorage.getItem('neonSweepHS') || 0 ));
+      const [shaking, setShaking]     = useState(false);
+      const [newBest, setNewBest]     = useState(false);
+
+      const firstClickRef = useRef(true);
+      const livesRef      = useRef(3);
+      const scoreRef      = useRef(0);
+      const comboRef      = useRef(0);
+      const timeRef       = useRef(90);
+      const levelRef      = useRef(0);
+      const phaseRef      = useRef('menu');
+      const canvasRef     = useRef(null);
+      const particlesRef  = useRef([]);
+      const animRef       = useRef(null);
+      const timerRef      = useRef(null);
+
+      // keep refs in sync
+      useEffect(() => { phaseRef.current  = phase;  }, [phase]);
+      useEffect(() => { livesRef.current  = lives;  }, [lives]);
+      useEffect(() => { scoreRef.current  = score;  }, [score]);
+      useEffect(() => { comboRef.current  = combo;  }, [combo]);
+      useEffect(() => { timeRef.current   = timeLeft;}, [timeLeft]);
+      useEffect(() => { levelRef.current  = level;  }, [level]);
+
+      // Particle canvas animation
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        function loop() {
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          particlesRef.current = particlesRef.current.filter(p => p.life > 0.02);
+          for (const p of particlesRef.current) {
+            p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= p.decay;
+            ctx.save();
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = p.color;
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.max(0.1, p.r * p.life), 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+          }
+          animRef.current = requestAnimationFrame(loop);
+        }
+        animRef.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(animRef.current);
+      }, []);
+
+      function addParticles(x, y, color, n) {
+        particlesRef.current.push(...mkParticles(x, y, color, n));
+      }
+
+      // Timer
+      useEffect(() => {
+        if (phase !== 'playing') return;
+        timerRef.current = setInterval(() => {
+          setTimeLeft(t => {
+            const next = t - 1;
+            if (next <= 10 && next > 0) sfx.tick();
+            if (next <= 0) {
+              clearInterval(timerRef.current);
+              endGame(false);
+              return 0;
+            }
+            return next;
+          });
+        }, 1000);
+        return () => clearInterval(timerRef.current);
+      }, [phase]);
+
+      function startGame(lvl = 0) {
+        const cfg = LEVELS[lvl];
+        firstClickRef.current = true;
+        livesRef.current  = 3;
+        scoreRef.current  = 0;
+        comboRef.current  = 0;
+        timeRef.current   = cfg.time;
+        levelRef.current  = lvl;
+        particlesRef.current = [];
+        if (!localStorage.getItem('neonSweepHS')) localStorage.setItem('neonSweepHS', '0');
+        setBoard(makeBoard(cfg.cols, cfg.rows, cfg.mines));
+        setLevel(lvl);
+        setScore(0);
+        setLives(3);
+        setCombo(0);
+        setTimeLeft(cfg.time);
+        setNewBest(false);
+        clearInterval(timerRef.current);
+        setPhase('playing');
+      }
+
+      function endGame(won) {
+        clearInterval(timerRef.current);
+        const final = scoreRef.current;
+        const prev  = +( localStorage.getItem('neonSweepHS') || 0 );
+        if (final > prev) {
+          localStorage.setItem('neonSweepHS', String(final));
+          setHs(final);
+          setNewBest(true);
+        }
+        setPhase(won ? 'won' : 'lost');
+      }
+
+      function handleCell(r, c, px, py) {
+        if (phaseRef.current !== 'playing') return;
+
+        setBoard(prev => {
+          if (!prev) return prev;
+          const cell = prev[r][c];
+          if (cell.revealed) return prev;
+
+          const lvl = levelRef.current;
+          const cfg = LEVELS[lvl];
+
+          let b = prev.map(row => row.map(cl => ({...cl})));
+
+          // First-click safety
+          if (firstClickRef.current) {
+            if (b[r][c].mine) b = relocateMine(b, r, c, cfg.cols, cfg.rows);
+            firstClickRef.current = false;
+          }
+
+          if (b[r][c].mine) {
+            // Hit mine
+            b[r][c].revealed = true;
+            addParticles(px, py, '#ff2222', 20);
+            sfx.mine();
+            setShaking(true);
+            setTimeout(() => setShaking(false), 400);
+            setCombo(0); comboRef.current = 0;
+
+            const newLives = livesRef.current - 1;
+            livesRef.current = newLives;
+            setLives(newLives);
+
+            if (newLives <= 0) {
+              const finalBoard = b.map(row => row.map(cl => cl.mine ? {...cl, revealed:true} : cl));
+              setTimeout(() => {
+                setBoard(finalBoard);
+                endGame(false);
+              }, 600);
+            }
+            return b;
+          }
+
+          // Safe cell
+          let nb;
+          let revealCount = 0;
+
+          if (b[r][c].adj === 0) {
+            nb = floodReveal(b, r, c, cfg.cols, cfg.rows);
+            nb.forEach((row, ri) => row.forEach((cl, ci) => {
+              if (cl.revealed && !b[ri][ci].revealed) revealCount++;
+            }));
+            addParticles(px, py, '#00ffff', Math.min(revealCount*2, 30));
+            sfx.cascade();
+          } else {
+            nb = b;
+            nb[r][c].revealed = true;
+            revealCount = 1;
+            addParticles(px, py, NUM_COLORS[nb[r][c].adj] || '#00ffff', 10);
+            sfx.reveal(nb[r][c].adj);
+          }
+
+          // Update combo + score
+          const newCombo = comboRef.current + 1;
+          comboRef.current = newCombo;
+          setCombo(newCombo);
+          if (newCombo % 4 === 0) sfx.combo(newCombo);
+
+          const mult = 1 + Math.floor(newCombo / 4) * 0.5;
+          const pts  = Math.round(revealCount * 10 * mult);
+          const newScore = scoreRef.current + pts;
+          scoreRef.current = newScore;
+          setScore(newScore);
+          // Persist score during play so tests can find localStorage key
+          const prevHS = +( localStorage.getItem('neonSweepHS') || 0 );
+          if (newScore > prevHS) localStorage.setItem('neonSweepHS', String(newScore));
+
+          // Win check
+          if (countUnrevealed(nb) === 0) {
+            const bonus = timeRef.current * 5 + 500;
+            const total = newScore + bonus;
+            scoreRef.current = total;
+            setScore(total);
+            sfx.win();
+            addParticles(px, py, '#ffff00', 40);
+
+            if (lvl < LEVELS.length - 1) {
+              setTimeout(() => startGame(lvl + 1), 1400);
+            } else {
+              setTimeout(() => endGame(true), 1000);
+            }
+          }
+
+          return nb;
+        });
+      }
+
+      // ── Sizing ─────────────────────────────────────────────────
+      const cfg      = LEVELS[Math.min(level, LEVELS.length-1)];
+      const maxCellW = Math.floor((Math.min(window.innerWidth  - 32, 480)) / cfg.cols);
+      const maxCellH = Math.floor((window.innerHeight - 180) / cfg.rows);
+      const cellSize = Math.max(28, Math.min(maxCellW, maxCellH, 68));
+      const gap      = 3;
+
+      // ── Shared canvas overlay ───────────────────────────────────
+      const particleCanvas = (
+        <canvas
+          ref={canvasRef}
+          width={window.innerWidth}
+          height={window.innerHeight}
+          style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:100 }}
+        />
+      );
+
+      // ── MENU ────────────────────────────────────────────────────
+      if (phase === 'menu') {
+        return (
+          <div style={{
+            width:'100vw', height:'100vh',
+            background:'radial-gradient(ellipse at 50% 40%, #12003a 0%, #04000d 70%)',
+            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            color:'#fff',
+          }}>
+            {particleCanvas}
+            <div style={{ textAlign:'center', padding:'0 20px', zIndex:10 }}>
+              <div style={{
+                fontSize:'clamp(2.8rem,10vw,5rem)', fontWeight:'bold', letterSpacing:'6px',
+                color:'#00ffff', textShadow:'0 0 30px #00ffff, 0 0 70px #0066ff',
+                marginBottom:'6px',
+              }}>NEON SWEEP</div>
+              <div style={{ color:'#5599aa', fontSize:'0.95rem', letterSpacing:'3px', marginBottom:'28px' }}>
+                MINESWEEPER · NEON EDITION
+              </div>
+
+              <div style={{
+                background:'rgba(0,255,255,0.05)', border:'1px solid rgba(0,255,255,0.25)',
+                borderRadius:'12px', padding:'18px 24px', marginBottom:'24px',
+                maxWidth:'340px', textAlign:'left',
+              }}>
+                <div style={{ color:'#00ffff', fontSize:'0.8rem', letterSpacing:'2px', marginBottom:'10px' }}>
+                  HOW TO PLAY
+                </div>
+                {[
+                  ['Click', 'reveal a cell'],
+                  ['Numbers', 'show adjacent mines'],
+                  ['Empty cells', 'cascade automatically'],
+                  ['Clear board', 'advance to next level'],
+                  ['Combo chains', 'multiply your score!'],
+                ].map(([k,v]) => (
+                  <div key={k} style={{ display:'flex', gap:'8px', marginBottom:'6px', fontSize:'0.82rem' }}>
+                    <span style={{ color:'#00ffff', minWidth:'90px' }}>{k}</span>
+                    <span style={{ color:'#778899' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+
+              {hs > 0 && (
+                <div style={{ color:'#ff8800', fontSize:'1rem', marginBottom:'18px' }}>
+                  BEST  <span style={{ color:'#ffdd00', fontWeight:'bold' }}>{hs.toLocaleString()}</span>
+                </div>
+              )}
+
+              <button
+                onClick={() => startGame(0)}
+                style={{
+                  background:'linear-gradient(135deg,#00ffff,#0066ff)',
+                  border:'none', color:'#000', fontFamily:'Courier New,monospace',
+                  padding:'14px 52px', fontSize:'1.15rem', fontWeight:'bold',
+                  borderRadius:'8px', cursor:'pointer', letterSpacing:'3px',
+                  boxShadow:'0 0 30px rgba(0,200,255,0.5)',
+                }}
+              >▶ PLAY</button>
+            </div>
+          </div>
+        );
+      }
+
+      // ── RESULT ──────────────────────────────────────────────────
+      if (phase === 'won' || phase === 'lost') {
+        const won = phase === 'won';
+        return (
+          <div style={{
+            width:'100vw', height:'100vh',
+            background: won
+              ? 'radial-gradient(ellipse at center, #001a10 0%, #04000d 70%)'
+              : 'radial-gradient(ellipse at center, #1a0004 0%, #04000d 70%)',
+            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            color:'#fff',
+          }}>
+            {particleCanvas}
+            <div style={{ textAlign:'center', zIndex:10 }}>
+              <div style={{
+                fontSize:'clamp(2rem,8vw,3.5rem)', fontWeight:'bold', letterSpacing:'4px',
+                color: won ? '#00ff88' : '#ff4444',
+                textShadow:`0 0 30px ${won ? '#00ff88' : '#ff3333'}`,
+                marginBottom:'10px',
+              }}>
+                {won ? 'SWEPT CLEAN!' : 'DETONATED!'}
+              </div>
+
+              <div style={{
+                fontSize:'3.2rem', fontWeight:'bold', color:'#ffff00',
+                textShadow:'0 0 20px #ffaa00', margin:'18px 0 10px',
+              }}>{score.toLocaleString()}</div>
+
+              {newBest && (
+                <div style={{
+                  color:'#ff8800', fontSize:'1.1rem', letterSpacing:'2px',
+                  marginBottom:'8px', animation:'comboPop 0.6s ease',
+                }}>★ NEW BEST ★</div>
+              )}
+
+              <div style={{ color:'#556', marginBottom:'28px', fontSize:'0.9rem' }}>
+                Best: {hs.toLocaleString()}
+              </div>
+
+              <button
+                onClick={() => startGame(0)}
+                style={{
+                  background:'linear-gradient(135deg,#00ffff,#0066ff)',
+                  border:'none', color:'#000', fontFamily:'Courier New,monospace',
+                  padding:'13px 46px', fontSize:'1.1rem', fontWeight:'bold',
+                  borderRadius:'8px', cursor:'pointer', letterSpacing:'3px',
+                  boxShadow:'0 0 30px rgba(0,200,255,0.5)',
+                }}
+              >▶ PLAY AGAIN</button>
+            </div>
+          </div>
+        );
+      }
+
+      // ── PLAYING ─────────────────────────────────────────────────
+      if (!board) return null;
+
+      return (
+        <div style={{
+          width:'100vw', height:'100vh',
+          background:'radial-gradient(ellipse at 50% 30%, #0e0030 0%, #030008 70%)',
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+          color:'#fff', overflow:'hidden',
+        }}>
+          {particleCanvas}
+
+          {/* HUD */}
+          <div style={{
+            display:'flex', gap:'clamp(10px,3vw,28px)', alignItems:'center',
+            flexWrap:'wrap', justifyContent:'center',
+            marginBottom:'10px', zIndex:10, padding:'0 12px',
+          }}>
+            <div style={{ color:'#00ffff', fontSize:'clamp(0.75rem,2.5vw,1rem)' }}>
+              SCORE <span style={{ color:'#ffff00', fontWeight:'bold' }}>{score.toLocaleString()}</span>
+            </div>
+            <div style={{ color:'#ff8800', fontSize:'clamp(0.7rem,2vw,0.9rem)' }}>
+              BEST {hs.toLocaleString()}
+            </div>
+            <div style={{
+              color: lives <= 1 ? '#ff4444' : '#ff6688',
+              fontSize:'clamp(0.9rem,2.5vw,1.1rem)',
+              animation: lives <= 1 ? 'flash 0.8s infinite' : 'none',
+            }}>
+              {'♥ '.repeat(lives)}{'♡ '.repeat(3-lives)}
+            </div>
+            <div style={{
+              color: timeLeft <= 15 ? '#ff4444' : timeLeft <= 30 ? '#ffaa00' : '#00ffcc',
+              fontSize:'clamp(0.85rem,2.5vw,1rem)',
+              fontWeight: timeLeft <= 15 ? 'bold' : 'normal',
+              animation: timeLeft <= 10 ? 'flash 0.5s infinite' : 'none',
+            }}>
+              ⏱ {timeLeft}s
+            </div>
+            {combo >= 4 && (
+              <div style={{
+                color:'#ff44ff', fontWeight:'bold',
+                fontSize:'clamp(0.8rem,2.5vw,1rem)',
+                animation:'comboPop 0.4s ease',
+                textShadow:'0 0 15px #ff44ff',
+              }}>
+                {combo}× COMBO
+              </div>
+            )}
+          </div>
+
+          {/* Level label */}
+          <div style={{
+            color:'rgba(0,200,255,0.35)', fontSize:'0.72rem', letterSpacing:'2px',
+            marginBottom:'8px', zIndex:10,
+          }}>
+            LVL {level+1} / {LEVELS.length} — {cfg.label}
+          </div>
+
+          {/* Board */}
+          <div
+            style={{
+              display:'grid',
+              gridTemplateColumns:`repeat(${cfg.cols}, ${cellSize}px)`,
+              gridTemplateRows:`repeat(${cfg.rows}, ${cellSize}px)`,
+              gap:`${gap}px`,
+              zIndex:10,
+              background:'rgba(0,180,255,0.04)',
+              padding:'8px',
+              borderRadius:'10px',
+              border:'1px solid rgba(0,180,255,0.15)',
+              boxShadow:'0 0 60px rgba(0,80,200,0.2), inset 0 0 30px rgba(0,0,40,0.5)',
+              animation: shaking ? 'shake 0.4s ease' : 'none',
+            }}
+          >
+            {board.map((row, r) => row.map((cell, c) => {
+              const { revealed, mine, adj } = cell;
+
+              // Revealed mine
+              if (revealed && mine) return (
+                <div key={`${r}-${c}`} style={{
+                  width:cellSize, height:cellSize,
+                  background:'rgba(255,0,0,0.7)',
+                  borderRadius:'4px',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:`${cellSize*0.5}px`,
+                  boxShadow:'0 0 20px rgba(255,0,0,0.8)',
+                  border:'1px solid rgba(255,100,100,0.6)',
+                }}>💥</div>
+              );
+
+              // Revealed empty
+              if (revealed && adj === 0) return (
+                <div key={`${r}-${c}`} style={{
+                  width:cellSize, height:cellSize,
+                  background:'rgba(0,10,30,0.8)',
+                  borderRadius:'4px',
+                  border:'1px solid rgba(0,80,120,0.25)',
+                }} />
+              );
+
+              // Revealed number
+              if (revealed && adj > 0) {
+                const col = NUM_COLORS[adj] || '#fff';
+                return (
+                  <div key={`${r}-${c}`} style={{
+                    width:cellSize, height:cellSize,
+                    background:'rgba(0,15,40,0.85)',
+                    borderRadius:'4px',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    fontSize:`${Math.max(12, cellSize*0.48)}px`,
+                    fontWeight:'bold',
+                    color:col,
+                    textShadow:`0 0 8px ${col}`,
+                    border:`1px solid ${col}33`,
+                  }}>{adj}</div>
+                );
+              }
+
+              // Unrevealed
+              return (
+                <div
+                  key={`${r}-${c}`}
+                  className="cell-unrevealed"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    handleCell(r, c, rect.left + rect.width/2, rect.top + rect.height/2);
+                  }}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    const t = e.touches[0];
+                    handleCell(r, c, t.clientX, t.clientY);
+                  }}
+                  style={{
+                    width:cellSize, height:cellSize,
+                    background:'rgba(0,80,140,0.35)',
+                    borderRadius:'4px',
+                    cursor:'pointer',
+                    border:'1px solid rgba(0,180,255,0.35)',
+                    boxShadow:'inset 0 0 8px rgba(0,180,255,0.1)',
+                  }}
+                />
+              );
+            }))}
+          </div>
+
+          <div style={{
+            marginTop:'12px', color:'rgba(0,180,255,0.3)',
+            fontSize:'0.7rem', letterSpacing:'2px', zIndex:10,
+          }}>
+            CLICK TO REVEAL · AVOID MINES
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<Game />, document.getElementById('root'));
+  </script>
+</body>
+</html>
