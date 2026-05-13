@@ -1505,7 +1505,7 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse to aim arc trajectory · Click / Tap to fire a ballistic shot",
+    "controls": "Move mouse to aim · Hold to charge power (ring grows) · Release to fire · Longer hold = more range",
     "folder": "games/2026-05-13",
     "file": "games/2026-05-13/index.html",
     "preview": "games/2026-05-13/preview.png"
