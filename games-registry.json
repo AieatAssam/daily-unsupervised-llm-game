@@ -1489,5 +1489,25 @@
     "folder": "games/2026-05-11",
     "file": "games/2026-05-11/index.html",
     "preview": "games/2026-05-11/preview.png"
+  },
+  {
+    "id": "2026-05-13",
+    "name": "Arc Surge",
+    "date": "2026-05-13",
+    "description": "Fire gravity-affected ballistic shots at drifting neon targets — predict where each target will be when your parabolic arc arrives, chain consecutive hits for massive combo multipliers, and survive 90 seconds before time runs out!",
+    "tagline": "Aim the arc. Lead the target. Chain the combos!",
+    "tags": [
+      "precision",
+      "reflex",
+      "action",
+      "arcade",
+      "ballistic"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse to aim arc trajectory · Click / Tap to fire a ballistic shot",
+    "folder": "games/2026-05-13",
+    "file": "games/2026-05-13/index.html",
+    "preview": "games/2026-05-13/preview.png"
   }
 ]
