@@ -17,10 +17,13 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    const GRAVITY   = 0.28;
-    const BALL_SPD  = 15;
-    const BALL_R    = 7;
-    const TARGET_R  = 30;
+    const GRAVITY    = 0.28;
+    const BALL_SPD   = 15;
+    const BALL_R     = 7;
+    const TARGET_R   = 30;
+    const MIN_POWER  = 1.3;   // quick-tap base power (reaches mid-screen)
+    const MAX_POWER  = 2.5;   // full-charge power (reaches top of screen)
+    const CHARGE_MS  = 1200;  // ms to reach MAX_POWER
     const COLS = ['#00ffff','#ff00ff','#ffff00','#ff6622','#00ff88','#ff44aa'];
 
     /* ── Audio ─────────────────────────────────────────────────────── */
@@ -39,14 +42,15 @@
           o.start(); o.stop(ctx.currentTime + dur + 0.01);
         };
         return {
-          shoot : () => tone(350,140,0.14,0.22,'sawtooth'),
+          shoot : (p) => tone(200 + p * 150, 80 + p * 60, 0.14, 0.22, 'sawtooth'),
           hit   : () => { tone(700,1300,0.11,0.28); tone(1000,700,0.13,0.18); },
           combo : () => { tone(500,1000,0.09,0.22); tone(750,1500,0.09,0.22); tone(1100,2000,0.13,0.28); },
           miss  : () => tone(220,90,0.28,0.18,'sawtooth'),
           over  : () => tone(300,70,0.85,0.3,'sawtooth'),
+          charge: (p) => tone(120 + p * 200, 140 + p * 220, 0.06, 0.08, 'sine'),
         };
       } catch(_) {
-        return { shoot:()=>{}, hit:()=>{}, combo:()=>{}, miss:()=>{}, over:()=>{} };
+        return { shoot:()=>{}, hit:()=>{}, combo:()=>{}, miss:()=>{}, over:()=>{}, charge:()=>{} };
       }
     }
 
@@ -65,12 +69,20 @@
       };
     }
 
-    function arcPreview(ox, oy, tx, ty, steps) {
+    function computePower(pressStart) {
+      if (!pressStart) return MIN_POWER;
+      const elapsed = Date.now() - pressStart;
+      return MIN_POWER + (MAX_POWER - MIN_POWER) * Math.min(1, elapsed / CHARGE_MS);
+    }
+
+    /* arcPreview scales trajectory by power so preview matches actual shot */
+    function arcPreview(ox, oy, tx, ty, power) {
       const dx = tx - ox, dy = ty - oy;
       const d  = Math.hypot(dx, dy);
       if (d < 2) return [];
-      let vx = (dx / d) * BALL_SPD;
-      let vy = (dy / d) * BALL_SPD;
+      let vx = (dx / d) * BALL_SPD * power;
+      let vy = (dy / d) * BALL_SPD * power;
+      const steps = Math.round(60 * Math.sqrt(power));
       const pts = [];
       let px = ox, py = oy;
       for (let i = 0; i < steps; i++) {
@@ -88,36 +100,39 @@
       const audio     = useRef(null);
       const rafRef    = useRef(null);
       const intvRef   = useRef(null);
-      const [tick, setTick] = useState(0); // triggers React UI redraws
+      const [tick, setTick] = useState(0);
 
-      /* ── initialise persistent HighScore in localStorage ── */
       if (!localStorage.getItem('arcSurge_highScore')) {
         localStorage.setItem('arcSurge_highScore', '0');
       }
 
       function freshState() {
         return {
-          phase   : 'start',
-          targets : [],
-          balls   : [],
-          parts   : [],
-          floats  : [],
-          score   : 0,
-          hs      : parseInt(localStorage.getItem('arcSurge_highScore') || '0'),
-          lives   : 3,
-          combo   : 0,
-          comboT  : 0,
-          timeLeft: 90,
-          frame   : 0,
-          bgHue   : 0,
-          mx      : 0,
-          my      : 0,
+          phase    : 'start',
+          targets  : [],
+          balls    : [],
+          parts    : [],
+          floats   : [],
+          score    : 0,
+          hs       : parseInt(localStorage.getItem('arcSurge_highScore') || '0'),
+          lives    : 3,
+          combo    : 0,
+          comboT   : 0,
+          timeLeft : 90,
+          frame    : 0,
+          bgHue    : 0,
+          mx       : 0,
+          my       : 0,
+          /* charge state */
+          pressing   : false,
+          pressStart : 0,
+          pressX     : 0,
+          pressY     : 0,
         };
       }
 
       if (!st.current) st.current = freshState();
 
-      /* ── Boom + float text ── */
       function boom(x, y, col, n) {
         const s = st.current;
         for (let i = 0; i < n; i++) {
@@ -132,10 +147,10 @@
         st.current.floats.push({ x, y, txt, col, life: 1, vy: -2.8 });
       }
 
-      /* ── endGame ── */
       function endGame() {
         const s = st.current;
-        s.phase = 'over';
+        s.phase    = 'over';
+        s.pressing = false;
         if (s.score > s.hs) {
           s.hs = s.score;
           localStorage.setItem('arcSurge_highScore', String(s.score));
@@ -146,21 +161,21 @@
         setTick(t => t + 1);
       }
 
-      /* ── startGame ── */
       function startGame() {
         if (!audio.current) audio.current = mkAudio();
         const w = canvasRef.current?.width  || window.innerWidth;
         const h = canvasRef.current?.height || window.innerHeight;
         const s = st.current;
         Object.assign(s, {
-          phase   : 'playing',
-          targets : [mkTarget(w,h,1), mkTarget(w,h,1), mkTarget(w,h,1)],
-          balls   : [], parts: [], floats: [],
-          score   : 0,
-          hs      : parseInt(localStorage.getItem('arcSurge_highScore') || '0'),
-          lives   : 3,
-          combo   : 0, comboT: 0,
-          timeLeft: 90, frame: 0,
+          phase    : 'playing',
+          targets  : [mkTarget(w,h,1), mkTarget(w,h,1), mkTarget(w,h,1)],
+          balls    : [], parts: [], floats: [],
+          score    : 0,
+          hs       : parseInt(localStorage.getItem('arcSurge_highScore') || '0'),
+          lives    : 3,
+          combo    : 0, comboT: 0,
+          timeLeft : 90, frame: 0,
+          pressing : false, pressStart: 0, pressX: 0, pressY: 0,
         });
         if (intvRef.current) clearInterval(intvRef.current);
         intvRef.current = setInterval(() => {
@@ -174,8 +189,8 @@
         setTick(t => t + 1);
       }
 
-      /* ── fire projectile ── */
-      function fire(cx, cy) {
+      /* fire with power multiplier */
+      function fire(cx, cy, power) {
         const s = st.current;
         const w = canvasRef.current?.width  || window.innerWidth;
         const h = canvasRef.current?.height || window.innerHeight;
@@ -185,10 +200,10 @@
         if (d < 5) return;
         s.balls.push({
           x: ox, y: oy,
-          vx: (dx/d)*BALL_SPD, vy: (dy/d)*BALL_SPD,
+          vx: (dx/d)*BALL_SPD*power, vy: (dy/d)*BALL_SPD*power,
           trail: [],
         });
-        audio.current?.shoot();
+        audio.current?.shoot(power);
       }
 
       /* ── game + render loop ── */
@@ -213,7 +228,6 @@
 
             const speedMult = 1 + (90 - s.timeLeft) / 100;
 
-            // Move targets
             s.targets.forEach(t => {
               t.x += t.vx * speedMult;
               t.y += t.vy;
@@ -221,7 +235,6 @@
               if (t.y > h * 0.72)  { t.y = h * 0.72;  t.vy = -Math.abs(t.vy); }
             });
 
-            // Escaped targets → lose life
             const escaped = s.targets.filter(t =>
               t.x < -(TARGET_R * 5) || t.x > w + TARGET_R * 5
             );
@@ -235,13 +248,11 @@
               t.x >= -(TARGET_R * 5) && t.x <= w + TARGET_R * 5
             );
 
-            // Spawn to maintain count
             const maxT = Math.min(6, 3 + Math.floor(s.frame / 500));
             while (s.targets.length < maxT) {
               s.targets.push(mkTarget(w, h, speedMult));
             }
 
-            // Move balls
             s.balls.forEach(b => {
               b.trail.push({ x: b.x, y: b.y });
               if (b.trail.length > 20) b.trail.shift();
@@ -253,7 +264,6 @@
               b.y < h + 100 && b.x > -100 && b.x < w + 100
             );
 
-            // Collisions
             const usedBalls = new Set();
             const usedTgts  = new Set();
             s.balls.forEach((b, bi) => {
@@ -279,20 +289,17 @@
             s.balls   = s.balls.filter((_,i)   => !usedBalls.has(i));
             s.targets = s.targets.filter((_,i) => !usedTgts.has(i));
 
-            // Particles
             s.parts.forEach(p => {
               p.x += p.vx; p.y += p.vy; p.vy += 0.13; p.vx *= 0.97;
               p.life -= 0.024;
             });
             s.parts = s.parts.filter(p => p.life > 0);
 
-            // Float texts
             s.floats.forEach(f => { f.y += f.vy; f.life -= 0.02; });
             s.floats = s.floats.filter(f => f.life > 0);
           }
 
           /* ── DRAW ── */
-          // Background
           const bg = ctx.createRadialGradient(w/2, h/2, 60, w/2, h/2, Math.max(w,h)*0.85);
           bg.addColorStop(0, `hsl(${(s.bgHue+255)%360},75%,8%)`);
           bg.addColorStop(0.55, `hsl(${(s.bgHue+295)%360},85%,4%)`);
@@ -300,7 +307,6 @@
           ctx.fillStyle = bg;
           ctx.fillRect(0, 0, w, h);
 
-          // Subtle grid
           ctx.strokeStyle = 'rgba(0,255,255,0.035)';
           ctx.lineWidth = 1;
           for (let x = 0; x < w; x += 55) {
@@ -311,13 +317,21 @@
           }
 
           if (s.phase === 'playing') {
+            /* compute current power for preview */
+            const curPower = s.pressing ? computePower(s.pressStart) : MIN_POWER;
+            const chargeRatio = (curPower - MIN_POWER) / (MAX_POWER - MIN_POWER);
+            const hue = Math.round(180 - chargeRatio * 120); // cyan → yellow → orange
+
             /* trajectory preview */
-            const pts = arcPreview(w/2, h-70, s.mx, s.my, 55);
+            const aimX = s.pressing ? s.pressX : s.mx;
+            const aimY = s.pressing ? s.pressY : s.my;
+            const pts = arcPreview(w/2, h-70, aimX, aimY, curPower);
             pts.forEach((p, i) => {
-              const a = (1 - i / pts.length) * 0.5;
-              const r = 2 + (1 - i / pts.length) * 1.5;
+              const frac = 1 - i / pts.length;
+              const a = frac * (0.3 + chargeRatio * 0.35);
+              const r = 2 + frac * (1.5 + chargeRatio * 2);
               ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2);
-              ctx.fillStyle = `rgba(255,230,80,${a})`;
+              ctx.fillStyle = `hsla(${hue},100%,65%,${a})`;
               ctx.fill();
             });
 
@@ -326,34 +340,28 @@
               const pulse = (Math.sin(s.frame * 0.09 + t.phase) + 1) * 0.5;
 
               ctx.save();
-              // glow aura
               const grd = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, TARGET_R * 2.8);
               grd.addColorStop(0, t.col + '55');
               grd.addColorStop(1, 'transparent');
               ctx.fillStyle = grd;
               ctx.beginPath(); ctx.arc(t.x, t.y, TARGET_R*2.8, 0, Math.PI*2); ctx.fill();
 
-              // outer ring
               ctx.shadowColor = t.col; ctx.shadowBlur = 22;
               ctx.strokeStyle = t.col; ctx.lineWidth = 3;
               ctx.beginPath(); ctx.arc(t.x, t.y, TARGET_R, 0, Math.PI*2); ctx.stroke();
 
-              // fill
               ctx.fillStyle = t.col + '28';
               ctx.beginPath(); ctx.arc(t.x, t.y, TARGET_R, 0, Math.PI*2); ctx.fill();
 
-              // centre dot
               ctx.shadowBlur = 28;
               ctx.fillStyle = t.col;
               ctx.beginPath(); ctx.arc(t.x, t.y, 9, 0, Math.PI*2); ctx.fill();
 
-              // pulse ring
               ctx.globalAlpha = pulse * 0.45;
               ctx.strokeStyle = t.col; ctx.lineWidth = 1.5;
               ctx.beginPath(); ctx.arc(t.x, t.y, TARGET_R + 8 + pulse*9, 0, Math.PI*2); ctx.stroke();
               ctx.restore();
 
-              // direction arrow hint (small chevron showing movement)
               ctx.save();
               ctx.strokeStyle = t.col + 'aa';
               ctx.lineWidth = 2;
@@ -377,14 +385,12 @@
             /* balls */
             s.balls.forEach(b => {
               ctx.save();
-              // trail
               b.trail.forEach((pt, i) => {
                 const a = (i / b.trail.length) * 0.55;
                 const r = (i / b.trail.length) * BALL_R;
                 ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, Math.PI*2);
                 ctx.fillStyle = `rgba(255,215,50,${a})`; ctx.fill();
               });
-              // head
               ctx.shadowColor = '#ffee44'; ctx.shadowBlur = 22;
               ctx.fillStyle = '#ffffff';
               ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, Math.PI*2); ctx.fill();
@@ -394,21 +400,42 @@
             /* launcher */
             const lx = w/2, ly = h-70;
             ctx.save();
-            ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 28;
-            ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3;
+            ctx.shadowColor = `hsl(${hue},100%,60%)`; ctx.shadowBlur = 28;
+            ctx.strokeStyle = `hsl(${hue},100%,60%)`; ctx.lineWidth = 3;
             ctx.beginPath(); ctx.arc(lx, ly, 22, 0, Math.PI*2); ctx.stroke();
-            ctx.fillStyle = '#00ffff30';
+            ctx.fillStyle = `hsl(${hue},100%,30%)44`;
             ctx.beginPath(); ctx.arc(lx, ly, 22, 0, Math.PI*2); ctx.fill();
 
-            // aim line
-            const adx = s.mx - lx, ady = s.my - ly;
+            /* aim line */
+            const adx = aimX - lx, ady = aimY - ly;
             const ad  = Math.hypot(adx, ady);
             if (ad > 5) {
-              ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.75;
+              ctx.strokeStyle = `hsl(${hue},100%,60%)`; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.75;
               ctx.beginPath();
               ctx.moveTo(lx, ly);
               ctx.lineTo(lx + (adx/ad)*46, ly + (ady/ad)*46);
               ctx.stroke();
+            }
+
+            /* charge ring — grows and changes colour as player holds */
+            if (s.pressing && chargeRatio > 0.01) {
+              ctx.globalAlpha = 1;
+              const ringR = 28 + chargeRatio * 22;
+              ctx.shadowColor = `hsl(${hue},100%,60%)`;
+              ctx.shadowBlur  = 18 + chargeRatio * 22;
+              ctx.strokeStyle = `hsl(${hue},100%,65%)`;
+              ctx.lineWidth   = 2.5 + chargeRatio * 2;
+              ctx.beginPath();
+              ctx.arc(lx, ly, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * chargeRatio);
+              ctx.stroke();
+
+              /* power label */
+              ctx.globalAlpha = Math.min(1, chargeRatio * 2);
+              ctx.font = `bold ${11 + Math.round(chargeRatio * 5)}px monospace`;
+              ctx.fillStyle   = `hsl(${hue},100%,70%)`;
+              ctx.shadowBlur  = 10;
+              ctx.textAlign   = 'center';
+              ctx.fillText(`${curPower.toFixed(1)}×`, lx, ly - ringR - 8);
             }
             ctx.restore();
           }
@@ -449,12 +476,40 @@
       const onMouseMove = e => {
         st.current.mx = e.clientX;
         st.current.my = e.clientY;
+        if (st.current.pressing) {
+          st.current.pressX = e.clientX;
+          st.current.pressY = e.clientY;
+        }
       };
 
-      const onClick = e => {
+      const onMouseDown = e => {
         const s = st.current;
         if (s.phase === 'start' || s.phase === 'over') { startGame(); return; }
-        if (s.phase === 'playing') fire(e.clientX, e.clientY);
+        if (s.phase === 'playing') {
+          s.pressing   = true;
+          s.pressStart = Date.now();
+          s.pressX     = e.clientX;
+          s.pressY     = e.clientY;
+        }
+      };
+
+      const onMouseUp = e => {
+        const s = st.current;
+        if (s.phase === 'playing' && s.pressing) {
+          const power = computePower(s.pressStart);
+          fire(e.clientX, e.clientY, power);
+          s.pressing = false;
+        }
+      };
+
+      /* cancel charge if mouse leaves canvas */
+      const onMouseLeave = () => {
+        const s = st.current;
+        if (s.phase === 'playing' && s.pressing) {
+          const power = computePower(s.pressStart);
+          fire(s.pressX, s.pressY, power);
+          s.pressing = false;
+        }
       };
 
       const onTouchStart = e => {
@@ -464,13 +519,36 @@
         st.current.my = t.clientY;
         const s = st.current;
         if (s.phase === 'start' || s.phase === 'over') { startGame(); return; }
-        if (s.phase === 'playing') fire(t.clientX, t.clientY);
+        if (s.phase === 'playing') {
+          s.pressing   = true;
+          s.pressStart = Date.now();
+          s.pressX     = t.clientX;
+          s.pressY     = t.clientY;
+        }
       };
 
       const onTouchMove = e => {
         e.preventDefault();
         const t = e.touches[0];
-        if (t) { st.current.mx = t.clientX; st.current.my = t.clientY; }
+        if (t) {
+          st.current.mx = t.clientX;
+          st.current.my = t.clientY;
+          if (st.current.pressing) {
+            st.current.pressX = t.clientX;
+            st.current.pressY = t.clientY;
+          }
+        }
+      };
+
+      const onTouchEnd = e => {
+        e.preventDefault();
+        const s = st.current;
+        if (s.phase === 'playing' && s.pressing) {
+          const t = e.changedTouches[0];
+          const power = computePower(s.pressStart);
+          fire(t?.clientX ?? s.pressX, t?.clientY ?? s.pressY, power);
+          s.pressing = false;
+        }
       };
 
       const s = st.current;
@@ -480,9 +558,12 @@
           style={{ position:'relative', width:'100vw', height:'100vh', overflow:'hidden',
                    fontFamily:'monospace', cursor: s.phase==='playing' ? 'crosshair' : 'pointer' }}
           onMouseMove={onMouseMove}
-          onClick={onClick}
+          onMouseDown={onMouseDown}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseLeave}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
         >
           <canvas
             ref={canvasRef}
@@ -544,10 +625,14 @@
                 🎯 Targets drift across — predict where they'll be!
               </div>
               <div style={{ color:'#7799bb', fontSize:14, marginBottom:8 }}>
-                ⬆️ Aim UP to curve the ball down onto far targets
+                ⬆️ Aim UP and curve the ball down onto far targets
+              </div>
+              <div style={{ color:'#ffdd44', fontSize:14, marginBottom:8,
+                            textShadow:'0 0 10px #ffdd44' }}>
+                ⚡ HOLD to charge shot power — reach the top of the screen!
               </div>
               <div style={{ color:'#7799bb', fontSize:14, marginBottom:36 }}>
-                ⚡ Chain hits for COMBO multipliers — up to x10!
+                🔗 Chain hits for COMBO multipliers — up to x10!
               </div>
               {s.hs > 0 && (
                 <div style={{ color:'#ffff44', fontSize:16, marginBottom:16,
