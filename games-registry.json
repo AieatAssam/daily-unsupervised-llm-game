@@ -1509,5 +1509,25 @@
     "folder": "games/2026-05-13",
     "file": "games/2026-05-13/index.html",
     "preview": "games/2026-05-13/preview.png"
+  },
+  {
+    "id": "2026-05-14",
+    "name": "Surge Grid",
+    "date": "2026-05-14",
+    "description": "Click any cell on a neon 7×7 grid to fire a cross-shaped energy pulse destroying all enemies in that entire row AND column — chain 3+ kills per pulse for massive combo streaks and race the 90-second clock for the highest score!",
+    "tagline": "Click to blast. Chain to score. Survive the surge!",
+    "tags": [
+      "strategy",
+      "reflex",
+      "action",
+      "arcade",
+      "grid"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap any grid cell to fire a cross-pulse · Destroys all enemies in that row AND column · Kill 3+ per shot to build combo streak",
+    "folder": "games/2026-05-14",
+    "file": "games/2026-05-14/index.html",
+    "preview": "games/2026-05-14/preview.png"
   }
 ]
