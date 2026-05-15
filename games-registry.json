@@ -1509,5 +1509,25 @@
     "folder": "games/2026-05-13",
     "file": "games/2026-05-13/index.html",
     "preview": "games/2026-05-13/preview.png"
+  },
+  {
+    "id": "2026-05-15",
+    "name": "Blade Ring",
+    "date": "2026-05-15",
+    "description": "Throw neon blades into a spinning disc — time each throw so your blade doesn't hit one already embedded! Golden gem diamonds score +100 bonus points as the disc speeds up and reverses direction each round.",
+    "tagline": "Time the throw. Don't hit a blade. Chain the combos!",
+    "tags": [
+      "timing",
+      "precision",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap to throw a blade into the spinning disc",
+    "folder": "games/2026-05-15",
+    "file": "games/2026-05-15/index.html",
+    "preview": "games/2026-05-15/preview.png"
   }
 ]
