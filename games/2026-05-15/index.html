@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blade Ring</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; -webkit-user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    function BladeRing() {
+      const canvasRef = useRef(null);
+      const audioRef = useRef(null);
+      const gRef = useRef({ phase: 'start' });
+      const rafRef = useRef(null);
+      const bestRef = useRef(parseInt(localStorage.getItem('bladeRingBest') || '0'));
+      const [ui, setUi] = useState({ phase: 'start', score: 0, best: bestRef.current, lives: 3, combo: 0, newBest: false });
+
+      function playSound(type) {
+        try {
+          if (!audioRef.current) audioRef.current = new (window.AudioContext || window.webkitAudioContext)();
+          const ac = audioRef.current;
+          const o = ac.createOscillator(), gain = ac.createGain();
+          o.connect(gain); gain.connect(ac.destination);
+          const t = ac.currentTime;
+          if (type === 'throw') {
+            o.type = 'square'; o.frequency.value = 380;
+            gain.gain.setValueAtTime(0.07, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+          } else if (type === 'embed') {
+            o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(380, t + 0.12);
+            gain.gain.setValueAtTime(0.2, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+          } else if (type === 'gem') {
+            o.type = 'sine';
+            o.frequency.setValueAtTime(1100, t); o.frequency.exponentialRampToValueAtTime(2200, t + 0.18);
+            gain.gain.setValueAtTime(0.25, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+          } else if (type === 'crash') {
+            o.type = 'sawtooth';
+            o.frequency.setValueAtTime(200, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.4);
+            gain.gain.setValueAtTime(0.35, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+          }
+          o.start(t); o.stop(t + 0.5);
+        } catch (e) {}
+      }
+
+      function makeGems(blades) {
+        const gems = [];
+        for (let i = 0; i < 3; i++) {
+          for (let tries = 0; tries < 40; tries++) {
+            const a = Math.random() * Math.PI * 2;
+            const clear = [...blades, ...gems].every(b => {
+              const d = Math.abs(a - b.angle);
+              return Math.min(d, Math.PI * 2 - d) > 0.42;
+            });
+            if (clear) { gems.push({ angle: a, hit: false }); break; }
+          }
+        }
+        return gems;
+      }
+
+      function burst(x, y, col, n) {
+        const g = gRef.current;
+        if (!g || !g.particles) return;
+        for (let i = 0; i < n; i++) {
+          const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 5;
+          g.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, col, sz: 2 + Math.random() * 3 });
+        }
+      }
+
+      function startGame() {
+        const canvas = canvasRef.current;
+        const W = canvas.width, H = canvas.height;
+        const r = Math.min(W, H) * 0.22;
+        gRef.current = {
+          phase: 'playing', W, H,
+          cx: W / 2, cy: H * 0.38, r,
+          discAngle: 0, discSpeed: 0.016, dir: 1,
+          reverseIn: 160 + Math.random() * 100,
+          blades: [], gems: makeGems([]),
+          blade: null, particles: [],
+          score: 0, combo: 0, lives: 3, thrown: 0, flash: 0,
+        };
+        localStorage.setItem('bladeRingBest', String(bestRef.current));
+        setUi({ phase: 'playing', score: 0, best: bestRef.current, lives: 3, combo: 0, newBest: false });
+      }
+
+      function handleInput() {
+        if (!audioRef.current) {
+          audioRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const g = gRef.current;
+        if (!g) return;
+        if (g.phase === 'start' || g.phase === 'over') { startGame(); return; }
+        if (g.phase === 'playing' && !g.blade) {
+          g.blade = { x: g.cx, y: g.H - 60 };
+          playSound('throw');
+        }
+      }
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const ctx = canvas.getContext('2d');
+
+        const THRESH = 0.092;
+        const GEM_THRESH = 0.22;
+        const BLADE_SPEED = 10;
+
+        function loop() {
+          const g = gRef.current;
+          const W = canvas.width, H = canvas.height;
+
+          ctx.clearRect(0, 0, W, H);
+
+          // Background
+          const bg = ctx.createRadialGradient(W / 2, H * 0.4, 0, W / 2, H * 0.4, H);
+          bg.addColorStop(0, '#1a0035'); bg.addColorStop(1, '#000008');
+          ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+          if (g.phase === 'playing') {
+            const { cx, cy, r } = g;
+            const BLADE_LEN = r * 0.38;
+
+            // Rotate disc
+            g.discAngle = (g.discAngle + g.discSpeed * g.dir + Math.PI * 4) % (Math.PI * 2);
+
+            // Direction reversal
+            if (--g.reverseIn <= 0) {
+              g.dir *= -1;
+              g.reverseIn = 130 + Math.floor(Math.random() * 110);
+              g.flash = 16;
+            }
+
+            // Flying blade
+            if (g.blade) {
+              g.blade.y -= BLADE_SPEED;
+              const dy = g.blade.y - cy, dx = g.blade.x - cx;
+              if (Math.sqrt(dx * dx + dy * dy) <= r + 4) {
+                // Blade hits disc edge at bottom (absolute angle = PI/2)
+                const relAngle = ((Math.PI / 2 - g.discAngle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+
+                const collided = g.blades.some(b => {
+                  const d = Math.abs(relAngle - b.angle);
+                  return Math.min(d, Math.PI * 2 - d) < THRESH;
+                });
+
+                const hitX = cx, hitY = cy + r;
+
+                if (collided) {
+                  g.lives--;
+                  g.combo = 0;
+                  g.flash = 30;
+                  burst(hitX, hitY, '#ff3300', 22);
+                  playSound('crash');
+                  if (g.lives <= 0) {
+                    const wasNew = g.score > bestRef.current;
+                    if (wasNew) { bestRef.current = g.score; localStorage.setItem('bladeRingBest', String(g.score)); }
+                    g.phase = 'over';
+                    setUi({ phase: 'over', score: g.score, best: bestRef.current, lives: 0, combo: 0, newBest: wasNew });
+                  } else {
+                    setUi(u => ({ ...u, lives: g.lives, combo: 0 }));
+                  }
+                } else {
+                  g.blades.push({ angle: relAngle });
+                  g.thrown++;
+                  g.combo++;
+                  const pts = 10 + Math.min(g.combo - 1, 8) * 5;
+                  g.score += pts;
+                  burst(hitX, hitY, '#00ffcc', 10);
+                  playSound('embed');
+
+                  for (const gem of g.gems) {
+                    if (!gem.hit) {
+                      const d = Math.abs(relAngle - gem.angle);
+                      if (Math.min(d, Math.PI * 2 - d) < GEM_THRESH) {
+                        gem.hit = true;
+                        g.score += 100;
+                        const gx = cx + Math.cos(g.discAngle + gem.angle) * r;
+                        const gy = cy + Math.sin(g.discAngle + gem.angle) * r;
+                        burst(gx, gy, '#ffdd00', 20);
+                        playSound('gem');
+                      }
+                    }
+                  }
+                  if (g.gems.every(gem => gem.hit)) g.gems = makeGems(g.blades);
+                  if (g.thrown % 5 === 0) g.discSpeed = Math.min(g.discSpeed * 1.14, 0.065);
+                  setUi(u => ({ ...u, score: g.score, combo: g.combo }));
+                }
+                g.blade = null;
+              }
+            }
+
+            // Particles
+            g.particles = g.particles.filter(p => p.life > 0);
+            for (const p of g.particles) {
+              p.x += p.vx; p.y += p.vy; p.vx *= 0.91; p.vy *= 0.91; p.life -= 0.026;
+            }
+            if (g.flash > 0) g.flash--;
+
+            // Flash overlay
+            if (g.flash > 0) {
+              ctx.fillStyle = `rgba(255,50,200,${g.flash / 30 * 0.22})`;
+              ctx.fillRect(0, 0, W, H);
+            }
+
+            // === Draw disc (rotated context) ===
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(g.discAngle);
+
+            // Disc fill
+            const dg = ctx.createRadialGradient(0, 0, r * 0.15, 0, 0, r);
+            dg.addColorStop(0, 'rgba(70,0,160,0.95)');
+            dg.addColorStop(0.7, 'rgba(110,0,210,0.7)');
+            dg.addColorStop(1, 'rgba(200,0,255,0.08)');
+            ctx.fillStyle = dg;
+            ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+
+            // Outer ring glow
+            ctx.shadowColor = '#bb00ff'; ctx.shadowBlur = 24;
+            ctx.strokeStyle = '#cc00ff'; ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Inner rings
+            for (const fr of [0.65, 0.35]) {
+              ctx.strokeStyle = 'rgba(180,50,255,0.22)'; ctx.lineWidth = 1;
+              ctx.beginPath(); ctx.arc(0, 0, r * fr, 0, Math.PI * 2); ctx.stroke();
+            }
+
+            // Spokes
+            ctx.strokeStyle = 'rgba(160,40,255,0.14)'; ctx.lineWidth = 1;
+            for (let i = 0; i < 12; i++) {
+              const a = i / 12 * Math.PI * 2;
+              ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); ctx.stroke();
+            }
+
+            // Gems on disc
+            for (const gem of g.gems) {
+              if (!gem.hit) {
+                const gx = Math.cos(gem.angle) * r, gy = Math.sin(gem.angle) * r;
+                ctx.shadowColor = '#ffdd00'; ctx.shadowBlur = 18;
+                ctx.fillStyle = '#ffe000';
+                ctx.beginPath();
+                ctx.moveTo(gx, gy - 8); ctx.lineTo(gx + 5, gy);
+                ctx.lineTo(gx, gy + 8); ctx.lineTo(gx - 5, gy);
+                ctx.closePath(); ctx.fill();
+                ctx.shadowBlur = 0;
+              }
+            }
+
+            // Embedded blades
+            ctx.lineCap = 'round';
+            for (const b of g.blades) {
+              const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
+              ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 12;
+              ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.moveTo(ca * (r - 4), sa * (r - 4));
+              ctx.lineTo(ca * (r + BLADE_LEN), sa * (r + BLADE_LEN));
+              ctx.stroke();
+              ctx.fillStyle = '#ffffff';
+              ctx.beginPath(); ctx.arc(ca * (r + BLADE_LEN), sa * (r + BLADE_LEN), 2.5, 0, Math.PI * 2); ctx.fill();
+              ctx.shadowBlur = 0;
+            }
+            ctx.restore();
+
+            // Flying blade (world frame)
+            if (g.blade) {
+              ctx.save();
+              ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 16;
+              ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+              ctx.beginPath();
+              ctx.moveTo(g.blade.x, g.blade.y + BLADE_LEN);
+              ctx.lineTo(g.blade.x, g.blade.y);
+              ctx.stroke();
+              ctx.fillStyle = '#ffffff';
+              ctx.beginPath(); ctx.arc(g.blade.x, g.blade.y - 2, 3, 0, Math.PI * 2); ctx.fill();
+              ctx.restore();
+            }
+
+            // Particles
+            for (const p of g.particles) {
+              ctx.globalAlpha = Math.max(0, p.life);
+              ctx.shadowColor = p.col; ctx.shadowBlur = 8;
+              ctx.fillStyle = p.col;
+              ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.5, p.sz * p.life), 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+            // Launch platform
+            ctx.shadowColor = '#9900ff'; ctx.shadowBlur = 14;
+            ctx.fillStyle = '#330066';
+            ctx.fillRect(cx - 32, H - 82, 64, 22);
+            ctx.strokeStyle = '#aa00ff'; ctx.lineWidth = 2;
+            ctx.strokeRect(cx - 32, H - 82, 64, 22);
+            ctx.shadowBlur = 0;
+          }
+
+          rafRef.current = requestAnimationFrame(loop);
+        }
+
+        rafRef.current = requestAnimationFrame(loop);
+        return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+      }, []);
+
+      const onInteract = useCallback((e) => { e.preventDefault(); handleInput(); }, []);
+
+      const { phase, score, best, lives, combo, newBest } = ui;
+
+      return (
+        <div
+          style={{ position: 'relative', width: '100vw', height: '100vh', cursor: 'pointer' }}
+          onClick={onInteract}
+          onTouchStart={onInteract}
+        >
+          <canvas ref={canvasRef} style={{ display: 'block' }} />
+
+          {/* HUD */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, padding: '14px 20px',
+            display: 'flex', justifyContent: 'space-between', pointerEvents: 'none'
+          }}>
+            <div>
+              <div style={{ color: '#00ffcc', fontSize: 32, fontWeight: 'bold', textShadow: '0 0 14px #00ffcc', fontFamily: 'monospace' }}>
+                {score}
+              </div>
+              <div style={{ color: '#664488', fontSize: 12, fontFamily: 'monospace' }}>BEST {best}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 22, letterSpacing: 4 }}>
+                {Array.from({ length: 3 }, (_, i) => (
+                  <span key={i} style={{ color: i < lives ? '#ff4488' : '#331133' }}>♥</span>
+                ))}
+              </div>
+              {combo > 1 && (
+                <div style={{ color: '#ffaa00', fontSize: 17, fontFamily: 'monospace', textShadow: '0 0 8px #ffaa00' }}>
+                  ×{combo} COMBO
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Start screen */}
+          {phase === 'start' && (
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,12,0.87)', gap: 16
+            }}>
+              <div style={{
+                fontSize: 50, fontWeight: 900, color: '#cc00ff', letterSpacing: 4,
+                textShadow: '0 0 28px #cc00ff, 0 0 55px #8800bb', fontFamily: 'monospace'
+              }}>BLADE RING</div>
+              <div style={{ color: '#9988bb', fontSize: 15, textAlign: 'center', lineHeight: 1.9, maxWidth: 300 }}>
+                Throw blades into the spinning neon disc<br />
+                Don't hit a blade already embedded!<br />
+                <span style={{ color: '#ffdd00' }}>◆ Hit gems for +100 pts</span>
+              </div>
+              <div style={{
+                marginTop: 22, padding: '15px 46px', borderRadius: 40, color: '#fff',
+                fontSize: 20, fontWeight: 'bold', fontFamily: 'monospace',
+                background: 'linear-gradient(135deg,#5500aa,#cc00ff)',
+                boxShadow: '0 0 28px #cc00ff'
+              }}>TAP TO START</div>
+            </div>
+          )}
+
+          {/* Game Over */}
+          {phase === 'over' && (
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,12,0.91)', gap: 14
+            }}>
+              <div style={{ fontSize: 42, fontWeight: 900, color: '#ff3333', textShadow: '0 0 22px #ff3333', fontFamily: 'monospace' }}>
+                SHATTERED
+              </div>
+              <div style={{ fontSize: 38, fontWeight: 'bold', color: '#00ffcc', textShadow: '0 0 14px #00ffcc', fontFamily: 'monospace' }}>
+                {score}
+              </div>
+              {newBest && (
+                <div style={{ fontSize: 20, color: '#ffdd00', textShadow: '0 0 12px #ffdd00' }}>★ NEW BEST ★</div>
+              )}
+              <div style={{ fontSize: 14, color: '#554477', fontFamily: 'monospace' }}>BEST: {best}</div>
+              <div style={{
+                marginTop: 20, padding: '15px 46px', borderRadius: 40, color: '#fff',
+                fontSize: 20, fontWeight: 'bold', fontFamily: 'monospace',
+                background: 'linear-gradient(135deg,#5500aa,#cc00ff)',
+                boxShadow: '0 0 28px #cc00ff'
+              }}>TAP TO RETRY</div>
+            </div>
+          )}
+
+          {phase === 'playing' && (
+            <div style={{
+              position: 'absolute', bottom: 18, left: 0, right: 0, textAlign: 'center',
+              color: 'rgba(140,70,210,0.5)', fontSize: 13, fontFamily: 'monospace', pointerEvents: 'none'
+            }}>
+              CLICK / TAP TO THROW
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<BladeRing />);
+  </script>
+</body>
+</html>
