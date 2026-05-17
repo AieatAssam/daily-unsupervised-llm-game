@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prism Sum</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { margin: 0; overflow: hidden; background: #08001a; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; }
+    @keyframes targetPulse {
+      0%,100% { text-shadow: 0 0 20px #f72585, 0 0 40px #8338ec44; }
+      50% { text-shadow: 0 0 35px #f72585, 0 0 70px #8338ec88; }
+    }
+    @keyframes fadeUp {
+      0% { opacity: 1; transform: translateX(-50%) translateY(0); }
+      100% { opacity: 0; transform: translateX(-50%) translateY(-50px); }
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    try {
+      if (!localStorage.getItem('prism_highScore')) localStorage.setItem('prism_highScore', '0');
+    } catch(e) {}
+  </script>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    /* -- Audio -- */
+    let AC = null;
+    function getAC() {
+      if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+      return AC;
+    }
+    function beep(freq, dur, type, vol) {
+      try {
+        var ac = getAC(), o = ac.createOscillator(), g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.type = type || 'sine'; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol || 0.28, ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+        o.start(); o.stop(ac.currentTime + dur);
+      } catch(e) {}
+    }
+    function sfxClick(n) { beep(200 + n * 40, 0.07); }
+    function sfxSuccess() {
+      beep(523, 0.1, 'sine', 0.35);
+      setTimeout(() => beep(659, 0.1, 'sine', 0.35), 80);
+      setTimeout(() => beep(784, 0.2, 'sine', 0.3), 160);
+    }
+    function sfxError() { beep(120, 0.25, 'sawtooth', 0.3); }
+    function sfxTick() { beep(880, 0.05, 'square', 0.08); }
+
+    /* -- Constants -- */
+    const COLS = 5, ROWS = 4, TOTAL = 20;
+    const COLORS = ['#f72585','#fb5607','#ffbe0b','#3a86ff','#8338ec','#06d6a0','#ef233c','#4cc9f0','#ff9f1c'];
+
+    /* -- Helpers -- */
+    function rnd(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
+    function genNum() { return rnd(1, 9); }
+    function genGrid() { return Array.from({ length: TOTAL }, genNum); }
+
+    function hasSubsetSum(nums, target) {
+      const dp = new Set([0]);
+      for (let i = 0; i < nums.length; i++) {
+        const arr = [...dp];
+        for (let j = 0; j < arr.length; j++) {
+          const nx = arr[j] + nums[i];
+          if (nx <= target) dp.add(nx);
+        }
+      }
+      return dp.has(target);
+    }
+
+    function genTarget(grid, level) {
+      const lo = 8 + level * 2, hi = Math.min(20 + level * 3, 45);
+      for (let i = 0; i < 40; i++) {
+        const t = rnd(lo, hi);
+        if (hasSubsetSum(grid, t)) return t;
+      }
+      return grid[0] + grid[1];
+    }
+
+    /* -- PrismCell -- */
+    function PrismCell({ value, selected, flash, onTap }) {
+      const ci = (value - 1) % COLORS.length;
+      const c = COLORS[ci];
+      const isErr = flash === 'error';
+      const isOk  = flash === 'success';
+      const bg = isErr ? 'radial-gradient(circle at 35% 25%, #ff3355, #550011)'
+        : isOk  ? 'radial-gradient(circle at 35% 25%, #fff, ' + c + ')'
+        : selected ? 'radial-gradient(circle at 35% 25%, ' + c + 'ff, ' + c + '88)'
+        : 'radial-gradient(circle at 35% 25%, ' + c + '44, ' + c + '11)';
+      const bdr = isErr ? '2px solid #ff3355' : isOk ? '2px solid #fff'
+        : selected ? '2px solid ' + c : '2px solid ' + c + '44';
+      const shd = isErr ? '0 0 20px #ff335588' : isOk ? '0 0 30px #fff8, 0 0 50px ' + c + '88'
+        : selected ? '0 0 18px ' + c + '99' : '0 0 5px ' + c + '22';
+      const scale = selected && !flash ? 'scale(1.1)' : 'scale(1)';
+      return (
+        <div onClick={onTap} style={{ aspectRatio: '1', padding: '3px', cursor: 'pointer' }}>
+          <div style={{
+            width: '100%', height: '100%', borderRadius: '11px',
+            background: bg, border: bdr, boxShadow: shd,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 'clamp(13px,3.5vw,26px)', fontWeight: '900',
+            color: (isErr || isOk || selected) ? '#fff' : c + 'bb',
+            textShadow: selected ? '0 0 10px #fff' : 'none',
+            transform: scale, transition: 'all 0.13s ease',
+            position: 'relative', overflow: 'hidden',
+          }}>
+            <div style={{
+              position: 'absolute', top: '8%', left: '12%',
+              width: '32%', height: '22%',
+              background: 'rgba(255,255,255,0.22)', borderRadius: '50%',
+              filter: 'blur(3px)', pointerEvents: 'none',
+            }} />
+            {value}
+          </div>
+        </div>
+      );
+    }
+
+    /* -- FloatScore -- */
+    function FloatScore({ text }) {
+      return (
+        <div style={{
+          position: 'absolute', top: '38%', left: '50%',
+          color: '#ffbe0b', fontSize: 'clamp(20px,4.5vw,28px)', fontWeight: '900',
+          textShadow: '0 0 20px #ffbe0b',
+          animation: 'fadeUp 0.9s ease-out forwards',
+          pointerEvents: 'none', zIndex: 20, whiteSpace: 'nowrap',
+        }}>{text}</div>
+      );
+    }
+
+    /* -- PrismSum -- */
+    function PrismSum() {
+      const starsRef   = useRef(Array.from({ length: 55 }, () => ({
+        x: Math.random()*100, y: Math.random()*100,
+        s: Math.random()*2+0.5, o: Math.random()*0.5+0.2,
+      })));
+      const canvasRef  = useRef(null);
+      const gridRef    = useRef(null);
+      const pRef       = useRef([]);
+      const lockedRef  = useRef(false);
+      const floatIdRef = useRef(0);
+
+      const [grid, setGrid]         = useState(genGrid);
+      const [selected, setSelected] = useState([]);
+      const [target, setTarget]     = useState(0);
+      const [score, setScore]       = useState(0);
+      const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('prism_highScore') || '0'));
+      const [timeLeft, setTimeLeft] = useState(90);
+      const [combo, setCombo]       = useState(0);
+      const [phase, setPhase]       = useState('start');
+      const [cellFlash, setCellFlash] = useState({});
+      const [comboFlash, setComboFlash] = useState(false);
+      const [floats, setFloats]     = useState([]);
+
+      /* Sync high score when score changes */
+      useEffect(() => {
+        if (score > 0) {
+          const hs = parseInt(localStorage.getItem('prism_highScore') || '0');
+          if (score > hs) {
+            localStorage.setItem('prism_highScore', String(score));
+            setHighScore(score);
+          }
+        }
+      }, [score]);
+
+      /* Canvas particle loop */
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        resize();
+        window.addEventListener('resize', resize);
+        let rafId;
+        const loop = () => {
+          const ct = canvas.getContext('2d');
+          ct.clearRect(0, 0, canvas.width, canvas.height);
+          const ps = pRef.current;
+          ct.save();
+          for (let i = ps.length - 1; i >= 0; i--) {
+            const p = ps[i];
+            const alpha = p.life / p.maxLife;
+            ct.globalAlpha = alpha * 0.85;
+            ct.fillStyle = p.color;
+            ct.shadowColor = p.color;
+            ct.shadowBlur = p.r * 4;
+            ct.beginPath();
+            ct.arc(p.x, p.y, Math.max(p.r * alpha, 0.1), 0, Math.PI * 2);
+            ct.fill();
+            p.x += p.vx; p.y += p.vy; p.vy += 0.22; p.vx *= 0.97; p.life--;
+            if (p.life <= 0) ps.splice(i, 1);
+          }
+          ct.restore();
+          rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+        return () => { cancelAnimationFrame(rafId); window.removeEventListener('resize', resize); };
+      }, []);
+
+      /* Timer */
+      useEffect(() => {
+        if (phase !== 'playing') return;
+        const id = setInterval(() => {
+          setTimeLeft(t => {
+            const next = t - 1;
+            if (next > 0 && next <= 10) sfxTick();
+            return next;
+          });
+        }, 1000);
+        return () => clearInterval(id);
+      }, [phase]);
+
+      /* Game over when time hits 0 */
+      useEffect(() => {
+        if (phase === 'playing' && timeLeft <= 0) {
+          setPhase('over');
+          const hs = parseInt(localStorage.getItem('prism_highScore') || '0');
+          setHighScore(prev => Math.max(prev, hs));
+        }
+      }, [timeLeft, phase]);
+
+      function spawnParticles(x, y, color) {
+        for (let i = 0; i < 16; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 1.5 + Math.random() * 6;
+          pRef.current.push({
+            x, y, color,
+            vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 2,
+            r: 2.5 + Math.random() * 4, life: 28 + Math.random() * 22, maxLife: 50,
+          });
+        }
+      }
+
+      function handleCell(idx) {
+        if (phase !== 'playing' || lockedRef.current) return;
+        if (selected.includes(idx)) {
+          setSelected(s => s.filter(i => i !== idx));
+          return;
+        }
+        const newSel = [...selected, idx];
+        const newSum = newSel.reduce((a, i) => a + grid[i], 0);
+        sfxClick(grid[idx]);
+
+        if (newSum === target) {
+          lockedRef.current = true;
+          const newCombo = combo + 1;
+          const pts = target * newCombo;
+          const newScore = score + pts;
+          const newLevel = Math.floor(newScore / 350);
+
+          setCombo(newCombo);
+          setScore(newScore);
+          setComboFlash(true);
+          setTimeout(() => setComboFlash(false), 500);
+
+          /* Float label */
+          const fid = floatIdRef.current++;
+          const label = newCombo > 1 ? '+' + pts + ' \xd7' + newCombo : '+' + pts;
+          setFloats(f => [...f, { id: fid, text: label }]);
+          setTimeout(() => setFloats(f => f.filter(x => x.id !== fid)), 950);
+
+          /* Flash success */
+          const flash = {};
+          newSel.forEach(i => { flash[i] = 'success'; });
+          setCellFlash(flash);
+
+          /* Particles */
+          if (gridRef.current) {
+            const r = gridRef.current.getBoundingClientRect();
+            const cw = r.width / COLS, ch = r.height / ROWS;
+            newSel.forEach(i => {
+              const col = i % COLS, row = Math.floor(i / COLS);
+              spawnParticles(r.left + (col+0.5)*cw, r.top + (row+0.5)*ch, COLORS[(grid[i]-1)%COLORS.length]);
+            });
+          }
+          sfxSuccess();
+
+          /* Replace cells + new target */
+          const newGrid = [...grid];
+          newSel.forEach(i => { newGrid[i] = genNum(); });
+          setTimeout(() => {
+            setCellFlash({});
+            setGrid(newGrid);
+            setSelected([]);
+            setTarget(genTarget(newGrid, newLevel));
+            lockedRef.current = false;
+          }, 380);
+
+        } else if (newSum > target) {
+          lockedRef.current = true;
+          setCombo(0);
+          const errFlash = {};
+          newSel.forEach(i => { errFlash[i] = 'error'; });
+          setCellFlash(errFlash);
+          sfxError();
+          setTimeout(() => {
+            setCellFlash({});
+            setSelected([]);
+            lockedRef.current = false;
+          }, 380);
+
+        } else {
+          setSelected(newSel);
+        }
+      }
+
+      function startGame() {
+        const g = genGrid();
+        setGrid(g); setSelected([]); setTarget(genTarget(g, 0));
+        setScore(0); setTimeLeft(90); setCombo(0);
+        setCellFlash({}); setFloats([]); pRef.current = [];
+        lockedRef.current = false; setPhase('playing');
+      }
+
+      const currentSum = selected.reduce((a, i) => a + (grid[i] || 0), 0);
+      const timeColor  = timeLeft <= 10 ? '#ef233c' : timeLeft <= 20 ? '#ffbe0b' : '#4cc9f0';
+      const stars = starsRef.current;
+
+      const rootStyle = {
+        width: '100vw', height: '100vh',
+        background: 'radial-gradient(ellipse at 50% 30%, #1c003a 0%, #08001a 100%)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        position: 'relative', overflow: 'hidden', userSelect: 'none',
+      };
+      const btnStyle = {
+        padding: 'clamp(12px,2vw,16px) clamp(36px,6vw,52px)',
+        fontSize: 'clamp(16px,3vw,20px)', fontWeight: '900',
+        background: 'linear-gradient(135deg, #8338ec, #f72585)',
+        border: 'none', borderRadius: '50px', color: '#fff',
+        cursor: 'pointer', letterSpacing: '3px', boxShadow: '0 0 40px #8338ec55',
+      };
+
+      const canvasEl = <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }} />;
+      const starEls  = stars.map((st, i) => (
+        <div key={i} style={{
+          position: 'absolute', left: st.x + '%', top: st.y + '%',
+          width: st.s, height: st.s, borderRadius: '50%',
+          background: '#fff', opacity: st.o * 0.6, pointerEvents: 'none',
+        }} />
+      ));
+
+      /* START / OVER */
+      if (phase === 'start' || phase === 'over') {
+        return (
+          <div style={rootStyle}>
+            {starEls}
+            {canvasEl}
+            <div style={{
+              textAlign: 'center',
+              padding: 'clamp(24px,4vw,44px) clamp(28px,5vw,54px)',
+              borderRadius: '24px', background: 'rgba(15,0,35,0.9)',
+              border: '2px solid #8338ec55', boxShadow: '0 0 80px #8338ec33',
+              maxWidth: '420px', width: '90%', zIndex: 10,
+            }}>
+              <div style={{
+                fontSize: 'clamp(36px,8vw,56px)', fontWeight: '900', letterSpacing: '4px',
+                background: 'linear-gradient(135deg, #4cc9f0 0%, #f72585 50%, #ffbe0b 100%)',
+                backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                animation: 'shimmer 3s linear infinite', marginBottom: '6px',
+              }}>
+                PRISM SUM
+              </div>
+              <div style={{ fontSize: '20px', marginBottom: '14px', opacity: 0.7 }}>
+                {COLORS.slice(0,5).map((c,i) => <span key={i} style={{ color: c, textShadow: '0 0 8px '+c }}> &#9670; </span>)}
+              </div>
+              {phase === 'over' && (
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ color: '#888', fontSize: '11px', letterSpacing: '3px' }}>FINAL SCORE</div>
+                  <div style={{ color: '#f72585', fontSize: 'clamp(40px,8vw,56px)', fontWeight: '900', textShadow: '0 0 30px #f72585' }}>
+                    {score}
+                  </div>
+                  <div style={{ color: '#ffbe0b', fontSize: '16px' }}>BEST {highScore}</div>
+                </div>
+              )}
+              {phase === 'start' && (
+                <div style={{ color: '#aaa', fontSize: 'clamp(12px,2vw,14px)', lineHeight: '1.8', marginBottom: '20px' }}>
+                  Pick prisms that <span style={{ color: '#ffbe0b', fontWeight: 'bold' }}>add up</span> to the target.<br/>
+                  Chain combos for <span style={{ color: '#f72585', fontWeight: 'bold' }}>multiplied</span> scores!<br/>
+                  Overshoot and your picks reset.
+                  {highScore > 0 && <div style={{ color: '#ffbe0b', marginTop: '10px' }}>BEST: {highScore}</div>}
+                </div>
+              )}
+              <button style={btnStyle} onClick={startGame}>{phase === 'over' ? 'PLAY AGAIN' : 'PLAY'}</button>
+            </div>
+          </div>
+        );
+      }
+
+      /* PLAYING */
+      return (
+        <div style={rootStyle}>
+          {starEls}
+          {canvasEl}
+          {floats.map(f => <FloatScore key={f.id} text={f.text} />)}
+
+          {/* HUD */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '520px', padding: '0 14px', marginBottom: '8px', zIndex: 10 }}>
+            <div>
+              <div style={{ color: '#444', fontSize: '10px', letterSpacing: '2px' }}>SCORE</div>
+              <div style={{ color: '#4cc9f0', fontSize: 'clamp(18px,4vw,24px)', fontWeight: 'bold' }}>{score}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#444', fontSize: '10px', letterSpacing: '2px' }}>TARGET</div>
+              <div style={{ color: '#fff', fontWeight: '900', fontSize: 'clamp(30px,7vw,48px)', animation: 'targetPulse 1.5s ease-in-out infinite' }}>
+                = {target}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ color: '#444', fontSize: '10px', letterSpacing: '2px' }}>TIME</div>
+              <div style={{ color: timeColor, fontSize: 'clamp(18px,4vw,24px)', fontWeight: 'bold', textShadow: timeLeft <= 10 ? '0 0 16px ' + timeColor : 'none' }}>
+                {timeLeft}s
+              </div>
+            </div>
+          </div>
+
+          {/* Timer bar */}
+          <div style={{ width: '100%', maxWidth: '520px', height: '3px', background: '#ffffff11', borderRadius: '2px', marginBottom: '10px', zIndex: 10, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: (timeLeft / 90 * 100) + '%', background: 'linear-gradient(90deg, ' + timeColor + ', ' + timeColor + '88)', transition: 'width 1s linear, background 0.3s', boxShadow: '0 0 8px ' + timeColor }} />
+          </div>
+
+          {/* Sum + Combo display */}
+          <div style={{ minHeight: '50px', textAlign: 'center', marginBottom: '4px', zIndex: 10 }}>
+            {currentSum > 0 && (
+              <div style={{ color: currentSum > target ? '#ef233c' : '#ffbe0b', fontSize: 'clamp(16px,3.5vw,22px)', fontWeight: 'bold', textShadow: currentSum > target ? '0 0 12px #ef233c' : 'none' }}>
+                {currentSum} / {target}
+              </div>
+            )}
+            {combo > 1 && (
+              <div style={{ color: '#ffbe0b', fontWeight: '900', fontSize: comboFlash ? 'clamp(22px,5vw,30px)' : 'clamp(14px,3vw,18px)', textShadow: '0 0 20px #ffbe0b', transition: 'font-size 0.18s ease' }}>
+                &times;{combo} COMBO!
+              </div>
+            )}
+          </div>
+
+          {/* Grid */}
+          <div ref={gridRef} style={{
+            display: 'grid', gridTemplateColumns: 'repeat(' + COLS + ', 1fr)',
+            gap: 'clamp(3px,0.8vw,6px)', padding: 'clamp(10px,2vw,16px)',
+            borderRadius: '18px', background: 'rgba(255,255,255,0.02)',
+            border: '1px solid #8338ec1a', boxShadow: '0 0 50px #8338ec0d',
+            width: '100%', maxWidth: '520px', zIndex: 10,
+          }}>
+            {grid.map((val, idx) => (
+              <PrismCell key={idx} value={val}
+                selected={selected.includes(idx)}
+                flash={cellFlash[idx] || null}
+                onTap={() => handleCell(idx)}
+              />
+            ))}
+          </div>
+
+          <div style={{ color: '#333', fontSize: '11px', marginTop: '10px', zIndex: 10 }}>
+            BEST {highScore}
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<PrismSum />);
+  </script>
+</body>
+</html>
