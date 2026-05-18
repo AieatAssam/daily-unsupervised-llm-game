@@ -1549,5 +1549,25 @@
     "folder": "games/2026-05-17",
     "file": "games/2026-05-17/index.html",
     "preview": "games/2026-05-17/preview.png"
+  },
+  {
+    "id": "2026-05-18",
+    "name": "Neon Reflect",
+    "date": "2026-05-18",
+    "description": "Click grid cells to place / and \\ mirrors that redirect a bouncing neon ball — route it into glowing gems before their 8-second timer expires or lose a life! Chain collections for massive combo multipliers as the ball speeds up each level.",
+    "tagline": "Place mirrors. Redirect the ball. Collect the gems!",
+    "tags": [
+      "puzzle",
+      "strategy",
+      "reflex",
+      "physics",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap any grid cell to cycle: empty → / mirror → \\ mirror → empty",
+    "folder": "games/2026-05-18",
+    "file": "games/2026-05-18/index.html",
+    "preview": "games/2026-05-18/preview.png"
   }
 ]

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Reflect</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #07000f; overflow: hidden; display: flex; align-items: center; justify-content: center; width: 100vw; height: 100vh; }
+    #root { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+    canvas { cursor: crosshair; display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useCallback } = React;
+
+const COLS = 14, ROWS = 10, CELL = 50;
+const W = COLS * CELL, H = ROWS * CELL; // 700 x 500
+
+// Direction: 0=right, 1=down, 2=left, 3=up
+const DX = [1, 0, -1, 0];
+const DY = [0, 1, 0, -1];
+// Reflections: / mirror then \ mirror
+const REFLECT_FWD = [3, 2, 1, 0]; // right→up, down→left, left→down, up→right
+const REFLECT_BCK = [1, 0, 3, 2]; // right→down, down→right, left→up, up→left
+
+const GEM_COLORS = ['#00ffff', '#ff00ff', '#ffff00', '#00ff88', '#ff6600', '#ff44aa'];
+const GEM_LIFE = 8000;
+
+let _audio = null;
+function sfx(freq, type = 'sine', dur = 0.12, vol = 0.2) {
+  try {
+    if (!_audio) _audio = new (window.AudioContext || window.webkitAudioContext)();
+    const o = _audio.createOscillator(), g = _audio.createGain();
+    o.connect(g); g.connect(_audio.destination);
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, _audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, _audio.currentTime + dur);
+    o.start(); o.stop(_audio.currentTime + dur);
+  } catch (e) {}
+}
+function resumeAudio() { try { _audio && _audio.resume(); } catch(e){} }
+
+function mkGame(level = 1) {
+  return {
+    mirrors: Array.from({ length: ROWS }, () => new Uint8Array(COLS)),
+    ball: {
+      x: (Math.floor(COLS / 2) + 0.5) * CELL,
+      y: 1.5 * CELL,
+      dir: 1, // start going down
+      speed: 2.4 + level * 0.32,
+      prevCX: Math.floor(COLS / 2),
+      prevCY: 1,
+    },
+    gems: [],
+    particles: [],
+    score: 0, combo: 1, lives: 3, level,
+    gemsCollected: 0, t: 0, lastSpawn: -9999,
+    phase: 'playing',
+  };
+}
+
+function spawnGem(gs) {
+  const used = new Set(gs.gems.map(g => `${g.cx},${g.cy}`));
+  const bcx = Math.floor(gs.ball.x / CELL);
+  const bcy = Math.floor(gs.ball.y / CELL);
+  used.add(`${bcx},${bcy}`);
+  // Also block mirror cells from spawning gems in same spot
+  for (let tries = 0; tries < 100; tries++) {
+    const cx = 1 + Math.floor(Math.random() * (COLS - 2));
+    const cy = 1 + Math.floor(Math.random() * (ROWS - 2));
+    if (!used.has(`${cx},${cy}`)) {
+      gs.gems.push({
+        cx, cy,
+        x: (cx + 0.5) * CELL, y: (cy + 0.5) * CELL,
+        color: GEM_COLORS[Math.floor(Math.random() * GEM_COLORS.length)],
+        born: gs.t, phase: Math.random() * Math.PI * 2, id: Math.random(),
+      });
+      return;
+    }
+  }
+}
+
+function emit(gs, x, y, color, n = 12) {
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.3;
+    const s = 1.5 + Math.random() * 4;
+    gs.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, color, r: 2 + Math.random() * 3 });
+  }
+}
+
+function drawTitle(ctx, ts, hs) {
+  const pulse = Math.sin(ts / 500) * 0.3 + 0.7;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 40;
+  ctx.font = 'bold 52px Courier New';
+  ctx.fillText('NEON REFLECT', W / 2, H / 2 - 100);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '17px Courier New';
+  ctx.fillText('Place mirrors to redirect the neon ball into gems', W / 2, H / 2 - 50);
+  ctx.fillStyle = '#00ff88'; ctx.font = '15px Courier New';
+  ctx.fillText('Click a grid cell to toggle:  empty  →  /  →  \\  →  empty', W / 2, H / 2 - 20);
+  ctx.fillStyle = 'rgba(255,120,120,0.85)'; ctx.font = '14px Courier New';
+  ctx.fillText('Gems expire in 8 seconds — let one vanish and you lose a life!', W / 2, H / 2 + 10);
+  ctx.fillStyle = `rgba(0,255,255,${pulse})`; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 20 * pulse;
+  ctx.font = 'bold 26px Courier New';
+  ctx.fillText('▶  CLICK TO START', W / 2, H / 2 + 72);
+  ctx.shadowBlur = 0;
+  if (hs > 0) {
+    ctx.fillStyle = '#ffff00'; ctx.font = '15px Courier New';
+    ctx.fillText(`BEST: ${hs}`, W / 2, H / 2 + 115);
+  }
+}
+
+function drawGameOver(ctx, ts, score, hs) {
+  const pulse = Math.sin(ts / 400) * 0.3 + 0.7;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ff4444'; ctx.shadowColor = '#ff4444'; ctx.shadowBlur = 30;
+  ctx.font = 'bold 46px Courier New';
+  ctx.fillText('GAME OVER', W / 2, H / 2 - 70);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffffff'; ctx.font = '24px Courier New';
+  ctx.fillText(`Score: ${score}`, W / 2, H / 2 - 20);
+  if (score >= hs && score > 0) {
+    ctx.fillStyle = '#ffff00'; ctx.font = '19px Courier New';
+    ctx.fillText('✦ NEW HIGH SCORE! ✦', W / 2, H / 2 + 20);
+  } else if (hs > 0) {
+    ctx.fillStyle = 'rgba(255,255,0,0.6)'; ctx.font = '15px Courier New';
+    ctx.fillText(`Best: ${hs}`, W / 2, H / 2 + 20);
+  }
+  ctx.fillStyle = `rgba(0,255,255,${pulse})`; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 20 * pulse;
+  ctx.font = 'bold 22px Courier New';
+  ctx.fillText('▶  CLICK TO PLAY AGAIN', W / 2, H / 2 + 90);
+  ctx.shadowBlur = 0;
+}
+
+function drawHUD(ctx, score, combo, lives, level) {
+  ctx.font = '13px Courier New';
+  // score
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(3, 3, 160, 22);
+  ctx.textAlign = 'left'; ctx.fillStyle = '#00ffff';
+  ctx.fillText(`SCORE: ${score}`, 9, 19);
+  // combo
+  if (combo > 1) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(W / 2 - 55, 3, 110, 22);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#ffff00';
+    ctx.fillText(`x${combo} COMBO`, W / 2, 19);
+  }
+  // level
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(W - 140, 3, 80, 22);
+  ctx.textAlign = 'left'; ctx.fillStyle = '#00ff88';
+  ctx.fillText(`LVL ${level}`, W - 133, 19);
+  // lives
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(W - 58, 3, 55, 22);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#ff6666';
+  ctx.fillText('♥'.repeat(Math.max(0, lives)), W - 6, 19);
+}
+
+function App() {
+  const canvasRef = useRef(null);
+  const gsRef = useRef(null);
+  const phaseRef = useRef('start');
+  const hsRef = useRef(parseInt(localStorage.getItem('nrHighScore') || '0'));
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let raf;
+    let prevTime = 0;
+
+    function frame(ts) {
+      raf = requestAnimationFrame(frame);
+      const dt = Math.min(ts - prevTime, 50);
+      prevTime = ts;
+      const gs = gsRef.current;
+
+      // Background
+      ctx.clearRect(0, 0, W, H);
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, '#07000f'); bg.addColorStop(0.5, '#000e1a'); bg.addColorStop(1, '#07000f');
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+      // Grid lines
+      ctx.strokeStyle = 'rgba(0,200,255,0.07)'; ctx.lineWidth = 0.5;
+      for (let c = 0; c <= COLS; c++) { ctx.beginPath(); ctx.moveTo(c * CELL, 0); ctx.lineTo(c * CELL, H); ctx.stroke(); }
+      for (let r = 0; r <= ROWS; r++) { ctx.beginPath(); ctx.moveTo(0, r * CELL); ctx.lineTo(W, r * CELL); ctx.stroke(); }
+
+      if (phaseRef.current === 'start') { drawTitle(ctx, ts, hsRef.current); return; }
+      if (phaseRef.current === 'gameover') { drawGameOver(ctx, ts, gs ? gs.score : 0, hsRef.current); return; }
+      if (!gs || gs.phase !== 'playing') return;
+
+      // UPDATE
+      gs.t += dt;
+
+      // Spawn gems
+      const maxGems = Math.min(2 + Math.floor(gs.level / 2), 4);
+      if (gs.gems.length < maxGems && gs.t - gs.lastSpawn > 1200) {
+        spawnGem(gs);
+        gs.lastSpawn = gs.t;
+      }
+
+      // Move ball
+      const ball = gs.ball;
+      ball.x += DX[ball.dir] * ball.speed;
+      ball.y += DY[ball.dir] * ball.speed;
+
+      // Wall bounce
+      const R = 7;
+      if (ball.x < R) { ball.x = R; if (ball.dir === 2) ball.dir = 0; sfx(180, 'square', 0.05, 0.08); }
+      else if (ball.x > W - R) { ball.x = W - R; if (ball.dir === 0) ball.dir = 2; sfx(180, 'square', 0.05, 0.08); }
+      if (ball.y < R) { ball.y = R; if (ball.dir === 3) ball.dir = 1; sfx(180, 'square', 0.05, 0.08); }
+      else if (ball.y > H - R) { ball.y = H - R; if (ball.dir === 1) ball.dir = 3; sfx(180, 'square', 0.05, 0.08); }
+
+      // Mirror collision (on cell entry)
+      const ncx = Math.max(0, Math.min(COLS - 1, Math.floor(ball.x / CELL)));
+      const ncy = Math.max(0, Math.min(ROWS - 1, Math.floor(ball.y / CELL)));
+      if (ncx !== ball.prevCX || ncy !== ball.prevCY) {
+        const m = gs.mirrors[ncy][ncx];
+        if (m !== 0) {
+          const newDir = m === 1 ? REFLECT_FWD[ball.dir] : REFLECT_BCK[ball.dir];
+          if (newDir !== ball.dir) {
+            ball.dir = newDir;
+            ball.x = (ncx + 0.5) * CELL;
+            ball.y = (ncy + 0.5) * CELL;
+            sfx(400 + ncx * 18, 'sine', 0.08, 0.14);
+            emit(gs, ball.x, ball.y, m === 1 ? '#00ff88' : '#ff8800', 7);
+          }
+        }
+        ball.prevCX = ncx;
+        ball.prevCY = ncy;
+      }
+
+      // Gem logic
+      gs.gems = gs.gems.filter(g => {
+        const age = gs.t - g.born;
+        if (age > GEM_LIFE) {
+          gs.lives--;
+          gs.combo = 1;
+          emit(gs, g.x, g.y, '#ff3333', 12);
+          sfx(140, 'sawtooth', 0.3, 0.28);
+          if (gs.lives <= 0) {
+            const prev = hsRef.current;
+            if (gs.score > prev) { hsRef.current = gs.score; localStorage.setItem('nrHighScore', gs.score); }
+            phaseRef.current = 'gameover';
+          }
+          return false;
+        }
+        const dist = Math.hypot(ball.x - g.x, ball.y - g.y);
+        if (dist < CELL * 0.52) {
+          const pts = 100 * gs.combo;
+          gs.score += pts;
+          gs.combo = Math.min(gs.combo + 1, 10);
+          gs.gemsCollected++;
+          if (gs.gemsCollected > 0 && gs.gemsCollected % (5 + gs.level * 2) === 0) {
+            gs.level++;
+            ball.speed = 2.4 + gs.level * 0.32;
+          }
+          emit(gs, g.x, g.y, g.color, 18);
+          sfx(480 + gs.combo * 55, 'sine', 0.18, 0.24);
+          if (gs.combo >= 3) sfx(720 + gs.combo * 70, 'triangle', 0.1, 0.15);
+          return false;
+        }
+        return true;
+      });
+
+      // Update particles
+      gs.particles = gs.particles.filter(p => p.life > 0.02);
+      gs.particles.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        p.vx *= 0.93; p.vy *= 0.93;
+        p.life -= 0.022;
+      });
+
+      // RENDER MIRRORS
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const m = gs.mirrors[r][c];
+          if (!m) continue;
+          const x = c * CELL, y = r * CELL;
+          const col = m === 1 ? '#00ff88' : '#ff8800';
+          ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 14; ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          if (m === 1) { ctx.moveTo(x + 7, y + CELL - 7); ctx.lineTo(x + CELL - 7, y + 7); }
+          else { ctx.moveTo(x + 7, y + 7); ctx.lineTo(x + CELL - 7, y + CELL - 7); }
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }
+
+      // RENDER GEMS
+      gs.gems.forEach(g => {
+        const age = gs.t - g.born;
+        const frac = 1 - age / GEM_LIFE;
+        const pulse = Math.sin(ts / 240 + g.phase) * 0.15 + 0.85;
+        const urgent = frac < 0.3;
+        // Timer arc
+        ctx.strokeStyle = urgent ? `rgba(255,80,80,${0.5 + Math.sin(ts / 100) * 0.3})` : 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 2.5; ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, 21, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+        ctx.stroke();
+        // Diamond
+        const s = 11 * pulse;
+        ctx.fillStyle = g.color; ctx.shadowColor = g.color; ctx.shadowBlur = 22;
+        ctx.beginPath();
+        ctx.moveTo(g.x, g.y - s);
+        ctx.lineTo(g.x + s * 0.65, g.y);
+        ctx.lineTo(g.x, g.y + s);
+        ctx.lineTo(g.x - s * 0.65, g.y);
+        ctx.closePath(); ctx.fill();
+        // Inner sparkle
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.shadowBlur = 0;
+        ctx.beginPath(); ctx.arc(g.x - 2, g.y - 3, 2, 0, Math.PI * 2); ctx.fill();
+      });
+
+      // RENDER PARTICLES
+      ctx.save();
+      gs.particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2); ctx.fill();
+      });
+      ctx.restore(); ctx.shadowBlur = 0;
+
+      // RENDER BALL
+      const bx = ball.x, by = ball.y;
+      // Glow halo
+      const grd = ctx.createRadialGradient(bx, by, 0, bx, by, 22);
+      grd.addColorStop(0, 'rgba(255,100,255,0.9)');
+      grd.addColorStop(0.4, 'rgba(160,0,255,0.45)');
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath(); ctx.arc(bx, by, 22, 0, Math.PI * 2); ctx.fill();
+      // Core
+      ctx.fillStyle = '#ffffff'; ctx.shadowColor = '#ff88ff'; ctx.shadowBlur = 25;
+      ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill();
+      // Direction indicator dot
+      ctx.fillStyle = '#ffccff'; ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.arc(bx + DX[ball.dir] * 10, by + DY[ball.dir] * 10, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+
+      drawHUD(ctx, gs.score, gs.combo, gs.lives, gs.level);
+    }
+
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const handlePointer = useCallback((e) => {
+    e.preventDefault();
+    try { if (_audio) _audio.resume(); else { _audio = new (window.AudioContext || window.webkitAudioContext)(); } } catch(ex){}
+
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = W / rect.width, scaleY = H / rect.height;
+    const src = e.touches ? e.touches[0] : e;
+    const mx = (src.clientX - rect.left) * scaleX;
+    const my = (src.clientY - rect.top) * scaleY;
+
+    if (phaseRef.current === 'start') {
+      gsRef.current = mkGame(1);
+      phaseRef.current = 'playing';
+      if (!localStorage.getItem('nrHighScore')) localStorage.setItem('nrHighScore', '0');
+      sfx(440, 'sine', 0.3, 0.2);
+      return;
+    }
+    if (phaseRef.current === 'gameover') {
+      gsRef.current = mkGame(1);
+      phaseRef.current = 'playing';
+      sfx(440, 'sine', 0.3, 0.2);
+      return;
+    }
+    const gs = gsRef.current;
+    if (!gs || gs.phase !== 'playing') return;
+
+    const cx = Math.floor(mx / CELL);
+    const cy = Math.floor(my / CELL);
+    if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS) return;
+    // Don't place mirror on ball's active cell
+    const bcx = Math.floor(gs.ball.x / CELL);
+    const bcy = Math.floor(gs.ball.y / CELL);
+    if (cx === bcx && cy === bcy) return;
+    gs.mirrors[cy][cx] = (gs.mirrors[cy][cx] + 1) % 3;
+    sfx(gs.mirrors[cy][cx] === 1 ? 800 : gs.mirrors[cy][cx] === 2 ? 600 : 300, 'triangle', 0.04, 0.06);
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={W} height={H}
+      onClick={handlePointer}
+      onTouchStart={handlePointer}
+      style={{ maxWidth: '100vw', maxHeight: '90vh', objectFit: 'contain' }}
+    />
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
