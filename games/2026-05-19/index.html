@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trail Blaze</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050510; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const COLS = 60;
+    const ROWS = 50;
+    const CELL = 10;
+    const W = COLS * CELL;
+    const H = ROWS * CELL;
+
+    const UP    = [0, -1];
+    const DOWN  = [0,  1];
+    const LEFT  = [-1, 0];
+    const RIGHT = [1,  0];
+
+    const PLAYER_COLOR = '#00ffff';
+    const AI_COLORS = ['#ff00ff', '#ff8800'];
+    const ALL_DIRS = [UP, DOWN, LEFT, RIGHT];
+
+    function createAudio() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const play = (freq, dur, type = 'sine', vol = 0.12) => {
+          try {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g); g.connect(ctx.destination);
+            o.type = type;
+            o.frequency.setValueAtTime(freq, ctx.currentTime);
+            g.gain.setValueAtTime(vol, ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+            o.start(); o.stop(ctx.currentTime + dur);
+          } catch (e) {}
+        };
+        return {
+          turn()  { play(440, 0.04, 'square', 0.08); },
+          die()   { [220, 165, 110].forEach((f, i) => setTimeout(() => play(f, 0.18, 'sawtooth', 0.18), i * 90)); },
+          kill()  { [600, 800, 1000].forEach((f, i) => setTimeout(() => play(f, 0.1, 'sine', 0.15), i * 50)); },
+          combo(n){ play(300 + n * 120, 0.25, 'sine', 0.2); },
+          start() { [400, 600, 800].forEach((f, i) => setTimeout(() => play(f, 0.12, 'sine', 0.12), i * 80)); },
+          clear() { [500, 700, 900, 1100].forEach((f, i) => setTimeout(() => play(f, 0.15, 'sine', 0.18), i * 70)); }
+        };
+      } catch (e) {
+        const noop = () => {};
+        return { turn: noop, die: noop, kill: noop, combo: noop, start: noop, clear: noop };
+      }
+    }
+
+    function makeBike(x, y, dir, color) {
+      return { x, y, dir: [...dir], nextDir: [...dir], trail: [[x, y]], color, alive: true };
+    }
+
+    function buildOccupied(state) {
+      const set = new Set();
+      const add = ([x, y]) => set.add(`${x},${y}`);
+      state.player.trail.forEach(add);
+      state.ais.forEach(ai => ai.trail.forEach(add));
+      return set;
+    }
+
+    function isClear(x, y, occupied) {
+      if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return false;
+      return !occupied.has(`${x},${y}`);
+    }
+
+    function countOpen(x, y, dir, occupied, depth = 5) {
+      let count = 0;
+      let cx = x, cy = y;
+      for (let i = 0; i < depth; i++) {
+        cx += dir[0]; cy += dir[1];
+        if (!isClear(cx, cy, occupied)) break;
+        count++;
+      }
+      return count;
+    }
+
+    function aiThink(ai, occupied) {
+      const [dx, dy] = ai.dir;
+      const nx = ai.x + dx, ny = ai.y + dy;
+      // If straight is clear and random dice allows it, keep going
+      if (isClear(nx, ny, occupied) && Math.random() > 0.12) return;
+      // Otherwise find best valid direction
+      const options = ALL_DIRS.filter(d => {
+        if (d[0] === -ai.dir[0] && d[1] === -ai.dir[1]) return false; // no 180
+        return isClear(ai.x + d[0], ai.y + d[1], occupied);
+      });
+      if (options.length === 0) return;
+      // Pick direction with most open space ahead
+      let best = options[0], bestScore = -1;
+      for (const d of options) {
+        const s = countOpen(ai.x, ai.y, d, occupied, 8);
+        if (s > bestScore) { bestScore = s; best = d; }
+      }
+      ai.nextDir = best;
+    }
+
+    function spawnParticles(x, y, color, count = 24) {
+      const ps = [];
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
+        const spd = 1.5 + Math.random() * 3;
+        ps.push({
+          x: x * CELL + CELL / 2,
+          y: y * CELL + CELL / 2,
+          vx: Math.cos(angle) * spd,
+          vy: Math.sin(angle) * spd,
+          life: 1,
+          color
+        });
+      }
+      return ps;
+    }
+
+    function createGameState() {
+      return {
+        phase: 'playing',
+        score: 0,
+        lives: 3,
+        combo: 0,
+        tick: 0,
+        speed: 8,
+        accumMs: 0,
+        particles: [],
+        flashText: null,
+        flashTimer: 0,
+        player: makeBike(5, Math.floor(ROWS / 2), RIGHT, PLAYER_COLOR),
+        ais: [
+          makeBike(COLS - 6, Math.floor(ROWS / 3),     LEFT, AI_COLORS[0]),
+          makeBike(COLS - 6, Math.floor(2 * ROWS / 3), LEFT, AI_COLORS[1])
+        ]
+      };
+    }
+
+    function resetRound(state) {
+      state.player = makeBike(5, Math.floor(ROWS / 2), RIGHT, PLAYER_COLOR);
+      state.ais = [
+        makeBike(COLS - 6, Math.floor(ROWS / 3),     LEFT, AI_COLORS[0]),
+        makeBike(COLS - 6, Math.floor(2 * ROWS / 3), LEFT, AI_COLORS[1])
+      ];
+      state.combo = 0;
+      state.accumMs = 0;
+    }
+
+    // ── Main Component ──────────────────────────────────────────────────────────
+    function TrailBlaze() {
+      const canvasRef  = useRef(null);
+      const stateRef   = useRef(null);
+      const audioRef   = useRef(null);
+      const animRef    = useRef(null);
+      const roundTimer = useRef(null);
+
+      const [ui, setUi] = useState({
+        phase: 'start',
+        score: 0,
+        lives: 3,
+        combo: 0,
+        highScore: parseInt(localStorage.getItem('trailBlazeHigh') || '0', 10)
+      });
+
+      // ── Compute display size (maintain aspect ratio, fit viewport) ──────────
+      const scale = Math.min(window.innerWidth / W, window.innerHeight / H, 1);
+      const dW = Math.floor(W * scale);
+      const dH = Math.floor(H * scale);
+
+      // ── Start / Restart ─────────────────────────────────────────────────────
+      const startGame = useCallback(() => {
+        if (roundTimer.current) clearTimeout(roundTimer.current);
+        const gs = createGameState();
+        stateRef.current = gs;
+        const hs = parseInt(localStorage.getItem('trailBlazeHigh') || '0', 10);
+        localStorage.setItem('trailBlazeHigh', String(hs));
+        setUi(u => ({ ...u, phase: 'playing', score: 0, lives: 3, combo: 0 }));
+        audioRef.current?.start();
+      }, []);
+
+      // ── Audio init ──────────────────────────────────────────────────────────
+      useEffect(() => {
+        audioRef.current = createAudio();
+      }, []);
+
+      // ── Keyboard ────────────────────────────────────────────────────────────
+      useEffect(() => {
+        const handler = (e) => {
+          const gs = stateRef.current;
+          if (!gs || gs.phase !== 'playing' || !gs.player.alive) return;
+          const map = {
+            ArrowUp: UP, ArrowDown: DOWN, ArrowLeft: LEFT, ArrowRight: RIGHT,
+            w: UP, s: DOWN, a: LEFT, d: RIGHT,
+            W: UP, S: DOWN, A: LEFT, D: RIGHT
+          };
+          const nd = map[e.key];
+          if (!nd) return;
+          const [cx, cy] = gs.player.dir;
+          if (nd[0] === -cx && nd[1] === -cy) return; // no 180
+          gs.player.nextDir = nd;
+          audioRef.current?.turn();
+          if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+      }, []);
+
+      // ── Touch / Click ────────────────────────────────────────────────────────
+      const handleTap = useCallback((clientX, clientY) => {
+        const gs = stateRef.current;
+        if (!gs || gs.phase !== 'playing' || !gs.player.alive) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const cx = (clientX - rect.left) * (W / rect.width);
+        const cy = (clientY - rect.top)  * (H / rect.height);
+        const px = gs.player.x * CELL + CELL / 2;
+        const py = gs.player.y * CELL + CELL / 2;
+        const [dx, dy] = gs.player.dir;
+        let nd;
+        if (dx !== 0) {
+          // moving horizontally → tap determines up/down
+          nd = cy < py ? UP : DOWN;
+        } else {
+          // moving vertically → tap determines left/right
+          nd = cx < px ? LEFT : RIGHT;
+        }
+        if (nd[0] === -dx && nd[1] === -dy) return; // no 180
+        gs.player.nextDir = nd;
+        audioRef.current?.turn();
+      }, []);
+
+      // ── Render + Game Loop ───────────────────────────────────────────────────
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let lastTs = 0;
+
+        const drawTrail = (trail, color, isHead) => {
+          if (trail.length < 1) return;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = color;
+          for (let i = 0; i < trail.length; i++) {
+            const alpha = isHead ? (0.25 + 0.75 * (i / trail.length)) : (0.25 + 0.75 * (i / trail.length));
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = color;
+            ctx.fillRect(trail[i][0] * CELL + 1, trail[i][1] * CELL + 1, CELL - 2, CELL - 2);
+          }
+          ctx.globalAlpha = 1;
+          ctx.shadowBlur = 0;
+        };
+
+        const drawHead = (x, y, color) => {
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = color;
+          ctx.fillStyle = color;
+          ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(x * CELL + 2, y * CELL + 2, CELL - 4, CELL - 4);
+          ctx.shadowBlur = 0;
+        };
+
+        const frame = (ts) => {
+          animRef.current = requestAnimationFrame(frame);
+          const dtMs = Math.min(ts - lastTs, 50);
+          lastTs = ts;
+
+          // ── Background ─────────────────────────────────────────────────────
+          ctx.fillStyle = '#050510';
+          ctx.fillRect(0, 0, W, H);
+
+          // Grid lines
+          ctx.strokeStyle = 'rgba(0,80,180,0.07)';
+          ctx.lineWidth = 0.5;
+          for (let x = 0; x <= COLS; x++) {
+            ctx.beginPath(); ctx.moveTo(x * CELL, 0); ctx.lineTo(x * CELL, H); ctx.stroke();
+          }
+          for (let y = 0; y <= ROWS; y++) {
+            ctx.beginPath(); ctx.moveTo(0, y * CELL); ctx.lineTo(W, y * CELL); ctx.stroke();
+          }
+
+          const gs = stateRef.current;
+
+          // ── Particles (always render) ──────────────────────────────────────
+          if (gs) {
+            gs.particles = gs.particles.filter(p => p.life > 0);
+            for (const p of gs.particles) {
+              p.x += p.vx; p.y += p.vy;
+              p.vy += 0.08;
+              p.life -= 0.025;
+              ctx.globalAlpha = Math.max(0, p.life);
+              ctx.shadowBlur = 10;
+              ctx.shadowColor = p.color;
+              ctx.fillStyle = p.color;
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
+          }
+
+          if (!gs || gs.phase !== 'playing') {
+            // Border
+            ctx.strokeStyle = 'rgba(0,255,255,0.3)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(1, 1, W - 2, H - 2);
+            return;
+          }
+
+          // ── Game Update ────────────────────────────────────────────────────
+          gs.accumMs += dtMs;
+          const stepMs = 1000 / gs.speed;
+
+          while (gs.accumMs >= stepMs) {
+            gs.accumMs -= stepMs;
+            gs.tick++;
+
+            const occupied = buildOccupied(gs);
+
+            // AI think
+            gs.ais.forEach(ai => {
+              if (!ai.alive) return;
+              aiThink(ai, occupied);
+            });
+
+            // Move player
+            if (gs.player.alive) {
+              gs.player.dir = [...gs.player.nextDir];
+              const [dx, dy] = gs.player.dir;
+              const nx = gs.player.x + dx, ny = gs.player.y + dy;
+              if (!isClear(nx, ny, occupied)) {
+                // Player crashed
+                gs.particles.push(...spawnParticles(gs.player.x, gs.player.y, PLAYER_COLOR, 32));
+                audioRef.current?.die();
+                gs.player.alive = false;
+                gs.combo = 0;
+                gs.lives--;
+                const finalLives = gs.lives;
+                const finalScore = gs.score;
+                if (finalLives <= 0) {
+                  gs.phase = 'ending';
+                  roundTimer.current = setTimeout(() => {
+                    const hs = Math.max(finalScore, parseInt(localStorage.getItem('trailBlazeHigh') || '0', 10));
+                    localStorage.setItem('trailBlazeHigh', String(hs));
+                    setUi(u => ({ ...u, phase: 'gameover', score: finalScore, highScore: hs }));
+                  }, 900);
+                } else {
+                  roundTimer.current = setTimeout(() => {
+                    if (!stateRef.current || stateRef.current.phase !== 'playing') return;
+                    resetRound(stateRef.current);
+                    setUi(u => ({ ...u, lives: finalLives, combo: 0 }));
+                  }, 900);
+                }
+              } else {
+                gs.player.x = nx; gs.player.y = ny;
+                gs.player.trail.push([nx, ny]);
+                if (gs.player.trail.length > 500) gs.player.trail.shift();
+                gs.score += 1 + Math.max(0, gs.combo - 1);
+              }
+            }
+
+            // Move AIs
+            gs.ais.forEach(ai => {
+              if (!ai.alive) return;
+              ai.dir = [...ai.nextDir];
+              const [dx, dy] = ai.dir;
+              const nx = ai.x + dx, ny = ai.y + dy;
+              if (!isClear(nx, ny, occupied)) {
+                gs.particles.push(...spawnParticles(ai.x, ai.y, ai.color, 24));
+                audioRef.current?.kill();
+                ai.alive = false;
+                gs.combo++;
+                gs.score += 100 * gs.combo;
+                gs.flashText = `+${100 * gs.combo}`;
+                gs.flashTimer = 60;
+                audioRef.current?.combo(gs.combo);
+                setUi(u => ({ ...u, score: gs.score, combo: gs.combo }));
+              } else {
+                ai.x = nx; ai.y = ny;
+                ai.trail.push([nx, ny]);
+                if (ai.trail.length > 400) ai.trail.shift();
+              }
+            });
+
+            // All AIs dead → bonus and respawn
+            if (gs.ais.every(ai => !ai.alive) && gs.player.alive) {
+              gs.score += 500;
+              gs.flashText = 'CLEAR! +500';
+              gs.flashTimer = 90;
+              audioRef.current?.clear();
+              const newSpeed = Math.min(gs.speed + 1, 22);
+              roundTimer.current = setTimeout(() => {
+                if (!stateRef.current || stateRef.current.phase !== 'playing') return;
+                stateRef.current.ais = [
+                  makeBike(COLS - 6, Math.floor(ROWS / 3),     LEFT, AI_COLORS[0]),
+                  makeBike(COLS - 6, Math.floor(2 * ROWS / 3), LEFT, AI_COLORS[1])
+                ];
+                stateRef.current.speed = newSpeed;
+                setUi(u => ({ ...u, score: stateRef.current.score }));
+              }, 800);
+            }
+
+            // Speed escalates over time
+            if (gs.tick % 400 === 0 && gs.speed < 18) {
+              gs.speed++;
+            }
+
+            // Sync UI
+            if (gs.tick % 10 === 0) {
+              setUi(u => ({ ...u, score: gs.score, combo: gs.combo, lives: gs.lives }));
+            }
+          }
+
+          // Flash timer
+          if (gs.flashTimer > 0) gs.flashTimer--;
+          else gs.flashText = null;
+
+          // ── Draw Trails ────────────────────────────────────────────────────
+          drawTrail(gs.player.trail, PLAYER_COLOR, true);
+          gs.ais.forEach(ai => drawTrail(ai.trail, ai.color, true));
+
+          // ── Draw Heads ─────────────────────────────────────────────────────
+          if (gs.player.alive) drawHead(gs.player.x, gs.player.y, PLAYER_COLOR);
+          gs.ais.forEach(ai => { if (ai.alive) drawHead(ai.x, ai.y, ai.color); });
+
+          // ── Border ─────────────────────────────────────────────────────────
+          ctx.strokeStyle = 'rgba(0,255,255,0.35)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(1, 1, W - 2, H - 2);
+
+          // ── Flash Text ─────────────────────────────────────────────────────
+          if (gs.flashText && gs.flashTimer > 0) {
+            const alpha = Math.min(1, gs.flashTimer / 20);
+            ctx.globalAlpha = alpha;
+            ctx.font = 'bold 28px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ffff00';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ffff00';
+            ctx.fillText(gs.flashText, W / 2, H / 2 - 40);
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
+            ctx.textAlign = 'left';
+          }
+        };
+
+        animRef.current = requestAnimationFrame(frame);
+        return () => {
+          if (animRef.current) cancelAnimationFrame(animRef.current);
+        };
+      }, []);
+
+      // ── Styles ───────────────────────────────────────────────────────────────
+      const glow = (color, size = 10) => `0 0 ${size}px ${color}, 0 0 ${size * 2}px ${color}`;
+      const mono = { fontFamily: 'Courier New, monospace', letterSpacing: '0.08em' };
+
+      const overlayBase = {
+        position: 'absolute', inset: 0,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(5,5,20,0.90)', zIndex: 10
+      };
+
+      const btnStyle = (color) => ({
+        background: 'transparent',
+        border: `2px solid ${color}`,
+        color,
+        padding: '12px 36px',
+        fontSize: 18,
+        cursor: 'pointer',
+        borderRadius: 4,
+        textShadow: glow(color, 8),
+        boxShadow: glow(color, 10),
+        ...mono
+      });
+
+      const hudStyle = {
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 5,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '8px 14px',
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)',
+        pointerEvents: 'none'
+      };
+
+      const txt = (color, size = 14) => ({
+        color, fontSize: size, fontWeight: 'bold',
+        textShadow: glow(color, 8), ...mono
+      });
+
+      const hearts = '♥'.repeat(ui.lives) + '♡'.repeat(Math.max(0, 3 - ui.lives));
+
+      return (
+        <div style={{ position: 'relative', width: dW, height: dH }}>
+          <canvas
+            ref={canvasRef}
+            width={W} height={H}
+            style={{ display: 'block', width: '100%', height: '100%', touchAction: 'none' }}
+            onMouseDown={(e) => handleTap(e.clientX, e.clientY)}
+            onTouchStart={(e) => { e.preventDefault(); handleTap(e.touches[0].clientX, e.touches[0].clientY); }}
+          />
+
+          {/* HUD */}
+          {ui.phase === 'playing' && (
+            <div style={hudStyle}>
+              <span style={txt('#ff4466', 16)}>{hearts}</span>
+              <span style={txt('#00ffff', 20)}>{ui.score.toLocaleString()}</span>
+              <span style={txt(ui.combo > 1 ? '#ffff00' : '#666', 13)}>
+                {ui.combo > 1 ? `×${ui.combo} COMBO` : `BEST ${ui.highScore}`}
+              </span>
+            </div>
+          )}
+
+          {/* Mobile hint */}
+          {ui.phase === 'playing' && (
+            <div style={{
+              position: 'absolute', bottom: 6, left: 0, right: 0,
+              textAlign: 'center', color: 'rgba(0,255,255,0.18)',
+              fontSize: 10, ...mono, pointerEvents: 'none', zIndex: 5
+            }}>
+              TAP TO STEER · ARROWS / WASD
+            </div>
+          )}
+
+          {/* Start Screen */}
+          {ui.phase === 'start' && (
+            <div style={overlayBase}>
+              <div style={{ ...txt('#00ffff', 52), marginBottom: 6 }}>TRAIL BLAZE</div>
+              <div style={{ ...txt('#ff00ff', 16), marginBottom: 28 }}>
+                Don't cross the trails — outlast the AI!
+              </div>
+
+              <div style={{ display: 'flex', gap: 24, marginBottom: 24 }}>
+                {[
+                  { color: PLAYER_COLOR, label: 'YOU' },
+                  { color: AI_COLORS[0], label: 'AI 1' },
+                  { color: AI_COLORS[1], label: 'AI 2' }
+                ].map(({ color, label }) => (
+                  <div key={label} style={{ textAlign: 'center' }}>
+                    <div style={{ width: 24, height: 24, background: color, boxShadow: glow(color), margin: '0 auto 4px' }} />
+                    <div style={txt(color, 11)}>{label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ color: '#888', fontSize: 12, marginBottom: 8, textAlign: 'center', lineHeight: 1.9, ...mono }}>
+                Arrow Keys / WASD to turn<br/>
+                Tap above/below or left/right of your head<br/>
+                Eliminate AIs for combo bonuses · 3 lives
+              </div>
+
+              {ui.highScore > 0 && (
+                <div style={{ ...txt('#ffff00', 13), marginBottom: 20 }}>
+                  BEST: {ui.highScore.toLocaleString()}
+                </div>
+              )}
+
+              <button style={btnStyle('#00ffff')} onClick={startGame}>
+                PLAY
+              </button>
+            </div>
+          )}
+
+          {/* Game Over */}
+          {ui.phase === 'gameover' && (
+            <div style={overlayBase}>
+              <div style={{ ...txt('#ff4444', 44), marginBottom: 8 }}>GAME OVER</div>
+              <div style={{ ...txt('#ffffff', 26), marginBottom: 6 }}>
+                {ui.score.toLocaleString()}
+              </div>
+              {ui.score >= ui.highScore && ui.score > 0 && (
+                <div style={{ ...txt('#ffff00', 15), marginBottom: 4 }}>NEW BEST!</div>
+              )}
+              <div style={{ ...txt('#888', 13), marginBottom: 32 }}>
+                Best: {ui.highScore.toLocaleString()}
+              </div>
+              <button style={btnStyle('#ff4444')} onClick={startGame}>
+                RETRY
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<TrailBlaze />);
+  </script>
+</body>
+</html>
