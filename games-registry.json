@@ -1531,6 +1531,26 @@
     "preview": "games/2026-05-15/preview.png"
   },
   {
+    "id": "2026-05-19",
+    "name": "Trail Blaze",
+    "date": "2026-05-19",
+    "description": "Steer your neon light cycle to outlast two AI opponents — leave glowing trails that eliminate anyone who crosses them! Chain AI kills for massive combo multipliers as the speed escalates each wave.",
+    "tagline": "Blaze the trail. Cut off the AI. Don't cross the neon!",
+    "tags": [
+      "action",
+      "reflex",
+      "arcade",
+      "strategy",
+      "tron"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow Keys / WASD to turn · Tap above/below or left/right of your head on mobile",
+    "folder": "games/2026-05-19",
+    "file": "games/2026-05-19/index.html",
+    "preview": "games/2026-05-19/preview.png"
+  },
+  {
     "id": "2026-05-17",
     "name": "Prism Sum",
     "date": "2026-05-17",
