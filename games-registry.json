@@ -1569,5 +1569,25 @@
     "folder": "games/2026-05-17",
     "file": "games/2026-05-17/index.html",
     "preview": "games/2026-05-17/preview.png"
+  },
+  {
+    "id": "2026-05-20",
+    "name": "Shell Rush",
+    "date": "2026-05-20",
+    "description": "Watch the glowing neon card reveal, then track it through rapid shuffles — pick the right card to score! Cards, swaps, and speed all escalate as your combo multiplier climbs.",
+    "tagline": "Track the glow. Beat the shuffle. Chain the combos!",
+    "tags": [
+      "memory",
+      "tracking",
+      "reflex",
+      "casual",
+      "puzzle"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap the card you tracked through the shuffle",
+    "folder": "games/2026-05-20",
+    "file": "games/2026-05-20/index.html",
+    "preview": "games/2026-05-20/preview.png"
   }
 ]
