@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shell Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body {
+      background: #080012;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    #root { width: 100%; height: 100%; }
+
+    @keyframes bgPulse {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50%       { transform: translateY(-8px); }
+    }
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff, 0 0 80px #00ffff44; }
+      50%       { box-shadow: 0 0 30px #00ffff, 0 0 60px #00ffff, 0 0 120px #00ffff66; }
+    }
+    @keyframes wrong-flash {
+      0%, 100% { background: rgba(255,0,80,0); }
+      50%       { background: rgba(255,0,80,0.25); }
+    }
+    @keyframes correct-flash {
+      0%, 100% { background: rgba(0,255,160,0); }
+      50%       { background: rgba(0,255,160,0.2); }
+    }
+    @keyframes scoreFloat {
+      0%   { opacity: 1; transform: translateY(0) scale(1.4); }
+      100% { opacity: 0; transform: translateY(-60px) scale(1); }
+    }
+    @keyframes particle {
+      0%   { opacity: 1; transform: translate(0,0) scale(1); }
+      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.2); }
+    }
+    @keyframes shimmer {
+      0%, 100% { opacity: 0.3; }
+      50%       { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ─── Audio ───────────────────────────────────────────────────────────────────
+let _ctx;
+function ac() {
+  if (!_ctx) _ctx = new (window.AudioContext || window.webkitAudioContext)();
+  return _ctx;
+}
+function beep(freq, type = 'sine', dur = 0.15, vol = 0.2, delay = 0) {
+  try {
+    const ctx = ac();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = type; o.frequency.value = freq;
+    const t = ctx.currentTime + delay;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.start(t); o.stop(t + dur);
+  } catch(e) {}
+}
+function playReveal() { beep(440,'sine',0.12,0.18); beep(550,'sine',0.12,0.12,0.08); }
+function playSwap()   { beep(120+Math.random()*180,'square',0.06,0.07); }
+function playCorrect() {
+  beep(523,'sine',0.12,0.25); beep(659,'sine',0.12,0.22,0.1);
+  beep(784,'sine',0.18,0.25,0.2); beep(1047,'sine',0.22,0.2,0.32);
+}
+function playWrong() {
+  beep(200,'sawtooth',0.1,0.3); beep(150,'sawtooth',0.18,0.3,0.1);
+  beep(100,'sawtooth',0.25,0.28,0.22);
+}
+
+// ─── Level configs ────────────────────────────────────────────────────────────
+const LEVELS = [
+  { cards: 3, swaps: 3,  ms: 560 },
+  { cards: 3, swaps: 5,  ms: 510 },
+  { cards: 3, swaps: 7,  ms: 460 },
+  { cards: 4, swaps: 7,  ms: 430 },
+  { cards: 4, swaps: 10, ms: 390 },
+  { cards: 4, swaps: 13, ms: 350 },
+  { cards: 5, swaps: 11, ms: 320 },
+  { cards: 5, swaps: 14, ms: 280 },
+  { cards: 5, swaps: 17, ms: 240 },
+  { cards: 5, swaps: 20, ms: 200 },
+];
+function cfg(lv) { return LEVELS[Math.min(lv, LEVELS.length - 1)]; }
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const CARD_W = 88;
+const CARD_H = 128;
+const CARD_GAP = 18;
+const CARD_SYMBOLS = ['◆','★','♠','♥','⬡'];
+const CARD_COLORS = ['#00ffff','#ff00ff','#ffff00','#00ff80','#ff6600'];
+
+// ─── Particle component ───────────────────────────────────────────────────────
+function Burst({ x, y, color, count = 16, active }) {
+  if (!active) return null;
+  return (
+    <div style={{ position:'absolute', left: x, top: y, pointerEvents:'none' }}>
+      {Array.from({ length: count }, (_, i) => {
+        const angle = (i / count) * Math.PI * 2;
+        const dist = 60 + Math.random() * 60;
+        return (
+          <div key={i} style={{
+            position: 'absolute',
+            width: 6, height: 6,
+            borderRadius: '50%',
+            background: color,
+            boxShadow: `0 0 8px ${color}`,
+            '--dx': `${Math.cos(angle)*dist}px`,
+            '--dy': `${Math.sin(angle)*dist}px`,
+            animation: `particle 0.6s ease-out forwards`,
+            animationDelay: `${Math.random() * 0.1}s`,
+          }} />
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Background particles ────────────────────────────────────────────────────
+function BgParticles() {
+  const dots = useRef(Array.from({ length: 40 }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    size: 1 + Math.random() * 3,
+    delay: Math.random() * 4,
+    color: CARD_COLORS[i % CARD_COLORS.length],
+  }))).current;
+  return (
+    <div style={{ position:'absolute', inset:0, overflow:'hidden', pointerEvents:'none' }}>
+      {dots.map(d => (
+        <div key={d.id} style={{
+          position:'absolute',
+          left: `${d.x}%`, top: `${d.y}%`,
+          width: d.size, height: d.size,
+          borderRadius: '50%',
+          background: d.color,
+          opacity: 0.4,
+          animation: `shimmer 2s ease-in-out infinite`,
+          animationDelay: `${d.delay}s`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+// ─── Card component ───────────────────────────────────────────────────────────
+function Card({ card, slot, numCards, containerW, containerH, phase, onClick }) {
+  const totalW = numCards * CARD_W + (numCards - 1) * CARD_GAP;
+  const startX = (containerW - totalW) / 2;
+  const x = startX + slot * (CARD_W + CARD_GAP);
+  const y = containerH / 2 - CARD_H / 2 - 20;
+
+  const isRevealed = card.state === 'revealed';
+  const isCorrect  = card.state === 'correct';
+  const isWrong    = card.state === 'wrong';
+  const isShuffling = phase === 'shuffling';
+
+  let borderColor = '#2a1a4a';
+  let glowColor   = 'transparent';
+  let bgColor     = 'linear-gradient(145deg, #120a28, #1a0830)';
+
+  if (isRevealed) {
+    borderColor = '#00ffff';
+    glowColor   = '#00ffff';
+    bgColor     = 'linear-gradient(145deg, #002233, #003344)';
+  } else if (isCorrect) {
+    borderColor = '#00ff80';
+    glowColor   = '#00ff80';
+    bgColor     = 'linear-gradient(145deg, #002215, #003322)';
+  } else if (isWrong) {
+    borderColor = '#ff0050';
+    glowColor   = '#ff0050';
+    bgColor     = 'linear-gradient(145deg, #330010, #220008)';
+  } else if (phase === 'pick') {
+    borderColor = '#4a3060';
+    glowColor   = '#aa44ff';
+  }
+
+  const cardStyle = {
+    position: 'absolute',
+    left: x,
+    top: y + (isShuffling ? -4 : 0),
+    width: CARD_W,
+    height: CARD_H,
+    borderRadius: 12,
+    border: `2px solid ${borderColor}`,
+    background: bgColor,
+    boxShadow: glowColor !== 'transparent'
+      ? `0 0 16px ${glowColor}, 0 0 32px ${glowColor}66, inset 0 0 12px ${glowColor}22`
+      : isShuffling
+        ? '0 0 10px #aa44ff44'
+        : '0 0 6px #2a1a4a88',
+    cursor: phase === 'pick' ? 'pointer' : 'default',
+    transition: `left 0.35s cubic-bezier(0.4,0,0.2,1), top 0.1s ease, box-shadow 0.2s`,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    userSelect: 'none',
+    animation: isRevealed ? 'glow-pulse 0.8s ease-in-out infinite' : 'none',
+    transform: isWrong ? 'scale(0.95)' : isCorrect ? 'scale(1.05)' : 'scale(1)',
+  };
+
+  const symbolColor = isCorrect ? '#00ff80' : isWrong ? '#ff0050' : isRevealed ? '#00ffff' : '#3a2050';
+  const symbol = CARD_SYMBOLS[card.id % CARD_SYMBOLS.length];
+
+  // Back face pattern
+  const BackFace = () => (
+    <div style={{ position:'relative', width:'100%', height:'100%',
+      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+      {/* circuit lines */}
+      <svg width={CARD_W - 16} height={CARD_H - 16} style={{ opacity: 0.25, position:'absolute' }}>
+        <line x1="0" y1="30" x2="72" y2="30" stroke="#aa44ff" strokeWidth="1"/>
+        <line x1="0" y1="56" x2="50" y2="56" stroke="#aa44ff" strokeWidth="1"/>
+        <line x1="22" y1="56" x2="22" y2="112" stroke="#aa44ff" strokeWidth="1"/>
+        <line x1="50" y1="30" x2="50" y2="56" stroke="#aa44ff" strokeWidth="1"/>
+        <circle cx="50" cy="56" r="3" fill="#aa44ff"/>
+        <circle cx="22" cy="30" r="3" fill="#aa44ff"/>
+        <line x1="0" y1="82" x2="72" y2="82" stroke="#aa44ff" strokeWidth="1"/>
+        <circle cx="60" cy="82" r="3" fill="#aa44ff"/>
+      </svg>
+      <div style={{
+        width: 30, height: 30, borderRadius: '50%',
+        border: '2px solid #4a2080',
+        boxShadow: '0 0 8px #4a208044',
+      }} />
+    </div>
+  );
+
+  return (
+    <div style={cardStyle} onClick={() => phase === 'pick' && onClick(card.id)}>
+      {(isRevealed || isCorrect || isWrong) ? (
+        <div style={{ textAlign:'center' }}>
+          <div style={{ fontSize: 46, color: symbolColor,
+            textShadow: `0 0 16px ${symbolColor}, 0 0 32px ${symbolColor}` }}>
+            {symbol}
+          </div>
+          <div style={{ fontSize: 11, color: symbolColor, marginTop: 4, letterSpacing: 2, opacity: 0.8 }}>
+            {isCorrect ? 'FOUND' : isWrong ? 'MISS' : 'TARGET'}
+          </div>
+        </div>
+      ) : (
+        <BackFace />
+      )}
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+function App() {
+  const [screen, setScreen]     = useState('start');
+  const [cards, setCards]       = useState([]);
+  const [phase, setPhase]       = useState('idle');
+  const [score, setScore]       = useState(0);
+  const [combo, setCombo]       = useState(0);
+  const [lives, setLives]       = useState(3);
+  const [level, setLevel]       = useState(0);
+  const [flashMsg, setFlashMsg] = useState('');
+  const [flashOk, setFlashOk]   = useState(true);
+  const [bursts, setBursts]     = useState([]);
+  const [flashBg, setFlashBg]   = useState('');
+  const [highScore, setHighScore] = useState(() => {
+    const saved = localStorage.getItem('shellRush_hi');
+    if (saved === null) localStorage.setItem('shellRush_hi', '0');
+    return +saved || 0;
+  });
+
+  const containerRef = useRef(null);
+  const activeRef    = useRef(false);
+  const comboRef     = useRef(0);
+  const scoreRef     = useRef(0);
+  const livesRef     = useRef(3);
+  const levelRef     = useRef(0);
+
+  // Keep refs in sync
+  useEffect(() => { comboRef.current = combo; },  [combo]);
+  useEffect(() => { scoreRef.current = score; },  [score]);
+  useEffect(() => { livesRef.current = lives; },  [lives]);
+  useEffect(() => { levelRef.current = level; },  [level]);
+
+  const [cSize, setCSize] = useState({
+    w: window.innerWidth,
+    h: window.innerHeight,
+  });
+  useEffect(() => {
+    function resize() {
+      setCSize({ w: window.innerWidth, h: window.innerHeight });
+    }
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  // ── Shuffle helper ──────────────────────────────────────────────────────────
+  const doShuffle = useCallback((cardsCopy, swapsLeft, swapMs) => {
+    if (!activeRef.current || swapsLeft === 0) {
+      setPhase('pick');
+      return;
+    }
+    const n = cardsCopy.length;
+    let a, b;
+    do { a = Math.floor(Math.random() * n); b = Math.floor(Math.random() * n); } while (a === b);
+
+    const idxA = cardsCopy.findIndex(c => c.slot === a);
+    const idxB = cardsCopy.findIndex(c => c.slot === b);
+    if (idxA !== -1) cardsCopy[idxA].slot = b;
+    if (idxB !== -1) cardsCopy[idxB].slot = a;
+    setCards([...cardsCopy]);
+    playSwap();
+
+    setTimeout(() => {
+      if (!activeRef.current) return;
+      doShuffle(cardsCopy, swapsLeft - 1, swapMs);
+    }, swapMs);
+  }, []);
+
+  // ── Start a round ───────────────────────────────────────────────────────────
+  const startRound = useCallback(() => {
+    if (!activeRef.current) return;
+    const c = cfg(levelRef.current);
+    const numCards = c.cards;
+    const targetId = Math.floor(Math.random() * numCards);
+    const newCards = Array.from({ length: numCards }, (_, i) => ({
+      id: i, slot: i, isTarget: i === targetId, state: 'hidden',
+    }));
+
+    setCards(newCards);
+    setPhase('reveal');
+
+    // Reveal the target
+    setTimeout(() => {
+      setCards(prev => prev.map(cd => ({ ...cd, state: cd.isTarget ? 'revealed' : 'hidden' })));
+      playReveal();
+    }, 80);
+
+    // Hide and shuffle
+    setTimeout(() => {
+      setCards(prev => prev.map(cd => ({ ...cd, state: 'hidden' })));
+      setTimeout(() => {
+        if (!activeRef.current) return;
+        setPhase('shuffling');
+        doShuffle(newCards.map(cd => ({ ...cd })), c.swaps, c.ms);
+      }, 300);
+    }, 1700);
+  }, [doShuffle]);
+
+  // ── Handle pick ─────────────────────────────────────────────────────────────
+  const handlePick = useCallback((cardId) => {
+    if (phase !== 'pick') return;
+    setPhase('result');
+
+    const pickedCard = cards.find(c => c.id === cardId);
+    const correct = !!pickedCard?.isTarget;
+
+    setCards(prev => prev.map(c => ({
+      ...c,
+      state: c.isTarget ? 'correct' : (c.id === cardId ? 'wrong' : 'hidden'),
+    })));
+
+    if (correct) {
+      const pts = 100 * (comboRef.current + 1);
+      const ns = scoreRef.current + pts;
+      setScore(ns);
+      setCombo(prev => prev + 1);
+      setFlashMsg(`+${pts}${comboRef.current > 0 ? ` ×${comboRef.current + 1} COMBO!` : ' CORRECT!'}`);
+      setFlashOk(true);
+      setFlashBg('correct');
+      if (ns > highScore) {
+        setHighScore(ns);
+        localStorage.setItem('shellRush_hi', String(ns));
+      }
+      playCorrect();
+
+      // Find card screen position for burst
+      if (containerRef.current) {
+        const c = cfg(levelRef.current);
+        const totalW = c.cards * CARD_W + (c.cards - 1) * CARD_GAP;
+        const startX = (cSize.w - totalW) / 2;
+        const slot = pickedCard.slot;
+        setBursts(prev => [...prev, {
+          id: Date.now(),
+          x: startX + slot * (CARD_W + CARD_GAP) + CARD_W / 2,
+          y: cSize.h / 2 - 20,
+          color: '#00ff80',
+        }]);
+        setTimeout(() => setBursts(prev => prev.slice(1)), 700);
+      }
+
+      // Level up every 3 combo
+      if ((comboRef.current + 1) % 3 === 0) {
+        setLevel(prev => Math.min(prev + 1, LEVELS.length - 1));
+      }
+    } else {
+      setCombo(0);
+      setFlashMsg('WRONG!');
+      setFlashOk(false);
+      setFlashBg('wrong');
+      playWrong();
+      const nl = livesRef.current - 1;
+      setLives(nl);
+      if (nl <= 0) {
+        setTimeout(() => { activeRef.current = false; setScreen('gameover'); }, 1300);
+        return;
+      }
+    }
+
+    setTimeout(() => {
+      if (!activeRef.current) return;
+      setFlashMsg(''); setFlashBg('');
+      startRound();
+    }, 1400);
+  }, [phase, cards, highScore, cSize, startRound]);
+
+  // ── Start / restart ─────────────────────────────────────────────────────────
+  const startGame = useCallback(() => {
+    activeRef.current = true;
+    setScore(0); scoreRef.current = 0;
+    setCombo(0); comboRef.current = 0;
+    setLives(3); livesRef.current = 3;
+    setLevel(0); levelRef.current = 0;
+    setFlashMsg(''); setFlashBg('');
+    setPhase('idle');
+    setScreen('play');
+    setTimeout(() => startRound(), 600);
+  }, [startRound]);
+
+  // ── UI helpers ───────────────────────────────────────────────────────────────
+  const heartStr = Array.from({ length: 3 }, (_, i) =>
+    i < lives ? '♥' : '♡').join(' ');
+
+  const levelLabel = `Level ${level + 1}  (${cfg(level).cards} cards · ${cfg(level).swaps} swaps)`;
+
+  // ── Hint text for current phase ──────────────────────────────────────────────
+  let hintText = '';
+  if (phase === 'reveal')    hintText = 'Remember this card!';
+  else if (phase === 'shuffling') hintText = 'Track the glow...';
+  else if (phase === 'pick') hintText = 'Pick the card! ✦';
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+  const containerStyle = {
+    width: '100%', height: '100vh',
+    background: 'linear-gradient(135deg, #08001a 0%, #0a0020 30%, #080018 60%, #0c0020 100%)',
+    position: 'relative',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+
+  if (screen === 'start') {
+    return (
+      <div style={containerStyle}>
+        <BgParticles />
+        <div style={{ textAlign:'center', position:'relative', zIndex:10 }}>
+          <div style={{
+            fontSize: 'clamp(42px, 10vw, 72px)',
+            fontWeight: 900,
+            background: 'linear-gradient(90deg, #00ffff, #ff00ff, #ffff00, #00ffff)',
+            backgroundSize: '200% auto',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            textShadow: 'none',
+            letterSpacing: 4,
+            animation: 'bgPulse 3s linear infinite',
+          }}>SHELL RUSH</div>
+          <div style={{ color:'#aa66ff', fontSize: 16, letterSpacing: 3, marginTop: 8, marginBottom: 40 }}>
+            TRACK THE GLOW · BEAT THE SHUFFLE
+          </div>
+
+          <div style={{ display:'flex', gap: 24, justifyContent:'center', marginBottom: 48, flexWrap:'wrap' }}>
+            {[
+              { icon: '◆', label: 'Watch the target card reveal' },
+              { icon: '⬡', label: 'Track it through rapid shuffles' },
+              { icon: '★', label: 'Click the right card to score' },
+            ].map((tip, i) => (
+              <div key={i} style={{
+                background: '#1a0830', border: '1px solid #4a2060',
+                borderRadius: 12, padding: '16px 20px', width: 150,
+                boxShadow: '0 0 16px #4a206040',
+              }}>
+                <div style={{ fontSize: 32, color: CARD_COLORS[i], marginBottom: 8,
+                  textShadow: `0 0 12px ${CARD_COLORS[i]}` }}>{tip.icon}</div>
+                <div style={{ color: '#aa88cc', fontSize: 12, lineHeight: 1.5 }}>{tip.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={startGame} style={{
+            background: 'linear-gradient(135deg, #00ffff22, #ff00ff22)',
+            border: '2px solid #00ffff',
+            color: '#00ffff',
+            fontSize: 22,
+            fontFamily: 'Courier New, monospace',
+            fontWeight: 700,
+            letterSpacing: 4,
+            padding: '16px 56px',
+            borderRadius: 50,
+            cursor: 'pointer',
+            boxShadow: '0 0 24px #00ffff88, 0 0 48px #00ffff44',
+            animation: 'glow-pulse 1.5s ease-in-out infinite',
+          }}>▶ PLAY</button>
+
+          {highScore > 0 && (
+            <div style={{ color: '#ffff00', fontSize: 14, marginTop: 24,
+              textShadow: '0 0 12px #ffff00' }}>
+              BEST: {highScore}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'gameover') {
+    return (
+      <div style={containerStyle}>
+        <BgParticles />
+        <div style={{ textAlign:'center', position:'relative', zIndex:10 }}>
+          <div style={{ fontSize: 56, fontWeight: 900, color: '#ff0050',
+            textShadow: '0 0 24px #ff0050, 0 0 48px #ff005088', letterSpacing: 3, marginBottom: 8 }}>
+            GAME OVER
+          </div>
+          <div style={{ fontSize: 48, color: '#00ffff', fontWeight: 700, marginBottom: 4,
+            textShadow: '0 0 20px #00ffff' }}>
+            {score}
+          </div>
+          <div style={{ color: '#aa66ff', fontSize: 14, marginBottom: 8 }}>SCORE</div>
+          {score >= highScore && score > 0 && (
+            <div style={{ color:'#ffff00', fontSize:16, marginBottom: 8,
+              textShadow:'0 0 12px #ffff00', letterSpacing:3 }}>
+              ★ NEW BEST! ★
+            </div>
+          )}
+          <div style={{ color:'#aa88cc', fontSize:14, marginBottom: 40 }}>
+            Best: {highScore} · Reached Level {level + 1}
+          </div>
+          <button onClick={startGame} style={{
+            background: 'linear-gradient(135deg, #00ffff22, #ff00ff22)',
+            border: '2px solid #00ffff',
+            color: '#00ffff',
+            fontSize: 20,
+            fontFamily: 'Courier New, monospace',
+            fontWeight: 700,
+            letterSpacing: 4,
+            padding: '14px 48px',
+            borderRadius: 50,
+            cursor: 'pointer',
+            boxShadow: '0 0 24px #00ffff88',
+          }}>↺ TRY AGAIN</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Play screen ──────────────────────────────────────────────────────────────
+  return (
+    <div ref={containerRef} style={containerStyle}>
+      <BgParticles />
+
+      {/* Flash overlay */}
+      {flashBg && (
+        <div style={{
+          position:'absolute', inset:0, pointerEvents:'none', zIndex: 5,
+          animation: `${flashBg}-flash 0.4s ease-out`,
+        }} />
+      )}
+
+      {/* HUD */}
+      <div style={{
+        position:'absolute', top: 0, left: 0, right: 0,
+        display:'flex', justifyContent:'space-between', alignItems:'flex-start',
+        padding: '16px 24px', zIndex: 20,
+      }}>
+        <div>
+          <div style={{ color:'#00ffff', fontSize: 28, fontWeight: 700,
+            textShadow:'0 0 16px #00ffff' }}>{score}</div>
+          <div style={{ color:'#4a3060', fontSize: 11, letterSpacing: 2 }}>SCORE</div>
+        </div>
+        <div style={{ textAlign:'center' }}>
+          <div style={{ color:'#ffff00', fontSize: 20, letterSpacing: 2,
+            textShadow:'0 0 12px #ffff00' }}>
+            {combo > 0 ? `×${combo} COMBO` : ' '}
+          </div>
+          <div style={{ color:'#aa88cc', fontSize: 11, letterSpacing: 2 }}>{levelLabel}</div>
+        </div>
+        <div>
+          <div style={{ color:'#ff4488', fontSize: 20, textAlign:'right',
+            textShadow:'0 0 12px #ff4488' }}>{heartStr}</div>
+          <div style={{ color:'#4a3060', fontSize: 11, letterSpacing: 2, textAlign:'right' }}>LIVES</div>
+        </div>
+      </div>
+
+      {/* Cards area */}
+      <div style={{ position:'relative', width:'100%', flex: 1 }}>
+        {cards.map(card => (
+          <Card
+            key={card.id}
+            card={card}
+            slot={card.slot}
+            numCards={cards.length}
+            containerW={cSize.w}
+            containerH={cSize.h}
+            phase={phase}
+            onClick={handlePick}
+          />
+        ))}
+        {/* Burst particles */}
+        {bursts.map(b => (
+          <Burst key={b.id} x={b.x - 4} y={b.y - 4} color={b.color} count={20} active={true} />
+        ))}
+      </div>
+
+      {/* Hint / flash message */}
+      <div style={{
+        position:'absolute', bottom: 80, left: 0, right: 0,
+        textAlign:'center', zIndex: 20, pointerEvents:'none',
+      }}>
+        {flashMsg ? (
+          <div style={{
+            color: flashOk ? '#00ff80' : '#ff0050',
+            fontSize: 28, fontWeight: 700,
+            textShadow: `0 0 20px ${flashOk ? '#00ff80' : '#ff0050'}`,
+            letterSpacing: 2,
+            animation: 'scoreFloat 1.2s ease-out forwards',
+          }}>
+            {flashMsg}
+          </div>
+        ) : (
+          <div style={{ color: phase === 'pick' ? '#ffff00' : '#aa66ff',
+            fontSize: 16, letterSpacing: 3, opacity: 0.85,
+            textShadow: phase === 'pick' ? '0 0 12px #ffff00' : 'none',
+            animation: phase === 'pick' ? 'shimmer 0.6s ease-in-out infinite' : 'none',
+          }}>
+            {hintText}
+          </div>
+        )}
+      </div>
+
+      {/* Best score */}
+      <div style={{
+        position:'absolute', bottom: 20, left: 0, right: 0,
+        textAlign:'center', color:'#4a3060', fontSize: 12, letterSpacing: 2,
+      }}>
+        BEST {highScore}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
