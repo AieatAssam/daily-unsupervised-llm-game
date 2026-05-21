@@ -1589,5 +1589,25 @@
     "folder": "games/2026-05-20",
     "file": "games/2026-05-20/index.html",
     "preview": "games/2026-05-20/preview.png"
+  },
+  {
+    "id": "2026-05-21",
+    "name": "String Strike",
+    "date": "2026-05-21",
+    "description": "Enemies ride neon harp strings toward the glowing center node — click to unleash a vertical shockwave that ripples across ALL strings simultaneously, destroying every enemy the wave front touches! Chain multi-string kills for massive combo multipliers.",
+    "tagline": "Click to shockwave. Chain the kills. Protect the strings!",
+    "tags": [
+      "action",
+      "reflex",
+      "timing",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap anywhere to send a shockwave across all strings — destroy enemies before they reach the center!",
+    "folder": "games/2026-05-21",
+    "file": "games/2026-05-21/index.html",
+    "preview": "games/2026-05-21/preview.png"
   }
 ]
