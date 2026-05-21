@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>String Strike</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0012; overflow: hidden; font-family: 'Courier New', monospace; }
+    canvas { display: block; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const W = () => window.innerWidth;
+    const H = () => window.innerHeight;
+
+    // Audio context
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    function playPluck(freq, vol = 0.3) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.3, ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc.start(); osc.stop(ctx.currentTime + 0.5);
+      } catch(e) {}
+    }
+
+    function playKill(count) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(300 + count * 100, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(600 + count * 200, ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+        osc.start(); osc.stop(ctx.currentTime + 0.2);
+      } catch(e) {}
+    }
+
+    function playLife() {
+      try {
+        const ctx = getAudio();
+        [200, 180, 160].forEach((f, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.frequency.value = f;
+          gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.1 + 0.15);
+          osc.start(ctx.currentTime + i * 0.1);
+          osc.stop(ctx.currentTime + i * 0.1 + 0.15);
+        });
+      } catch(e) {}
+    }
+
+    // String colors (hue-rotated neon)
+    const STRING_COLORS = [
+      '#ff2dff', // magenta
+      '#00ffff', // cyan
+      '#ff6600', // orange
+      '#00ff88', // green
+      '#ff2255', // red-pink
+      '#9966ff', // purple
+      '#ffff00', // yellow
+    ];
+
+    const STRING_FREQS = [261, 293, 329, 349, 392, 440, 493];
+
+    function Game() {
+      const canvasRef = useRef(null);
+      const stateRef = useRef(null);
+      const rafRef = useRef(null);
+      const [ui, setUi] = useState({ score: 0, lives: 3, combo: 0, highScore: 0, phase: 'start' });
+
+      function initState() {
+        const w = W(), h = H();
+        const numStrings = Math.min(7, Math.max(5, Math.floor(h / 80)));
+        const margin = h * 0.15;
+        const spacing = (h - margin * 2) / (numStrings - 1);
+
+        const highScore = parseInt(localStorage.getItem('stringStrikeHigh') || '0');
+        // Ensure key exists in localStorage
+        if (!localStorage.getItem('stringStrikeHigh')) {
+          localStorage.setItem('stringStrikeHigh', '0');
+        }
+        return {
+          w, h,
+          numStrings,
+          strings: Array.from({ length: numStrings }, (_, i) => ({
+            y: margin + i * spacing,
+            color: STRING_COLORS[i],
+            freq: STRING_FREQS[i],
+            waves: [],
+            vibration: 0,
+            vibDir: 1,
+          })),
+          enemies: [],
+          particles: [],
+          score: 0,
+          lives: 5,
+          combo: 0,
+          comboTimer: 0,
+          spawnTimer: 0,
+          spawnInterval: 120,
+          level: 1,
+          levelTimer: 0,
+          phase: 'playing',
+          floatingTexts: [],
+          bgHue: 0,
+          highScore,
+        };
+      }
+
+      function spawnEnemy(state) {
+        const si = Math.floor(Math.random() * state.numStrings);
+        const fromLeft = Math.random() < 0.5;
+        const speed = (1.0 + state.level * 0.25 + Math.random() * 1.0);
+        state.enemies.push({
+          id: Math.random(),
+          stringIndex: si,
+          x: fromLeft ? -20 : state.w + 20,
+          vx: fromLeft ? speed : -speed,
+          radius: 10,
+          color: state.strings[si].color,
+          hp: 1,
+        });
+      }
+
+      function pluckString(state, clickX, clickY) {
+        // Vertical shockwave: all strings get a wave at clickX simultaneously
+        state.strings.forEach((str, i) => {
+          str.vibration = 12;
+          str.waves.push({
+            x: clickX,
+            leftX: clickX,
+            rightX: clickX,
+            speed: 8,
+            alive: true,
+            born: Date.now(),
+          });
+        });
+        // Play a chord
+        const closestIdx = state.strings.reduce((best, s, i) => {
+          return Math.abs(s.y - clickY) < Math.abs(state.strings[best].y - clickY) ? i : best;
+        }, 0);
+        playPluck(state.strings[closestIdx].freq);
+      }
+
+      function update(state, dt) {
+        state.bgHue = (state.bgHue + 0.3) % 360;
+
+        // Decay combos
+        if (state.combo > 0) {
+          state.comboTimer -= dt;
+          if (state.comboTimer <= 0) state.combo = 0;
+        }
+
+        // Vibration decay
+        state.strings.forEach(s => {
+          s.vibration *= 0.85;
+          if (s.vibration < 0.1) s.vibration = 0;
+        });
+
+        // Update waves
+        state.strings.forEach(s => {
+          s.waves = s.waves.filter(w => {
+            w.leftX -= w.speed;
+            w.rightX += w.speed;
+            // Kill wave if both edges off screen
+            if (w.leftX < -50 && w.rightX > state.w + 50) return false;
+            return true;
+          });
+        });
+
+        // Spawn enemies
+        state.spawnTimer -= dt;
+        if (state.spawnTimer <= 0) {
+          spawnEnemy(state);
+          // Sometimes spawn 2
+          if (state.level >= 3 && Math.random() < 0.3) spawnEnemy(state);
+          if (state.level >= 5 && Math.random() < 0.2) spawnEnemy(state);
+          state.spawnTimer = state.spawnInterval - state.level * 5;
+          if (state.spawnTimer < 30) state.spawnTimer = 30;
+        }
+
+        // Update enemies
+        const killList = [];
+        state.enemies = state.enemies.filter(e => {
+          e.x += e.vx;
+          const str = state.strings[e.stringIndex];
+
+          // Check wave collision
+          let killed = false;
+          str.waves.forEach(w => {
+            if (Math.abs(e.x - w.leftX) < 20 || Math.abs(e.x - w.rightX) < 20 ||
+                (e.x >= w.leftX && e.x <= w.rightX)) {
+              // Enemy is within wave zone - check if wave just passed through
+              const dist1 = Math.abs(e.x - w.leftX);
+              const dist2 = Math.abs(e.x - w.rightX);
+              if (dist1 < 25 || dist2 < 25) {
+                killed = true;
+              }
+            }
+          });
+
+          if (killed) {
+            killList.push(e);
+            // Particles
+            for (let p = 0; p < 8; p++) {
+              const angle = Math.random() * Math.PI * 2;
+              const speed = 2 + Math.random() * 4;
+              state.particles.push({
+                x: e.x, y: str.y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1, color: e.color, r: 4
+              });
+            }
+            return false;
+          }
+
+          // Check if reached center node area
+          const centerX = state.w / 2;
+          const reached = (e.vx > 0 && e.x > centerX - 5) || (e.vx < 0 && e.x < centerX + 5);
+          if (reached) {
+            state.lives--;
+            state.combo = 0;
+            playLife();
+            // flash particles (red)
+            for (let p = 0; p < 5; p++) {
+              const angle = Math.random() * Math.PI * 2;
+              state.particles.push({
+                x: centerX, y: str.y,
+                vx: Math.cos(angle) * 3,
+                vy: Math.sin(angle) * 3,
+                life: 1, color: '#ff0000', r: 5
+              });
+            }
+            state.floatingTexts.push({
+              x: centerX, y: str.y - 30,
+              text: '-1 LIFE', color: '#ff4444',
+              vy: -1.5, life: 1
+            });
+            if (state.lives <= 0) {
+              state.phase = 'gameover';
+              if (state.score > state.highScore) {
+                state.highScore = state.score;
+                localStorage.setItem('stringStrikeHigh', state.score);
+              }
+            }
+            return false;
+          }
+
+          return true;
+        });
+
+        // Score kills
+        if (killList.length > 0) {
+          state.combo += killList.length;
+          state.comboTimer = 120;
+          const points = killList.length * 10 * Math.max(1, state.combo);
+          state.score += points;
+          if (state.score > state.highScore) {
+            state.highScore = state.score;
+            localStorage.setItem('stringStrikeHigh', state.score);
+          }
+          playKill(state.combo);
+          killList.forEach(e => {
+            const str = state.strings[e.stringIndex];
+            str.vibration = 8;
+            state.floatingTexts.push({
+              x: e.x, y: str.y - 20,
+              text: killList.length > 1 ? `+${points} x${state.combo}!` : `+${killList.length * 10}`,
+              color: killList.length > 1 ? '#ffff00' : '#00ffff',
+              vy: -1.5, life: 1
+            });
+          });
+        }
+
+        // Update particles
+        state.particles = state.particles.filter(p => {
+          p.x += p.vx; p.y += p.vy;
+          p.vy += 0.15;
+          p.life -= 0.03;
+          p.r *= 0.97;
+          return p.life > 0;
+        });
+
+        // Update floating texts
+        state.floatingTexts = state.floatingTexts.filter(t => {
+          t.y += t.vy; t.life -= 0.025;
+          return t.life > 0;
+        });
+
+        // Level progression
+        state.levelTimer += dt;
+        if (state.levelTimer > 600) {
+          state.level++;
+          state.levelTimer = 0;
+          state.floatingTexts.push({
+            x: state.w / 2, y: state.h / 2,
+            text: `LEVEL ${state.level}`, color: '#ff88ff',
+            vy: -0.8, life: 1.5
+          });
+        }
+      }
+
+      function draw(canvas, state) {
+        const ctx = canvas.getContext('2d');
+        const { w, h } = state;
+        ctx.clearRect(0, 0, w, h);
+
+        // Animated bg gradient
+        const hue1 = state.bgHue;
+        const hue2 = (state.bgHue + 60) % 360;
+        const grad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w,h)*0.7);
+        grad.addColorStop(0, `hsla(${hue1},80%,8%,1)`);
+        grad.addColorStop(1, `hsla(${hue2},80%,3%,1)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        const cx = w / 2;
+
+        // Draw strings
+        state.strings.forEach((str, si) => {
+          // Main string line with vibration
+          ctx.save();
+          ctx.beginPath();
+          const amp = str.vibration;
+          const segs = 80;
+          ctx.moveTo(0, str.y);
+          for (let i = 1; i <= segs; i++) {
+            const px = (i / segs) * w;
+            const dist = Math.abs(px - cx) / (w / 2);
+            const waveOffset = amp * Math.sin((i / segs) * Math.PI * 6 - Date.now() * 0.02) * (1 - dist * 0.5);
+            ctx.lineTo(px, str.y + waveOffset);
+          }
+          ctx.strokeStyle = str.color;
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = str.color;
+          ctx.globalAlpha = 0.7;
+          ctx.stroke();
+          ctx.restore();
+
+          // Waves on strings
+          str.waves.forEach(w => {
+            // Left wave pulse
+            if (w.leftX > -10 && w.leftX < state.w + 10) {
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(w.leftX, str.y, 6, 0, Math.PI * 2);
+              ctx.fillStyle = str.color;
+              ctx.shadowBlur = 20;
+              ctx.shadowColor = str.color;
+              ctx.globalAlpha = 0.9;
+              ctx.fill();
+              ctx.restore();
+            }
+            // Right wave pulse
+            if (w.rightX > -10 && w.rightX < state.w + 10) {
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(w.rightX, str.y, 6, 0, Math.PI * 2);
+              ctx.fillStyle = str.color;
+              ctx.shadowBlur = 20;
+              ctx.shadowColor = str.color;
+              ctx.globalAlpha = 0.9;
+              ctx.fill();
+              ctx.restore();
+            }
+          });
+
+          // Center node
+          ctx.save();
+          const pulse = 0.8 + 0.2 * Math.sin(Date.now() * 0.005 + si);
+          ctx.beginPath();
+          ctx.arc(cx, str.y, 8 * pulse, 0, Math.PI * 2);
+          ctx.fillStyle = str.color;
+          ctx.shadowBlur = 25 * pulse;
+          ctx.shadowColor = str.color;
+          ctx.globalAlpha = 0.9;
+          ctx.fill();
+          // inner bright
+          ctx.beginPath();
+          ctx.arc(cx, str.y, 4 * pulse, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Draw enemies
+        state.enemies.forEach(e => {
+          const str = state.strings[e.stringIndex];
+          ctx.save();
+          // Glow
+          ctx.beginPath();
+          ctx.arc(e.x, str.y, e.radius + 4, 0, Math.PI * 2);
+          const g = ctx.createRadialGradient(e.x, str.y, 0, e.x, str.y, e.radius + 4);
+          g.addColorStop(0, e.color + 'cc');
+          g.addColorStop(1, e.color + '00');
+          ctx.fillStyle = g;
+          ctx.fill();
+          // Core
+          ctx.beginPath();
+          ctx.arc(e.x, str.y, e.radius, 0, Math.PI * 2);
+          ctx.fillStyle = e.color;
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = e.color;
+          ctx.fill();
+          // Bright center
+          ctx.beginPath();
+          ctx.arc(e.x, str.y, e.radius * 0.4, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          // Direction arrow
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = 0.7;
+          ctx.font = '10px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(e.vx > 0 ? '▶' : '◀', e.x, str.y + 3);
+          ctx.restore();
+        });
+
+        // Draw particles
+        state.particles.forEach(p => {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = p.life;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = p.color;
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Floating texts
+        state.floatingTexts.forEach(t => {
+          ctx.save();
+          ctx.font = `bold ${t.text.includes('LEVEL') ? 28 : 18}px 'Courier New'`;
+          ctx.fillStyle = t.color;
+          ctx.globalAlpha = Math.min(1, t.life);
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = t.color;
+          ctx.textAlign = 'center';
+          ctx.fillText(t.text, t.x, t.y);
+          ctx.restore();
+        });
+      }
+
+      function drawHUD(canvas, state) {
+        const ctx = canvas.getContext('2d');
+        const { w, score, lives, combo, highScore, level } = state;
+
+        // Top bar background
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0, 0, w, 55);
+        ctx.restore();
+
+        // Score
+        ctx.save();
+        ctx.font = 'bold 22px Courier New';
+        ctx.fillStyle = '#00ffff';
+        ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff';
+        ctx.textAlign = 'left';
+        ctx.fillText(`SCORE: ${score}`, 16, 36);
+        ctx.restore();
+
+        // High score
+        ctx.save();
+        ctx.font = '14px Courier New';
+        ctx.fillStyle = '#9966ff';
+        ctx.textAlign = 'center';
+        ctx.fillText(`BEST: ${highScore}`, w / 2, 20);
+        ctx.fillStyle = '#ff88ff';
+        ctx.font = '13px Courier New';
+        ctx.fillText(`LEVEL ${level}`, w / 2, 38);
+        ctx.restore();
+
+        // Lives
+        ctx.save();
+        ctx.font = '22px Courier New';
+        ctx.fillStyle = '#ff2255';
+        ctx.shadowBlur = 10; ctx.shadowColor = '#ff2255';
+        ctx.textAlign = 'right';
+        ctx.fillText('♥'.repeat(lives) + '♡'.repeat(Math.max(0, 5 - lives)), w - 16, 36);
+        ctx.restore();
+
+        // Combo
+        if (combo > 1) {
+          ctx.save();
+          ctx.font = `bold ${18 + combo}px Courier New`;
+          ctx.fillStyle = '#ffff00';
+          ctx.shadowBlur = 20; ctx.shadowColor = '#ffff00';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${combo}x COMBO!`, w / 2, 70);
+          ctx.restore();
+        }
+      }
+
+      function drawStart(canvas) {
+        const ctx = canvas.getContext('2d');
+        const w = W(), h = H();
+        canvas.width = w; canvas.height = h;
+        ctx.clearRect(0, 0, w, h);
+        const grad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w,h)*0.8);
+        grad.addColorStop(0, '#1a0030');
+        grad.addColorStop(1, '#000010');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Title
+        ctx.save();
+        ctx.font = `bold ${Math.min(64, w*0.12)}px Courier New`;
+        ctx.fillStyle = '#ff2dff';
+        ctx.shadowBlur = 40; ctx.shadowColor = '#ff2dff';
+        ctx.textAlign = 'center';
+        ctx.fillText('STRING STRIKE', w/2, h * 0.28);
+        ctx.restore();
+
+        // Decorative strings
+        const colors = STRING_COLORS;
+        for (let i = 0; i < 5; i++) {
+          const y = h * 0.38 + i * 35;
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(w * 0.1, y);
+          ctx.lineTo(w * 0.9, y);
+          ctx.strokeStyle = colors[i % colors.length];
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 10; ctx.shadowColor = colors[i % colors.length];
+          ctx.globalAlpha = 0.6;
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        ctx.save();
+        ctx.font = `${Math.min(18, w*0.04)}px Courier New`;
+        ctx.fillStyle = '#aaffff';
+        ctx.textAlign = 'center';
+        ctx.shadowBlur = 8; ctx.shadowColor = '#00ffff';
+        ctx.fillText('Enemies ride the neon strings toward the center.', w/2, h * 0.62);
+        ctx.fillText('Click to send a SHOCKWAVE across ALL strings — destroy them!', w/2, h * 0.67);
+        ctx.fillText('Chain multi-string kills for massive COMBO multipliers!', w/2, h * 0.72);
+        ctx.restore();
+
+        ctx.save();
+        ctx.font = `bold ${Math.min(24, w*0.05)}px Courier New`;
+        ctx.fillStyle = '#00ffff';
+        ctx.shadowBlur = 20; ctx.shadowColor = '#00ffff';
+        ctx.textAlign = 'center';
+        const pulse = 0.7 + 0.3 * Math.sin(Date.now() * 0.003);
+        ctx.globalAlpha = pulse;
+        ctx.fillText('CLICK / TAP TO PLAY', w/2, h * 0.83);
+        ctx.restore();
+      }
+
+      function drawGameOver(canvas, state) {
+        const ctx = canvas.getContext('2d');
+        const { w, h, score, highScore } = state;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+
+        ctx.save();
+        ctx.font = `bold ${Math.min(52, w*0.1)}px Courier New`;
+        ctx.fillStyle = '#ff2255';
+        ctx.shadowBlur = 30; ctx.shadowColor = '#ff2255';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', w/2, h * 0.35);
+        ctx.restore();
+
+        ctx.save();
+        ctx.font = `bold ${Math.min(30, w*0.06)}px Courier New`;
+        ctx.fillStyle = '#00ffff';
+        ctx.textAlign = 'center';
+        ctx.fillText(`SCORE: ${score}`, w/2, h * 0.47);
+        ctx.fillStyle = '#ffff00';
+        ctx.font = `${Math.min(22, w*0.04)}px Courier New`;
+        ctx.fillText(`BEST: ${highScore}`, w/2, h * 0.56);
+        if (score >= highScore && score > 0) {
+          ctx.fillStyle = '#ff88ff';
+          ctx.fillText('NEW HIGH SCORE!', w/2, h * 0.63);
+        }
+        ctx.restore();
+
+        ctx.save();
+        ctx.font = `bold ${Math.min(22, w*0.045)}px Courier New`;
+        ctx.fillStyle = '#aaffff';
+        ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff';
+        ctx.textAlign = 'center';
+        const pulse = 0.7 + 0.3 * Math.sin(Date.now() * 0.003);
+        ctx.globalAlpha = pulse;
+        ctx.fillText('CLICK TO PLAY AGAIN', w/2, h * 0.75);
+        ctx.restore();
+      }
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        let state = null;
+        let lastTime = 0;
+        let animPhase = 'start';
+
+        function resize() {
+          canvas.width = W();
+          canvas.height = H();
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        function loop(ts) {
+          rafRef.current = requestAnimationFrame(loop);
+          const dt = Math.min(ts - lastTime, 50);
+          lastTime = ts;
+
+          if (animPhase === 'start') {
+            drawStart(canvas);
+          } else if (animPhase === 'playing' && state) {
+            update(state, dt / 16.67);
+            draw(canvas, state);
+            drawHUD(canvas, state);
+            if (state.phase === 'gameover') {
+              animPhase = 'gameover';
+              setUi(u => ({ ...u, phase: 'gameover', score: state.score, highScore: state.highScore }));
+            }
+            setUi(u => ({ ...u, score: state.score, lives: state.lives, combo: state.combo }));
+          } else if (animPhase === 'gameover' && state) {
+            draw(canvas, state);
+            drawHUD(canvas, state);
+            drawGameOver(canvas, state);
+          }
+        }
+
+        rafRef.current = requestAnimationFrame(loop);
+
+        function handleInteract(ex, ey) {
+          if (animPhase === 'start') {
+            animPhase = 'playing';
+            state = initState();
+            setUi({ score: 0, lives: 3, combo: 0, highScore: state.highScore, phase: 'playing' });
+            return;
+          }
+          if (animPhase === 'gameover') {
+            animPhase = 'playing';
+            state = initState();
+            setUi({ score: 0, lives: 3, combo: 0, highScore: state.highScore, phase: 'playing' });
+            return;
+          }
+          if (animPhase === 'playing' && state) {
+            pluckString(state, ex, ey);
+          }
+        }
+
+        canvas.addEventListener('click', e => {
+          const r = canvas.getBoundingClientRect();
+          handleInteract(e.clientX - r.left, e.clientY - r.top);
+        });
+
+        canvas.addEventListener('touchstart', e => {
+          e.preventDefault();
+          const r = canvas.getBoundingClientRect();
+          const t = e.touches[0];
+          handleInteract(t.clientX - r.left, t.clientY - r.top);
+        }, { passive: false });
+
+        return () => {
+          cancelAnimationFrame(rafRef.current);
+          window.removeEventListener('resize', resize);
+        };
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          style={{ display: 'block', cursor: 'crosshair', width: '100%', height: '100%' }}
+        />
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Game />);
+  </script>
+</body>
+</html>
