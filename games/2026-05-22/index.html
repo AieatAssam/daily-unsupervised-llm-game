@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Dice Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0015;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      color: #fff;
+      user-select: none;
+    }
+    @keyframes bgPulse {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50%       { transform: translateY(-6px); }
+    }
+    @keyframes rollAnim {
+      0%   { transform: rotate(0deg) scale(1); }
+      25%  { transform: rotate(90deg) scale(1.15); }
+      50%  { transform: rotate(180deg) scale(0.9); }
+      75%  { transform: rotate(270deg) scale(1.1); }
+      100% { transform: rotate(360deg) scale(1); }
+    }
+    @keyframes scorePopup {
+      0%   { opacity: 1; transform: translateY(0) scale(1); }
+      100% { opacity: 0; transform: translateY(-80px) scale(1.5); }
+    }
+    @keyframes lockPulse {
+      0%, 100% { box-shadow: 0 0 12px #00ffff, 0 0 24px #00ffff; }
+      50%       { box-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff, 0 0 60px #00ffff88; }
+    }
+    @keyframes newTurn {
+      0%   { opacity: 0; transform: scale(0.5); }
+      60%  { transform: scale(1.1); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    @keyframes scanline {
+      0%   { transform: translateY(-100%); }
+      100% { transform: translateY(100vh); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ─── Audio ─────────────────────────────────────────────────── */
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let actx = null;
+    function getACtx() {
+      if (!actx) actx = new AudioCtx();
+      return actx;
+    }
+    function playTone(freq, type = 'square', dur = 0.08, vol = 0.18) {
+      try {
+        const ctx = getACtx();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.start(); o.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+    function playRoll() {
+      [220, 330, 440].forEach((f, i) => setTimeout(() => playTone(f, 'sawtooth', 0.06, 0.12), i * 40));
+    }
+    function playLock() { playTone(660, 'sine', 0.12, 0.2); }
+    function playUnlock() { playTone(440, 'sine', 0.1, 0.15); }
+    function playScore(pts) {
+      const base = pts >= 200 ? 880 : pts >= 100 ? 660 : pts >= 50 ? 550 : 440;
+      [base, base * 1.25, base * 1.5].forEach((f, i) => setTimeout(() => playTone(f, 'sine', 0.15, 0.22), i * 60));
+    }
+    function playGameOver() {
+      [440, 330, 220, 110].forEach((f, i) => setTimeout(() => playTone(f, 'sawtooth', 0.2, 0.25), i * 120));
+    }
+
+    /* ─── Scoring ────────────────────────────────────────────────── */
+    function scoreDice(dice) {
+      const counts = {};
+      dice.forEach(d => { counts[d] = (counts[d] || 0) + 1; });
+      const vals = Object.values(counts).sort((a, b) => b - a);
+      const keys = Object.keys(counts).map(Number).sort((a, b) => b - a);
+      const sum = dice.reduce((s, d) => s + d, 0);
+
+      // Five of a kind
+      if (vals[0] === 5) return { name: 'FIVE OF A KIND', pts: 500, tier: 5 };
+      // Four of a kind
+      if (vals[0] === 4) return { name: 'FOUR OF A KIND', pts: 150, tier: 4 };
+      // Full house
+      if (vals[0] === 3 && vals[1] === 2) return { name: 'FULL HOUSE', pts: 75, tier: 3 };
+      // Large straight
+      const sorted = [...new Set(dice)].sort((a, b) => a - b);
+      if (sorted.length === 5 && sorted[4] - sorted[0] === 4) return { name: 'LARGE STRAIGHT', pts: 200, tier: 4 };
+      // Small straight
+      let hasSmall = false;
+      for (let start = 1; start <= 3; start++) {
+        if ([start, start+1, start+2, start+3].every(v => dice.includes(v))) { hasSmall = true; break; }
+      }
+      if (hasSmall) return { name: 'SMALL STRAIGHT', pts: 100, tier: 3 };
+      // Three of a kind
+      if (vals[0] === 3) return { name: 'THREE OF A KIND', pts: 50, tier: 2 };
+      // Two pair
+      if (vals[0] === 2 && vals[1] === 2) return { name: 'TWO PAIR', pts: 25, tier: 1 };
+      // One pair
+      if (vals[0] === 2) return { name: 'PAIR', pts: 10, tier: 0 };
+      // Chance
+      return { name: 'CHANCE', pts: Math.max(sum - 15, 0), tier: -1 };
+    }
+
+    /* ─── Die face SVG dots ──────────────────────────────────────── */
+    const DOT_POSITIONS = {
+      1: [[50, 50]],
+      2: [[25, 25], [75, 75]],
+      3: [[25, 25], [50, 50], [75, 75]],
+      4: [[25, 25], [75, 25], [25, 75], [75, 75]],
+      5: [[25, 25], [75, 25], [50, 50], [25, 75], [75, 75]],
+      6: [[25, 25], [75, 25], [25, 50], [75, 50], [25, 75], [75, 75]],
+    };
+
+    function DieFace({ value, locked, rolling, onClick, color }) {
+      const dots = DOT_POSITIONS[value] || DOT_POSITIONS[1];
+      const glow = locked ? '#00ffff' : color;
+      return (
+        <div
+          onClick={onClick}
+          style={{
+            width: 80, height: 80,
+            borderRadius: 16,
+            background: locked
+              ? 'linear-gradient(135deg, #001a2e, #002a3e)'
+              : 'linear-gradient(135deg, #12002a, #1e0040)',
+            border: `3px solid ${glow}`,
+            boxShadow: locked
+              ? `0 0 14px ${glow}, 0 0 28px ${glow}66, inset 0 0 12px ${glow}22`
+              : `0 0 8px ${glow}88, inset 0 0 8px ${glow}11`,
+            position: 'relative',
+            cursor: 'pointer',
+            animation: rolling
+              ? 'rollAnim 0.35s ease-in-out'
+              : locked ? 'lockPulse 1.5s ease-in-out infinite' : 'float 3s ease-in-out infinite',
+            transition: 'border-color 0.2s, box-shadow 0.2s',
+            flexShrink: 0,
+          }}
+        >
+          <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
+            {dots.map(([cx, cy], i) => (
+              <circle key={i} cx={cx} cy={cy} r={10}
+                fill={locked ? '#00ffff' : glow}
+                style={{ filter: `drop-shadow(0 0 4px ${glow})` }}
+              />
+            ))}
+          </svg>
+          {locked && (
+            <div style={{
+              position: 'absolute', bottom: -8, left: '50%', transform: 'translateX(-50%)',
+              background: '#00ffff', color: '#000', fontSize: 8, fontWeight: 900,
+              padding: '1px 5px', borderRadius: 4, letterSpacing: 1,
+            }}>LOCK</div>
+          )}
+        </div>
+      );
+    }
+
+    /* ─── Particles ──────────────────────────────────────────────── */
+    function useParticles() {
+      const [particles, setParticles] = useState([]);
+      const idRef = useRef(0);
+      const burst = useCallback((x, y, color = '#ff00ff', count = 10) => {
+        const newP = Array.from({ length: count }, (_, i) => ({
+          id: ++idRef.current,
+          x, y, color,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8 - 4,
+          life: 1,
+        }));
+        setParticles(p => [...p, ...newP]);
+        setTimeout(() => {
+          setParticles(p => p.filter(pt => !newP.find(np => np.id === pt.id)));
+        }, 800);
+      }, []);
+      return { particles, burst };
+    }
+
+    /* ─── Combo colors ───────────────────────────────────────────── */
+    const TIER_COLORS = ['#ffaa00', '#00ffff', '#ff00ff', '#00ff88', '#ff4444', '#ffff00'];
+    const DIE_COLORS  = ['#ff00ff', '#00ffff', '#ff8800', '#00ff88', '#ff4466'];
+
+    /* ─── Main Game ──────────────────────────────────────────────── */
+    const GAME_TIME = 90;
+
+    function App() {
+      const [screen, setScreen]         = useState('start'); // start | playing | gameover
+      const [dice, setDice]             = useState([1, 2, 3, 4, 5]);
+      const [locked, setLocked]         = useState([false, false, false, false, false]);
+      const [rollsLeft, setRollsLeft]   = useState(3);
+      const [rolling, setRolling]       = useState([false, false, false, false, false]);
+      const [score, setScore]           = useState(0);
+      const [highScore, setHighScore]   = useState(() => parseInt(localStorage.getItem('neonDiceHighScore') || '0'));
+      const [combo, setCombo]           = useState(0);
+      const [timer, setTimer]           = useState(GAME_TIME);
+      const [hasRolled, setHasRolled]   = useState(false);
+      const [turnResult, setTurnResult] = useState(null);   // { name, pts, tier }
+      const [popups, setPopups]         = useState([]);
+      const [newTurnAnim, setNewTurnAnim] = useState(false);
+      const { particles, burst }        = useParticles();
+      const timerRef = useRef(null);
+      const popIdRef = useRef(0);
+
+      const currentScore = hasRolled ? scoreDice(dice) : null;
+
+      /* timer */
+      useEffect(() => {
+        if (screen !== 'playing') return;
+        timerRef.current = setInterval(() => {
+          setTimer(t => {
+            if (t <= 1) { clearInterval(timerRef.current); endGame(); return 0; }
+            return t - 1;
+          });
+        }, 1000);
+        return () => clearInterval(timerRef.current);
+      }, [screen]);
+
+      function endGame() {
+        playGameOver();
+        setScreen('gameover');
+        setScore(s => {
+          const hs = parseInt(localStorage.getItem('neonDiceHighScore') || '0');
+          if (s > hs) { localStorage.setItem('neonDiceHighScore', String(s)); setHighScore(s); }
+          return s;
+        });
+      }
+
+      function startGame() {
+        setScore(0); setCombo(0); setTimer(GAME_TIME); setHasRolled(false);
+        setDice([1, 2, 3, 4, 5]); setLocked([false, false, false, false, false]);
+        setRollsLeft(3); setTurnResult(null); setPopups([]);
+        setScreen('playing');
+        // auto-roll first
+        setTimeout(() => doRoll(3, [false,false,false,false,false], [1,2,3,4,5]), 200);
+      }
+
+      function doRoll(rolls, lockedArr, diceArr) {
+        if (rolls <= 0) return;
+        playRoll();
+        const rollingFlags = diceArr.map((_, i) => !lockedArr[i]);
+        setRolling(rollingFlags);
+        setTimeout(() => {
+          const newDice = diceArr.map((d, i) => lockedArr[i] ? d : Math.ceil(Math.random() * 6));
+          setDice(newDice);
+          setRolling([false,false,false,false,false]);
+          setRollsLeft(rolls - 1);
+          setHasRolled(true);
+          setTurnResult(null);
+        }, 350);
+      }
+
+      function handleRoll() {
+        if (rollsLeft <= 0 || screen !== 'playing') return;
+        doRoll(rollsLeft, locked, dice);
+      }
+
+      function handleLock(i) {
+        if (!hasRolled || screen !== 'playing') return;
+        const next = [...locked];
+        next[i] = !next[i];
+        setLocked(next);
+        next[i] ? playLock() : playUnlock();
+      }
+
+      function handleScore() {
+        if (!hasRolled || screen !== 'playing') return;
+        const result = scoreDice(dice);
+        const multiplier = result.tier >= 2 ? combo + 1 : 1;
+        const earned = result.pts * multiplier;
+
+        // popup
+        const id = ++popIdRef.current;
+        setPopups(p => [...p, { id, text: `+${earned}`, color: TIER_COLORS[Math.max(0, result.tier + 1)] }]);
+        setTimeout(() => setPopups(p => p.filter(x => x.id !== id)), 900);
+
+        // burst from center
+        burst(window.innerWidth / 2, window.innerHeight * 0.45, TIER_COLORS[Math.max(0, result.tier + 1)], 14);
+        playScore(earned);
+
+        setScore(s => {
+          const next = s + earned;
+          const hs = parseInt(localStorage.getItem('neonDiceHighScore') || '0');
+          if (next > hs) localStorage.setItem('neonDiceHighScore', String(next));
+          return next;
+        });
+        setCombo(c => result.tier >= 0 ? c + 1 : 0);
+        setTurnResult(result);
+
+        // new turn
+        setNewTurnAnim(true);
+        setTimeout(() => setNewTurnAnim(false), 500);
+        setTimeout(() => {
+          setLocked([false,false,false,false,false]);
+          setRollsLeft(3);
+          setHasRolled(false);
+          setTurnResult(null);
+          // auto-roll
+          doRoll(3, [false,false,false,false,false], [1,2,3,4,5]);
+        }, 600);
+      }
+
+      const timerPct = timer / GAME_TIME;
+      const timerColor = timerPct > 0.5 ? '#00ff88' : timerPct > 0.25 ? '#ffaa00' : '#ff3333';
+
+      /* ─── START SCREEN ── */
+      if (screen === 'start') return (
+        <div style={{
+          width: '100vw', height: '100vh',
+          background: 'radial-gradient(ellipse at 30% 40%, #1a003a 0%, #000820 60%, #0a0015 100%)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 24,
+        }}>
+          <div style={{ fontSize: 'clamp(28px,6vw,52px)', fontWeight: 900, letterSpacing: 3,
+            background: 'linear-gradient(90deg,#ff00ff,#00ffff,#ff8800)', WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent', textAlign: 'center', lineHeight: 1.1, padding: '0 16px' }}>
+            NEON DICE RUSH
+          </div>
+          <div style={{ color: '#aaa', fontSize: 13, textAlign: 'center', maxWidth: 320, lineHeight: 1.7, padding: '0 20px' }}>
+            Roll 5 neon dice · Lock the keepers<br/>
+            Reroll up to <b style={{ color: '#00ffff' }}>3 times</b> per turn<br/>
+            Score combos for <b style={{ color: '#ff00ff' }}>MASSIVE</b> multipliers<br/>
+            Race the <b style={{ color: '#ff8800' }}>90-second</b> clock!
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', padding: '0 20px' }}>
+            {['PAIR 10pt','THREE 50pt','FULL HOUSE 75pt','STRAIGHT 200pt','FIVE 500pt'].map(t => (
+              <div key={t} style={{ background: '#ffffff11', border: '1px solid #ffffff33', borderRadius: 8,
+                padding: '4px 10px', fontSize: 11, color: '#ccc', letterSpacing: 1 }}>{t}</div>
+            ))}
+          </div>
+          <button onClick={startGame} style={{
+            background: 'linear-gradient(135deg, #ff00ff, #8800ff)',
+            border: 'none', borderRadius: 12, padding: '16px 48px',
+            color: '#fff', fontSize: 20, fontWeight: 900, letterSpacing: 3,
+            cursor: 'pointer', marginTop: 8,
+            boxShadow: '0 0 24px #ff00ff88, 0 0 48px #8800ff44',
+          }}>PLAY</button>
+          {highScore > 0 && <div style={{ color: '#ffaa00', fontSize: 13 }}>BEST: {highScore}</div>}
+        </div>
+      );
+
+      /* ─── GAME OVER ── */
+      if (screen === 'gameover') return (
+        <div style={{
+          width: '100vw', height: '100vh',
+          background: 'radial-gradient(ellipse at 50% 40%, #1a003a 0%, #000820 60%, #0a0015 100%)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20,
+        }}>
+          <div style={{ fontSize: 'clamp(22px,5vw,40px)', fontWeight: 900, letterSpacing: 3, color: '#ff3333',
+            textShadow: '0 0 20px #ff3333' }}>GAME OVER</div>
+          <div style={{ fontSize: 'clamp(40px,10vw,80px)', fontWeight: 900,
+            background: 'linear-gradient(90deg,#ff00ff,#00ffff)', WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent' }}>{score}</div>
+          {score >= highScore && score > 0 && (
+            <div style={{ color: '#ffff00', fontWeight: 900, letterSpacing: 2, fontSize: 16,
+              textShadow: '0 0 12px #ffff00' }}>⭐ NEW HIGH SCORE! ⭐</div>
+          )}
+          {score < highScore && (
+            <div style={{ color: '#aaa', fontSize: 14 }}>Best: {highScore}</div>
+          )}
+          <button onClick={startGame} style={{
+            background: 'linear-gradient(135deg, #ff00ff, #8800ff)',
+            border: 'none', borderRadius: 12, padding: '14px 40px',
+            color: '#fff', fontSize: 18, fontWeight: 900, letterSpacing: 3,
+            cursor: 'pointer', boxShadow: '0 0 24px #ff00ff88',
+          }}>PLAY AGAIN</button>
+        </div>
+      );
+
+      /* ─── PLAYING ── */
+      return (
+        <div style={{
+          width: '100vw', height: '100vh', overflow: 'hidden',
+          background: 'radial-gradient(ellipse at 30% 20%, #1a003a 0%, #000820 50%, #0a0015 100%)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'flex-start', paddingTop: 'max(12px, env(safe-area-inset-top))',
+          position: 'relative',
+        }}>
+          {/* Scanline effect */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0,
+            backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,255,255,0.015) 3px, rgba(0,255,255,0.015) 4px)',
+          }} />
+
+          {/* Particles */}
+          {particles.map(p => (
+            <div key={p.id} style={{
+              position: 'absolute', left: p.x, top: p.y, width: 6, height: 6, borderRadius: '50%',
+              background: p.color, pointerEvents: 'none', zIndex: 100,
+              boxShadow: `0 0 8px ${p.color}`,
+              animation: 'scorePopup 0.8s ease-out forwards',
+            }} />
+          ))}
+
+          {/* Popups */}
+          {popups.map(p => (
+            <div key={p.id} style={{
+              position: 'absolute', top: '38%', left: '50%', transform: 'translateX(-50%)',
+              fontSize: 'clamp(28px,7vw,54px)', fontWeight: 900, color: p.color,
+              textShadow: `0 0 20px ${p.color}, 0 0 40px ${p.color}`,
+              pointerEvents: 'none', zIndex: 200,
+              animation: 'scorePopup 0.9s ease-out forwards',
+            }}>{p.text}</div>
+          ))}
+
+          {/* HUD */}
+          <div style={{ width: '100%', maxWidth: 480, padding: '0 16px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {/* Timer bar */}
+            <div style={{ width: '100%', height: 6, background: '#ffffff15', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 3,
+                width: `${timerPct * 100}%`,
+                background: timerColor,
+                boxShadow: `0 0 10px ${timerColor}`,
+                transition: 'width 1s linear, background 0.5s',
+              }} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ fontSize: 11, color: '#ffffff55', letterSpacing: 2 }}>SCORE</div>
+                <div style={{ fontSize: 'clamp(20px,5vw,32px)', fontWeight: 900,
+                  background: 'linear-gradient(90deg,#ff00ff,#00ffff)', WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent' }}>{score}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ fontSize: 11, color: '#ffffff55', letterSpacing: 2 }}>TIME</div>
+                <div style={{ fontSize: 'clamp(20px,5vw,32px)', fontWeight: 900, color: timerColor,
+                  textShadow: `0 0 12px ${timerColor}` }}>{timer}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <div style={{ fontSize: 11, color: '#ffffff55', letterSpacing: 2 }}>COMBO</div>
+                <div style={{ fontSize: 'clamp(20px,5vw,32px)', fontWeight: 900, color: '#ffaa00',
+                  textShadow: combo > 0 ? '0 0 12px #ffaa00' : 'none' }}>×{combo + 1}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Combo label */}
+          {combo >= 2 && (
+            <div style={{ fontSize: 12, color: '#ffaa00', letterSpacing: 3, fontWeight: 900,
+              textShadow: '0 0 10px #ffaa00', zIndex: 10, marginTop: 2 }}>
+              {combo >= 5 ? '🔥 ON FIRE!' : combo >= 3 ? '⚡ HOT STREAK!' : '✨ COMBO!'}
+            </div>
+          )}
+
+          {/* Dice area */}
+          <div style={{
+            display: 'flex', gap: 'clamp(8px,2vw,16px)',
+            justifyContent: 'center', alignItems: 'center',
+            marginTop: 'clamp(12px,3vh,28px)',
+            animation: newTurnAnim ? 'newTurn 0.5s ease-out' : 'none',
+            zIndex: 10, flexWrap: 'wrap', padding: '0 12px',
+          }}>
+            {dice.map((d, i) => (
+              <DieFace
+                key={i} value={d} locked={locked[i]} rolling={rolling[i]}
+                color={DIE_COLORS[i]}
+                onClick={() => handleLock(i)}
+              />
+            ))}
+          </div>
+
+          {/* Rolls left pips */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, zIndex: 10, alignItems: 'center' }}>
+            <div style={{ fontSize: 11, color: '#ffffff55', letterSpacing: 2 }}>ROLLS</div>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{
+                width: 12, height: 12, borderRadius: '50%',
+                background: i < rollsLeft ? '#00ffff' : '#ffffff22',
+                boxShadow: i < rollsLeft ? '0 0 8px #00ffff' : 'none',
+                transition: 'background 0.2s',
+              }} />
+            ))}
+          </div>
+
+          {/* Current score preview */}
+          {currentScore && !turnResult && (
+            <div style={{
+              marginTop: 10, padding: '6px 18px', borderRadius: 10, zIndex: 10,
+              background: `${TIER_COLORS[Math.max(0, currentScore.tier + 1)]}22`,
+              border: `1px solid ${TIER_COLORS[Math.max(0, currentScore.tier + 1)]}66`,
+              color: TIER_COLORS[Math.max(0, currentScore.tier + 1)],
+              fontWeight: 900, fontSize: 'clamp(12px,3vw,16px)', letterSpacing: 2,
+              textShadow: `0 0 8px ${TIER_COLORS[Math.max(0, currentScore.tier + 1)]}`,
+            }}>
+              {currentScore.name} · {currentScore.pts}pt{combo > 0 ? ` ×${combo + 1} = ${currentScore.pts * (combo + 1)}` : ''}
+            </div>
+          )}
+
+          {/* Buttons */}
+          <div style={{ display: 'flex', gap: 12, marginTop: 'clamp(12px,2.5vh,24px)', zIndex: 10, flexWrap: 'wrap', justifyContent: 'center', padding: '0 16px' }}>
+            <button
+              onClick={handleRoll}
+              disabled={rollsLeft <= 0}
+              style={{
+                background: rollsLeft > 0
+                  ? 'linear-gradient(135deg, #0088ff, #00ffff)'
+                  : '#ffffff22',
+                border: 'none', borderRadius: 12, padding: 'clamp(10px,2vh,14px) clamp(24px,5vw,40px)',
+                color: rollsLeft > 0 ? '#000' : '#ffffff44',
+                fontSize: 'clamp(14px,3vw,18px)', fontWeight: 900, letterSpacing: 2,
+                cursor: rollsLeft > 0 ? 'pointer' : 'not-allowed',
+                boxShadow: rollsLeft > 0 ? '0 0 20px #00ffff88' : 'none',
+                transition: 'all 0.2s',
+              }}
+            >
+              ROLL {rollsLeft > 0 ? `(${rollsLeft})` : '—'}
+            </button>
+
+            <button
+              onClick={handleScore}
+              disabled={!hasRolled}
+              style={{
+                background: hasRolled
+                  ? 'linear-gradient(135deg, #ff00ff, #8800ff)'
+                  : '#ffffff22',
+                border: 'none', borderRadius: 12, padding: 'clamp(10px,2vh,14px) clamp(24px,5vw,40px)',
+                color: hasRolled ? '#fff' : '#ffffff44',
+                fontSize: 'clamp(14px,3vw,18px)', fontWeight: 900, letterSpacing: 2,
+                cursor: hasRolled ? 'pointer' : 'not-allowed',
+                boxShadow: hasRolled ? '0 0 20px #ff00ff88' : 'none',
+                transition: 'all 0.2s',
+              }}
+            >
+              SCORE ✓
+            </button>
+          </div>
+
+          {/* Hint */}
+          <div style={{ marginTop: 10, fontSize: 11, color: '#ffffff33', letterSpacing: 1, textAlign: 'center', padding: '0 16px', zIndex: 10 }}>
+            {!hasRolled ? 'Rolling...' : rollsLeft > 0 ? 'Tap dice to lock · Roll or Score' : 'No rolls left — must Score!'}
+          </div>
+
+          {/* Scoring legend */}
+          <div style={{
+            position: 'absolute', bottom: 'max(8px, env(safe-area-inset-bottom))',
+            left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 8,
+            flexWrap: 'wrap', padding: '0 12px', zIndex: 10,
+          }}>
+            {[
+              { n: 'PAIR', p: 10, t: 0 },
+              { n: '2×PAIR', p: 25, t: 1 },
+              { n: 'THREE', p: 50, t: 2 },
+              { n: 'HOUSE', p: 75, t: 3 },
+              { n: 'STR8', p: 100, t: 3 },
+              { n: 'FOUR', p: 150, t: 4 },
+              { n: 'BIG STR8', p: 200, t: 4 },
+              { n: 'FIVE!', p: 500, t: 5 },
+            ].map(({ n, p, t }) => (
+              <div key={n} style={{
+                fontSize: 9, color: TIER_COLORS[Math.max(0, t + 1)], letterSpacing: 1,
+                background: `${TIER_COLORS[Math.max(0, t + 1)]}15`, border: `1px solid ${TIER_COLORS[Math.max(0, t + 1)]}44`,
+                borderRadius: 6, padding: '2px 6px', fontWeight: 700,
+              }}>{n} {p}</div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

@@ -1609,5 +1609,25 @@
     "folder": "games/2026-05-21",
     "file": "games/2026-05-21/index.html",
     "preview": "games/2026-05-21/preview.png"
+  },
+  {
+    "id": "2026-05-22",
+    "name": "Neon Dice Rush",
+    "date": "2026-05-22",
+    "description": "Roll 5 neon dice and lock the keepers — reroll up to 3 times per turn to build scoring combos! Chain consecutive high-scoring turns for massive multipliers and race the 90-second clock!",
+    "tagline": "Roll. Lock. Score. Chain the combos!",
+    "tags": [
+      "dice",
+      "strategy",
+      "casual",
+      "puzzle",
+      "combo"
+    ],
+    "difficulty": "easy",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap dice to lock them · Click ROLL to reroll · Click SCORE to bank your combo",
+    "folder": "games/2026-05-22",
+    "file": "games/2026-05-22/index.html",
+    "preview": "games/2026-05-22/preview.png"
   }
 ]
