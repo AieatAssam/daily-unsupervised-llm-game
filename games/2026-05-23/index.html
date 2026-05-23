@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snap Lock</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const LS_KEY = 'snapLockHighScore';
+    const GAME_DURATION = 90;
+
+    let audioCtx = null;
+    const getAudio = () => {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    };
+    const playTone = (freq, type, dur, vol = 0.3) => {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start();
+        osc.stop(ctx.currentTime + dur);
+      } catch (e) {}
+    };
+
+    const SnapLock = () => {
+      const canvasRef = useRef(null);
+      if (!localStorage.getItem(LS_KEY)) localStorage.setItem(LS_KEY, '0');
+      const [hud, setHud] = useState({
+        phase: 'start', score: 0, combo: 0, lives: 3,
+        timeLeft: GAME_DURATION, highScore: parseInt(localStorage.getItem(LS_KEY) || '0'),
+      });
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const s = {
+          phase: 'start',
+          scanX: 0, scanY: 0,
+          velX: 2.0, velY: 1.5,
+          targets: [], particles: [], pops: [],
+          score: 0, combo: 0, lives: 3, level: 1,
+          timeLeft: GAME_DURATION, startTime: 0,
+          nextId: 0, lastSpawn: -9999,
+          highScore: parseInt(localStorage.getItem(LS_KEY) || '0'),
+        };
+
+        const resize = () => {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        const spawnTarget = () => {
+          const w = canvas.width, h = canvas.height;
+          const mg = 90;
+          s.targets.push({
+            id: s.nextId++,
+            x: mg + Math.random() * (w - mg * 2),
+            y: mg + Math.random() * (h - mg * 2),
+            radius: 38,
+            hue: Math.floor(Math.random() * 360),
+            get color() { return `hsl(${this.hue},100%,60%)`; },
+            get colorA() { return (a) => `hsla(${this.hue},100%,60%,${a})`; },
+            life: Math.max(3.5, 8 - s.level * 0.5),
+            maxLife: Math.max(3.5, 8 - s.level * 0.5),
+          });
+        };
+
+        const endGame = () => {
+          s.phase = 'gameover';
+          if (s.score > s.highScore) {
+            s.highScore = s.score;
+            localStorage.setItem(LS_KEY, String(s.score));
+          }
+          playTone(220, 'sawtooth', 0.5, 0.4);
+          setTimeout(() => playTone(110, 'sawtooth', 0.6, 0.3), 200);
+          setHud(d => ({ ...d, phase: 'gameover', score: s.score, highScore: s.highScore }));
+        };
+
+        const startGame = () => {
+          const w = canvas.width, h = canvas.height;
+          s.phase = 'playing';
+          s.score = 0; s.combo = 0; s.lives = 3; s.level = 1;
+          s.timeLeft = GAME_DURATION;
+          s.targets = []; s.particles = []; s.pops = [];
+          s.scanX = w / 2; s.scanY = h / 2;
+          s.velX = 2.0; s.velY = 1.5;
+          s.startTime = performance.now();
+          s.lastSpawn = -9999;
+          s.nextId = 0;
+          spawnTarget();
+          setHud(d => ({ ...d, phase: 'playing', score: 0, combo: 0, lives: 3, timeLeft: GAME_DURATION }));
+        };
+
+        const handleFire = (e) => {
+          e.preventDefault();
+          if (s.phase === 'start' || s.phase === 'gameover') {
+            startGame();
+            return;
+          }
+          if (s.phase !== 'playing') return;
+
+          const fx = s.scanX, fy = s.scanY;
+          let bestTarget = null, bestDist = Infinity;
+          for (const t of s.targets) {
+            const d = Math.hypot(fx - t.x, fy - t.y);
+            if (d < bestDist) { bestDist = d; bestTarget = t; }
+          }
+
+          const hitRadius = 62;
+          if (bestTarget && bestDist < hitRadius) {
+            let label, pts;
+            if (bestDist < 12) { label = 'PERFECT'; pts = 250; playTone(1100, 'sine', 0.25, 0.45); }
+            else if (bestDist < 28) { label = 'GREAT'; pts = 130; playTone(880, 'sine', 0.22, 0.35); }
+            else if (bestDist < 48) { label = 'GOOD'; pts = 60; playTone(660, 'sine', 0.2, 0.25); }
+            else { label = 'OK'; pts = 25; playTone(440, 'sine', 0.18, 0.2); }
+
+            s.combo++;
+            pts = Math.round(pts * (1 + (s.combo - 1) * 0.15));
+            s.score += pts;
+            if (s.score > s.level * 900) {
+              s.level++;
+              s.velX = Math.min(5.5, 2.0 + s.level * 0.38);
+              s.velY = Math.min(4.5, 1.5 + s.level * 0.3);
+            }
+
+            // Burst particles
+            for (let i = 0; i < 20; i++) {
+              const ang = (Math.PI * 2 * i) / 20 + Math.random() * 0.3;
+              const spd = 3 + Math.random() * 5;
+              s.particles.push({
+                x: bestTarget.x, y: bestTarget.y,
+                vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+                life: 1, decay: 0.03 + Math.random() * 0.03,
+                color: bestTarget.color, size: 3 + Math.random() * 4,
+              });
+            }
+            // Ring burst
+            for (let r = 0; r < 3; r++) {
+              s.particles.push({
+                x: bestTarget.x, y: bestTarget.y, ring: true,
+                radius: 0, maxRadius: 30 + r * 25,
+                life: 1, decay: 0.04, color: bestTarget.color,
+              });
+            }
+
+            s.pops.push({
+              x: bestTarget.x, y: bestTarget.y - 10,
+              label, pts: `+${pts}`, life: 1, decay: 0.022,
+              color: label === 'PERFECT' ? '#ffff00' : label === 'GREAT' ? '#00ffff' : label === 'GOOD' ? '#00ff88' : '#ffffff',
+            });
+            s.targets = s.targets.filter(t => t !== bestTarget);
+          } else {
+            s.combo = 0;
+            playTone(160, 'sawtooth', 0.3, 0.2);
+            s.pops.push({ x: fx, y: fy - 10, label: 'MISS', pts: '', life: 1, decay: 0.03, color: '#ff4444' });
+          }
+          setHud(d => ({ ...d, score: s.score, combo: s.combo }));
+        };
+
+        canvas.addEventListener('click', handleFire);
+        canvas.addEventListener('touchstart', handleFire, { passive: false });
+
+        let lastNow = 0;
+        let rafId;
+
+        const drawGrid = (w, h) => {
+          ctx.strokeStyle = 'rgba(0,255,255,0.035)';
+          ctx.lineWidth = 1;
+          const gs = 55;
+          for (let x = 0; x <= w; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+          for (let y = 0; y <= h; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+        };
+
+        const drawScanLines = (w, h, onTarget) => {
+          // Vertical cyan line
+          const vg = ctx.createLinearGradient(s.scanX - 24, 0, s.scanX + 24, 0);
+          vg.addColorStop(0, 'transparent');
+          vg.addColorStop(0.5, `rgba(0,255,255,${0.18 + onTarget * 0.25})`);
+          vg.addColorStop(1, 'transparent');
+          ctx.fillStyle = vg;
+          ctx.fillRect(s.scanX - 24, 0, 48, h);
+          ctx.beginPath(); ctx.moveTo(s.scanX, 0); ctx.lineTo(s.scanX, h);
+          ctx.strokeStyle = `rgba(0,255,255,${0.85 + onTarget * 0.15})`;
+          ctx.lineWidth = 1.5;
+          ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 12 + onTarget * 10;
+          ctx.stroke(); ctx.shadowBlur = 0;
+
+          // Horizontal magenta line
+          const hg = ctx.createLinearGradient(0, s.scanY - 24, 0, s.scanY + 24);
+          hg.addColorStop(0, 'transparent');
+          hg.addColorStop(0.5, `rgba(255,0,255,${0.18 + onTarget * 0.25})`);
+          hg.addColorStop(1, 'transparent');
+          ctx.fillStyle = hg;
+          ctx.fillRect(0, s.scanY - 24, w, 48);
+          ctx.beginPath(); ctx.moveTo(0, s.scanY); ctx.lineTo(w, s.scanY);
+          ctx.strokeStyle = `rgba(255,0,255,${0.85 + onTarget * 0.15})`;
+          ctx.lineWidth = 1.5;
+          ctx.shadowColor = '#ff00ff'; ctx.shadowBlur = 12 + onTarget * 10;
+          ctx.stroke(); ctx.shadowBlur = 0;
+
+          // Crosshair glow at intersection
+          const igr = ctx.createRadialGradient(s.scanX, s.scanY, 0, s.scanX, s.scanY, 28 + onTarget * 18);
+          igr.addColorStop(0, `rgba(255,255,255,${0.6 + onTarget * 0.4})`);
+          igr.addColorStop(1, 'transparent');
+          ctx.beginPath(); ctx.arc(s.scanX, s.scanY, 28 + onTarget * 18, 0, Math.PI * 2);
+          ctx.fillStyle = igr; ctx.fill();
+
+          // Reticle marks
+          ctx.strokeStyle = `rgba(255,255,255,${0.7 + onTarget * 0.3})`;
+          ctx.lineWidth = 1.5;
+          const cs = 14;
+          ctx.beginPath();
+          ctx.moveTo(s.scanX - cs, s.scanY); ctx.lineTo(s.scanX - 5, s.scanY);
+          ctx.moveTo(s.scanX + 5, s.scanY); ctx.lineTo(s.scanX + cs, s.scanY);
+          ctx.moveTo(s.scanX, s.scanY - cs); ctx.lineTo(s.scanX, s.scanY - 5);
+          ctx.moveTo(s.scanX, s.scanY + 5); ctx.lineTo(s.scanX, s.scanY + cs);
+          ctx.stroke();
+          ctx.beginPath(); ctx.arc(s.scanX, s.scanY, 4.5, 0, Math.PI * 2);
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+        };
+
+        const drawTargets = (now) => {
+          for (const t of s.targets) {
+            const frac = t.life / t.maxLife;
+            const pulse = 0.85 + 0.15 * Math.sin(now * 0.006);
+            const r = t.radius * pulse;
+            const dist = Math.hypot(s.scanX - t.x, s.scanY - t.y);
+            const nearness = Math.max(0, 1 - dist / 62);
+
+            // Glow
+            const gr = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, r * 1.8);
+            gr.addColorStop(0, t.colorA(0.33));
+            gr.addColorStop(1, 'transparent');
+            ctx.beginPath(); ctx.arc(t.x, t.y, r * 1.8, 0, Math.PI * 2);
+            ctx.fillStyle = gr; ctx.fill();
+
+            // Countdown arc
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, r + 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac, false);
+            ctx.strokeStyle = frac > 0.4 ? t.color : `hsl(0, 100%, ${50 + 20 * Math.sin(now * 0.015)}%)`;
+            ctx.lineWidth = 3.5; ctx.stroke();
+
+            // Target rings
+            for (let ring = 1; ring <= 3; ring++) {
+              ctx.beginPath();
+              ctx.arc(t.x, t.y, r * ring / 3, 0, Math.PI * 2);
+              ctx.strokeStyle = t.color;
+              ctx.globalAlpha = 0.12 * ring + nearness * 0.2;
+              ctx.lineWidth = 1.5; ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+
+            // Lock-on highlight ring
+            if (nearness > 0) {
+              ctx.beginPath();
+              ctx.arc(t.x, t.y, r + 20, 0, Math.PI * 2);
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 2;
+              ctx.globalAlpha = nearness * 0.7;
+              ctx.shadowColor = '#fff'; ctx.shadowBlur = 8;
+              ctx.stroke(); ctx.shadowBlur = 0;
+              ctx.globalAlpha = 1;
+            }
+
+            // Center dot
+            ctx.beginPath(); ctx.arc(t.x, t.y, 5.5, 0, Math.PI * 2);
+            ctx.fillStyle = t.color; ctx.fill();
+          }
+        };
+
+        const drawParticles = (dt) => {
+          for (const p of s.particles) {
+            if (p.ring) {
+              p.radius += (p.maxRadius - p.radius) * 0.1 * dt;
+              p.life -= p.decay * dt;
+              ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+              ctx.strokeStyle = p.color;
+              ctx.globalAlpha = Math.max(0, p.life) * 0.7;
+              ctx.lineWidth = 2; ctx.stroke();
+            } else {
+              p.x += p.vx * dt; p.y += p.vy * dt;
+              p.vx *= 0.94; p.vy *= 0.94;
+              p.life -= p.decay * dt;
+              ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+              ctx.fillStyle = p.color;
+              ctx.globalAlpha = Math.max(0, p.life);
+              ctx.fill();
+            }
+          }
+          ctx.globalAlpha = 1;
+          s.particles = s.particles.filter(p => p.life > 0);
+        };
+
+        const drawPops = (dt) => {
+          ctx.textAlign = 'center';
+          for (const p of s.pops) {
+            p.y -= 0.6 * dt;
+            p.life -= p.decay * dt;
+            const a = Math.max(0, p.life);
+            ctx.globalAlpha = a;
+            ctx.font = `bold ${22 + (1 - p.life) * 8}px 'Courier New', monospace`;
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = p.color; ctx.shadowBlur = 10;
+            ctx.fillText(p.label, p.x, p.y);
+            if (p.pts) {
+              ctx.font = `15px 'Courier New', monospace`;
+              ctx.fillText(p.pts, p.x, p.y + 22);
+            }
+            ctx.shadowBlur = 0;
+          }
+          ctx.globalAlpha = 1; ctx.textAlign = 'left';
+          s.pops = s.pops.filter(p => p.life > 0);
+        };
+
+        const drawStart = (w, h, now) => {
+          ctx.fillStyle = 'rgba(0,0,12,0.72)';
+          ctx.fillRect(0, 0, w, h);
+          const t = now * 0.001;
+
+          // Animated demo scanlines
+          ctx.globalAlpha = 0.25 + 0.08 * Math.sin(t * 2.5);
+          ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2;
+          const demoY = h * 0.38 + Math.sin(t * 1.7) * 18;
+          ctx.beginPath(); ctx.moveTo(0, demoY); ctx.lineTo(w, demoY); ctx.stroke();
+          ctx.strokeStyle = '#ff00ff';
+          const demoX = w * 0.5 + Math.cos(t * 2.1) * 35;
+          ctx.beginPath(); ctx.moveTo(demoX, 0); ctx.lineTo(demoX, h); ctx.stroke();
+          ctx.globalAlpha = 1;
+
+          ctx.textAlign = 'center';
+          const fs = Math.min(76, w * 0.13);
+          ctx.font = `bold ${fs}px 'Courier New', monospace`;
+          ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 35;
+          ctx.fillText('SNAP', w / 2, h * 0.3);
+          ctx.fillStyle = '#ff00ff'; ctx.shadowColor = '#ff00ff';
+          ctx.fillText('LOCK', w / 2, h * 0.3 + fs * 1.1);
+          ctx.shadowBlur = 0;
+
+          ctx.font = `${Math.min(17, w * 0.038)}px 'Courier New', monospace`;
+          ctx.fillStyle = 'rgba(180,200,255,0.85)';
+          ctx.fillText('Cyan & magenta scanlines sweep the field.', w / 2, h * 0.57);
+          ctx.fillText('Click to fire when the crosshair locks on a target!', w / 2, h * 0.57 + 26);
+
+          ctx.font = `${Math.min(21, w * 0.042)}px 'Courier New', monospace`;
+          ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 14;
+          if (Math.sin(now * 0.003) > 0) ctx.fillText('[ CLICK TO START ]', w / 2, h * 0.73);
+          ctx.shadowBlur = 0;
+
+          if (s.highScore > 0) {
+            ctx.font = `${Math.min(15, w * 0.032)}px 'Courier New', monospace`;
+            ctx.fillStyle = '#ffaa00';
+            ctx.fillText(`BEST: ${s.highScore}`, w / 2, h * 0.83);
+          }
+          ctx.textAlign = 'left';
+        };
+
+        const drawGameOver = (w, h, now) => {
+          ctx.fillStyle = 'rgba(0,0,12,0.78)';
+          ctx.fillRect(0, 0, w, h);
+          ctx.textAlign = 'center';
+          const fs = Math.min(58, w * 0.1);
+          ctx.font = `bold ${fs}px 'Courier New', monospace`;
+          ctx.fillStyle = '#ff4466'; ctx.shadowColor = '#ff4466'; ctx.shadowBlur = 28;
+          ctx.fillText('SIGNAL LOST', w / 2, h * 0.35);
+          ctx.shadowBlur = 0;
+
+          ctx.font = `${Math.min(34, w * 0.065)}px 'Courier New', monospace`;
+          ctx.fillStyle = '#00ffff';
+          ctx.fillText(`SCORE: ${s.score}`, w / 2, h * 0.48);
+
+          if (s.score >= s.highScore && s.score > 0) {
+            ctx.fillStyle = '#ffff00'; ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 22;
+            ctx.font = `${Math.min(22, w * 0.044)}px 'Courier New', monospace`;
+            ctx.fillText('NEW HIGH SCORE!', w / 2, h * 0.57);
+            ctx.shadowBlur = 0;
+          } else if (s.highScore > 0) {
+            ctx.fillStyle = '#ffaa00';
+            ctx.font = `${Math.min(18, w * 0.036)}px 'Courier New', monospace`;
+            ctx.fillText(`BEST: ${s.highScore}`, w / 2, h * 0.57);
+          }
+
+          ctx.font = `${Math.min(20, w * 0.04)}px 'Courier New', monospace`;
+          ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 12;
+          if (Math.sin(now * 0.003) > 0) ctx.fillText('[ CLICK TO RETRY ]', w / 2, h * 0.7);
+          ctx.shadowBlur = 0;
+          ctx.textAlign = 'left';
+        };
+
+        const frame = (now) => {
+          rafId = requestAnimationFrame(frame);
+          const dt = Math.min((now - lastNow) / 16.67, 3);
+          lastNow = now;
+          const w = canvas.width, h = canvas.height;
+
+          ctx.fillStyle = 'rgba(0,0,10,0.88)';
+          ctx.fillRect(0, 0, w, h);
+          drawGrid(w, h);
+
+          if (s.phase === 'playing') {
+            // Update timer
+            const elapsed = (now - s.startTime) / 1000;
+            s.timeLeft = Math.max(0, GAME_DURATION - elapsed);
+            if (s.timeLeft <= 0) { endGame(); return; }
+
+            // Move scanlines
+            s.scanX += s.velX * dt;
+            s.scanY += s.velY * dt;
+            if (s.scanX >= w) { s.scanX = w; s.velX = -Math.abs(s.velX); }
+            if (s.scanX <= 0) { s.scanX = 0; s.velX = Math.abs(s.velX); }
+            if (s.scanY >= h) { s.scanY = h; s.velY = -Math.abs(s.velY); }
+            if (s.scanY <= 0) { s.scanY = 0; s.velY = Math.abs(s.velY); }
+
+            // Spawn targets
+            const maxT = Math.min(2, 1 + Math.floor(s.level / 3));
+            if (s.targets.length < maxT && now - s.lastSpawn > 1800) {
+              spawnTarget(); s.lastSpawn = now;
+            }
+
+            // Age targets
+            for (const t of s.targets) {
+              t.life -= dt / 60;
+              if (t.life <= 0) {
+                s.lives = Math.max(0, s.lives - 1);
+                s.combo = 0;
+                playTone(110, 'sawtooth', 0.45, 0.35);
+                for (let i = 0; i < 10; i++) {
+                  const ang = Math.random() * Math.PI * 2;
+                  s.particles.push({
+                    x: t.x, y: t.y,
+                    vx: Math.cos(ang) * (2 + Math.random() * 3),
+                    vy: Math.sin(ang) * (2 + Math.random() * 3),
+                    life: 1, decay: 0.05, color: '#ff4444', size: 3,
+                  });
+                }
+                if (s.lives <= 0) { endGame(); return; }
+              }
+            }
+            s.targets = s.targets.filter(t => t.life > 0);
+
+            const minDist = s.targets.length
+              ? Math.min(...s.targets.map(t => Math.hypot(s.scanX - t.x, s.scanY - t.y)))
+              : Infinity;
+            const onTarget = Math.max(0, 1 - minDist / 62);
+
+            drawTargets(now);
+            drawScanLines(w, h, onTarget);
+            drawParticles(dt);
+            drawPops(dt);
+
+            // Update HUD ~10fps
+            if (Math.floor(now / 100) !== Math.floor((now - dt * 16.67) / 100)) {
+              setHud(d => ({
+                ...d, score: s.score, combo: s.combo,
+                lives: s.lives, timeLeft: Math.ceil(s.timeLeft),
+              }));
+            }
+          } else {
+            // Still draw lingering particles/pops on non-playing screens
+            drawParticles(dt);
+            drawPops(dt);
+            if (s.phase === 'start') drawStart(w, h, now);
+            else if (s.phase === 'gameover') drawGameOver(w, h, now);
+          }
+        };
+
+        rafId = requestAnimationFrame(frame);
+
+        return () => {
+          cancelAnimationFrame(rafId);
+          window.removeEventListener('resize', resize);
+          canvas.removeEventListener('click', handleFire);
+          canvas.removeEventListener('touchstart', handleFire);
+        };
+      }, []);
+
+      return (
+        <div style={{ width: '100%', height: '100vh', position: 'relative', background: '#000' }}>
+          <canvas ref={canvasRef} style={{ display: 'block', cursor: 'crosshair' }} />
+          {hud.phase === 'playing' && (
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0,
+              padding: '10px 18px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+              pointerEvents: 'none', fontFamily: "'Courier New', monospace",
+            }}>
+              <div>
+                <div style={{ color: 'rgba(0,255,255,0.6)', fontSize: 11, letterSpacing: 2 }}>SCORE</div>
+                <div style={{ color: '#00ffff', fontSize: 28, fontWeight: 'bold', textShadow: '0 0 12px #00ffff' }}>
+                  {hud.score}
+                </div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: 'rgba(255,170,0,0.6)', fontSize: 11, letterSpacing: 2 }}>TIME</div>
+                <div style={{
+                  color: hud.timeLeft <= 10 ? '#ff4444' : '#ffaa00',
+                  fontSize: 28, fontWeight: 'bold',
+                  textShadow: `0 0 12px ${hud.timeLeft <= 10 ? '#ff4444' : '#ffaa00'}`,
+                }}>
+                  {hud.timeLeft}
+                </div>
+              </div>
+              <div style={{ textAlign: 'center', minWidth: 60 }}>
+                {hud.combo > 1 && (
+                  <>
+                    <div style={{ color: 'rgba(255,0,255,0.6)', fontSize: 11, letterSpacing: 2 }}>COMBO</div>
+                    <div style={{ color: '#ff00ff', fontSize: 28, fontWeight: 'bold', textShadow: '0 0 12px #ff00ff' }}>
+                      ×{hud.combo}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ color: 'rgba(255,80,80,0.6)', fontSize: 11, letterSpacing: 2 }}>LIVES</div>
+                <div style={{ fontSize: 22, textShadow: '0 0 10px #ff5555' }}>
+                  {'♥'.repeat(hud.lives)}
+                  <span style={{ opacity: 0.25 }}>{'♥'.repeat(Math.max(0, 3 - hud.lives))}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<SnapLock />);
+  </script>
+</body>
+</html>

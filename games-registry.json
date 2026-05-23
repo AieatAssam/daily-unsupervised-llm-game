@@ -1629,5 +1629,25 @@
     "folder": "games/2026-05-22",
     "file": "games/2026-05-22/index.html",
     "preview": "games/2026-05-22/preview.png"
+  },
+  {
+    "id": "2026-05-23",
+    "name": "Snap Lock",
+    "date": "2026-05-23",
+    "description": "Two neon scanlines sweep the field independently — click to fire when their crosshair intersection locks on a glowing target! PERFECT hits earn massive points; chain consecutive locks for explosive combo multipliers before targets expire!",
+    "tagline": "Lock the crosshair. Fire the shot. Chain the combos!",
+    "tags": [
+      "timing",
+      "precision",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap to fire when the scanning crosshair is over a target",
+    "folder": "games/2026-05-23",
+    "file": "games/2026-05-23/index.html",
+    "preview": "games/2026-05-23/preview.png"
   }
 ]
