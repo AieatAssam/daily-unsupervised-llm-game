@@ -1649,5 +1649,25 @@
     "folder": "games/2026-05-23",
     "file": "games/2026-05-23/index.html",
     "preview": "games/2026-05-23/preview.png"
+  },
+  {
+    "id": "2026-05-24",
+    "name": "Blast Zone",
+    "date": "2026-05-24",
+    "description": "Navigate a neon arena and place timed bombs to blast glowing enemies — chain multi-kills for massive combo multipliers, collect power-ups to boost range and bomb count, and clear all enemies to advance!",
+    "tagline": "Place bombs. Chain kills. Clear the zone!",
+    "tags": [
+      "action",
+      "strategy",
+      "arcade",
+      "reflex",
+      "bomberman"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Arrow Keys / WASD to move · Space / Z to place bomb · Mobile D-pad buttons",
+    "folder": "games/2026-05-24",
+    "file": "games/2026-05-24/index.html",
+    "preview": "games/2026-05-24/preview.png"
   }
 ]
