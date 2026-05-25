@@ -1669,5 +1669,25 @@
     "folder": "games/2026-05-24",
     "file": "games/2026-05-24/index.html",
     "preview": "games/2026-05-24/preview.png"
+  },
+  {
+    "id": "2026-05-25",
+    "name": "Card Rush",
+    "date": "2026-05-25",
+    "description": "Neon playing cards slide past in 4 lanes — click to grab 5 cards and build the best poker hand! Chain hands for combo multipliers as cards speed up each round.",
+    "tagline": "Grab 5 cards. Build the best hand. Chain the combos!",
+    "tags": [
+      "cards",
+      "strategy",
+      "reflex",
+      "casual",
+      "poker"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap sliding cards to grab them — collect 5 for a poker hand · DISCARD button resets held cards",
+    "folder": "games/2026-05-25",
+    "file": "games/2026-05-25/index.html",
+    "preview": "games/2026-05-25/preview.png"
   }
 ]
