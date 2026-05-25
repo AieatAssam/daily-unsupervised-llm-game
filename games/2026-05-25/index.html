@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #08000f;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    #root { width: 100vw; height: 100vh; }
+    @keyframes cardPop {
+      from { transform: scale(0.7); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+    @keyframes handPop {
+      0%   { opacity: 0; transform: translateX(-50%) scale(0.5); }
+      15%  { opacity: 1; transform: translateX(-50%) scale(1.18); }
+      65%  { opacity: 1; transform: translateX(-50%) scale(1); }
+      100% { opacity: 0; transform: translateX(-50%) scale(0.85); }
+    }
+    @keyframes bgPulse {
+      0%, 100% { opacity: 0.4; }
+      50%       { opacity: 0.7; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ── constants ─────────────────────────────────────── */
+    const SUITS  = ['♠','♥','♦','♣'];
+    const VALUES = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+    const SUIT_COL  = { '♠':'#00ffee', '♥':'#ff3377', '♦':'#ffcc00', '♣':'#bb44ff' };
+    const LANE_BG   = ['#00ffee14','#ff337714','#ffcc0014','#bb44ff14'];
+    const HAND_NAMES = [
+      'High Card','Pair','Two Pair','Three of a Kind',
+      'Straight','Flush','Full House','Four of a Kind','Straight Flush'
+    ];
+    const HAND_PTS = [80, 250, 500, 800, 1200, 1600, 2200, 3500, 6000];
+    const HAND_COL = [
+      '#888888','#00ffee','#00ddcc','#ff8800',
+      '#ff9922','#ff44cc','#ee33bb','#ffcc00','#ffdd22'
+    ];
+    const LANE_COUNT = 4;
+    const CARD_W = 66;
+
+    /* ── audio ─────────────────────────────────────────── */
+    let _ctx = null;
+    const ac = () => { if (!_ctx) _ctx = new (window.AudioContext||window.webkitAudioContext)(); return _ctx; };
+    const beep = (f, type='sine', d=0.12, v=0.25) => {
+      try {
+        const ctx = ac(), o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = f; o.type = type;
+        g.gain.setValueAtTime(v, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d);
+        o.start(); o.stop(ctx.currentTime + d);
+      } catch(e){}
+    };
+    const scoreSound = rank => {
+      const freqs = [200,280,360,460,560,680,820,1000,1200];
+      const f = freqs[Math.min(rank,8)];
+      beep(f,'triangle',0.3,0.4);
+      setTimeout(()=>beep(f*1.25,'sine',0.2,0.3),160);
+      if (rank>=4) setTimeout(()=>beep(f*1.5,'triangle',0.15,0.25),300);
+    };
+
+    /* ── poker eval ────────────────────────────────────── */
+    const vIdx = v => VALUES.indexOf(v);
+    const evalHand = cards => {
+      if (cards.length !== 5) return -1;
+      const vs = cards.map(c=>vIdx(c.value)).sort((a,b)=>a-b);
+      const ss = cards.map(c=>c.suit);
+      const flush = ss.every(s=>s===ss[0]);
+      const uniq  = [...new Set(vs)];
+      const cnts  = uniq.map(u=>vs.filter(x=>x===u).length).sort((a,b)=>b-a);
+      const str8  = uniq.length===5 && vs[4]-vs[0]===4;
+      const wheel = uniq.length===5 && vs[0]===0&&vs[1]===1&&vs[2]===2&&vs[3]===3&&vs[4]===12;
+      if ((str8||wheel)&&flush) return 8;
+      if (cnts[0]===4) return 7;
+      if (cnts[0]===3&&cnts[1]===2) return 6;
+      if (flush) return 5;
+      if (str8||wheel) return 4;
+      if (cnts[0]===3) return 3;
+      if (cnts[0]===2&&cnts[1]===2) return 2;
+      if (cnts[0]===2) return 1;
+      return 0;
+    };
+
+    /* ── card factory ──────────────────────────────────── */
+    let _cid = 0;
+    const mkCard = (lane, x) => ({
+      id: ++_cid,
+      suit:  SUITS[Math.floor(Math.random()*4)],
+      value: VALUES[Math.floor(Math.random()*13)],
+      lane, x,
+    });
+
+    /* ── main component ────────────────────────────────── */
+    const CardRush = () => {
+      const [phase,     setPhase]     = useState('start');
+      const [score,     setScore]     = useState(0);
+      const [best,      setBest]      = useState(() => {
+        const v = parseInt(localStorage.getItem('cardRushBest')||'0');
+        localStorage.setItem('cardRushBest', v.toString());
+        return v;
+      });
+      const [combo,     setCombo]     = useState(0);
+      const [timeLeft,  setTimeLeft]  = useState(90);
+      const [cards,     setCards]     = useState([]);
+      const [held,      setHeld]      = useState([]);
+      const [handFlash, setHandFlash] = useState(null);
+      const [particles, setParticles] = useState([]);
+      const [popups,    setPopups]    = useState([]);
+      const [bgHue,     setBgHue]     = useState(270);
+
+      /* refs for game loop */
+      const phaseRef     = useRef('start');
+      const cardsRef     = useRef([]);
+      const heldRef      = useRef([]);
+      const comboRef     = useRef(0);
+      const scoreRef     = useRef(0);
+      const timeRef      = useRef(90);
+      const evalRef      = useRef(false);
+      const speedRef     = useRef(90);
+      const spawnIntRef  = useRef(1100);
+      const spawnTRef    = useRef(0);
+      const frameRef     = useRef(null);
+      const lastTRef     = useRef(null);
+      const particlesRef = useRef([]);
+      const popupsRef    = useRef([]);
+      const wRef         = useRef(window.innerWidth);
+      const hRef         = useRef(window.innerHeight);
+
+      useEffect(()=>{
+        const fn = ()=>{ wRef.current=window.innerWidth; hRef.current=window.innerHeight; };
+        window.addEventListener('resize',fn);
+        return ()=>window.removeEventListener('resize',fn);
+      },[]);
+
+      /* ── layout ── */
+      const W      = wRef.current;
+      const H      = hRef.current;
+      const HUD_H  = 65;
+      const HELD_H = Math.min(160, Math.floor(H*0.22));
+      const LANE_H = H - HUD_H - HELD_H;
+      const CARD_H = Math.min(82, Math.max(52, Math.floor((LANE_H-(LANE_COUNT+1)*8)/LANE_COUNT)));
+      const L_STEP = CARD_H + 8;
+      const L_PAD  = Math.floor((LANE_H - LANE_COUNT*L_STEP)/2);
+
+      /* ── grab card ── */
+      const grabCard = useCallback(id => {
+        if (phaseRef.current!=='playing') return;
+        if (evalRef.current) return;
+        if (heldRef.current.length>=5) return;
+        const idx = cardsRef.current.findIndex(c=>c.id===id);
+        if (idx===-1) return;
+        const card = cardsRef.current[idx];
+        cardsRef.current = cardsRef.current.filter(c=>c.id!==id);
+        const newHeld = [...heldRef.current, card];
+        heldRef.current = newHeld;
+        beep(300+vIdx(card.value)*22,'triangle',0.1,0.25);
+        setCards([...cardsRef.current]);
+        setHeld([...newHeld]);
+
+        if (newHeld.length===5) {
+          evalRef.current = true;
+          const rank = evalHand(newHeld);
+          const mult = Math.min(comboRef.current+1, 10);
+          const pts  = HAND_PTS[rank] * mult;
+          scoreRef.current += pts;
+          comboRef.current++;
+          setScore(scoreRef.current);
+          setCombo(comboRef.current);
+          setHandFlash({name:HAND_NAMES[rank], rank, mult, pts});
+          scoreSound(rank);
+
+          /* particles for strong hands */
+          if (rank>=3) {
+            const col = HAND_COL[rank];
+            const px = wRef.current/2, py = hRef.current*0.62;
+            const count = rank>=5?50:25;
+            particlesRef.current = [
+              ...particlesRef.current,
+              ...Array.from({length:count},()=>({
+                id:Math.random(), x:px, y:py,
+                vx:(Math.random()-0.5)*13,
+                vy:(Math.random()-1.8)*9,
+                life:1, color:col,
+                size:Math.random()*6+2,
+              })),
+            ];
+          }
+
+          /* score popup */
+          popupsRef.current = [...popupsRef.current, {
+            id:Math.random(),
+            x: wRef.current/2,
+            y: hRef.current*0.38,
+            text:`${HAND_NAMES[rank]}  +${pts.toLocaleString()}`,
+            color:HAND_COL[rank],
+            life:1,
+          }];
+
+          /* ramp difficulty */
+          if (comboRef.current%3===0) {
+            speedRef.current   = Math.min(speedRef.current+14, 280);
+            spawnIntRef.current = Math.max(spawnIntRef.current-65, 460);
+          }
+
+          setTimeout(()=>{
+            heldRef.current = [];
+            setHeld([]);
+            setHandFlash(null);
+            evalRef.current = false;
+          }, 1150);
+        }
+      },[]);
+
+      /* ── discard ── */
+      const discard = useCallback(()=>{
+        if (phaseRef.current!=='playing') return;
+        if (evalRef.current) return;
+        if (heldRef.current.length===0) return;
+        heldRef.current = [];
+        setHeld([]);
+        comboRef.current = 0;
+        setCombo(0);
+        beep(170,'sawtooth',0.2,0.3);
+      },[]);
+
+      /* ── start ── */
+      const startGame = useCallback(()=>{
+        cardsRef.current=[];heldRef.current=[];
+        comboRef.current=0;scoreRef.current=0;
+        timeRef.current=90;speedRef.current=90;
+        spawnIntRef.current=1100;spawnTRef.current=0;
+        evalRef.current=false;particlesRef.current=[];popupsRef.current=[];
+        phaseRef.current='playing';
+        setCards([]);setHeld([]);setCombo(0);setScore(0);
+        setTimeLeft(90);setParticles([]);setPopups([]);
+        setHandFlash(null);setPhase('playing');
+        beep(440,'sine',0.2,0.4);
+      },[]);
+
+      /* ── game loop ── */
+      useEffect(()=>{
+        if (phase!=='playing') return;
+        lastTRef.current=null;
+
+        const loop = ts => {
+          if (!lastTRef.current) lastTRef.current=ts;
+          const dt = Math.min((ts-lastTRef.current)/1000, 0.05);
+          lastTRef.current = ts;
+          if (phaseRef.current!=='playing') return;
+
+          /* timer */
+          timeRef.current -= dt;
+          if (timeRef.current<=0) {
+            timeRef.current=0;
+            phaseRef.current='over';
+            const b = Math.max(scoreRef.current, parseInt(localStorage.getItem('cardRushBest')||'0'));
+            localStorage.setItem('cardRushBest', b.toString());
+            setBest(b);
+            setTimeLeft(0);
+            setPhase('over');
+            beep(180,'sawtooth',0.6,0.4);
+            return;
+          }
+          setTimeLeft(Math.ceil(timeRef.current));
+
+          /* spawn */
+          spawnTRef.current += dt*1000;
+          if (spawnTRef.current >= spawnIntRef.current) {
+            spawnTRef.current = 0;
+            const lane = Math.floor(Math.random()*LANE_COUNT);
+            const laneCount = cardsRef.current.filter(c=>c.lane===lane).length;
+            if (laneCount < 6) {
+              cardsRef.current = [...cardsRef.current, mkCard(lane, wRef.current+20)];
+            }
+          }
+
+          /* move */
+          cardsRef.current = cardsRef.current
+            .map(c=>({...c, x: c.x - speedRef.current*dt}))
+            .filter(c=>c.x > -(CARD_W+10));
+
+          /* particles */
+          particlesRef.current = particlesRef.current
+            .map(p=>({...p, x:p.x+p.vx, y:p.y+p.vy, vy:p.vy+0.38, life:p.life-dt*1.5}))
+            .filter(p=>p.life>0);
+
+          /* popups */
+          popupsRef.current = popupsRef.current
+            .map(p=>({...p, life:p.life-dt*1.1}))
+            .filter(p=>p.life>0);
+
+          setBgHue(h=>(h+dt*14)%360);
+          setCards([...cardsRef.current]);
+          setParticles([...particlesRef.current]);
+          setPopups([...popupsRef.current]);
+          frameRef.current = requestAnimationFrame(loop);
+        };
+        frameRef.current = requestAnimationFrame(loop);
+        return ()=>{ if(frameRef.current) cancelAnimationFrame(frameRef.current); };
+      },[phase]);
+
+      /* ══ START SCREEN ══════════════════════════════════ */
+      if (phase==='start') return (
+        <div className="game-container" style={{
+          width:'100vw',height:'100vh',
+          background:'radial-gradient(ellipse at 50% 40%, #220044 0%, #060010 100%)',
+          display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+          gap:18,color:'white',padding:'0 20px',
+        }}>
+          <div style={{
+            fontSize:'clamp(40px,9vw,80px)',fontWeight:'bold',letterSpacing:4,
+            background:'linear-gradient(90deg,#ff3377,#ffcc00,#00ffee,#bb44ff)',
+            WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',
+          }}>CARD RUSH</div>
+
+          <div style={{fontSize:'clamp(13px,2.5vw,17px)',color:'#aaa',textAlign:'center',maxWidth:440,lineHeight:1.8}}>
+            Neon cards slide past in 4 lanes.<br/>
+            <strong style={{color:'#fff'}}>Tap 5 cards</strong> to build the best poker hand!<br/>
+            Chain hands for combo multipliers — up to ×10!
+          </div>
+
+          <div style={{display:'flex',gap:14,flexWrap:'wrap',justifyContent:'center',fontSize:15}}>
+            {['♠ Spades','♥ Hearts','♦ Diamonds','♣ Clubs'].map((t,i)=>(
+              <span key={t} style={{color:Object.values(SUIT_COL)[i]}}>{t}</span>
+            ))}
+          </div>
+
+          <div style={{
+            background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.1)',
+            borderRadius:10,padding:'10px 20px',fontSize:12,color:'#888',
+            textAlign:'center',lineHeight:1.9,
+          }}>
+            Pair 250 · Two Pair 500 · Trips 800 · Straight 1200<br/>
+            Flush 1600 · Full House 2200 · Quads 3500 · <span style={{color:'#ffcc00'}}>Str8 Flush 6000!</span>
+          </div>
+
+          <button onClick={startGame} style={{
+            marginTop:6,padding:'14px 44px',fontSize:20,fontWeight:'bold',
+            background:'linear-gradient(135deg,#4400aa,#aa0044)',
+            border:'2px solid #ff3377',borderRadius:12,color:'white',
+            cursor:'pointer',letterSpacing:2,
+            boxShadow:'0 0 28px #ff337760,0 0 55px #4400aa40',
+          }}>DEAL IN ♠</button>
+
+          {best>0 && <div style={{color:'#ffcc00',fontSize:14}}>Best: {best.toLocaleString()}</div>}
+        </div>
+      );
+
+      /* ══ GAME OVER ═════════════════════════════════════ */
+      if (phase==='over') {
+        const newRecord = score>0 && score>=best;
+        return (
+          <div className="game-container" style={{
+            width:'100vw',height:'100vh',
+            background:'radial-gradient(ellipse at 50% 40%, #1a0030 0%, #050010 100%)',
+            display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+            gap:16,color:'white',
+          }}>
+            <div style={{fontSize:52,fontWeight:'bold',color:'#ff4444',textShadow:'0 0 25px #ff4444'}}>
+              TIME'S UP!
+            </div>
+            <div style={{fontSize:44,color:'#00ffee',fontWeight:'bold',textShadow:'0 0 16px #00ffee'}}>
+              {score.toLocaleString()}
+            </div>
+            {newRecord && <div style={{fontSize:22,color:'#ffcc00',textShadow:'0 0 12px #ffcc00'}}>
+              🏆 NEW RECORD!
+            </div>}
+            <div style={{color:'#777',fontSize:14}}>Best: {Math.max(score,best).toLocaleString()}</div>
+            <div style={{color:'#888',fontSize:14}}>Combo chains: {combo}</div>
+            <button onClick={startGame} style={{
+              marginTop:6,padding:'13px 40px',fontSize:18,fontWeight:'bold',
+              background:'linear-gradient(135deg,#4400aa,#aa0044)',
+              border:'2px solid #ff3377',borderRadius:10,color:'white',
+              cursor:'pointer',letterSpacing:2,
+              boxShadow:'0 0 20px #ff337760',
+            }}>DEAL AGAIN</button>
+          </div>
+        );
+      }
+
+      /* ══ PLAYING ═══════════════════════════════════════ */
+      const mult = Math.min(combo+1, 10);
+
+      return (
+        <div className="game-container" style={{
+          width:'100vw',height:'100vh',position:'relative',overflow:'hidden',
+          background:`linear-gradient(135deg,
+            hsl(${bgHue},75%,4%) 0%,
+            hsl(${(bgHue+70)%360},65%,3%) 50%,
+            hsl(${(bgHue+140)%360},75%,5%) 100%)`,
+        }}>
+          {/* ── HUD ── */}
+          <div style={{
+            position:'absolute',top:0,left:0,right:0,height:HUD_H,
+            display:'flex',alignItems:'center',justifyContent:'space-between',
+            padding:'0 18px',
+            background:'linear-gradient(to bottom,rgba(0,0,20,0.88),transparent)',
+            zIndex:10,
+          }}>
+            <div>
+              <div style={{color:'#444',fontSize:10,letterSpacing:1}}>SCORE</div>
+              <div style={{color:'#00ffee',fontSize:26,fontWeight:'bold',textShadow:'0 0 10px #00ffee80'}}>
+                {score.toLocaleString()}
+              </div>
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{color:'#444',fontSize:10,letterSpacing:1}}>TIME</div>
+              <div style={{
+                fontSize:28,fontWeight:'bold',
+                color:timeLeft<=10?'#ff4444':'#ffffff',
+                textShadow:timeLeft<=10?'0 0 20px #ff4444':'0 0 8px #ffffff60',
+              }}>{timeLeft}s</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{color:'#444',fontSize:10,letterSpacing:1}}>COMBO</div>
+              <div style={{color:'#ffcc00',fontSize:26,fontWeight:'bold',textShadow:'0 0 10px #ffcc0080'}}>
+                ×{mult}
+              </div>
+            </div>
+          </div>
+
+          {/* ── lane area ── */}
+          <div style={{
+            position:'absolute',
+            top:HUD_H,left:0,right:0,height:LANE_H,
+            overflow:'hidden',
+          }}>
+            {/* lane backgrounds */}
+            {Array.from({length:LANE_COUNT},(_,i)=>(
+              <div key={i} style={{
+                position:'absolute',
+                top: L_PAD + i*L_STEP, left:8, right:8, height:CARD_H,
+                background:LANE_BG[i], borderRadius:6,
+                animation:'bgPulse 3s ease-in-out infinite',
+                animationDelay:`${i*0.5}s`,
+              }}/>
+            ))}
+
+            {/* divider line */}
+            <div style={{
+              position:'absolute',bottom:0,left:0,right:0,height:1,
+              background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent)',
+            }}/>
+
+            {/* sliding cards */}
+            {cards.map(card=>{
+              const col = SUIT_COL[card.suit];
+              const isSmall = CARD_H < 65;
+              return (
+                <div
+                  key={card.id}
+                  onClick={()=>grabCard(card.id)}
+                  style={{
+                    position:'absolute',
+                    left: card.x,
+                    top:  L_PAD + card.lane*L_STEP,
+                    width: CARD_W,
+                    height: CARD_H,
+                    background:'linear-gradient(150deg,#0e0025,#060018)',
+                    border:`2px solid ${col}`,
+                    borderRadius:8,
+                    cursor:'pointer',
+                    boxShadow:`0 0 12px ${col}55, 0 0 28px ${col}25`,
+                    display:'flex',flexDirection:'column',
+                    alignItems:'center',justifyContent:'center',
+                    gap:isSmall?1:3,
+                    touchAction:'manipulation',
+                  }}
+                >
+                  <div style={{fontSize:isSmall?11:13,color:col,fontWeight:'bold',lineHeight:1}}>{card.value}</div>
+                  <div style={{fontSize:isSmall?Math.floor(CARD_H*0.32):Math.floor(CARD_H*0.3),color:col,lineHeight:1}}>
+                    {card.suit}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── held cards area ── */}
+          <div style={{
+            position:'absolute',bottom:0,left:0,right:0,height:HELD_H,
+            background:'linear-gradient(to top,rgba(0,0,25,0.92),rgba(0,0,20,0.5))',
+            borderTop:'1px solid rgba(255,255,255,0.07)',
+            display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+            gap:6,
+          }}>
+            <div style={{color:'#3a3a5a',fontSize:10,letterSpacing:3,textTransform:'uppercase'}}>
+              Hold ({held.length}/5)
+            </div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              {Array.from({length:5},(_,i)=>{
+                const card = held[i];
+                if (!card) return (
+                  <div key={i} style={{
+                    width:50,height:70,
+                    border:'1px dashed rgba(255,255,255,0.09)',
+                    borderRadius:7,
+                  }}/>
+                );
+                const col = SUIT_COL[card.suit];
+                return (
+                  <div key={card.id} style={{
+                    width:50,height:70,
+                    background:'linear-gradient(150deg,#1a0038,#0c0022)',
+                    border:`2px solid ${col}`,
+                    borderRadius:7,
+                    display:'flex',flexDirection:'column',
+                    alignItems:'center',justifyContent:'center',gap:2,
+                    boxShadow:`0 0 16px ${col}70, inset 0 0 8px ${col}15`,
+                    animation:'cardPop 0.15s ease-out',
+                  }}>
+                    <div style={{fontSize:12,color:col,fontWeight:'bold',lineHeight:1}}>{card.value}</div>
+                    <div style={{fontSize:22,color:col,lineHeight:1}}>{card.suit}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {held.length>0 && !evalRef.current && (
+              <button onClick={discard} style={{
+                padding:'3px 15px',fontSize:11,letterSpacing:1,
+                background:'rgba(255,40,60,0.14)',
+                border:'1px solid rgba(255,40,60,0.35)',
+                borderRadius:5,color:'#ff4455',cursor:'pointer',
+              }}>DISCARD</button>
+            )}
+          </div>
+
+          {/* ── hand flash ── */}
+          {handFlash && (
+            <div style={{
+              position:'absolute',top:'35%',left:'50%',
+              pointerEvents:'none',zIndex:50,
+              animation:'handPop 1.15s ease-out forwards',
+              textAlign:'center',whiteSpace:'nowrap',
+            }}>
+              <div style={{
+                fontSize:'clamp(30px,6.5vw,54px)',fontWeight:'bold',
+                color:HAND_COL[handFlash.rank],
+                textShadow:`0 0 32px ${HAND_COL[handFlash.rank]}`,
+              }}>{handFlash.name.toUpperCase()}</div>
+              {handFlash.mult>1 && (
+                <div style={{fontSize:18,color:'#ffcc00',textShadow:'0 0 10px #ffcc00',marginTop:4}}>
+                  ×{handFlash.mult} COMBO!
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── score popups ── */}
+          {popups.map(p=>(
+            <div key={p.id} style={{
+              position:'absolute',
+              left:p.x, top: p.y - (1-p.life)*65,
+              transform:'translateX(-50%)',
+              color:p.color, opacity:p.life,
+              fontSize:17,fontWeight:'bold',
+              textShadow:`0 0 10px ${p.color}`,
+              pointerEvents:'none',whiteSpace:'nowrap',zIndex:60,
+            }}>{p.text}</div>
+          ))}
+
+          {/* ── particles ── */}
+          <svg style={{
+            position:'absolute',top:0,left:0,width:'100%',height:'100%',
+            pointerEvents:'none',zIndex:20,
+          }}>
+            {particles.map(p=>(
+              <circle key={p.id}
+                cx={p.x} cy={p.y}
+                r={Math.max(0.1, p.size*p.life)}
+                fill={p.color} opacity={p.life}
+              />
+            ))}
+          </svg>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<CardRush />, document.getElementById('root'));
+  </script>
+</body>
+</html>
