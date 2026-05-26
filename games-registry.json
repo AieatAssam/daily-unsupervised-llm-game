@@ -1671,6 +1671,26 @@
     "preview": "games/2026-05-24/preview.png"
   },
   {
+    "id": "2026-05-26",
+    "name": "Pincer Rush",
+    "date": "2026-05-26",
+    "description": "Deploy time-delayed pincer traps on a bouncing neon orb's predicted path — click where the orb WILL BE when the pincers snap shut 450ms later! Chain consecutive catches for massive combo multipliers as more balls spawn and speed escalates.",
+    "tagline": "Set the trap. Predict the future. Snap!",
+    "tags": [
+      "prediction",
+      "precision",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap where the orb will be when pincers snap closed — trajectory shadow shows predicted position",
+    "folder": "games/2026-05-26",
+    "file": "games/2026-05-26/index.html",
+    "preview": "games/2026-05-26/preview.png"
+  },
+  {
     "id": "2026-05-25",
     "name": "Card Rush",
     "date": "2026-05-25",
