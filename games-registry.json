@@ -1689,5 +1689,25 @@
     "folder": "games/2026-05-25",
     "file": "games/2026-05-25/index.html",
     "preview": "games/2026-05-25/preview.png"
+  },
+  {
+    "id": "2026-05-27",
+    "name": "Neon Word Hunt",
+    "date": "2026-05-27",
+    "description": "Drag across a glowing 8×8 letter grid to find hidden words — horizontal, vertical, or diagonal! Chain consecutive finds for explosive combo multipliers and race the 90-second clock!",
+    "tagline": "Drag to spell. Find the words. Chain the combos!",
+    "tags": [
+      "word",
+      "puzzle",
+      "drag",
+      "casual",
+      "reflex"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click and drag across adjacent letters to spell hidden words — any direction!",
+    "folder": "games/2026-05-27",
+    "file": "games/2026-05-27/index.html",
+    "preview": "games/2026-05-27/preview.png"
   }
 ]
