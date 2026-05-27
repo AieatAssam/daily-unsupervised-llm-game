@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Word Hunt</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0015;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #root { width: 100%; height: 100%; }
+    @keyframes bgPulse {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes neonFlicker {
+      0%,100% { opacity:1; } 50% { opacity:0.85; }
+    }
+    @keyframes wordFound {
+      0%   { transform: scale(1); opacity:1; }
+      50%  { transform: scale(1.3); opacity:0.8; }
+      100% { transform: scale(0); opacity:0; }
+    }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 8px currentColor; }
+      50% { box-shadow: 0 0 20px currentColor, 0 0 40px currentColor; }
+    }
+    .particle {
+      position: absolute;
+      pointer-events: none;
+      border-radius: 50%;
+      animation: particleFly 0.8s ease-out forwards;
+    }
+    @keyframes particleFly {
+      0%   { transform: translate(0,0) scale(1); opacity:1; }
+      100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity:0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ── Audio ──────────────────────────────────────────────────────────────────
+    function createAudio() {
+      try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+    }
+    function playTone(ctx, freq, type='sine', duration=0.1, vol=0.3) {
+      if(!ctx) return;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      o.start(); o.stop(ctx.currentTime + duration);
+    }
+    function playFound(ctx) {
+      [300,400,600,800].forEach((f,i)=>setTimeout(()=>playTone(ctx,f,'triangle',0.15,0.3),i*60));
+    }
+    function playSelect(ctx) { playTone(ctx, 440, 'sine', 0.05, 0.15); }
+    function playWrong(ctx)  { playTone(ctx, 200, 'sawtooth', 0.12, 0.2); }
+    function playCombo(ctx)  { [500,700,900,1200].forEach((f,i)=>setTimeout(()=>playTone(ctx,f,'triangle',0.12,0.4),i*50)); }
+
+    // ── Word list ──────────────────────────────────────────────────────────────
+    const WORD_POOLS = [
+      ['NEON','GLOW','BEAM','FLASH','HAZE'],
+      ['CYAN','PINK','GOLD','TEAL','BLUE'],
+      ['WAVE','GRID','PULSE','RING','STAR'],
+      ['DART','FIRE','RUSH','BOLT','BURN'],
+      ['VOID','DARK','MIST','DUST','HALO'],
+      ['RIFT','FLUX','APEX','CORE','EDGE'],
+      ['BLAZE','SURGE','SPARK','DRIFT','LIGHT'],
+      ['PRISM','STORM','SHIFT','TRACE','PHASE'],
+      ['ORBIT','BURST','GLARE','RADAR','LASER'],
+      ['SONIC','HYPER','TURBO','NITRO','RAPID'],
+      ['ZING','ZEST','ZOOM','ZONE','ZERO'],
+      ['FUSE','GUST','HURL','JUMP','KEEN'],
+    ];
+
+    function pickWords(count=8) {
+      const pool = [];
+      WORD_POOLS.forEach(g => g.forEach(w => pool.push(w)));
+      // shuffle
+      for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+      return pool.slice(0,count);
+    }
+
+    // ── Grid builder ──────────────────────────────────────────────────────────
+    const ROWS=8, COLS=8;
+    const LETTERS='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const DIRS=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+
+    function buildGrid(words) {
+      const grid = Array.from({length:ROWS},()=>Array(COLS).fill(''));
+      const placed = [];
+      const wordCells = {}; // word -> array of [r,c]
+
+      for(const word of words) {
+        let ok=false;
+        for(let attempt=0;attempt<200&&!ok;attempt++){
+          const [dr,dc]=DIRS[Math.floor(Math.random()*DIRS.length)];
+          const startR = Math.floor(Math.random()*ROWS);
+          const startC = Math.floor(Math.random()*COLS);
+          const endR = startR + dr*(word.length-1);
+          const endC = startC + dc*(word.length-1);
+          if(endR<0||endR>=ROWS||endC<0||endC>=COLS) continue;
+          let canPlace=true;
+          const cells=[];
+          for(let k=0;k<word.length;k++){
+            const r=startR+dr*k, c=startC+dc*k;
+            if(grid[r][c]!=='' && grid[r][c]!==word[k]){ canPlace=false; break; }
+            cells.push([r,c]);
+          }
+          if(canPlace){
+            cells.forEach(([r,c],k)=>{ grid[r][c]=word[k]; });
+            placed.push(word);
+            wordCells[word]=cells;
+            ok=true;
+          }
+        }
+      }
+      // fill empties
+      for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++)
+        if(!grid[r][c]) grid[r][c]=LETTERS[Math.floor(Math.random()*26)];
+
+      return { grid, placed, wordCells };
+    }
+
+    // ── Color palette ─────────────────────────────────────────────────────────
+    const NEON_COLORS=['#00ffff','#ff00ff','#00ff88','#ff8800','#8800ff','#ff0088','#ffff00','#00aaff'];
+
+    function wordColor(idx){ return NEON_COLORS[idx%NEON_COLORS.length]; }
+
+    // ── Particle system ───────────────────────────────────────────────────────
+    let particleId=0;
+    function makeParticles(x, y, color, count=12) {
+      return Array.from({length:count}, ()=>({
+        id: particleId++,
+        x, y, color,
+        tx: (Math.random()-0.5)*120,
+        ty: (Math.random()-0.5)*120,
+      }));
+    }
+
+    // ── Main Game ─────────────────────────────────────────────────────────────
+    function Game() {
+      const audioRef = useRef(null);
+      const containerRef = useRef(null);
+
+      const [phase, setPhase] = useState('start'); // start|playing|gameover
+      const [timeLeft, setTimeLeft] = useState(90);
+      const [score, setScore] = useState(0);
+      const [combo, setCombo] = useState(0);
+      const [highScore, setHighScore] = useState(()=>{
+        try{ return parseInt(localStorage.getItem('neonWordHuntHigh')||'0'); } catch(e){ return 0; }
+      });
+
+      // Persist initial high score key so localStorage test can find it
+      useEffect(()=>{
+        try{ if(!localStorage.getItem('neonWordHuntHigh')) localStorage.setItem('neonWordHuntHigh','0'); } catch(e){}
+      },[]);
+      const [words, setWords] = useState([]);
+      const [grid, setGrid] = useState([]);
+      const [wordCells, setWordCells] = useState({});
+      const [foundWords, setFoundWords] = useState([]);
+      const [foundCells, setFoundCells] = useState({}); // cell key -> color
+
+      // drag state
+      const [dragging, setDragging] = useState(false);
+      const [selectedCells, setSelectedCells] = useState([]); // [{r,c}]
+      const [flashCells, setFlashCells] = useState({}); // cell key -> color (flash animation)
+
+      const [particles, setParticles] = useState([]);
+      const [floatTexts, setFloatTexts] = useState([]);
+      const [roundBonus, setRoundBonus] = useState(null);
+
+      const timerRef = useRef(null);
+      const cellRefs = useRef({});
+
+      function initGame() {
+        if(!audioRef.current) audioRef.current = createAudio();
+        const chosen = pickWords(10);
+        const { grid: g, placed, wordCells: wc } = buildGrid(chosen);
+        setWords(placed);
+        setGrid(g);
+        setWordCells(wc);
+        setFoundWords([]);
+        setFoundCells({});
+        setSelectedCells([]);
+        setDragging(false);
+        setFlashCells({});
+        setParticles([]);
+        setFloatTexts([]);
+        setScore(0);
+        setCombo(0);
+        setTimeLeft(90);
+        setPhase('playing');
+      }
+
+      // Timer
+      useEffect(()=>{
+        if(phase!=='playing') return;
+        timerRef.current = setInterval(()=>{
+          setTimeLeft(t=>{
+            if(t<=1){ clearInterval(timerRef.current); setPhase('gameover'); return 0; }
+            return t-1;
+          });
+        },1000);
+        return ()=>clearInterval(timerRef.current);
+      },[phase]);
+
+      // Save high score
+      useEffect(()=>{
+        if(phase==='gameover'){
+          setHighScore(prev=>{
+            const next=Math.max(prev,score);
+            try{ localStorage.setItem('neonWordHuntHigh',String(next)); } catch(e){}
+            return next;
+          });
+        }
+      },[phase,score]);
+
+      // Particle cleanup
+      useEffect(()=>{
+        if(particles.length===0) return;
+        const t=setTimeout(()=>setParticles([]),1000);
+        return ()=>clearTimeout(t);
+      },[particles]);
+
+      // Float text cleanup
+      useEffect(()=>{
+        if(floatTexts.length===0) return;
+        const t=setTimeout(()=>setFloatTexts([]),1200);
+        return ()=>clearTimeout(t);
+      },[floatTexts]);
+
+      function cellKey(r,c){ return `${r}-${c}`; }
+
+      function getCellFromPoint(x,y){
+        for(const [key,el] of Object.entries(cellRefs.current)){
+          if(!el) continue;
+          const rect=el.getBoundingClientRect();
+          if(x>=rect.left&&x<=rect.right&&y>=rect.top&&y<=rect.bottom){
+            const [r,c]=key.split('-').map(Number);
+            return {r,c};
+          }
+        }
+        return null;
+      }
+
+      function isAdjacent(a,b){
+        return Math.abs(a.r-b.r)<=1 && Math.abs(a.c-b.c)<=1 && !(a.r===b.r&&a.c===b.c);
+      }
+
+      function inSameDirection(cells,newCell){
+        if(cells.length<2) return true;
+        const dr=cells[1].r-cells[0].r, dc=cells[1].c-cells[0].c;
+        const last=cells[cells.length-1];
+        return (newCell.r-last.r)===dr && (newCell.c-last.c)===dc;
+      }
+
+      function startDrag(r,c){
+        if(phase!=='playing') return;
+        setDragging(true);
+        setSelectedCells([{r,c}]);
+        playSelect(audioRef.current);
+      }
+
+      function moveDrag(clientX,clientY){
+        if(!dragging||phase!=='playing') return;
+        const cell=getCellFromPoint(clientX,clientY);
+        if(!cell) return;
+        setSelectedCells(prev=>{
+          if(prev.length===0) return prev;
+          const last=prev[prev.length-1];
+          if(last.r===cell.r&&last.c===cell.c) return prev;
+          // backtrack
+          if(prev.length>=2&&prev[prev.length-2].r===cell.r&&prev[prev.length-2].c===cell.c)
+            return prev.slice(0,-1);
+          if(!isAdjacent(last,cell)) return prev;
+          if(!inSameDirection(prev,cell)) return prev;
+          if(prev.some(p=>p.r===cell.r&&p.c===cell.c)) return prev;
+          playSelect(audioRef.current);
+          return [...prev,cell];
+        });
+      }
+
+      function endDrag(){
+        if(!dragging) return;
+        setDragging(false);
+        checkWord(selectedCells);
+        setSelectedCells([]);
+      }
+
+      function checkWord(cells){
+        if(cells.length<3) return;
+        const word=cells.map(({r,c})=>grid[r]&&grid[r][c]||'').join('');
+        const reverse=word.split('').reverse().join('');
+        const match=words.find(w=>!foundWords.includes(w)&&(w===word||w===reverse));
+        if(match){
+          const idx=words.indexOf(match);
+          const color=wordColor(idx);
+          const newCombo=combo+1;
+          setCombo(newCombo);
+          const pts=match.length*100*(newCombo>1?newCombo:1);
+          setScore(s=>s+pts);
+          const newFound=[...foundWords,match];
+          setFoundWords(newFound);
+          // mark cells
+          const newFoundCells={...foundCells};
+          cells.forEach(({r,c})=>{ newFoundCells[cellKey(r,c)]=color; });
+          setFoundCells(newFoundCells);
+          // flash
+          const flash={};
+          cells.forEach(({r,c})=>{ flash[cellKey(r,c)]=color; });
+          setFlashCells(flash);
+          setTimeout(()=>setFlashCells({}),400);
+          // particles from center
+          const midCell=cells[Math.floor(cells.length/2)];
+          const el=cellRefs.current[cellKey(midCell.r,midCell.c)];
+          if(el){
+            const rect=el.getBoundingClientRect();
+            const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+            setParticles(p=>[...p,...makeParticles(cx,cy,color,16)]);
+          }
+          // float text
+          if(newCombo>1){
+            playCombo(audioRef.current);
+            setFloatTexts(f=>[...f,{id:Date.now(),text:`${newCombo}x COMBO! +${pts}`,color,y:50}]);
+          } else {
+            playFound(audioRef.current);
+            setFloatTexts(f=>[...f,{id:Date.now(),text:`+${pts}`,color,y:50}]);
+          }
+          // all found?
+          if(newFound.length===words.length){
+            const bonus=Math.ceil(timeLeft/10)*500;
+            setScore(s=>s+bonus);
+            setRoundBonus(bonus);
+            setTimeout(()=>setRoundBonus(null),1500);
+            setTimeout(()=>{
+              const next=pickWords(10);
+              const{grid:g,placed,wordCells:wc}=buildGrid(next);
+              setWords(placed);
+              setGrid(g);
+              setWordCells(wc);
+              setFoundWords([]);
+              setFoundCells({});
+            },1600);
+          }
+        } else {
+          // wrong
+          const flashW={};
+          cells.forEach(({r,c})=>{ flashW[cellKey(r,c)]='#ff2200'; });
+          setFlashCells(flashW);
+          setTimeout(()=>setFlashCells({}),300);
+          setCombo(0);
+          playWrong(audioRef.current);
+        }
+      }
+
+      // Touch/pointer events
+      function onPointerDown(e,r,c){
+        e.preventDefault();
+        startDrag(r,c);
+      }
+      function onPointerMove(e){
+        e.preventDefault();
+        const touch=e.touches?e.touches[0]:e;
+        moveDrag(touch.clientX,touch.clientY);
+      }
+      function onPointerUp(e){
+        e.preventDefault();
+        endDrag();
+      }
+
+      const currentWord=selectedCells.map(({r,c})=>grid[r]&&grid[r][c]||'').join('');
+      const timerPct=timeLeft/90;
+      const timerColor=timerPct>0.5?'#00ffcc':timerPct>0.25?'#ffaa00':'#ff2244';
+
+      // CELL size responsive — account for HUD, timer bar, word preview, word list
+      const [cellSize, setCellSize] = useState(44);
+      useEffect(()=>{
+        function resize(){
+          const w=window.innerWidth, h=window.innerHeight;
+          // UI overhead: HUD(55)+gaps+timerBar(6)+wordPreview(36)+wordList(54)+padding = ~220px
+          const fromH=Math.floor((h-220)/ROWS);
+          const fromW=Math.floor((w*0.92-41)/COLS);
+          setCellSize(Math.max(26, Math.min(fromH, fromW, 52)));
+        }
+        resize();
+        window.addEventListener('resize',resize);
+        return ()=>window.removeEventListener('resize',resize);
+      },[]);
+
+      return (
+        <div style={{
+          width:'100vw', height:'100vh',
+          background:'linear-gradient(135deg,#0a0015 0%,#000820 40%,#0a0015 100%)',
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+          userSelect:'none', overflow:'hidden', position:'relative',
+        }}
+          onMouseMove={dragging?onPointerMove:undefined}
+          onMouseUp={dragging?onPointerUp:undefined}
+          onTouchMove={dragging?onPointerMove:undefined}
+          onTouchEnd={dragging?onPointerUp:undefined}
+        >
+          {/* Background glow orbs */}
+          {[...Array(6)].map((_,i)=>(
+            <div key={i} style={{
+              position:'absolute',
+              width: 200+i*60,
+              height: 200+i*60,
+              borderRadius:'50%',
+              background:`radial-gradient(circle, ${NEON_COLORS[i]}22 0%, transparent 70%)`,
+              left: `${10+i*15}%`, top: `${5+i*12}%`,
+              animation:`neonFlicker ${2+i*0.4}s ease-in-out infinite`,
+              pointerEvents:'none',
+            }}/>
+          ))}
+
+          {/* Particles */}
+          {particles.map(p=>(
+            <div key={p.id} className="particle" style={{
+              left:p.x-4, top:p.y-4, width:8, height:8,
+              background:p.color,
+              boxShadow:`0 0 6px ${p.color}`,
+              '--tx':`${p.tx}px`, '--ty':`${p.ty}px`,
+            }}/>
+          ))}
+
+          {/* Float texts */}
+          {floatTexts.map(ft=>(
+            <div key={ft.id} style={{
+              position:'absolute', top:'40%', left:'50%', transform:'translateX(-50%)',
+              color:ft.color, fontSize:28, fontWeight:'bold', pointerEvents:'none',
+              textShadow:`0 0 12px ${ft.color}`,
+              animation:'wordFound 1.2s ease-out forwards',
+              zIndex:100,
+            }}>{ft.text}</div>
+          ))}
+
+          {/* Round bonus */}
+          {roundBonus&&(
+            <div style={{
+              position:'absolute', top:'35%', left:'50%', transform:'translateX(-50%)',
+              color:'#ffdd00', fontSize:36, fontWeight:'bold', pointerEvents:'none',
+              textShadow:'0 0 20px #ffdd00',
+              animation:'wordFound 1.5s ease-out forwards',
+              zIndex:101,
+            }}>ALL FOUND! +{roundBonus}</div>
+          )}
+
+          {/* START SCREEN */}
+          {phase==='start'&&(
+            <div style={{
+              display:'flex',flexDirection:'column',alignItems:'center',gap:24,
+              background:'rgba(0,0,20,0.85)', borderRadius:20,
+              padding:'40px 50px',
+              border:'2px solid #00ffcc',
+              boxShadow:'0 0 40px #00ffcc44, inset 0 0 30px #00002244',
+            }}>
+              <div style={{fontSize:48,fontWeight:'bold',color:'#00ffcc',
+                textShadow:'0 0 20px #00ffcc, 0 0 40px #00ffcc88',
+                letterSpacing:4}}>NEON</div>
+              <div style={{fontSize:36,fontWeight:'bold',color:'#ff00ff',
+                textShadow:'0 0 20px #ff00ff',letterSpacing:6}}>WORD HUNT</div>
+              <div style={{color:'#aaccff',fontSize:14,textAlign:'center',maxWidth:300,lineHeight:1.6}}>
+                Drag across letters to find hidden words.<br/>
+                Chain finds for combo multipliers!<br/>
+                90 seconds · Horizontal · Vertical · Diagonal
+              </div>
+              {highScore>0&&<div style={{color:'#ffdd00',fontSize:16}}>Best: {highScore.toLocaleString()}</div>}
+              <button onClick={initGame} style={{
+                padding:'14px 48px', fontSize:22, fontWeight:'bold',
+                background:'linear-gradient(90deg,#00ffcc,#0088ff)',
+                border:'none', borderRadius:50, cursor:'pointer',
+                color:'#000', boxShadow:'0 0 20px #00ffcc',
+                transition:'transform 0.1s',
+              }}
+                onMouseEnter={e=>e.target.style.transform='scale(1.07)'}
+                onMouseLeave={e=>e.target.style.transform='scale(1)'}
+              >PLAY</button>
+            </div>
+          )}
+
+          {/* GAME OVER */}
+          {phase==='gameover'&&(
+            <div style={{
+              display:'flex',flexDirection:'column',alignItems:'center',gap:20,
+              background:'rgba(0,0,20,0.9)', borderRadius:20,
+              padding:'40px 50px',
+              border:'2px solid #ff00ff',
+              boxShadow:'0 0 40px #ff00ff44',
+            }}>
+              <div style={{fontSize:36,fontWeight:'bold',color:'#ff00ff',
+                textShadow:'0 0 20px #ff00ff',letterSpacing:3}}>TIME'S UP!</div>
+              <div style={{fontSize:52,fontWeight:'bold',color:'#00ffcc',
+                textShadow:'0 0 20px #00ffcc'}}>{score.toLocaleString()}</div>
+              <div style={{color:'#aaccff',fontSize:16}}>Words found: {foundWords.length}/{words.length}</div>
+              {score>=highScore&&score>0&&(
+                <div style={{color:'#ffdd00',fontSize:18,fontWeight:'bold',
+                  textShadow:'0 0 12px #ffdd00'}}>🏆 NEW HIGH SCORE!</div>
+              )}
+              <div style={{color:'#ffdd00',fontSize:14}}>Best: {highScore.toLocaleString()}</div>
+              <button onClick={initGame} style={{
+                padding:'14px 48px', fontSize:22, fontWeight:'bold',
+                background:'linear-gradient(90deg,#ff00ff,#8800ff)',
+                border:'none', borderRadius:50, cursor:'pointer',
+                color:'#fff', boxShadow:'0 0 20px #ff00ff',
+              }}>PLAY AGAIN</button>
+            </div>
+          )}
+
+          {/* PLAYING */}
+          {phase==='playing'&&(
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,width:'100%',maxWidth:600}}>
+              {/* HUD */}
+              <div style={{
+                display:'flex',justifyContent:'space-between',alignItems:'center',
+                width:'100%',padding:'0 12px',
+              }}>
+                <div style={{textAlign:'left'}}>
+                  <div style={{color:'#888',fontSize:11}}>SCORE</div>
+                  <div style={{color:'#00ffcc',fontSize:28,fontWeight:'bold',
+                    textShadow:'0 0 12px #00ffcc'}}>{score.toLocaleString()}</div>
+                </div>
+                <div style={{textAlign:'center'}}>
+                  {combo>1&&(
+                    <div style={{color:'#ffdd00',fontSize:20,fontWeight:'bold',
+                      textShadow:'0 0 10px #ffdd00',animation:'pulse 0.5s ease-in-out infinite'}}>
+                      {combo}x COMBO
+                    </div>
+                  )}
+                  <div style={{color:timerColor,fontSize:32,fontWeight:'bold',
+                    textShadow:`0 0 14px ${timerColor}`}}>{timeLeft}s</div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{color:'#888',fontSize:11}}>BEST</div>
+                  <div style={{color:'#ffdd00',fontSize:20,fontWeight:'bold'}}>{highScore.toLocaleString()}</div>
+                </div>
+              </div>
+
+              {/* Timer bar */}
+              <div style={{width:'94%',height:6,background:'#111',borderRadius:3,overflow:'hidden'}}>
+                <div style={{
+                  width:`${timerPct*100}%`, height:'100%',
+                  background:`linear-gradient(90deg,${timerColor},#ffffff44)`,
+                  borderRadius:3,
+                  boxShadow:`0 0 8px ${timerColor}`,
+                  transition:'width 1s linear, background 0.5s',
+                }}/>
+              </div>
+
+              {/* Grid */}
+              <div style={{
+                display:'grid',
+                gridTemplateColumns:`repeat(${COLS},${cellSize}px)`,
+                gap:3,
+                padding:10,
+                background:'rgba(0,0,30,0.7)',
+                borderRadius:14,
+                border:'1px solid #00ffcc33',
+                boxShadow:'0 0 30px #00002288',
+                touchAction:'none',
+              }}>
+                {grid.map((row,r)=>row.map((letter,c)=>{
+                  const key=cellKey(r,c);
+                  const isSelected=selectedCells.some(s=>s.r===r&&s.c===c);
+                  const foundColor=foundCells[key];
+                  const flashColor=flashCells[key];
+                  const activeColor=flashColor||(isSelected?'#ffffff':foundColor||null);
+
+                  return (
+                    <div key={key}
+                      ref={el=>cellRefs.current[key]=el}
+                      onMouseDown={e=>{e.preventDefault();onPointerDown(e,r,c);}}
+                      onTouchStart={e=>{e.preventDefault();onPointerDown(e,r,c);}}
+                      style={{
+                        width:cellSize, height:cellSize,
+                        display:'flex', alignItems:'center', justifyContent:'center',
+                        borderRadius:7,
+                        fontSize: cellSize>40?18:14,
+                        fontWeight:'bold',
+                        letterSpacing:1,
+                        cursor:'pointer',
+                        transition:'all 0.1s',
+                        background: activeColor
+                          ? `${activeColor}33`
+                          : 'rgba(0,10,40,0.8)',
+                        border: activeColor
+                          ? `2px solid ${activeColor}`
+                          : '1px solid #1a2a4a',
+                        color: activeColor || '#ccd8ff',
+                        textShadow: activeColor ? `0 0 10px ${activeColor}` : 'none',
+                        boxShadow: activeColor ? `0 0 12px ${activeColor}66, inset 0 0 8px ${activeColor}22` : 'none',
+                        transform: isSelected ? 'scale(1.12)' : 'scale(1)',
+                      }}
+                    >{letter}</div>
+                  );
+                }))}
+              </div>
+
+              {/* Current word preview */}
+              <div style={{
+                height:32, display:'flex', alignItems:'center', justifyContent:'center',
+                color:'#ffffff', fontSize:20, fontWeight:'bold', letterSpacing:4,
+                textShadow:'0 0 10px #ffffff88',
+              }}>
+                {currentWord.length>0 ? currentWord : ' '}
+              </div>
+
+              {/* Word list */}
+              <div style={{
+                display:'flex',flexWrap:'wrap',gap:8,justifyContent:'center',
+                padding:'8px 12px', maxWidth:'100%',
+              }}>
+                {words.map((w,i)=>{
+                  const found=foundWords.includes(w);
+                  const color=wordColor(i);
+                  return (
+                    <div key={w} style={{
+                      padding:'4px 12px', borderRadius:20, fontSize:13, fontWeight:'bold',
+                      background: found ? `${color}22` : 'rgba(0,0,0,0.4)',
+                      border: found ? `1px solid ${color}` : '1px solid #223',
+                      color: found ? color : '#445566',
+                      textDecoration: found ? 'line-through' : 'none',
+                      textShadow: found ? `0 0 8px ${color}` : 'none',
+                      transition:'all 0.3s',
+                    }}>{found?w:'?'.repeat(w.length)}</div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
+  </script>
+</body>
+</html>
