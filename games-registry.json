@@ -1709,5 +1709,25 @@
     "folder": "games/2026-05-27",
     "file": "games/2026-05-27/index.html",
     "preview": "games/2026-05-27/preview.png"
+  },
+  {
+    "id": "2026-05-28",
+    "name": "Mirror Blaze",
+    "date": "2026-05-28",
+    "description": "Redirect a glowing laser beam using / and \\ mirrors on a neon grid to hit all targets simultaneously — chain level completions for massive combo multipliers as puzzles grow more complex each round!",
+    "tagline": "Place mirrors. Redirect the laser. Hit all targets!",
+    "tags": [
+      "puzzle",
+      "logic",
+      "laser",
+      "strategy",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click an empty cell to place a / mirror · Click again for \\ · Click again to remove",
+    "folder": "games/2026-05-28",
+    "file": "games/2026-05-28/index.html",
+    "preview": "games/2026-05-28/preview.png"
   }
 ]
