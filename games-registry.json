@@ -1729,5 +1729,25 @@
     "folder": "games/2026-05-28",
     "file": "games/2026-05-28/index.html",
     "preview": "games/2026-05-28/preview.png"
+  },
+  {
+    "id": "2026-05-29",
+    "name": "Neon Infiltrator",
+    "date": "2026-05-29",
+    "description": "Sneak a glowing cyan agent across a 10×10 neon grid — dodge rotating yellow spotlight cones from orange guard sentinels and reach the golden vault before getting caught! Chain level completions for massive combo multipliers.",
+    "tagline": "Dodge the spotlights. Crack the vault. Don't get caught!",
+    "tags": [
+      "stealth",
+      "strategy",
+      "reflex",
+      "puzzle",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow Keys / WASD to move one cell at a time | Tap D-pad on mobile",
+    "folder": "games/2026-05-29",
+    "file": "games/2026-05-29/index.html",
+    "preview": "games/2026-05-29/preview.png"
   }
 ]
