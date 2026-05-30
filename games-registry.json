@@ -1749,5 +1749,25 @@
     "folder": "games/2026-05-29",
     "file": "games/2026-05-29/index.html",
     "preview": "games/2026-05-29/preview.png"
+  },
+  {
+    "id": "2026-05-30",
+    "name": "Neon Strike",
+    "date": "2026-05-30",
+    "description": "Move your glowing ball along the lane to aim, hold to charge power, then release to bowl — scatter neon pins with chain-reaction physics, chain consecutive strikes for massive combo multipliers, and survive 3 gutter balls before game over!",
+    "tagline": "Aim. Charge. Bowl. Chain the strikes!",
+    "tags": [
+      "physics",
+      "precision",
+      "arcade",
+      "casual",
+      "bowling"
+    ],
+    "difficulty": "easy",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse to aim · Hold mouse button to charge power · Release to bowl | Drag on mobile",
+    "folder": "games/2026-05-30",
+    "file": "games/2026-05-30/index.html",
+    "preview": "games/2026-05-30/preview.png"
   }
 ]
