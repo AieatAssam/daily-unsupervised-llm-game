@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Strike</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #04000e; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const CW = 480, CH = 720;
+    const BALL_R = 16, PIN_R = 11;
+    const LANE_L = 90, LANE_R = 390;
+    const BALL_START_Y = 630;
+
+    // 10-pin triangle: head pin closest to ball (highest y), back row furthest (lowest y)
+    const PIN_LAYOUT = [
+      {x:240, y:265},                                        // 1 head
+      {x:218, y:228}, {x:262, y:228},                       // 2-3
+      {x:196, y:191}, {x:240, y:191}, {x:284, y:191},       // 4-5-6
+      {x:174, y:154}, {x:218, y:154}, {x:262, y:154}, {x:306, y:154}, // 7-8-9-10
+    ];
+
+    const NeonStrike = () => {
+      const canvasRef = useRef(null);
+      const gs = useRef(null);
+      const rafRef = useRef(null);
+      const audioCtx = useRef(null);
+      const [, forceRender] = useState(0);
+
+      const getAudio = () => {
+        if (!audioCtx.current) {
+          try { audioCtx.current = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+        }
+        return audioCtx.current;
+      };
+
+      const beep = (freq, type, dur, vol=0.25) => {
+        try {
+          const ctx = getAudio(); if (!ctx) return;
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.connect(g); g.connect(ctx.destination);
+          osc.type = type; osc.frequency.value = freq;
+          osc.frequency.exponentialRampToValueAtTime(freq * 0.4, ctx.currentTime + dur);
+          g.gain.setValueAtTime(vol, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+          osc.start(); osc.stop(ctx.currentTime + dur);
+        } catch(e){}
+      };
+
+      const makePins = () => PIN_LAYOUT.map((p,i) => ({
+        id: i, x: p.x, y: p.y, ox: p.x, oy: p.y,
+        vx: 0, vy: 0, alive: true, moving: false, opacity: 1,
+      }));
+
+      const initState = () => {
+        // Initialize localStorage key on first run
+        if (!localStorage.getItem('neonStrike_hi')) {
+          localStorage.setItem('neonStrike_hi', '0');
+        }
+        return {
+          phase: 'idle',       // idle | aiming | rolling | settling
+          ball: { x: 240, y: BALL_START_Y, vx: 0, vy: 0 },
+          pins: makePins(),
+          particles: [],
+          flashes: [],
+          aimX: 240,
+          power: 0, powerDir: 1,
+          score: 0, combo: 0,
+          lives: 3, round: 1,
+          gameOver: false,
+          highScore: parseInt(localStorage.getItem('neonStrike_hi') || '0'),
+          settling: false,
+          bgAngle: 0,
+          trailPoints: [],
+        };
+      };
+
+      useEffect(() => {
+        gs.current = initState();
+        const canvas = canvasRef.current;
+        let last = 0;
+
+        const loop = (ts) => {
+          const dt = Math.min((ts - last) / 1000, 0.033);
+          last = ts;
+          update(dt);
+          draw(canvas.getContext('2d'));
+          rafRef.current = requestAnimationFrame(loop);
+        };
+        rafRef.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(rafRef.current);
+      }, []);
+
+      const spawnParticles = (x, y, color, count=10) => {
+        const g = gs.current;
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 80 + Math.random() * 220;
+          g.particles.push({
+            x, y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1, size: 2 + Math.random() * 5,
+            color, glow: color,
+          });
+        }
+      };
+
+      const endRound = () => {
+        const g = gs.current;
+        if (g.settling) return;
+        g.settling = true;
+
+        const knocked = g.pins.filter(p => !p.alive).length;
+        let pts = 0;
+
+        if (knocked === 10) {
+          g.combo++;
+          pts = (500 + knocked * 50) * Math.max(1, g.combo);
+          g.flashes.push({ x:240, y:360, text:`🎳 STRIKE! ×${g.combo}`, color:'#ffdd00', life:2 });
+          beep(880, 'sine', 0.15, 0.35);
+          setTimeout(()=>beep(1100,'sine',0.15,0.35),120);
+          setTimeout(()=>beep(1320,'sine',0.25,0.35),240);
+          setTimeout(()=>beep(1760,'sine',0.3,0.4),380);
+          // Spawn celebration particles in center
+          for(let i=0;i<3;i++) setTimeout(()=>spawnParticles(200+Math.random()*80, 200+Math.random()*100, `hsl(${Math.random()*360},100%,70%)`, 8), i*100);
+        } else if (knocked >= 7) {
+          g.combo++;
+          pts = knocked * 60 * Math.max(1, g.combo);
+          g.flashes.push({ x:240, y:360, text:`GREAT! +${pts}`, color:'#00ffcc', life:1.5 });
+          beep(660, 'sine', 0.2, 0.3);
+          setTimeout(()=>beep(880,'sine',0.2,0.3),150);
+        } else if (knocked > 0) {
+          if (knocked < 3) g.combo = 0;
+          else g.combo = Math.max(0, g.combo);
+          pts = knocked * 50;
+          if (g.combo > 0) pts *= g.combo;
+          g.flashes.push({ x:240, y:360, text:`+${pts}`, color:'#88ffff', life:1.2 });
+          beep(440, 'sine', 0.15, 0.2);
+        } else {
+          g.combo = 0;
+          g.lives--;
+          g.flashes.push({ x:240, y:360, text:'GUTTER!', color:'#ff4444', life:1.5 });
+          beep(180, 'sawtooth', 0.4, 0.3);
+          spawnParticles(240, 400, '#ff3333', 15);
+        }
+
+        g.score += pts;
+        if (g.score > g.highScore) {
+          g.highScore = g.score;
+          localStorage.setItem('neonStrike_hi', String(g.score));
+        }
+
+        if (g.lives <= 0) {
+          setTimeout(() => { g.gameOver = true; g.phase = 'idle'; forceRender(n=>n+1); }, 1200);
+          return;
+        }
+
+        g.round++;
+        // Reset for next bowl
+        setTimeout(() => {
+          g.pins = makePins();
+          g.ball = { x: g.aimX || 240, y: BALL_START_Y, vx:0, vy:0 };
+          g.phase = 'idle';
+          g.power = 0; g.powerDir = 1;
+          g.trailPoints = [];
+          g.settling = false;
+        }, 1400);
+      };
+
+      const update = (dt) => {
+        const g = gs.current;
+        if (!g) return;
+
+        g.bgAngle += dt * 0.3;
+
+        // Power oscillation while aiming
+        if (g.phase === 'aiming') {
+          g.power += g.powerDir * dt * 1.8;
+          if (g.power >= 1) { g.power = 1; g.powerDir = -1; }
+          if (g.power <= 0) { g.power = 0; g.powerDir = 1; }
+        }
+
+        // Ball physics
+        if (g.phase === 'rolling') {
+          const prevY = g.ball.y;
+          g.ball.x += g.ball.vx * dt;
+          g.ball.y += g.ball.vy * dt;
+
+          // Store trail
+          g.trailPoints.push({ x: g.ball.x, y: g.ball.y, life: 1 });
+          if (g.trailPoints.length > 20) g.trailPoints.shift();
+
+          // Lane walls
+          if (g.ball.x < LANE_L + BALL_R) { g.ball.x = LANE_L + BALL_R; g.ball.vx = Math.abs(g.ball.vx) * 0.5; }
+          if (g.ball.x > LANE_R - BALL_R) { g.ball.x = LANE_R - BALL_R; g.ball.vx = -Math.abs(g.ball.vx) * 0.5; }
+
+          // Pin collisions
+          g.pins.forEach(pin => {
+            if (!pin.alive) return;
+            const dx = g.ball.x - pin.x;
+            const dy = g.ball.y - pin.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < BALL_R + PIN_R + 2) {
+              // Knock pin
+              pin.alive = false;
+              pin.moving = true;
+              const nx = dx/dist, ny = dy/dist;
+              const impact = (g.ball.vx*nx + g.ball.vy*ny);
+              pin.vx = nx * Math.abs(impact) * 1.2 + (Math.random()-0.5)*80;
+              pin.vy = ny * Math.abs(impact) * 1.2 + (Math.random()-0.5)*80;
+              // Slight ball deflection
+              g.ball.vx += -nx * 20;
+              // Particles
+              spawnParticles(pin.x, pin.y, '#00ffcc', 8);
+              beep(150 + Math.random()*100, 'square', 0.12, 0.15);
+            }
+          });
+
+          // Pin-to-pin chain collisions
+          g.pins.forEach(movingPin => {
+            if (!movingPin.moving) return;
+            g.pins.forEach(standingPin => {
+              if (!standingPin.alive || movingPin.id === standingPin.id) return;
+              const dx = movingPin.x - standingPin.x;
+              const dy = movingPin.y - standingPin.y;
+              const dist = Math.sqrt(dx*dx + dy*dy);
+              if (dist < PIN_R * 2 + 4) {
+                standingPin.alive = false;
+                standingPin.moving = true;
+                const nx = dx/dist, ny = dy/dist;
+                const speed = Math.sqrt(movingPin.vx*movingPin.vx + movingPin.vy*movingPin.vy);
+                standingPin.vx = -nx * speed * 0.8 + (Math.random()-0.5)*60;
+                standingPin.vy = -ny * speed * 0.8 + (Math.random()-0.5)*60;
+                spawnParticles(standingPin.x, standingPin.y, '#aaff00', 6);
+                beep(200+Math.random()*150, 'triangle', 0.1, 0.1);
+              }
+            });
+          });
+
+          // Move scattered pins
+          g.pins.forEach(pin => {
+            if (!pin.moving) return;
+            pin.x += pin.vx * dt;
+            pin.y += pin.vy * dt;
+            pin.vx *= 0.92;
+            pin.vy *= 0.92;
+            pin.opacity = Math.max(0, pin.opacity - dt * 0.8);
+          });
+
+          // End round when ball exits top
+          if (g.ball.y < 90 && !g.settling) {
+            g.phase = 'settling';
+            endRound();
+          }
+        }
+
+        // Fade trail
+        g.trailPoints.forEach(p => { p.life -= dt * 4; });
+        g.trailPoints = g.trailPoints.filter(p => p.life > 0);
+
+        // Particles
+        g.particles.forEach(p => {
+          p.x += p.vx * dt; p.y += p.vy * dt;
+          p.vx *= 0.94; p.vy *= 0.94;
+          p.life -= dt * 1.5;
+        });
+        g.particles = g.particles.filter(p => p.life > 0);
+
+        // Flashes
+        g.flashes.forEach(f => { f.y -= 35 * dt; f.life -= dt; });
+        g.flashes = g.flashes.filter(f => f.life > 0);
+      };
+
+      const draw = (ctx) => {
+        const g = gs.current;
+        if (!g) return;
+
+        // Background gradient
+        const bg = ctx.createLinearGradient(0, 0, CW, CH);
+        bg.addColorStop(0, '#04000e');
+        bg.addColorStop(0.5, '#080022');
+        bg.addColorStop(1, '#04000e');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, CW, CH);
+
+        // Subtle animated grid
+        ctx.strokeStyle = 'rgba(80,0,150,0.12)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < CW; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,CH); ctx.stroke(); }
+        for (let y = 0; y < CH; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(CW,y); ctx.stroke(); }
+
+        // Lane body
+        const laneGrad = ctx.createLinearGradient(LANE_L, 0, LANE_R, 0);
+        laneGrad.addColorStop(0, 'rgba(0,80,160,0.08)');
+        laneGrad.addColorStop(0.5, 'rgba(0,120,220,0.14)');
+        laneGrad.addColorStop(1, 'rgba(0,80,160,0.08)');
+        ctx.fillStyle = laneGrad;
+        ctx.fillRect(LANE_L, 80, LANE_R - LANE_L, CH - 80);
+
+        // Lane borders glow
+        const edgeGlow = (x) => {
+          ctx.save();
+          ctx.shadowBlur = 20; ctx.shadowColor = '#0055ff';
+          ctx.strokeStyle = '#0088ff'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(x, 80); ctx.lineTo(x, CH); ctx.stroke();
+          ctx.restore();
+        };
+        edgeGlow(LANE_L); edgeGlow(LANE_R);
+
+        // Lane arrows (aiming guides in middle of lane)
+        ctx.strokeStyle = 'rgba(0,180,255,0.2)';
+        ctx.lineWidth = 1;
+        [200, 240, 280].forEach(x => {
+          ctx.beginPath(); ctx.moveTo(x, 420); ctx.lineTo(x, 480); ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x-6, 434); ctx.lineTo(x, 420); ctx.lineTo(x+6, 434);
+          ctx.stroke();
+        });
+
+        // Foul line
+        ctx.strokeStyle = 'rgba(255,80,80,0.5)'; ctx.lineWidth = 2;
+        ctx.setLineDash([8,6]);
+        ctx.beginPath(); ctx.moveTo(LANE_L, 540); ctx.lineTo(LANE_R, 540); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Pin zone highlight
+        ctx.fillStyle = 'rgba(0,255,180,0.03)';
+        ctx.fillRect(LANE_L, 100, LANE_R-LANE_L, 200);
+
+        // Aim dotted line
+        if ((g.phase === 'idle' || g.phase === 'aiming') && !g.gameOver) {
+          ctx.save();
+          ctx.setLineDash([8, 12]);
+          ctx.strokeStyle = 'rgba(0,255,180,0.45)';
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 8; ctx.shadowColor = '#00ffcc';
+          ctx.beginPath();
+          ctx.moveTo(g.ball.x, g.ball.y - BALL_R - 5);
+          ctx.lineTo(g.ball.x, 140);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+
+        // Ball trail
+        g.trailPoints.forEach((p, i) => {
+          ctx.save();
+          ctx.globalAlpha = p.life * 0.5;
+          ctx.fillStyle = '#cc44ff';
+          ctx.shadowBlur = 8; ctx.shadowColor = '#cc44ff';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, BALL_R * 0.6 * p.life, 0, Math.PI*2);
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Pins
+        g.pins.forEach(pin => {
+          if (pin.opacity <= 0) return;
+          ctx.save();
+          ctx.globalAlpha = pin.opacity;
+
+          if (pin.alive) {
+            // Standing pin glow
+            ctx.shadowBlur = 22; ctx.shadowColor = '#00ffcc';
+            const pg = ctx.createRadialGradient(pin.x-3, pin.y-3, 2, pin.x, pin.y, PIN_R);
+            pg.addColorStop(0, '#aaffee');
+            pg.addColorStop(0.4, '#00ffcc');
+            pg.addColorStop(1, '#007755');
+            ctx.fillStyle = pg;
+          } else {
+            ctx.shadowBlur = 12; ctx.shadowColor = '#ff6600';
+            ctx.fillStyle = '#ff8833';
+          }
+
+          ctx.beginPath(); ctx.arc(pin.x, pin.y, PIN_R, 0, Math.PI*2); ctx.fill();
+
+          // Pin highlight
+          if (pin.alive) {
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.beginPath(); ctx.arc(pin.x-4, pin.y-4, 4, 0, Math.PI*2); ctx.fill();
+          }
+          ctx.restore();
+        });
+
+        // Ball
+        if (g.phase !== 'idle' || true) {
+          ctx.save();
+          ctx.shadowBlur = 35; ctx.shadowColor = '#cc00ff';
+          const bg2 = ctx.createRadialGradient(g.ball.x-5, g.ball.y-5, 2, g.ball.x, g.ball.y, BALL_R);
+          bg2.addColorStop(0, '#ff88ff');
+          bg2.addColorStop(0.4, '#dd00ff');
+          bg2.addColorStop(1, '#550077');
+          ctx.fillStyle = bg2;
+          ctx.beginPath(); ctx.arc(g.ball.x, g.ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
+          // Ball shine
+          ctx.fillStyle = 'rgba(255,255,255,0.5)';
+          ctx.beginPath(); ctx.arc(g.ball.x-5, g.ball.y-5, 5, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+        }
+
+        // Particles
+        g.particles.forEach(p => {
+          ctx.save();
+          ctx.globalAlpha = p.life;
+          ctx.fillStyle = p.color;
+          ctx.shadowBlur = 12; ctx.shadowColor = p.glow;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+        });
+
+        // Power bar
+        if (g.phase === 'aiming') {
+          const bx = 18, by = 200, bw = 22, bh = 220;
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(bx-2, by-2, bw+4, bh+4);
+
+          const grad = ctx.createLinearGradient(0, by+bh, 0, by);
+          grad.addColorStop(0, '#00ff88'); grad.addColorStop(0.5, '#ffaa00'); grad.addColorStop(1, '#ff2200');
+          ctx.fillStyle = grad;
+          ctx.fillRect(bx, by + bh*(1-g.power), bw, bh*g.power);
+
+          ctx.strokeStyle = g.power > 0.8 ? '#ff2200' : '#ffffff';
+          ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, bw, bh);
+          ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px Courier New';
+          ctx.textAlign = 'center'; ctx.fillText('PWR', bx+bw/2, by-8);
+
+          // Sweet spot indicator
+          ctx.strokeStyle = 'rgba(255,255,0,0.6)'; ctx.lineWidth = 1;
+          ctx.setLineDash([4,4]);
+          ctx.beginPath(); ctx.moveTo(bx, by+bh*0.3); ctx.lineTo(bx+bw, by+bh*0.3); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // Score flashes
+        g.flashes.forEach(f => {
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, f.life * 1.5);
+          ctx.fillStyle = f.color;
+          ctx.shadowBlur = 25; ctx.shadowColor = f.color;
+          ctx.font = 'bold 30px Courier New'; ctx.textAlign = 'center';
+          ctx.fillText(f.text, f.x, f.y);
+          ctx.restore();
+        });
+
+        // HUD top
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillRect(0, 0, CW, 72);
+
+        // Score
+        ctx.save();
+        ctx.shadowBlur = 15; ctx.shadowColor = '#00ffcc';
+        ctx.fillStyle = '#00ffcc'; ctx.font = 'bold 22px Courier New';
+        ctx.textAlign = 'left'; ctx.fillText(`${g.score}`, 16, 32);
+        ctx.fillStyle = '#446655'; ctx.font = '13px Courier New';
+        ctx.fillText(`BEST ${g.highScore}`, 16, 54);
+        ctx.restore();
+
+        // Round + combo
+        ctx.save();
+        ctx.shadowBlur = 10; ctx.shadowColor = '#ffcc00';
+        ctx.fillStyle = '#ffcc00'; ctx.font = 'bold 20px Courier New';
+        ctx.textAlign = 'center'; ctx.fillText(`RND ${g.round}`, CW/2, 30);
+        if (g.combo > 1) {
+          const t = Date.now() * 0.002;
+          ctx.fillStyle = `hsl(${(t*60)%360},100%,65%)`;
+          ctx.font = 'bold 15px Courier New';
+          ctx.fillText(`🔥 ×${g.combo} COMBO`, CW/2, 54);
+        }
+        ctx.restore();
+
+        // Lives
+        for (let i = 0; i < 3; i++) {
+          ctx.save();
+          if (i < g.lives) { ctx.shadowBlur = 12; ctx.shadowColor = '#ff4488'; }
+          ctx.fillStyle = i < g.lives ? '#ff4488' : '#2a0010';
+          ctx.font = '22px Courier New'; ctx.textAlign = 'right';
+          ctx.fillText('♥', CW - 14 - i * 26, 34);
+          ctx.restore();
+        }
+
+        // Bottom instruction
+        if ((g.phase === 'idle') && !g.gameOver) {
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
+          ctx.fillRect(0, CH-44, CW, 44);
+          ctx.fillStyle = 'rgba(0,255,200,0.8)'; ctx.font = '14px Courier New';
+          ctx.textAlign = 'center';
+          ctx.fillText('MOVE to aim  •  HOLD to charge  •  RELEASE to bowl!', CW/2, CH-16);
+        }
+
+        // Game over screen
+        if (g.gameOver) {
+          ctx.fillStyle = 'rgba(0,0,0,0.88)';
+          ctx.fillRect(0, 0, CW, CH);
+
+          ctx.save();
+          ctx.shadowBlur = 40; ctx.shadowColor = '#ff2266';
+          ctx.fillStyle = '#ff2266'; ctx.font = 'bold 52px Courier New';
+          ctx.textAlign = 'center'; ctx.fillText('GAME OVER', CW/2, CH/2 - 90);
+          ctx.restore();
+
+          ctx.save();
+          ctx.shadowBlur = 20; ctx.shadowColor = '#00ffcc';
+          ctx.fillStyle = '#00ffcc'; ctx.font = 'bold 36px Courier New';
+          ctx.textAlign = 'center'; ctx.fillText(`Score: ${g.score}`, CW/2, CH/2 - 20);
+          ctx.restore();
+
+          ctx.save();
+          ctx.shadowBlur = 15; ctx.shadowColor = '#ffcc00';
+          ctx.fillStyle = '#ffcc00'; ctx.font = '24px Courier New';
+          ctx.textAlign = 'center';
+          ctx.fillText(`Best: ${g.highScore}`, CW/2, CH/2 + 28);
+          ctx.fillText(`Rounds: ${g.round - 1}`, CW/2, CH/2 + 62);
+          ctx.restore();
+
+          ctx.fillStyle = 'rgba(0,255,200,0.7)'; ctx.font = '18px Courier New';
+          ctx.textAlign = 'center';
+          const pulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.003);
+          ctx.globalAlpha = pulse;
+          ctx.fillText('▶  Click / Tap to Play Again', CW/2, CH/2 + 115);
+          ctx.globalAlpha = 1;
+        }
+      };
+
+      const getCanvasX = (clientX) => {
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        return (clientX - rect.left) * (CW / rect.width);
+      };
+
+      const handleDown = useCallback((clientX) => {
+        const g = gs.current;
+        if (!g) return;
+        if (g.gameOver) {
+          gs.current = initState();
+          return;
+        }
+        if (g.phase === 'idle') {
+          const x = getCanvasX(clientX);
+          g.aimX = Math.max(LANE_L + BALL_R, Math.min(LANE_R - BALL_R, x));
+          g.ball.x = g.aimX;
+          g.phase = 'aiming';
+          g.power = 0; g.powerDir = 1;
+          beep(300, 'sine', 0.08, 0.15);
+        }
+      }, []);
+
+      const handleMove = useCallback((clientX) => {
+        const g = gs.current;
+        if (!g) return;
+        if (g.phase === 'idle' || g.phase === 'aiming') {
+          const x = getCanvasX(clientX);
+          g.aimX = Math.max(LANE_L + BALL_R, Math.min(LANE_R - BALL_R, x));
+          g.ball.x = g.aimX;
+        }
+      }, []);
+
+      const handleUp = useCallback(() => {
+        const g = gs.current;
+        if (!g || g.phase !== 'aiming') return;
+        const speed = 350 + g.power * 550;
+        g.ball.vy = -speed;
+        g.ball.vx = (g.aimX - 240) * 0.15; // slight horizontal drift based on off-center aim
+        g.phase = 'rolling';
+        beep(220, 'sine', 0.25, 0.3);
+      }, []);
+
+      return (
+        <div style={{ width:'100vw', height:'100vh', display:'flex', justifyContent:'center', alignItems:'center', background:'#04000e' }}>
+          <canvas
+            ref={canvasRef}
+            width={CW} height={CH}
+            style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', cursor:'crosshair', touchAction:'none' }}
+            onMouseDown={e => handleDown(e.clientX)}
+            onMouseMove={e => handleMove(e.clientX)}
+            onMouseUp={handleUp}
+            onMouseLeave={handleUp}
+            onTouchStart={e => { e.preventDefault(); handleDown(e.touches[0].clientX); }}
+            onTouchMove={e => { e.preventDefault(); handleMove(e.touches[0].clientX); }}
+            onTouchEnd={e => { e.preventDefault(); handleUp(); }}
+          />
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<NeonStrike />);
+  </script>
+</body>
+</html>
