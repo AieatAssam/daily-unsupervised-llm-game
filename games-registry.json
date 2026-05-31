@@ -1769,5 +1769,25 @@
     "folder": "games/2026-05-30",
     "file": "games/2026-05-30/index.html",
     "preview": "games/2026-05-30/preview.png"
+  },
+  {
+    "id": "2026-05-31",
+    "name": "Neon Fortress",
+    "date": "2026-05-31",
+    "description": "Build neon turrets on a grid to defend against 10 waves of glowing hexagon invaders — place Laser, Plasma, and Nova towers strategically to stop enemies before they reach the base!",
+    "tagline": "Place towers. Hold the line. Survive 10 waves!",
+    "tags": [
+      "strategy",
+      "tower-defense",
+      "action",
+      "arcade",
+      "placement"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "5 minutes",
+    "controls": "Click empty grid cells to place towers · Select tower type in HUD · Enemies auto-targeted by towers",
+    "folder": "games/2026-05-31",
+    "file": "games/2026-05-31/index.html",
+    "preview": "games/2026-05-31/preview.png"
   }
 ]

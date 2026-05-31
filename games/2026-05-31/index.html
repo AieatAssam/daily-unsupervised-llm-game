@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Fortress</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #040412; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; user-select: none; }
+    #root { width: 100vw; height: 100vh; display: flex; flex-direction: column; align-items: center; }
+    button:focus { outline: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ── Grid layout ──
+    const COLS = 13, ROWS = 8;
+
+    // Path: [col, row] pairs — enemies follow this winding route
+    const PATH = [
+      [0,3],[1,3],[2,3],[3,3],
+      [3,2],[3,1],
+      [4,1],[5,1],[6,1],[7,1],[8,1],
+      [8,2],[8,3],[8,4],[8,5],[8,6],
+      [9,6],[10,6],[11,6],[12,6]
+    ];
+    const PATH_SET = new Set(PATH.map(([c,r]) => `${c},${r}`));
+
+    // Tower definitions
+    const TOWERS = [
+      { name:'LASER',  color:'#00ffff', cost:60,  dmg:18,  rng:2.8, rate:1.6, splash:0,   desc:'Fast, long range' },
+      { name:'PLASMA', color:'#cc44ff', cost:110, dmg:55,  rng:2.2, rate:0.65,splash:0,   desc:'High damage burst' },
+      { name:'NOVA',   color:'#ff8800', cost:170, dmg:28,  rng:1.9, rate:0.4, splash:1.0, desc:'Splash explosion' },
+    ];
+
+    // Wave definitions
+    const WAVES = [
+      {n:6,  hp:55,  spd:55, gap:1.4},
+      {n:9,  hp:85,  spd:60, gap:1.2},
+      {n:12, hp:125, spd:65, gap:1.05},
+      {n:15, hp:180, spd:70, gap:0.95},
+      {n:19, hp:250, spd:74, gap:0.88},
+      {n:23, hp:340, spd:78, gap:0.82},
+      {n:27, hp:460, spd:82, gap:0.76},
+      {n:32, hp:620, spd:86, gap:0.7},
+      {n:38, hp:820, spd:90, gap:0.65},
+      {n:46, hp:1050,spd:96, gap:0.58},
+    ];
+
+    // ── Audio ──
+    let _audioCtx = null;
+    function getAudioCtx() {
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return _audioCtx;
+    }
+    function resumeAudio() { try { getAudioCtx().resume(); } catch(e) {} }
+
+    function playTone(freq1, freq2, dur, vol, type='square') {
+      try {
+        const ctx = getAudioCtx();
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = type;
+        o.frequency.setValueAtTime(freq1, ctx.currentTime);
+        if (freq2 !== freq1) o.frequency.linearRampToValueAtTime(freq2, ctx.currentTime + dur);
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.linearRampToValueAtTime(0, ctx.currentTime + dur);
+        o.start(); o.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+
+    function playNoise(dur, vol) {
+      try {
+        const ctx = getAudioCtx();
+        const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1)*(1-i/d.length)*0.7;
+        const src = ctx.createBufferSource(), g = ctx.createGain();
+        src.buffer = buf; src.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        src.start(); src.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+
+    function sndShoot() { playTone(500+Math.random()*400, 150, 0.07, 0.035); }
+    function sndDie()   { playNoise(0.12, 0.16); }
+    function sndPlace() { playTone(400, 900, 0.12, 0.1, 'sine'); }
+    function sndWave()  { playTone(300, 700, 0.4, 0.12, 'sine'); }
+    function sndHurt()  { playTone(100, 50, 0.2, 0.15, 'sawtooth'); }
+    function sndWin()   { [500,600,750,900].forEach((f,i) => setTimeout(() => playTone(f,f,0.2,0.12,'sine'), i*120)); }
+
+    // ── ID generator ──
+    let _id = 1;
+    function mkId() { return _id++; }
+
+    // ── Game state init ──
+    function initState() {
+      _id = 1;
+      return {
+        phase: 'prep',   // prep | wave | gameover | win
+        wave: 1,
+        gold: 140,
+        hp: 20,
+        score: 0,
+        towers: [],
+        enemies: [],
+        bullets: [],
+        particles: [],
+        floats: [],       // floating score text
+        selectedTower: 0,
+        spawnTimer: 0,
+        spawned: 0,
+        prepTimer: 5.0,
+        shootThrottle: 0,
+        time: 0,
+      };
+    }
+
+    // ── Helpers ──
+    function pathCenter(idx, cs) {
+      const [c, r] = PATH[idx];
+      return [c * cs + cs / 2, r * cs + cs / 2];
+    }
+
+    function spawnEnemy(g, cs) {
+      const w = WAVES[Math.min(g.wave - 1, WAVES.length - 1)];
+      const [px, py] = pathCenter(0, cs);
+      g.enemies.push({
+        id: mkId(),
+        pathIdx: 0,
+        x: px - cs * 1.5,
+        y: py,
+        hp: w.hp * (0.85 + Math.random() * 0.3),
+        maxHp: w.hp,
+        spd: w.spd * (0.9 + Math.random() * 0.2),
+        reward: 8 + g.wave * 2,
+        hue: 10 + Math.random() * 45,
+        flash: 0,
+        size: cs * 0.28,
+        angle: 0,
+      });
+    }
+
+    function addParticles(g, x, y, color, count, speed, life) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = speed * (0.5 + Math.random() * 0.5);
+        g.particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life, maxLife: life, col: color, sz: 2+Math.random()*5 });
+      }
+    }
+
+    function addFloat(g, x, y, text, color) {
+      g.floats.push({ x, y, vy: -55, text, color, life: 1.2, maxLife: 1.2 });
+    }
+
+    // ── Update ──
+    function updateState(g, dt, cs) {
+      g.time += dt;
+      if (g.phase === 'gameover' || g.phase === 'win') return;
+
+      // ── PREP countdown ──
+      if (g.phase === 'prep') {
+        g.prepTimer -= dt;
+        if (g.prepTimer <= 0) {
+          g.phase = 'wave';
+          g.spawnTimer = 0.3;
+          g.spawned = 0;
+          sndWave();
+        }
+        // Particles drifting in prep phase
+        if (Math.random() < 0.3) {
+          const c = PATH[Math.floor(Math.random()*PATH.length)];
+          addParticles(g, c[0]*cs+cs/2, c[1]*cs+cs/2, '#1144ff', 1, 25, 1.5);
+        }
+        updatePassive(g, dt);
+        return;
+      }
+
+      // ── WAVE phase ──
+      const wdef = WAVES[Math.min(g.wave - 1, WAVES.length - 1)];
+
+      // Spawn
+      if (g.spawned < wdef.n) {
+        g.spawnTimer -= dt;
+        if (g.spawnTimer <= 0) {
+          spawnEnemy(g, cs);
+          g.spawned++;
+          g.spawnTimer = wdef.gap;
+        }
+      }
+
+      // Move enemies
+      const dead = new Set();
+      for (const e of g.enemies) {
+        if (e.hp <= 0) {
+          dead.add(e.id);
+          const earned = Math.floor(e.reward);
+          g.gold += earned;
+          g.score += earned * g.wave * 10;
+          sndDie();
+          addParticles(g, e.x, e.y, `hsl(${e.hue},100%,60%)`, 16, 100, 0.8);
+          addFloat(g, e.x, e.y - e.size, `+${earned}g`, '#ffcc00');
+          continue;
+        }
+        e.flash = Math.max(0, e.flash - dt);
+        e.angle += dt * 2;
+
+        const ni = Math.min(e.pathIdx + 1, PATH.length - 1);
+        const [tx, ty] = pathCenter(ni, cs);
+        const dx = tx - e.x, dy = ty - e.y;
+        const d = Math.hypot(dx, dy);
+        if (d < 5) {
+          e.pathIdx = ni;
+          if (e.pathIdx >= PATH.length - 1) {
+            dead.add(e.id);
+            g.hp--;
+            sndHurt();
+            addParticles(g, e.x, e.y, '#ff4444', 12, 80, 0.6);
+            addFloat(g, e.x, e.y, '-1 HP', '#ff4444');
+            if (g.hp <= 0) {
+              g.hp = 0;
+              g.phase = 'gameover';
+              saveHigh(g.score);
+            }
+          }
+        } else {
+          e.x += dx/d * e.spd * dt;
+          e.y += dy/d * e.spd * dt;
+        }
+      }
+      g.enemies = g.enemies.filter(e => !dead.has(e.id));
+
+      // Tower shooting
+      g.shootThrottle = Math.max(0, g.shootThrottle - dt);
+      for (const t of g.towers) {
+        const td = TOWERS[t.type];
+        t.cd = Math.max(0, (t.cd || 0) - dt);
+        if (t.cd > 0) continue;
+        const cx = t.col * cs + cs/2, cy = t.row * cs + cs/2;
+        const rng = td.rng * cs;
+
+        // Target farthest along path within range
+        let best = null, bestPIdx = -1;
+        for (const e of g.enemies) {
+          const dist = Math.hypot(e.x - cx, e.y - cy);
+          if (dist <= rng && e.pathIdx > bestPIdx) {
+            best = e; bestPIdx = e.pathIdx;
+          }
+        }
+        if (best) {
+          t.cd = 1 / td.rate;
+          t.lastTarget = { x: best.x, y: best.y };
+          g.bullets.push({
+            id: mkId(), x: cx, y: cy,
+            tx: best.x, ty: best.y,
+            tid: best.id, type: t.type,
+            dmg: td.dmg, splash: td.splash * cs, spd: 310,
+          });
+          if (g.shootThrottle <= 0) {
+            sndShoot();
+            g.shootThrottle = 0.06;
+          }
+        }
+      }
+
+      // Move bullets
+      const bdead = new Set();
+      for (const b of g.bullets) {
+        const te = g.enemies.find(e => e.id === b.tid);
+        if (te) { b.tx = te.x; b.ty = te.y; }
+        const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy);
+        if (d < 10) {
+          bdead.add(b.id);
+          const tc = TOWERS[b.type].color;
+          if (b.splash > 0) {
+            addParticles(g, b.tx, b.ty, tc, 14, 90, 0.45);
+            // Ring burst
+            for (let i = 0; i < 12; i++) {
+              const a = i/12 * Math.PI*2;
+              g.particles.push({ x:b.tx+Math.cos(a)*b.splash*0.4, y:b.ty+Math.sin(a)*b.splash*0.4, vx:Math.cos(a)*50, vy:Math.sin(a)*50, life:0.4, maxLife:0.4, col:tc, sz:4 });
+            }
+            for (const e of g.enemies) {
+              const ed = Math.hypot(e.x - b.tx, e.y - b.ty);
+              if (ed <= b.splash) {
+                e.hp -= b.dmg * (1 - ed/b.splash * 0.55);
+                e.flash = 0.12;
+              }
+            }
+          } else {
+            if (te) { te.hp -= b.dmg; te.flash = 0.12; }
+            addParticles(g, b.tx, b.ty, tc, 6, 60, 0.3);
+          }
+        } else {
+          b.x += dx/d * b.spd * dt;
+          b.y += dy/d * b.spd * dt;
+        }
+      }
+      g.bullets = g.bullets.filter(b => !bdead.has(b.id));
+
+      updatePassive(g, dt);
+
+      // Check wave completion
+      if (g.spawned >= wdef.n && g.enemies.length === 0 && g.phase === 'wave') {
+        const bonus = 40 + g.wave * 12;
+        g.gold += bonus;
+        addFloat(g, COLS/2 * cs, ROWS/2 * cs - 30, `+${bonus}g WAVE CLEAR!`, '#00ff88');
+        if (g.wave >= 10) {
+          g.score += 15000;
+          g.phase = 'win';
+          saveHigh(g.score);
+          sndWin();
+        } else {
+          g.wave++;
+          g.phase = 'prep';
+          g.prepTimer = 6;
+          sndWave();
+        }
+      }
+    }
+
+    function updatePassive(g, dt) {
+      for (const p of g.particles) {
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vx *= 0.87; p.vy *= 0.87;
+        p.life -= dt;
+      }
+      g.particles = g.particles.filter(p => p.life > 0);
+
+      for (const f of g.floats) {
+        f.y += f.vy * dt;
+        f.vy *= 0.94;
+        f.life -= dt;
+      }
+      g.floats = g.floats.filter(f => f.life > 0);
+    }
+
+    function saveHigh(s) {
+      const prev = parseInt(localStorage.getItem('neonFortressHigh') || '0');
+      if (s > prev) localStorage.setItem('neonFortressHigh', String(s));
+    }
+    function getHigh() { return parseInt(localStorage.getItem('neonFortressHigh') || '0'); }
+
+    // ── Render ──
+    function renderGame(ctx, g, cs, W, H, hover) {
+      const t = g.time;
+
+      // Background gradient
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, '#030310');
+      bg.addColorStop(0.5, '#07051a');
+      bg.addColorStop(1, '#040312');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      // Subtle grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+      ctx.lineWidth = 1;
+      for (let c = 0; c <= COLS; c++) {
+        ctx.beginPath(); ctx.moveTo(c*cs, 0); ctx.lineTo(c*cs, H); ctx.stroke();
+      }
+      for (let r = 0; r <= ROWS; r++) {
+        ctx.beginPath(); ctx.moveTo(0, r*cs); ctx.lineTo(W, r*cs); ctx.stroke();
+      }
+
+      // Path cells background
+      for (const [c, r] of PATH) {
+        ctx.fillStyle = '#07071e';
+        ctx.fillRect(c*cs+1, r*cs+1, cs-2, cs-2);
+      }
+
+      // Path road (wide glow stripe)
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(PATH[0][0]*cs + cs/2, PATH[0][1]*cs + cs/2);
+      for (let i = 1; i < PATH.length; i++) {
+        ctx.lineTo(PATH[i][0]*cs + cs/2, PATH[i][1]*cs + cs/2);
+      }
+      ctx.strokeStyle = 'rgba(40,80,200,0.32)';
+      ctx.lineWidth = cs * 0.62;
+      ctx.stroke();
+      // Center line pulse
+      ctx.strokeStyle = `rgba(60,120,255,${0.12 + 0.06*Math.sin(t*2)})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+
+      // Animated path arrows
+      const arrowOffset = (t * 55) % cs;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(80,140,255,0.2)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < PATH.length - 1; i++) {
+        const [c0, r0] = PATH[i], [c1, r1] = PATH[i+1];
+        const x0 = c0*cs+cs/2, y0 = r0*cs+cs/2;
+        const x1 = c1*cs+cs/2, y1 = r1*cs+cs/2;
+        const dx = x1-x0, dy = y1-y0, d = Math.hypot(dx,dy);
+        const nx = dx/d, ny = dy/d;
+        const ax = x0 + nx*arrowOffset, ay = y0 + ny*arrowOffset;
+        if (Math.hypot(ax-x0,ay-y0) < d) {
+          const perp = 5;
+          ctx.beginPath();
+          ctx.moveTo(ax - nx*6 + ny*perp, ay - ny*6 - nx*perp);
+          ctx.lineTo(ax + nx*6, ay + ny*6);
+          ctx.lineTo(ax - nx*6 - ny*perp, ay - ny*6 + nx*perp);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+
+      // Start and end markers
+      ctx.font = `bold ${cs*0.38}px monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const [sc, sr] = PATH[0];
+      ctx.fillStyle = '#00ff88'; ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 12;
+      ctx.fillText('▶', sc*cs+cs/2, sr*cs+cs/2);
+      const [ec, er] = PATH[PATH.length-1];
+      ctx.fillStyle = '#ff3333'; ctx.shadowColor = '#ff3333'; ctx.shadowBlur = 12;
+      ctx.fillText('⚡', ec*cs+cs/2, er*cs+cs/2);
+      ctx.shadowBlur = 0;
+
+      // Hover placement preview
+      if (hover && !PATH_SET.has(`${hover[0]},${hover[1]}`)) {
+        const [hc, hr] = hover;
+        const td = TOWERS[g.selectedTower];
+        const hcx = hc*cs+cs/2, hcy = hr*cs+cs/2;
+        const rng = td.rng * cs;
+        // Range circle
+        ctx.beginPath(); ctx.arc(hcx, hcy, rng, 0, Math.PI*2);
+        ctx.fillStyle = `${td.color}12`;
+        ctx.fill();
+        ctx.strokeStyle = `${td.color}40`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Cell highlight
+        ctx.fillStyle = g.towers.find(t=>t.col===hc&&t.row===hr) ? 'rgba(255,50,50,0.15)' : `${td.color}22`;
+        ctx.fillRect(hc*cs+2, hr*cs+2, cs-4, cs-4);
+      }
+
+      // ── Towers ──
+      for (const t2 of g.towers) {
+        const td = TOWERS[t2.type];
+        const cx = t2.col*cs+cs/2, cy = t2.row*cs+cs/2;
+        const pulse = 0.8 + 0.2*Math.sin(t*2.5 + t2.col*0.8 + t2.row*0.6);
+        const sz = cs*0.32;
+
+        // Platform glow
+        ctx.save();
+        ctx.shadowBlur = 25*pulse;
+        ctx.shadowColor = td.color;
+
+        // Base platform
+        ctx.fillStyle = '#0c0c24';
+        ctx.strokeStyle = `${td.color}55`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(cx-sz*1.25, cy-sz*1.25, sz*2.5, sz*2.5, 4);
+        ctx.fill(); ctx.stroke();
+
+        // Tower shape (rotates)
+        ctx.translate(cx, cy);
+        const rotSpeed = [0.5, 0.35, 0.8][t2.type];
+        ctx.rotate(t * rotSpeed + t2.col * 0.5);
+        ctx.fillStyle = td.color;
+
+        if (t2.type === 0) {
+          // LASER — diamond with inner highlight
+          ctx.beginPath();
+          ctx.moveTo(0, -sz); ctx.lineTo(sz*0.68, 0);
+          ctx.lineTo(0, sz); ctx.lineTo(-sz*0.68, 0);
+          ctx.closePath(); ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.3)';
+          ctx.beginPath();
+          ctx.moveTo(0, -sz*0.65); ctx.lineTo(sz*0.35, -sz*0.1); ctx.lineTo(0, sz*0.1);
+          ctx.closePath(); ctx.fill();
+          // Barrel
+          ctx.fillStyle = td.color;
+          ctx.fillRect(-2, sz*0.6, 4, sz*0.5);
+        } else if (t2.type === 1) {
+          // PLASMA — hexagon
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = i*Math.PI/3;
+            i===0 ? ctx.moveTo(Math.cos(a)*sz, Math.sin(a)*sz) : ctx.lineTo(Math.cos(a)*sz, Math.sin(a)*sz);
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.25)';
+          ctx.beginPath(); ctx.arc(0, 0, sz*0.45, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = td.color;
+          ctx.beginPath(); ctx.arc(0, 0, sz*0.2, 0, Math.PI*2); ctx.fill();
+        } else {
+          // NOVA — 8-pointed star
+          ctx.beginPath();
+          for (let i = 0; i < 8; i++) {
+            const a = i*Math.PI/4;
+            const r2 = i%2===0 ? sz : sz*0.42;
+            i===0 ? ctx.moveTo(Math.cos(a)*r2, Math.sin(a)*r2) : ctx.lineTo(Math.cos(a)*r2, Math.sin(a)*r2);
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.fillStyle = 'rgba(255,200,50,0.5)';
+          ctx.beginPath(); ctx.arc(0, 0, sz*0.3, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+
+        // Targeting beam (faint)
+        if (t2.lastTarget) {
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(t2.lastTarget.x, t2.lastTarget.y);
+          ctx.strokeStyle = `${td.color}18`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+
+      // ── Enemies ──
+      for (const e of g.enemies) {
+        const flash = e.flash > 0;
+        const ecol = flash ? '#ffffff' : `hsl(${e.hue},100%,62%)`;
+
+        ctx.save();
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = flash ? '#ffffff' : `hsl(${e.hue},100%,55%)`;
+
+        // Body (hexagon)
+        ctx.fillStyle = ecol;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = i*Math.PI/3 + e.angle * 0.3;
+          i===0 ? ctx.moveTo(e.x+Math.cos(a)*e.size, e.y+Math.sin(a)*e.size)
+                : ctx.lineTo(e.x+Math.cos(a)*e.size, e.y+Math.sin(a)*e.size);
+        }
+        ctx.closePath(); ctx.fill();
+
+        // Inner glow
+        ctx.fillStyle = flash ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.18)';
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.size*0.42, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+
+        // HP bar
+        const ratio = Math.max(0, e.hp / e.maxHp);
+        if (ratio < 0.99) {
+          const bw = e.size*3, bh = 4;
+          const bx = e.x - bw/2, by = e.y - e.size - 8;
+          ctx.fillStyle = '#1a0008';
+          ctx.fillRect(bx, by, bw, bh);
+          ctx.fillStyle = `hsl(${ratio*120},100%,52%)`;
+          ctx.fillRect(bx, by, bw*ratio, bh);
+        }
+      }
+
+      // ── Bullets ──
+      for (const b of g.bullets) {
+        const td = TOWERS[b.type];
+        const bSz = b.type === 2 ? 7 : 5;
+        ctx.save();
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = td.color;
+        ctx.fillStyle = td.color;
+        ctx.beginPath(); ctx.arc(b.x, b.y, bSz, 0, Math.PI*2); ctx.fill();
+        // Trail
+        const dx=b.tx-b.x, dy=b.ty-b.y, d=Math.hypot(dx,dy);
+        if (d > 1) {
+          const tl = Math.min(22, d);
+          ctx.beginPath();
+          ctx.moveTo(b.x, b.y);
+          ctx.lineTo(b.x-dx/d*tl, b.y-dy/d*tl);
+          ctx.strokeStyle = `${td.color}55`;
+          ctx.lineWidth = b.type===2 ? 5 : 3;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // ── Particles ──
+      for (const p of g.particles) {
+        const a = p.life / p.maxLife;
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = p.col;
+        ctx.fillStyle = p.col;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.sz * a, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+
+      // ── Floating text ──
+      ctx.save();
+      for (const f of g.floats) {
+        const a = f.life / f.maxLife;
+        ctx.globalAlpha = a;
+        ctx.fillStyle = f.color;
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 10;
+        ctx.font = `bold ${Math.round(cs*0.28)}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(f.text, f.x, f.y);
+      }
+      ctx.restore();
+
+      // ── Prep countdown overlay ──
+      if (g.phase === 'prep') {
+        const pt = Math.ceil(g.prepTimer);
+        const px = W/2, py = H/2;
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = '#040412';
+        ctx.fillRect(px-90, py-32, 180, 64);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = 'rgba(0,255,136,0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px-90, py-32, 180, 64);
+        ctx.fillStyle = '#00ff88';
+        ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 18;
+        ctx.font = `bold ${Math.round(cs*0.5)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(`WAVE ${g.wave} IN ${pt}s`, px, py);
+        ctx.restore();
+      }
+    }
+
+    // ── React App ──
+    function App() {
+      const canvasRef = useRef(null);
+      const gRef = useRef(null);
+      const hoverRef = useRef(null);
+      const rafRef = useRef(null);
+      const [phase, setPhase] = useState('start');
+      const [ui, setUi] = useState({ wave:1, gold:140, hp:20, score:0, selT:0 });
+      const [highScore, setHighScore] = useState(getHigh);
+      const [cs, setCs] = useState(52);
+
+      // Compute cell size
+      useEffect(() => {
+        function calc() {
+          const hudH = 78;
+          const byW = Math.floor(window.innerWidth / COLS);
+          const byH = Math.floor((window.innerHeight - hudH) / ROWS);
+          setCs(Math.max(28, Math.min(byW, byH, 76)));
+        }
+        calc();
+        window.addEventListener('resize', calc);
+        return () => window.removeEventListener('resize', calc);
+      }, []);
+
+      // Animation loop
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width = COLS * cs;
+        canvas.height = ROWS * cs;
+        let last = performance.now();
+        let frameCount = 0;
+
+        function loop(now) {
+          const dt = Math.min((now - last) / 1000, 0.05);
+          last = now;
+          frameCount++;
+          const g = gRef.current;
+          const ctx = canvas.getContext('2d');
+          if (g) {
+            updateState(g, dt, cs);
+            renderGame(ctx, g, cs, canvas.width, canvas.height, hoverRef.current);
+            if (frameCount % 3 === 0) {
+              setUi({ wave:g.wave, gold:g.gold, hp:g.hp, score:g.score, selT:g.selectedTower, prepTimer:Math.ceil(g.prepTimer||0) });
+            }
+            if (g.phase === 'gameover' || g.phase === 'win') {
+              setPhase(g.phase);
+              const hs = getHigh();
+              setHighScore(hs);
+            }
+          } else {
+            ctx.fillStyle = '#030310'; ctx.fillRect(0,0,canvas.width,canvas.height);
+          }
+          rafRef.current = requestAnimationFrame(loop);
+        }
+        rafRef.current = requestAnimationFrame(loop);
+        return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+      }, [cs]);
+
+      function startGame() {
+        resumeAudio();
+        gRef.current = initState();
+        setPhase('playing');
+        setUi({ wave:1, gold:140, hp:20, score:0, selT:0 });
+      }
+
+      function handleCanvasClick(e) {
+        const g = gRef.current;
+        if (!g || g.phase === 'gameover' || g.phase === 'win') return;
+        resumeAudio();
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const scX = canvas.width / rect.width, scY = canvas.height / rect.height;
+        const px = (e.clientX - rect.left) * scX;
+        const py = (e.clientY - rect.top) * scY;
+        const col = Math.floor(px / cs), row = Math.floor(py / cs);
+        if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+        if (PATH_SET.has(`${col},${row}`)) return;
+        if (g.towers.find(t => t.col === col && t.row === row)) return;
+        const td = TOWERS[g.selectedTower];
+        if (g.gold < td.cost) return;
+        g.gold -= td.cost;
+        g.towers.push({ col, row, type: g.selectedTower, cd: 0, lastTarget: null });
+        sndPlace();
+      }
+
+      function handleCanvasTouch(e) {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        handleCanvasClick({ clientX: touch.clientX, clientY: touch.clientY });
+      }
+
+      function handleMouseMove(e) {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const scX = canvas.width / rect.width, scY = canvas.height / rect.height;
+        const px = (e.clientX - rect.left) * scX;
+        const py = (e.clientY - rect.top) * scY;
+        const col = Math.floor(px / cs), row = Math.floor(py / cs);
+        hoverRef.current = (col>=0&&col<COLS&&row>=0&&row<ROWS) ? [col,row] : null;
+      }
+
+      function selectTower(i) {
+        if (gRef.current) gRef.current.selectedTower = i;
+        setUi(u => ({...u, selT: i}));
+      }
+
+      const isPlaying = phase === 'playing';
+      const W = COLS * cs, H = ROWS * cs;
+
+      return (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', height:'100vh', overflow:'hidden' }}>
+
+          {/* ── HUD ── */}
+          {isPlaying && (
+            <div style={{ width:'100%', maxWidth:W+'px', display:'flex', alignItems:'center', gap:'10px', padding:'8px 12px', background:'rgba(3,3,16,0.97)', borderBottom:'1px solid rgba(0,200,255,0.2)', flexWrap:'wrap', justifyContent:'space-between', minHeight:'46px' }}>
+              <div style={{ display:'flex', gap:'14px', alignItems:'center', flexWrap:'wrap' }}>
+                <span style={{ color:'#ffcc00', fontSize:'13px', fontWeight:'bold' }}>💰 {ui.gold}g</span>
+                <span style={{ color:'#ff5566', fontSize:'13px', fontWeight:'bold' }}>❤️ {ui.hp}</span>
+                <span style={{ color:'#00ccff', fontSize:'13px', fontWeight:'bold' }}>⚡ W{ui.wave}/10</span>
+                <span style={{ color:'#cc88ff', fontSize:'13px' }}>★ {ui.score.toLocaleString()}</span>
+                {highScore > 0 && <span style={{ color:'#888', fontSize:'11px' }}>Best:{highScore.toLocaleString()}</span>}
+              </div>
+              <div style={{ display:'flex', gap:'6px' }}>
+                {TOWERS.map((t, i) => (
+                  <button key={i} onClick={() => selectTower(i)}
+                    style={{ padding:'4px 9px', background:ui.selT===i ? `${t.color}20` : 'transparent', border:`1.5px solid ${ui.selT===i?t.color:t.color+'55'}`, color:ui.gold>=(isPlaying?t.cost:0)?t.color:'#444', fontSize:'11px', cursor:'pointer', borderRadius:'5px', letterSpacing:'0.5px', fontFamily:'monospace' }}>
+                    {t.name} {t.cost}g
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Canvas + overlays ── */}
+          <div style={{ position:'relative', display:'flex', justifyContent:'center', alignItems:'center', flex:1 }}>
+            <canvas ref={canvasRef} width={W} height={H}
+              onClick={handleCanvasClick}
+              onTouchEnd={handleCanvasTouch}
+              onMouseMove={handleMouseMove}
+              onMouseLeave={() => { hoverRef.current = null; }}
+              style={{ cursor:isPlaying?'crosshair':'default', display:'block', border:'1px solid rgba(0,180,255,0.12)', boxShadow:'0 0 50px rgba(0,60,200,0.18)' }} />
+
+            {/* START */}
+            {phase === 'start' && (
+              <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(3,3,14,0.93)' }}>
+                <div style={{ textAlign:'center', padding:'28px 32px', border:'1px solid rgba(0,200,255,0.35)', borderRadius:'14px', maxWidth:'460px', width:'90%', background:'rgba(5,5,20,0.8)' }}>
+                  <div style={{ fontSize:'clamp(30px,5vw,52px)', color:'#00ffff', textShadow:'0 0 30px #00ffff, 0 0 60px #0066ff', fontWeight:'bold', marginBottom:'6px', letterSpacing:'3px' }}>
+                    NEON FORTRESS
+                  </div>
+                  <p style={{ color:'#6677aa', marginBottom:'18px', fontSize:'13px' }}>
+                    Place neon towers to defend the base — survive 10 waves of glowing invaders!
+                  </p>
+                  <div style={{ display:'flex', justifyContent:'center', gap:'12px', marginBottom:'18px', flexWrap:'wrap' }}>
+                    {TOWERS.map((t, i) => (
+                      <div key={i} style={{ padding:'10px 14px', border:`1px solid ${t.color}55`, borderRadius:'8px', color:t.color, fontSize:'11px', textAlign:'center', background:`${t.color}0c`, minWidth:'90px' }}>
+                        <div style={{ fontSize:'20px', marginBottom:'4px' }}>{['◇','⬡','★'][i]}</div>
+                        <div style={{ fontWeight:'bold', fontSize:'12px' }}>{t.name}</div>
+                        <div>{t.cost}g</div>
+                        <div style={{ color:'#556', marginTop:'3px', fontSize:'10px' }}>{t.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p style={{ color:'#445566', fontSize:'11px', marginBottom:'18px', lineHeight:'1.6' }}>
+                    Click empty cells to place towers · Enemies follow the blue path · Don't let them reach ⚡
+                  </p>
+                  {highScore > 0 && (
+                    <div style={{ color:'#ffcc00', marginBottom:'14px', fontSize:'13px' }}>Best Score: {highScore.toLocaleString()}</div>
+                  )}
+                  <button onClick={startGame} style={{ padding:'13px 42px', background:'transparent', border:'2px solid #00ffff', color:'#00ffff', fontSize:'20px', cursor:'pointer', borderRadius:'8px', textShadow:'0 0 12px #00ffff', boxShadow:'0 0 25px rgba(0,255,255,0.2)', letterSpacing:'3px', fontFamily:'monospace' }}>
+                    DEPLOY ▶
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* GAME OVER / WIN */}
+            {(phase === 'gameover' || phase === 'win') && (
+              <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(3,3,14,0.88)' }}>
+                <div style={{ textAlign:'center', padding:'28px 32px', border:`1px solid rgba(${phase==='win'?'0,255,136':'255,68,68'},0.4)`, borderRadius:'14px', maxWidth:'420px', width:'90%', background:'rgba(5,5,20,0.85)' }}>
+                  <div style={{ fontSize:'clamp(24px,4vw,42px)', color:phase==='win'?'#00ff88':'#ff4444', textShadow:`0 0 25px ${phase==='win'?'#00ff88':'#ff4444'}`, fontWeight:'bold', marginBottom:'12px', letterSpacing:'2px' }}>
+                    {phase === 'win' ? '🏆 FORTRESS HELD!' : '💥 BREACHED!'}
+                  </div>
+                  <div style={{ fontSize:'36px', color:'#ffcc00', textShadow:'0 0 20px #ffcc00', marginBottom:'8px' }}>
+                    {ui.score.toLocaleString()}
+                  </div>
+                  <div style={{ color:'#6677aa', fontSize:'13px', marginBottom:'8px' }}>
+                    Wave {ui.wave} · {ui.score.toLocaleString()} pts
+                  </div>
+                  {ui.score >= highScore && highScore > 0 && (
+                    <div style={{ color:'#00ff88', fontSize:'14px', marginBottom:'8px' }}>✨ NEW BEST!</div>
+                  )}
+                  <div style={{ color:'#ffcc00', fontSize:'13px', marginBottom:'22px' }}>
+                    Best: {Math.max(ui.score, highScore).toLocaleString()}
+                  </div>
+                  <button onClick={startGame} style={{ padding:'13px 42px', background:'transparent', border:'2px solid #00ffff', color:'#00ffff', fontSize:'18px', cursor:'pointer', borderRadius:'8px', letterSpacing:'3px', fontFamily:'monospace' }}>
+                    RETRY ▶
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
