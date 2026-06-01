@@ -1789,5 +1789,25 @@
     "folder": "games/2026-05-31",
     "file": "games/2026-05-31/index.html",
     "preview": "games/2026-05-31/preview.png"
+  },
+  {
+    "id": "2026-06-01",
+    "name": "Skeet Surge",
+    "date": "2026-06-01",
+    "description": "Neon clay discs launch from the edges in parabolic arcs — aim your crosshair and click to blast them before they escape! Chain consecutive hits for massive combo multipliers and precision bullseye bonuses.",
+    "tagline": "Aim the crosshair. Blast the disc. Chain the combos!",
+    "tags": [
+      "shooting",
+      "precision",
+      "reflex",
+      "arcade",
+      "action"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse to aim crosshair · Click / Tap to shoot at flying neon discs",
+    "folder": "games/2026-06-01",
+    "file": "games/2026-06-01/index.html",
+    "preview": "games/2026-06-01/preview.png"
   }
 ]
