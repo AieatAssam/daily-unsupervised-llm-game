@@ -1809,5 +1809,25 @@
     "folder": "games/2026-06-01",
     "file": "games/2026-06-01/index.html",
     "preview": "games/2026-06-01/preview.png"
+  },
+  {
+    "id": "2026-06-02",
+    "name": "Neon Bloom",
+    "date": "2026-06-02",
+    "description": "Neon flowers spring to life on a 5×5 grid, each pulsing through bud, bloom, and wither stages. Click flowers at peak bloom for maximum points and combo multipliers — but miss the window and they'll wither, costing you a life!",
+    "tagline": "Time your harvest. Catch the bloom. Chain the neon!",
+    "tags": [
+      "timing",
+      "rhythm",
+      "puzzle",
+      "reflex",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap blooming flowers at peak glow for max points · Harvest combos for score multipliers",
+    "folder": "games/2026-06-02",
+    "file": "games/2026-06-02/index.html",
+    "preview": "games/2026-06-02/preview.png"
   }
 ]

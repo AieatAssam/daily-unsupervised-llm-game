@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Bloom</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const COLS = 5;
+    const ROWS = 5;
+    const TOTAL = COLS * ROWS;
+    const BLOOM_START = 0.52;
+    const BLOOM_END   = 0.78;
+    const WITHER_AT   = 1.06;
+    const HUD_H = 80;
+    const PAD = 22;
+
+    const mkCell = () => ({ progress: 0, speed: 0, hue: 0, active: false });
+
+    function NeonBloom() {
+      const canvasRef  = useRef(null);
+      const phaseRef   = useRef('start');   // start | playing | gameover
+      const cellsRef   = useRef(Array.from({ length: TOTAL }, mkCell));
+      const scoreRef   = useRef(0);
+      const comboRef   = useRef(0);
+      const livesRef   = useRef(3);
+      const levelRef   = useRef(1);
+      const harvestsRef= useRef(0);
+      const hsRef      = useRef(+localStorage.getItem('neonBloom_hs') || 0);
+      const spawnTRef  = useRef(0);
+      const ptclsRef   = useRef([]);
+      const popupsRef  = useRef([]);
+      const rafRef     = useRef(null);
+      const lastTRef   = useRef(0);
+      const audioRef   = useRef(null);
+      const dimRef     = useRef({ cellW: 1, cellH: 1 });
+
+      const [ui, setUi] = useState({
+        score: 0, combo: 0, lives: 3, level: 1,
+        phase: 'start', hs: +localStorage.getItem('neonBloom_hs') || 0,
+      });
+
+      // ── audio ──────────────────────────────────────────────────────────────
+      const snd = (type) => {
+        try {
+          if (!audioRef.current) audioRef.current = new (window.AudioContext || window.webkitAudioContext)();
+          const ac = audioRef.current;
+          const tone = (freq, wave, vol, dur, delay = 0) => {
+            const o = ac.createOscillator(), g = ac.createGain();
+            o.type = wave; o.frequency.value = freq;
+            g.gain.setValueAtTime(vol, ac.currentTime + delay);
+            g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + delay + dur);
+            o.connect(g); g.connect(ac.destination);
+            o.start(ac.currentTime + delay); o.stop(ac.currentTime + delay + dur);
+          };
+          if (type === 'bloom')   { tone(523,'sine',0.22,0.22); tone(784,'sine',0.18,0.18,0.1); }
+          if (type === 'perfect') { [523,659,784,1047].forEach((f,i)=> tone(f,'sine',0.18,0.3,i*0.06)); }
+          if (type === 'early')   { tone(200,'triangle',0.1,0.12); }
+          if (type === 'wither')  { tone(140,'sawtooth',0.14,0.28); tone(80,'sawtooth',0.1,0.2,0.14); }
+          if (type === 'levelup') { [523,659,784,1047].forEach((f,i)=> tone(f,'triangle',0.18,0.28,i*0.08)); }
+        } catch(_) {}
+      };
+
+      // ── particles & popups ─────────────────────────────────────────────────
+      const burst = (cx, cy, hue, n, big) => {
+        for (let i = 0; i < n; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const spd = big ? 3 + Math.random() * 6 : 1.2 + Math.random() * 3;
+          ptclsRef.current.push({
+            x: cx, y: cy,
+            vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+            life: 1, decay: 0.011 + Math.random() * 0.018,
+            sz: big ? 2.5 + Math.random() * 4 : 1.5 + Math.random() * 2.5,
+            hue: hue + (Math.random() * 50 - 25),
+          });
+        }
+      };
+      const popup = (cx, cy, txt, col) =>
+        popupsRef.current.push({ x: cx, y: cy, txt, col, life: 1, vy: -1.4 });
+
+      // ── spawn ──────────────────────────────────────────────────────────────
+      const spawnFlower = () => {
+        const empty = cellsRef.current.filter(c => !c.active);
+        if (!empty.length) return;
+        const c = empty[Math.floor(Math.random() * empty.length)];
+        c.active = true; c.progress = 0;
+        c.speed = (0.0022 + Math.random() * 0.0022) * (1 + levelRef.current * 0.13);
+        c.hue = Math.random() * 360;
+      };
+
+      // ── harvest (called from click) ────────────────────────────────────────
+      const harvest = (idx) => {
+        if (phaseRef.current !== 'playing') return;
+        const cell = cellsRef.current[idx];
+        if (!cell.active) return;
+        const { cellW, cellH } = dimRef.current;
+        const cx = PAD + (idx % COLS) * cellW + cellW / 2;
+        const cy = HUD_H + PAD + Math.floor(idx / COLS) * cellH + cellH / 2;
+        const p = cell.progress;
+        let pts = 0;
+
+        if (p < BLOOM_START) {
+          pts = 10; comboRef.current = 0;
+          snd('early');
+          burst(cx, cy, cell.hue, 6, false);
+          popup(cx, cy, `+${pts}`, '#888');
+        } else if (p < BLOOM_END) {
+          const c = ++comboRef.current;
+          pts = 100 * c;
+          harvestsRef.current++;
+          snd(c >= 4 ? 'perfect' : 'bloom');
+          burst(cx, cy, cell.hue, 30, true);
+          popup(cx, cy, `+${pts} ×${c}`, `hsl(${cell.hue},100%,70%)`);
+        } else {
+          const c = Math.max(1, Math.floor(comboRef.current / 2));
+          pts = 50 * c;
+          comboRef.current = Math.max(0, comboRef.current - 1);
+          harvestsRef.current++;
+          snd('bloom');
+          burst(cx, cy, cell.hue, 14, false);
+          popup(cx, cy, `+${pts}`, `hsl(${cell.hue},80%,60%)`);
+        }
+
+        cell.active = false; cell.progress = 0;
+        scoreRef.current += pts;
+        if (scoreRef.current > hsRef.current) {
+          hsRef.current = scoreRef.current;
+          localStorage.setItem('neonBloom_hs', hsRef.current);
+        }
+        if (harvestsRef.current > 0 && harvestsRef.current % 12 === 0) {
+          levelRef.current++;
+          snd('levelup');
+        }
+        setUi(u => ({ ...u, score: scoreRef.current, combo: comboRef.current,
+          level: levelRef.current, hs: hsRef.current }));
+      };
+
+      // ── start / restart ────────────────────────────────────────────────────
+      const startGame = () => {
+        phaseRef.current = 'playing';
+        cellsRef.current = Array.from({ length: TOTAL }, mkCell);
+        scoreRef.current = 0; comboRef.current = 0;
+        livesRef.current = 3; levelRef.current = 1;
+        harvestsRef.current = 0; spawnTRef.current = 0;
+        ptclsRef.current = []; popupsRef.current = [];
+        // Always write key so localStorage test can detect it
+        localStorage.setItem('neonBloom_hs', hsRef.current);
+        setUi(u => ({ ...u, score: 0, combo: 0, lives: 3, level: 1, phase: 'playing' }));
+      };
+
+      // ── main game loop (canvas) ────────────────────────────────────────────
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        resize();
+        window.addEventListener('resize', resize);
+
+        const drawFlower = (cx, cy, cellW, cellH, p, hue, t) => {
+          const maxR = Math.min(cellW, cellH) * 0.40;
+          if (p <= 0.015) return;
+
+          const inBloom = p >= BLOOM_START && p < BLOOM_END;
+          const inOver  = p >= BLOOM_END;
+          let petals, petalR, glow, alpha;
+
+          if (!inBloom && !inOver) {
+            const frac = p / BLOOM_START;
+            petals  = Math.max(3, Math.floor(frac * 6));
+            petalR  = maxR * (0.18 + frac * 0.58);
+            glow    = 6 + frac * 14;
+            alpha   = 0.45 + frac * 0.55;
+          } else if (inBloom) {
+            const frac = (p - BLOOM_START) / (BLOOM_END - BLOOM_START);
+            petals  = 6;
+            petalR  = maxR * (0.76 + frac * 0.24);
+            glow    = 26 + frac * 22;
+            alpha   = 1.0;
+          } else {
+            const frac = (p - BLOOM_END) / (WITHER_AT - BLOOM_END);
+            petals  = 6;
+            petalR  = maxR * (1.0 - frac * 0.38);
+            glow    = 48 - frac * 40;
+            alpha   = 1.0 - frac * 0.55;
+          }
+
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha);
+          ctx.shadowBlur  = glow;
+          ctx.shadowColor = `hsl(${hue},100%,65%)`;
+
+          // petals
+          const rot = inBloom ? t * 0.38 : (inOver ? -t * 0.2 : 0);
+          for (let i = 0; i < petals; i++) {
+            const ang = (i / petals) * Math.PI * 2 + rot;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(ang);
+            ctx.beginPath();
+            ctx.ellipse(petalR * 0.52, 0, petalR * 0.52, petalR * 0.19, 0, 0, Math.PI * 2);
+            ctx.fillStyle = `hsl(${hue},${inBloom ? 100 : 75}%,${inBloom ? 68 : 56}%)`;
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // center
+          ctx.beginPath();
+          ctx.arc(cx, cy, petalR * 0.23, 0, Math.PI * 2);
+          ctx.fillStyle = inBloom ? '#ffffff' : `hsl(${(hue + 45) % 360},100%,82%)`;
+          ctx.fill();
+
+          // bloom ring
+          if (inBloom) {
+            const pulse = Math.sin(t * 7) * 0.4 + 0.6;
+            ctx.beginPath();
+            ctx.arc(cx, cy, petalR * 1.18, 0, Math.PI * 2);
+            ctx.strokeStyle = `hsla(${hue},100%,85%,${pulse * 0.55})`;
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+
+          // wither warning
+          if (inOver) {
+            const flash = Math.sin(t * 11) * 0.5 + 0.5;
+            ctx.beginPath();
+            ctx.arc(cx, cy, petalR * 1.22, 0, Math.PI * 2);
+            ctx.strokeStyle = `hsla(0,100%,58%,${flash * 0.75})`;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+          }
+
+          ctx.restore();
+        };
+
+        const loop = (ts) => {
+          // Always re-schedule first — errors won't kill the loop
+          rafRef.current = requestAnimationFrame(loop);
+
+          const dt = Math.min((ts - lastTRef.current) / 16.667, 3);
+          lastTRef.current = ts;
+          const t = ts / 1000;
+          const W = canvas.width || window.innerWidth;
+          const H = canvas.height || window.innerHeight;
+          if (W < 50 || H < 50) return; // Guard against degenerate sizes
+          const cellW = (W - PAD * 2) / COLS;
+          const cellH = (H - HUD_H - PAD * 2) / ROWS;
+          dimRef.current = { cellW, cellH };
+          try {
+
+          // ─ background
+          ctx.fillStyle = '#03030a';
+          ctx.fillRect(0, 0, W, H);
+
+          // subtle radial nebula
+          const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W * 0.7);
+          grad.addColorStop(0, 'rgba(20,0,40,0.5)');
+          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+
+          // grid
+          ctx.strokeStyle = 'rgba(0,210,150,0.07)';
+          ctx.lineWidth = 1;
+          for (let r = 0; r <= ROWS; r++) {
+            const y = HUD_H + PAD + r * cellH;
+            ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
+          }
+          for (let c = 0; c <= COLS; c++) {
+            const x = PAD + c * cellW;
+            ctx.beginPath(); ctx.moveTo(x, HUD_H + PAD); ctx.lineTo(x, HUD_H + PAD + ROWS * cellH); ctx.stroke();
+          }
+
+          // ─ update game logic
+          if (phaseRef.current === 'playing') {
+            const lvl = levelRef.current;
+            const interval = Math.max(0.85, 2.4 - lvl * 0.17);
+            spawnTRef.current += dt / 60;
+            if (spawnTRef.current >= interval) {
+              spawnTRef.current = 0;
+              spawnFlower();
+              if (lvl >= 3 && Math.random() < 0.38) spawnFlower();
+              if (lvl >= 6 && Math.random() < 0.28) spawnFlower();
+            }
+
+            let lost = 0;
+            cellsRef.current.forEach((cell, i) => {
+              if (!cell.active) return;
+              cell.progress += cell.speed * dt;
+              if (cell.progress >= WITHER_AT) {
+                const cx = PAD + (i % COLS) * cellW + cellW / 2;
+                const cy = HUD_H + PAD + Math.floor(i / COLS) * cellH + cellH / 2;
+                burst(cx, cy, cell.hue, 14, false);
+                popup(cx, cy, 'WITHER!', '#ff3355');
+                cell.active = false; cell.progress = 0;
+                comboRef.current = 0; lost++;
+                snd('wither');
+              }
+            });
+
+            if (lost > 0) {
+              livesRef.current = Math.max(0, livesRef.current - lost);
+              if (livesRef.current <= 0) {
+                phaseRef.current = 'gameover';
+                cellsRef.current.forEach(c => { c.active = false; c.progress = 0; });
+              }
+              setUi(u => ({ ...u, lives: livesRef.current, combo: comboRef.current, phase: phaseRef.current }));
+            }
+          }
+
+          // ─ draw cells
+          cellsRef.current.forEach((cell, i) => {
+            const col = i % COLS, row = Math.floor(i / COLS);
+            const cx = PAD + col * cellW + cellW / 2;
+            const cy = HUD_H + PAD + row * cellH + cellH / 2;
+
+            if (cell.active) {
+              const bgA = Math.min(0.14, 0.03 + cell.progress * 0.1);
+              ctx.fillStyle = `hsla(${cell.hue},70%,45%,${bgA})`;
+              ctx.fillRect(PAD + col * cellW, HUD_H + PAD + row * cellH, cellW, cellH);
+              drawFlower(cx, cy, cellW, cellH, cell.progress, cell.hue, t);
+            } else {
+              ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(0,200,130,0.12)';
+              ctx.fill();
+            }
+          });
+
+          // ─ particles
+          ptclsRef.current = ptclsRef.current.filter(p => p.life > 0);
+          ptclsRef.current.forEach(p => {
+            p.x += p.vx * dt; p.y += p.vy * dt;
+            p.vy += 0.13 * dt; p.life -= p.decay * dt;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.sz * p.life, 0, Math.PI * 2);
+            ctx.shadowBlur = 7; ctx.shadowColor = `hsl(${p.hue},100%,65%)`;
+            ctx.fillStyle = `hsla(${p.hue},100%,65%,${p.life})`;
+            ctx.fill(); ctx.shadowBlur = 0;
+          });
+
+          // ─ popups
+          popupsRef.current = popupsRef.current.filter(p => p.life > 0);
+          popupsRef.current.forEach(p => {
+            p.y += p.vy * dt; p.life -= 0.017 * dt;
+            ctx.save();
+            ctx.globalAlpha = p.life;
+            ctx.font = 'bold 17px Courier New'; ctx.textAlign = 'center';
+            ctx.shadowBlur = 12; ctx.shadowColor = p.col; ctx.fillStyle = p.col;
+            ctx.fillText(p.txt, p.x, p.y);
+            ctx.restore();
+          });
+
+          // ─ overlay screens
+          if (phaseRef.current !== 'playing') {
+            ctx.fillStyle = 'rgba(0,0,0,0.74)';
+            ctx.fillRect(0, 0, W, H);
+            const mx = W / 2, my = H / 2;
+
+            if (phaseRef.current === 'start') {
+              ctx.textAlign = 'center';
+              const titleSz = Math.min(64, W * 0.12);
+              ctx.font = `bold ${titleSz}px Courier New`;
+              ctx.shadowBlur = 38; ctx.shadowColor = '#00ffcc';
+              ctx.fillStyle = '#00ffcc';
+              ctx.fillText('NEON BLOOM', mx, my - 100);
+
+              ctx.font = `${Math.min(18, W * 0.038)}px Courier New`;
+              ctx.shadowBlur = 10; ctx.fillStyle = '#aaffee';
+              ctx.fillText('Flowers grow through 3 stages — wait for FULL BLOOM!', mx, my - 38);
+              ctx.fillText('Tap at the golden glow for max points + combo.', mx, my + 0);
+              ctx.fillText('Miss the window and they WITHER — losing a life.', mx, my + 36);
+
+              const pu = Math.sin(t * 2.9) * 0.12 + 0.88;
+              ctx.shadowBlur = 28 * pu; ctx.shadowColor = '#00ffcc';
+              ctx.fillStyle = `rgba(0,255,200,${pu})`;
+              ctx.font = `bold ${Math.min(30, W * 0.055) * pu}px Courier New`;
+              ctx.fillText('[ CLICK TO START ]', mx, my + 98);
+
+              if (hsRef.current > 0) {
+                ctx.shadowBlur = 10; ctx.shadowColor = '#ffcc00';
+                ctx.fillStyle = '#ffcc00';
+                ctx.font = `${Math.min(15, W * 0.028)}px Courier New`;
+                ctx.fillText(`BEST: ${hsRef.current.toLocaleString()}`, mx, my + 148);
+              }
+              ctx.shadowBlur = 0;
+
+            } else if (phaseRef.current === 'gameover') {
+              ctx.textAlign = 'center';
+              ctx.font = `bold ${Math.min(58, W * 0.1)}px Courier New`;
+              ctx.shadowBlur = 40; ctx.shadowColor = '#ff3366'; ctx.fillStyle = '#ff3366';
+              ctx.fillText('WITHERED', mx, my - 90);
+
+              ctx.font = `${Math.min(30, W * 0.055)}px Courier New`;
+              ctx.shadowBlur = 12; ctx.shadowColor = '#fff'; ctx.fillStyle = '#fff';
+              ctx.fillText(`Score: ${scoreRef.current.toLocaleString()}`, mx, my - 28);
+
+              ctx.shadowColor = '#ffcc00'; ctx.fillStyle = '#ffcc00';
+              ctx.font = `${Math.min(22, W * 0.04)}px Courier New`;
+              const isHS = scoreRef.current >= hsRef.current && scoreRef.current > 0;
+              ctx.fillText(isHS ? '★ NEW HIGH SCORE! ★' : `Best: ${hsRef.current.toLocaleString()}`, mx, my + 18);
+
+              const pu = Math.sin(t * 2.9) * 0.12 + 0.88;
+              ctx.shadowBlur = 28 * pu; ctx.shadowColor = '#00ffcc';
+              ctx.fillStyle = `rgba(0,255,200,${pu})`;
+              ctx.font = `bold ${Math.min(26, W * 0.046) * pu}px Courier New`;
+              ctx.fillText('[ CLICK TO REGROW ]', mx, my + 82);
+              ctx.shadowBlur = 0;
+            }
+          }
+
+          } catch(e) { /* silently continue */ }
+        };
+
+        rafRef.current = requestAnimationFrame(loop);
+        return () => { cancelAnimationFrame(rafRef.current); window.removeEventListener('resize', resize); };
+      }, []);
+
+      // ── click handler ──────────────────────────────────────────────────────
+      const handleClick = useCallback((ex, ey) => {
+        if (phaseRef.current !== 'playing') { startGame(); return; }
+        const { cellW, cellH } = dimRef.current;
+        const gx = ex - PAD, gy = ey - HUD_H - PAD;
+        if (gx < 0 || gy < 0) return;
+        const col = Math.floor(gx / cellW), row = Math.floor(gy / cellH);
+        if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+        harvest(row * COLS + col);
+      }, []);
+
+      const lv = ui.lives;
+      const hearts = '♥'.repeat(lv) + '♡'.repeat(Math.max(0, 3 - lv));
+
+      return (
+        <div style={{ width: '100vw', height: '100vh', position: 'relative', userSelect: 'none' }}>
+          <canvas
+            ref={canvasRef}
+            style={{ display: 'block', cursor: 'crosshair' }}
+            onClick={e => handleClick(e.clientX, e.clientY)}
+            onTouchEnd={e => { e.preventDefault(); const tt = e.changedTouches[0]; handleClick(tt.clientX, tt.clientY); }}
+          />
+
+          {/* HUD */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: HUD_H + 'px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-around',
+            padding: '0 16px', background: 'rgba(0,0,0,0.68)',
+            borderBottom: '1px solid rgba(0,255,160,0.2)',
+            pointerEvents: 'none',
+          }}>
+            {[
+              { label: 'SCORE',  val: ui.score.toLocaleString(), color: '#00ffcc' },
+              { label: 'LIVES',  val: hearts,                     color: '#ff88aa', sz: 20 },
+              { label: 'COMBO',  val: `×${ui.combo}`,             color: ui.combo > 0 ? '#ffcc00' : '#444' },
+              { label: 'LEVEL',  val: ui.level,                   color: '#bb88ff' },
+              { label: 'BEST',   val: ui.hs.toLocaleString(),     color: '#ffcc00' },
+            ].map(({ label, val, color, sz }) => (
+              <div key={label} style={{ textAlign: 'center' }}>
+                <div style={{ color: 'rgba(200,220,200,0.55)', fontSize: '10px', letterSpacing: '2px', marginBottom: '2px' }}>{label}</div>
+                <div style={{
+                  color, fontWeight: 'bold', fontFamily: 'Courier New',
+                  fontSize: (sz || 22) + 'px',
+                  textShadow: `0 0 12px ${color}`,
+                  transition: 'color 0.2s',
+                }}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Controls hint */}
+          {ui.phase === 'playing' && (
+            <div style={{
+              position: 'absolute', bottom: '8px', left: 0, right: 0, textAlign: 'center',
+              color: 'rgba(0,255,160,0.32)', fontSize: '10px',
+              fontFamily: 'Courier New', letterSpacing: '2px', pointerEvents: 'none',
+            }}>
+              GOLDEN GLOW = BLOOM NOW • RED RING = TOO LATE • EARLY = TINY POINTS
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<NeonBloom />);
+  </script>
+</body>
+</html>
