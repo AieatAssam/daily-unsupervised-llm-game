@@ -1849,5 +1849,25 @@
     "folder": "games/2026-06-03",
     "file": "games/2026-06-03/index.html",
     "preview": "games/2026-06-03/preview.png"
+  },
+  {
+    "id": "2026-06-05",
+    "name": "Hue Rush",
+    "date": "2026-06-05",
+    "description": "A neon Stroop challenge — color words flash on screen in a mismatched ink color. Click the actual INK color as fast as you can, chain correct answers for massive combo multipliers, and survive 90 seconds before time runs out!",
+    "tagline": "Read the color, not the word. Beat the confusion!",
+    "tags": [
+      "reflex",
+      "cognitive",
+      "color",
+      "puzzle",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap the color button matching the INK color of the displayed word",
+    "folder": "games/2026-06-05",
+    "file": "games/2026-06-05/index.html",
+    "preview": "games/2026-06-05/preview.png"
   }
 ]

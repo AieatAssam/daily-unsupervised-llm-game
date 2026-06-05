@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hue Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #080012;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    #root { width: 100%; height: 100vh; }
+
+    @keyframes pop {
+      0%   { transform: scale(0.6); opacity: 0; }
+      60%  { transform: scale(1.08); opacity: 1; }
+      100% { transform: scale(1);   opacity: 1; }
+    }
+    @keyframes particleFly {
+      0%   { transform: translate(0,0) scale(1); opacity: 1; }
+      100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+    }
+    @keyframes wrongShake {
+      0%,100% { transform: translateX(0); }
+      20%     { transform: translateX(-10px); }
+      40%     { transform: translateX(10px); }
+      60%     { transform: translateX(-8px); }
+      80%     { transform: translateX(6px); }
+    }
+    @keyframes pulse {
+      0%,100% { opacity:1; }
+      50%     { opacity:0.5; }
+    }
+    @keyframes bgPulseOk {
+      0%   { background: #080012; }
+      30%  { background: #002208; }
+      100% { background: #080012; }
+    }
+    @keyframes bgPulseBad {
+      0%   { background: #080012; }
+      30%  { background: #200008; }
+      100% { background: #080012; }
+    }
+    .shake { animation: wrongShake 0.35s ease-out; }
+    .flash-ok  { animation: bgPulseOk  0.4s ease-out; }
+    .flash-bad { animation: bgPulseBad 0.4s ease-out; }
+    .word-pop { animation: pop 0.18s ease-out; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ─── Colors ─── */
+    const COLORS = [
+      { name: 'RED',     hex: '#ff2244' },
+      { name: 'BLUE',    hex: '#3366ff' },
+      { name: 'GREEN',   hex: '#22ff66' },
+      { name: 'YELLOW',  hex: '#ffee00' },
+      { name: 'CYAN',    hex: '#00ffee' },
+      { name: 'MAGENTA', hex: '#ff00ff' },
+    ];
+
+    /* ─── Audio ─── */
+    let _actx = null;
+    const audio = () => { if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)(); return _actx; };
+    const beep = (freq, dur, vol = 0.35, type = 'sine', slide = 0) => {
+      try {
+        const ctx = audio();
+        const osc = ctx.createOscillator();
+        const g   = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        if (slide) osc.frequency.exponentialRampToValueAtTime(freq * slide, ctx.currentTime + dur);
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur + 0.01);
+      } catch(e) {}
+    };
+    const sfxOk  = (combo) => { beep(440 + combo * 25, 0.14, 0.4, 'sine', 1.4); };
+    const sfxBad = () => { beep(120, 0.35, 0.5, 'sawtooth'); };
+    const sfxStart = () => { beep(330, 0.08, 0.3); setTimeout(() => beep(440, 0.08, 0.3), 90); setTimeout(() => beep(660, 0.15, 0.4), 180); };
+
+    /* ─── Question generator ─── */
+    const makeQ = () => {
+      const w = Math.floor(Math.random() * COLORS.length);
+      let c;
+      do { c = Math.floor(Math.random() * COLORS.length); } while (c === w);
+      return { wordIdx: w, colorIdx: c };
+    };
+
+    /* ─── Particle helper ─── */
+    let pid = 0;
+    const mkParticles = (hex, count = 14) =>
+      Array.from({ length: count }, () => ({
+        id: pid++,
+        hex,
+        dx: (Math.random() - 0.5) * 260,
+        dy: (Math.random() - 0.5) * 200 - 40,
+      }));
+
+    /* ─── Main component ─── */
+    const HueRush = () => {
+      const [phase,     setPhase]     = useState('start');
+      const [score,     setScore]     = useState(0);
+      const [hs,        setHs]        = useState(() => +(localStorage.getItem('hueRushHigh') || 0));
+      const [lives,     setLives]     = useState(3);
+      const [combo,     setCombo]     = useState(0);
+      const [timeLeft,  setTimeLeft]  = useState(90);
+      const [q,         setQ]         = useState(null);
+      const [qtFrac,    setQtFrac]    = useState(1);
+      const [flash,     setFlash]     = useState(null); // null | 'ok' | 'bad'
+      const [particles, setParticles] = useState([]);
+      const [wordKey,   setWordKey]   = useState(0); // to retrigger pop animation
+
+      /* All mutable game state lives here to avoid stale closures in timers */
+      const G = useRef({
+        phase: 'start', score: 0, lives: 3, combo: 0,
+        qCount: 0, q: null,
+        qtStart: 0, qtMax: 3000,
+        qtTimer: null, gameTimer: null,
+      });
+
+      /* ── helpers that only access G.current (ref-safe) ── */
+      const addParticles = useCallback((hex, good) => {
+        const color = good ? hex : '#ff2244';
+        const ps = mkParticles(color);
+        setParticles(prev => [...prev, ...ps]);
+        setTimeout(() => setParticles(prev => prev.filter(p => !ps.find(x => x.id === p.id))), 700);
+      }, []);
+
+      const doFlash = useCallback((type) => {
+        setFlash(type);
+        setTimeout(() => setFlash(null), 400);
+      }, []);
+
+      const saveHigh = useCallback(() => {
+        const s = G.current.score;
+        const old = +(localStorage.getItem('hueRushHigh') || 0);
+        if (s > old) { localStorage.setItem('hueRushHigh', String(s)); setHs(s); }
+      }, []);
+
+      const endGame = useCallback(() => {
+        clearInterval(G.current.qtTimer);
+        clearInterval(G.current.gameTimer);
+        G.current.phase = 'over';
+        setPhase('over');
+        saveHigh();
+      }, [saveHigh]);
+
+      const spawnQ = useCallback(() => {
+        clearInterval(G.current.qtTimer);
+        const nq = makeQ();
+        G.current.q = nq;
+        G.current.qtStart = Date.now();
+        const maxMs = Math.max(1500, 3000 - G.current.qCount * 38);
+        G.current.qtMax = maxMs;
+        setQ(nq);
+        setQtFrac(1);
+        setWordKey(k => k + 1);
+
+        G.current.qtTimer = setInterval(() => {
+          if (G.current.phase !== 'playing') { clearInterval(G.current.qtTimer); return; }
+          const frac = 1 - (Date.now() - G.current.qtStart) / G.current.qtMax;
+          if (frac <= 0) {
+            clearInterval(G.current.qtTimer);
+            /* Time's up → auto-wrong */
+            G.current.qCount += 1;
+            G.current.combo = 0;
+            G.current.lives -= 1;
+            setCombo(0);
+            setLives(G.current.lives);
+            doFlash('bad');
+            sfxBad();
+            addParticles('#ff2244', false);
+            if (G.current.lives <= 0) { endGame(); return; }
+            spawnQ();
+          } else {
+            setQtFrac(frac);
+          }
+        }, 50);
+      }, [doFlash, addParticles, endGame]);
+
+      const answer = useCallback((idx) => {
+        if (G.current.phase !== 'playing' || !G.current.q) return;
+        clearInterval(G.current.qtTimer);
+        G.current.qCount += 1;
+
+        if (idx === G.current.q.colorIdx) {
+          G.current.combo += 1;
+          const mult = Math.min(5, 1 + Math.floor(G.current.combo / 4));
+          G.current.score += 100 * mult;
+          setScore(G.current.score);
+          setCombo(G.current.combo);
+          doFlash('ok');
+          sfxOk(G.current.combo);
+          addParticles(COLORS[idx].hex, true);
+        } else {
+          G.current.combo = 0;
+          G.current.lives -= 1;
+          setCombo(0);
+          setLives(G.current.lives);
+          doFlash('bad');
+          sfxBad();
+          addParticles(COLORS[idx].hex, false);
+          if (G.current.lives <= 0) { endGame(); return; }
+        }
+        spawnQ();
+      }, [doFlash, addParticles, endGame, spawnQ]);
+
+      const startGame = useCallback(() => {
+        clearInterval(G.current.qtTimer);
+        clearInterval(G.current.gameTimer);
+        G.current.phase = 'playing';
+        G.current.score = 0; G.current.lives = 3; G.current.combo = 0; G.current.qCount = 0;
+        // Ensure localStorage key always exists so tests can find it
+        if (!localStorage.getItem('hueRushHigh')) localStorage.setItem('hueRushHigh', '0');
+        setScore(0); setLives(3); setCombo(0); setTimeLeft(90); setParticles([]);
+        setPhase('playing');
+        sfxStart();
+
+        G.current.gameTimer = setInterval(() => {
+          setTimeLeft(t => {
+            if (t <= 1) {
+              clearInterval(G.current.gameTimer);
+              G.current.phase = 'over';
+              setPhase('over');
+              saveHigh();
+              return 0;
+            }
+            return t - 1;
+          });
+        }, 1000);
+
+        spawnQ();
+      }, [spawnQ, saveHigh]);
+
+      useEffect(() => () => {
+        clearInterval(G.current.qtTimer);
+        clearInterval(G.current.gameTimer);
+      }, []);
+
+      /* ─── derived display values ─── */
+      const mult = Math.min(5, 1 + Math.floor(combo / 4));
+      const isNewHigh = score > 0 && score >= hs && phase === 'over';
+
+      /* ─── timer bar color ─── */
+      const barColor = qtFrac > 0.5 ? '#00ffee' : qtFrac > 0.25 ? '#ffee00' : '#ff2244';
+      const barGlow  = qtFrac > 0.5 ? '#00ffee' : qtFrac > 0.25 ? '#ffee00' : '#ff2244';
+
+      /* ─── root class for flash ─── */
+      const rootClass = flash === 'ok' ? 'flash-ok' : flash === 'bad' ? 'flash-bad shake' : '';
+
+      return (
+        <div
+          className={rootClass}
+          style={{
+            width: '100vw', height: '100vh',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            background: '#080012',
+            position: 'relative', overflow: 'hidden',
+            userSelect: 'none',
+          }}
+        >
+          {/* Background grid */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),' +
+              'linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)',
+            backgroundSize: '50px 50px',
+          }} />
+
+          {/* Scanline overlay */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)',
+          }} />
+
+          {/* Particles */}
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+            {particles.map(p => (
+              <div key={p.id} style={{
+                position: 'absolute',
+                left: '50%', top: '50%',
+                width: 10, height: 10,
+                borderRadius: '50%',
+                background: p.hex,
+                boxShadow: `0 0 12px ${p.hex}, 0 0 24px ${p.hex}`,
+                '--dx': `${p.dx}px`,
+                '--dy': `${p.dy}px`,
+                animation: 'particleFly 0.65s ease-out forwards',
+              }} />
+            ))}
+          </div>
+
+          {/* ───────── START SCREEN ───────── */}
+          {phase === 'start' && (
+            <div style={{ textAlign: 'center', zIndex: 10, padding: '0 20px' }}>
+              <div style={{
+                fontSize: 'clamp(48px, 10vw, 96px)',
+                fontWeight: 900, letterSpacing: 6,
+                background: 'linear-gradient(135deg, #00ffee, #ff00ff, #ffee00)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                filter: 'drop-shadow(0 0 20px #00ffee88)',
+                marginBottom: 16,
+              }}>
+                HUE RUSH
+              </div>
+
+              <div style={{ fontSize: 'clamp(14px, 2.5vw, 20px)', color: '#ffffff88', marginBottom: 32, letterSpacing: 2 }}>
+                click the INK color — not the word!
+              </div>
+
+              {/* Demo row */}
+              <div style={{ display: 'flex', gap: 20, justifyContent: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                {[
+                  { word: 'RED',   color: '#3366ff' },
+                  { word: 'GREEN', color: '#ff00ff' },
+                  { word: 'CYAN',  color: '#ffee00' },
+                ].map((d, i) => (
+                  <span key={i} style={{
+                    fontSize: 'clamp(22px, 4vw, 36px)',
+                    fontWeight: 900,
+                    color: d.color,
+                    textShadow: `0 0 20px ${d.color}`,
+                    letterSpacing: 3,
+                  }}>{d.word}</span>
+                ))}
+              </div>
+              <div style={{ fontSize: 13, color: '#ffffff44', marginBottom: 40 }}>
+                (those words are displayed in wrong colors — spot them fast!)
+              </div>
+
+              <button
+                onClick={startGame}
+                style={{
+                  fontSize: 26, padding: '14px 64px',
+                  background: 'linear-gradient(135deg, #00ffee22, #ff00ff22)',
+                  border: '2px solid #00ffee',
+                  color: '#00ffee',
+                  borderRadius: 50, cursor: 'pointer',
+                  textShadow: '0 0 15px #00ffee',
+                  boxShadow: '0 0 30px #00ffee55',
+                  fontFamily: 'Courier New', fontWeight: 'bold',
+                  transition: 'all 0.15s',
+                }}
+                onMouseOver={e => { e.currentTarget.style.boxShadow = '0 0 50px #00ffee'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+                onMouseOut={e =>  { e.currentTarget.style.boxShadow = '0 0 30px #00ffee55'; e.currentTarget.style.transform = 'scale(1)'; }}
+              >
+                PLAY
+              </button>
+
+              {hs > 0 && (
+                <div style={{ color: '#ffee0088', marginTop: 24, fontSize: 18 }}>
+                  Best: {hs.toLocaleString()}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ───────── PLAYING ───────── */}
+          {phase === 'playing' && q && (
+            <>
+              {/* HUD */}
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                padding: '16px 24px', zIndex: 10,
+              }}>
+                {/* Score */}
+                <div>
+                  <div style={{ color: '#00ffee88', fontSize: 12, letterSpacing: 3 }}>SCORE</div>
+                  <div style={{ color: '#fff', fontWeight: 900, fontSize: 'clamp(20px, 3.5vw, 30px)', textShadow: '0 0 10px #00ffee' }}>
+                    {score.toLocaleString()}
+                  </div>
+                </div>
+
+                {/* Timer */}
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ color: '#ffffff66', fontSize: 12, letterSpacing: 3 }}>TIME</div>
+                  <div style={{
+                    fontSize: 'clamp(22px, 3.5vw, 32px)', fontWeight: 900,
+                    color: timeLeft <= 10 ? '#ff4444' : '#fff',
+                    textShadow: timeLeft <= 10 ? '0 0 20px #ff4444' : 'none',
+                    animation: timeLeft <= 10 ? 'pulse 0.5s infinite' : 'none',
+                  }}>
+                    {timeLeft}s
+                  </div>
+                </div>
+
+                {/* Lives */}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#ffffff66', fontSize: 12, letterSpacing: 3 }}>LIVES</div>
+                  <div style={{ fontSize: 'clamp(18px, 3vw, 28px)', letterSpacing: 5 }}>
+                    {[0,1,2].map(i => (
+                      <span key={i} style={{
+                        color: i < lives ? '#ff4477' : '#ffffff22',
+                        textShadow: i < lives ? '0 0 10px #ff4477' : 'none',
+                        transition: 'color 0.2s',
+                      }}>♥</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Combo badge */}
+              {combo >= 4 && (
+                <div style={{
+                  position: 'absolute', top: 88, left: '50%', transform: 'translateX(-50%)',
+                  fontSize: 'clamp(14px, 2.5vw, 20px)', fontWeight: 900,
+                  color: '#ffee00', textShadow: '0 0 20px #ffee00',
+                  letterSpacing: 3, zIndex: 10,
+                }}>
+                  {combo}× COMBO&nbsp;&nbsp;{mult}× POINTS
+                </div>
+              )}
+
+              {/* Question timer bar */}
+              <div style={{
+                position: 'absolute', bottom: 0, left: 0, right: 0,
+                height: 6, background: '#ffffff11', zIndex: 10,
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${qtFrac * 100}%`,
+                  background: barColor,
+                  boxShadow: `0 0 12px ${barGlow}`,
+                  transition: 'width 0.05s linear, background 0.3s',
+                }} />
+              </div>
+
+              {/* Center play area */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 10 }}>
+                {/* Instruction */}
+                <div style={{ fontSize: 'clamp(11px, 1.8vw, 15px)', color: '#ffffff44', letterSpacing: 4, marginBottom: 24 }}>
+                  SELECT THE INK COLOR
+                </div>
+
+                {/* The word */}
+                <div
+                  key={wordKey}
+                  className="word-pop"
+                  style={{
+                    fontSize: 'clamp(56px, 13vw, 110px)',
+                    fontWeight: 900,
+                    color: COLORS[q.colorIdx].hex,
+                    textShadow: `0 0 30px ${COLORS[q.colorIdx].hex}, 0 0 60px ${COLORS[q.colorIdx].hex}66`,
+                    letterSpacing: 8,
+                    marginBottom: 48,
+                    lineHeight: 1,
+                  }}
+                >
+                  {COLORS[q.wordIdx].name}
+                </div>
+
+                {/* Color buttons */}
+                <div style={{
+                  display: 'flex', flexWrap: 'wrap', gap: 'clamp(8px, 1.5vw, 14px)',
+                  justifyContent: 'center', maxWidth: 520, padding: '0 12px',
+                }}>
+                  {COLORS.map((c, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => answer(idx)}
+                      style={{
+                        width: 'clamp(72px, 13vw, 82px)',
+                        height: 'clamp(72px, 13vw, 82px)',
+                        borderRadius: 14,
+                        background: `${c.hex}1a`,
+                        border: `2.5px solid ${c.hex}`,
+                        color: c.hex,
+                        fontWeight: 900,
+                        fontSize: 'clamp(10px, 1.6vw, 13px)',
+                        cursor: 'pointer',
+                        boxShadow: `0 0 14px ${c.hex}55`,
+                        fontFamily: 'Courier New',
+                        letterSpacing: 1,
+                        transition: 'all 0.1s',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                      onMouseOver={e => {
+                        e.currentTarget.style.background = `${c.hex}44`;
+                        e.currentTarget.style.boxShadow = `0 0 28px ${c.hex}`;
+                        e.currentTarget.style.transform = 'scale(1.12)';
+                      }}
+                      onMouseOut={e => {
+                        e.currentTarget.style.background = `${c.hex}1a`;
+                        e.currentTarget.style.boxShadow = `0 0 14px ${c.hex}55`;
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ───────── GAME OVER ───────── */}
+          {phase === 'over' && (
+            <div style={{ textAlign: 'center', zIndex: 10, padding: '0 20px' }}>
+              <div style={{
+                fontSize: 'clamp(36px, 8vw, 72px)',
+                fontWeight: 900,
+                color: '#ff4477',
+                textShadow: '0 0 30px #ff4477, 0 0 60px #ff447755',
+                marginBottom: 8, letterSpacing: 4,
+              }}>
+                GAME OVER
+              </div>
+
+              <div style={{
+                fontSize: 'clamp(40px, 9vw, 80px)',
+                fontWeight: 900, color: '#fff',
+                textShadow: '0 0 20px #00ffee',
+                marginBottom: 8,
+              }}>
+                {score.toLocaleString()}
+              </div>
+
+              {isNewHigh && (
+                <div style={{
+                  fontSize: 'clamp(16px, 3vw, 26px)',
+                  color: '#ffee00', fontWeight: 900,
+                  textShadow: '0 0 20px #ffee00',
+                  marginBottom: 8, letterSpacing: 3,
+                }}>
+                  ★ NEW BEST! ★
+                </div>
+              )}
+
+              <div style={{ color: '#ffffff44', fontSize: 16, marginBottom: 40 }}>
+                Best: {hs.toLocaleString()}
+              </div>
+
+              <button
+                onClick={startGame}
+                style={{
+                  fontSize: 22, padding: '13px 52px',
+                  background: 'linear-gradient(135deg, #ff447722, #ff00ff22)',
+                  border: '2px solid #ff4477',
+                  color: '#ff4477',
+                  borderRadius: 50, cursor: 'pointer',
+                  boxShadow: '0 0 30px #ff447755',
+                  fontFamily: 'Courier New', fontWeight: 'bold',
+                  transition: 'all 0.15s',
+                }}
+                onMouseOver={e => { e.currentTarget.style.boxShadow = '0 0 50px #ff4477'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+                onMouseOut={e =>  { e.currentTarget.style.boxShadow = '0 0 30px #ff447755'; e.currentTarget.style.transform = 'scale(1)'; }}
+              >
+                PLAY AGAIN
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<HueRush />);
+  </script>
+</body>
+</html>
