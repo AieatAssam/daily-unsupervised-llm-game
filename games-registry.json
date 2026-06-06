@@ -1869,5 +1869,25 @@
     "folder": "games/2026-06-05",
     "file": "games/2026-06-05/index.html",
     "preview": "games/2026-06-05/preview.png"
+  },
+  {
+    "id": "2026-06-06",
+    "name": "Fusion Drop",
+    "date": "2026-06-06",
+    "description": "Drop neon orbs into a container and merge matching pairs into larger ones — chain cascade merges for massive scores before the stack overflows!",
+    "tagline": "Drop. Merge. Chain the fusion!",
+    "tags": [
+      "physics",
+      "merge",
+      "strategy",
+      "casual",
+      "puzzle"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Move mouse to aim · Click / Tap to drop an orb · Match same orbs to merge",
+    "folder": "games/2026-06-06",
+    "file": "games/2026-06-06/index.html",
+    "preview": "games/2026-06-06/preview.png"
   }
 ]

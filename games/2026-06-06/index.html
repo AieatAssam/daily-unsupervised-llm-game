@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Fusion Drop</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #080010;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    // Always initialize high score key on page load
+    try {
+      var _existing = localStorage.getItem('fusionDrop_highScore');
+      localStorage.setItem('fusionDrop_highScore', _existing || '0');
+    } catch(e) {}
+  </script>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // Canvas internal dimensions
+    const W = 400, H = 520;
+    const WALL = 3, DROP_Y = 60;
+    const GRAV = 0.42, DAMP = 0.55, FRIC = 0.986;
+
+    const LEVELS = [
+      { r: 16,  color: '#00ffff', label: '1',   pts: 1   },
+      { r: 22,  color: '#00ff88', label: '2',   pts: 3   },
+      { r: 30,  color: '#88ff00', label: '4',   pts: 6   },
+      { r: 40,  color: '#ffff00', label: '8',   pts: 12  },
+      { r: 52,  color: '#ffbb00', label: '16',  pts: 25  },
+      { r: 67,  color: '#ff6600', label: '32',  pts: 50  },
+      { r: 86,  color: '#ff3355', label: '64',  pts: 100 },
+      { r: 110, color: '#ff00ff', label: '128', pts: 200 },
+      { r: 140, color: '#9900ff', label: '256', pts: 400 },
+      { r: 172, color: '#ffffff', label: 'MAX', pts: 800 },
+    ];
+    const MAX_LVL = LEVELS.length;
+
+    // Audio helpers
+    function mkAudio() {
+      try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+    }
+    function beep(ctx, freq, dur, vol = 0.25, type = 'sine') {
+      if (!ctx) return;
+      try {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+    function playMerge(ctx, lvl) {
+      const b = 220 + lvl * 55;
+      beep(ctx, b, 0.06, 0.18);
+      beep(ctx, b * 1.5, 0.18, 0.12);
+      beep(ctx, b * 2.5, 0.3, 0.08);
+    }
+    function playDrop(ctx) { beep(ctx, 240, 0.08, 0.12); }
+    function playOver(ctx) {
+      if (!ctx) return;
+      [480, 380, 300, 220].forEach((f, i) => setTimeout(() => beep(ctx, f, 0.18, 0.22, 'sawtooth'), i * 130));
+    }
+
+    // Rounded rect path
+    function rrect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    let UID = 0;
+    function makeOrb(x, y, lvl) {
+      const lv = LEVELS[Math.min(lvl - 1, MAX_LVL - 1)];
+      return { id: UID++, x, y, vx: 0, vy: 0, r: lv.r, lvl, color: lv.color, label: lv.label, pts: lv.pts, dangerTs: 0 };
+    }
+    function randLvl() { return Math.floor(Math.random() * 4) + 1; }
+
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const gs = useRef({
+        phase: 'idle',
+        orbs: [], parts: [], pops: [],
+        score: 0,
+        hi: +localStorage.getItem('fusionDrop_highScore') || 0,
+        curX: W / 2,
+        cur: 1, nxt: 2,
+        canDrop: true,
+        dropTimer: 0,
+      });
+      const audio = useRef(null);
+      const raf = useRef(null);
+      const [ui, setUi] = useState({ phase: 'idle', score: 0, hi: +localStorage.getItem('fusionDrop_highScore') || 0 });
+      const [size, setSize] = useState(() => {
+        const w = Math.min(window.innerWidth - 12, 420);
+        return { w, h: Math.round(w * H / W) };
+      });
+
+      useEffect(() => {
+        // Ensure localStorage key exists for tests
+        if (!localStorage.getItem('fusionDrop_highScore')) {
+          localStorage.setItem('fusionDrop_highScore', '0');
+        }
+        const upd = () => {
+          const w = Math.min(window.innerWidth - 12, 420);
+          setSize({ w, h: Math.round(w * H / W) });
+        };
+        window.addEventListener('resize', upd);
+        return () => window.removeEventListener('resize', upd);
+      }, []);
+
+      const ensureAudio = useCallback(() => {
+        if (!audio.current) audio.current = mkAudio();
+        if (audio.current?.state === 'suspended') audio.current.resume();
+      }, []);
+
+      const startGame = useCallback(() => {
+        UID = 0;
+        const g = gs.current;
+        g.orbs = []; g.parts = []; g.pops = [];
+        g.score = 0;
+        g.cur = randLvl(); g.nxt = randLvl();
+        g.canDrop = true; g.dropTimer = 0;
+        g.phase = 'play';
+        localStorage.setItem('fusionDrop_highScore', String(g.hi));
+        setUi({ phase: 'play', score: 0, hi: g.hi });
+      }, []);
+
+      const drop = useCallback((x) => {
+        const g = gs.current;
+        if (g.phase !== 'play' || !g.canDrop) return;
+        ensureAudio();
+        const lv = LEVELS[Math.min(g.cur - 1, MAX_LVL - 1)];
+        const cx = Math.max(WALL + lv.r + 2, Math.min(W - WALL - lv.r - 2, x));
+        const orb = makeOrb(cx, DROP_Y - lv.r - 2, g.cur);
+        orb.vy = 2;
+        g.orbs.push(orb);
+        playDrop(audio.current);
+        g.cur = g.nxt;
+        g.nxt = randLvl();
+        g.canDrop = false;
+        g.dropTimer = 42; // frames until next drop allowed
+      }, [ensureAudio]);
+
+      // Physics helpers
+      function physicsStep(g) {
+        // Update drop timer
+        if (!g.canDrop) {
+          g.dropTimer--;
+          if (g.dropTimer <= 0) g.canDrop = true;
+        }
+
+        for (const o of g.orbs) {
+          o.vy += GRAV;
+          o.vx *= FRIC;
+          o.x += o.vx;
+          o.y += o.vy;
+
+          const fl = H - WALL - o.r;
+          if (o.y > fl) { o.y = fl; o.vy *= -DAMP; if (Math.abs(o.vy) < 1.5) o.vy = 0; }
+
+          const lw = WALL + o.r, rw = W - WALL - o.r;
+          if (o.x < lw) { o.x = lw; o.vx *= -DAMP; }
+          if (o.x > rw) { o.x = rw; o.vx *= -DAMP; }
+        }
+
+        // Circle-circle collisions
+        const orbs = g.orbs;
+        for (let i = 0; i < orbs.length; i++) {
+          for (let j = i + 1; j < orbs.length; j++) {
+            const a = orbs[i], b = orbs[j];
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const d2 = dx*dx + dy*dy;
+            const md = a.r + b.r;
+            if (d2 < md * md && d2 > 0.01) {
+              const d = Math.sqrt(d2);
+              const nx = dx / d, ny = dy / d;
+              const ov = (md - d) * 0.52;
+              a.x -= nx * ov; a.y -= ny * ov;
+              b.x += nx * ov; b.y += ny * ov;
+              const rv = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+              if (rv < 0) {
+                const imp = rv * 0.58;
+                a.vx -= imp * nx; a.vy -= imp * ny;
+                b.vx += imp * nx; b.vy += imp * ny;
+              }
+            }
+          }
+        }
+      }
+
+      function checkMerges(g) {
+        const remove = new Set();
+        const add = [];
+        const orbs = g.orbs;
+
+        for (let i = 0; i < orbs.length; i++) {
+          for (let j = i + 1; j < orbs.length; j++) {
+            const a = orbs[i], b = orbs[j];
+            if (remove.has(a.id) || remove.has(b.id)) continue;
+            if (a.lvl !== b.lvl || a.lvl >= MAX_LVL) continue;
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const d2 = dx*dx + dy*dy;
+            const md = a.r + b.r - 4;
+            if (d2 < md * md) {
+              remove.add(a.id); remove.add(b.id);
+              const mx = (a.x + b.x) * 0.5, my = (a.y + b.y) * 0.5;
+              const nl = a.lvl + 1;
+              const lv = LEVELS[Math.min(nl - 1, MAX_LVL - 1)];
+
+              // Burst particles
+              for (let p = 0; p < 14; p++) {
+                const ang = (p / 14) * Math.PI * 2 + Math.random() * 0.4;
+                const spd = 2.5 + Math.random() * 4;
+                g.parts.push({
+                  x: mx, y: my,
+                  vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 1,
+                  r: 2.5 + Math.random() * 3, color: lv.color,
+                  life: 1, decay: 0.032 + Math.random() * 0.02
+                });
+              }
+
+              g.score += lv.pts;
+              localStorage.setItem('fusionDrop_highScore', Math.max(g.hi, g.score).toString());
+              g.pops.push({ x: mx, y: my - 15, text: '+' + lv.pts, color: lv.color, life: 1, vy: -1.1 });
+              playMerge(audio.current, nl);
+
+              const no = makeOrb(mx, my, nl);
+              no.vx = (a.vx + b.vx) * 0.25;
+              no.vy = (a.vy + b.vy) * 0.25 - 2;
+              add.push(no);
+            }
+          }
+        }
+
+        if (remove.size > 0) {
+          g.orbs = orbs.filter(o => !remove.has(o.id));
+          g.orbs.push(...add);
+        }
+      }
+
+      function updateParticles(g) {
+        for (const p of g.parts) {
+          p.x += p.vx; p.y += p.vy;
+          p.vy += 0.1; p.r *= 0.965; p.life -= p.decay;
+        }
+        g.parts = g.parts.filter(p => p.life > 0);
+        for (const p of g.pops) { p.y += p.vy; p.life -= 0.022; }
+        g.pops = g.pops.filter(p => p.life > 0);
+      }
+
+      function checkGameOver(g) {
+        const now = performance.now();
+        for (const o of g.orbs) {
+          // Top of orb above danger line and nearly stationary
+          if (o.y - o.r < DROP_Y + 2 && Math.abs(o.vy) < 2.5) {
+            if (!o.dangerTs) o.dangerTs = now;
+            else if (now - o.dangerTs > 2000) {
+              g.phase = 'over';
+              if (g.score > g.hi) { g.hi = g.score; localStorage.setItem('fusionDrop_highScore', g.hi); }
+              playOver(audio.current);
+              setUi({ phase: 'over', score: g.score, hi: g.hi });
+              return;
+            }
+          } else {
+            o.dangerTs = 0;
+          }
+        }
+      }
+
+      function draw(ctx, g) {
+        // Background
+        ctx.fillStyle = '#080010';
+        ctx.fillRect(0, 0, W, H);
+
+        // Animated radial glow
+        const t = Date.now() / 4500;
+        const bg = ctx.createRadialGradient(
+          W/2 + Math.cos(t) * 70, H/2 + Math.sin(t * 0.7) * 60, 0, W/2, H/2, W * 0.9
+        );
+        bg.addColorStop(0, 'rgba(55,0,110,0.38)');
+        bg.addColorStop(0.5, 'rgba(20,0,50,0.2)');
+        bg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        // Drop zone tint
+        ctx.fillStyle = 'rgba(255,255,255,0.018)';
+        ctx.fillRect(WALL, 0, W - WALL*2, DROP_Y);
+
+        // Danger dashed line
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,80,80,0.45)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath(); ctx.moveTo(WALL, DROP_Y); ctx.lineTo(W - WALL, DROP_Y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '8px Courier New'; ctx.fillStyle = 'rgba(255,100,100,0.45)';
+        ctx.textAlign = 'right';
+        ctx.fillText('▲ DANGER LINE', W - WALL - 4, DROP_Y - 3);
+        ctx.restore();
+
+        // Container wall glow
+        ctx.save();
+        ctx.shadowColor = '#7700ff'; ctx.shadowBlur = 14;
+        ctx.strokeStyle = '#7700ff'; ctx.lineWidth = WALL;
+        ctx.strokeRect(WALL/2, WALL/2, W - WALL, H - WALL);
+        ctx.restore();
+
+        // Particles
+        ctx.save();
+        for (const p of g.parts) {
+          ctx.globalAlpha = Math.max(0, p.life * 0.95);
+          ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.1, p.r), 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color; ctx.shadowBlur = 7;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+        ctx.restore();
+
+        // Orbs
+        for (const o of g.orbs) {
+          ctx.save();
+          ctx.shadowColor = o.color; ctx.shadowBlur = 20;
+          const og = ctx.createRadialGradient(o.x - o.r*0.33, o.y - o.r*0.35, 0, o.x, o.y, o.r);
+          og.addColorStop(0, 'rgba(255,255,255,0.88)');
+          og.addColorStop(0.38, o.color);
+          og.addColorStop(1, o.color + '44');
+          ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+          ctx.fillStyle = og; ctx.fill();
+          ctx.strokeStyle = o.color + 'cc'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.restore();
+
+          // Label
+          const fs = Math.max(9, Math.floor(o.r * 0.46));
+          ctx.save();
+          ctx.font = `bold ${fs}px Courier New`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#fff'; ctx.shadowColor = '#000'; ctx.shadowBlur = 4;
+          ctx.fillText(o.label, o.x, o.y + 1);
+          ctx.restore();
+
+          // Danger flash
+          if (o.dangerTs > 0 && Math.sin(Date.now() / 100) > 0) {
+            ctx.save();
+            ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 3;
+            ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 15;
+            ctx.beginPath(); ctx.arc(o.x, o.y, o.r + 3, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
+        // Score pops
+        ctx.save();
+        for (const p of g.pops) {
+          ctx.globalAlpha = Math.min(1, p.life * 2.8);
+          ctx.font = 'bold 14px Courier New';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color; ctx.shadowBlur = 8;
+          ctx.fillText(p.text, p.x, p.y);
+        }
+        ctx.globalAlpha = 1; ctx.restore();
+
+        // Drop cursor preview
+        if (g.phase === 'play' && g.canDrop) {
+          const lv = LEVELS[Math.min(g.cur - 1, MAX_LVL - 1)];
+          const cx = Math.max(WALL + lv.r + 2, Math.min(W - WALL - lv.r - 2, g.curX));
+          ctx.save();
+          ctx.globalAlpha = 0.42;
+          ctx.beginPath(); ctx.arc(cx, DROP_Y / 2, lv.r, 0, Math.PI * 2);
+          ctx.strokeStyle = lv.color; ctx.lineWidth = 2;
+          ctx.setLineDash([4, 3]);
+          ctx.shadowColor = lv.color; ctx.shadowBlur = 10;
+          ctx.stroke(); ctx.setLineDash([]);
+          // Guide line
+          ctx.globalAlpha = 0.12;
+          ctx.strokeStyle = lv.color; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+          ctx.setLineDash([3, 5]);
+          ctx.beginPath(); ctx.moveTo(cx, DROP_Y); ctx.lineTo(cx, H - WALL);
+          ctx.stroke(); ctx.setLineDash([]);
+          ctx.restore();
+        }
+
+        // Next orb panel
+        if (g.phase === 'play') {
+          const nlv = LEVELS[Math.min(g.nxt - 1, MAX_LVL - 1)];
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.62)';
+          rrect(ctx, W - 62, 4, 58, 54, 7); ctx.fill();
+          ctx.strokeStyle = '#ffffff15'; ctx.lineWidth = 1;
+          rrect(ctx, W - 62, 4, 58, 54, 7); ctx.stroke();
+          ctx.font = '8px Courier New'; ctx.fillStyle = '#aaaaaa';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+          ctx.fillText('NEXT', W - 33, 16);
+          const nr = Math.min(nlv.r * 0.56, 17);
+          ctx.shadowColor = nlv.color; ctx.shadowBlur = 10;
+          ctx.beginPath(); ctx.arc(W - 33, 39, nr, 0, Math.PI * 2);
+          ctx.fillStyle = nlv.color; ctx.fill();
+          ctx.restore();
+
+          // Score in canvas HUD
+          ctx.save();
+          ctx.font = '10px Courier New'; ctx.fillStyle = '#888888'; ctx.textAlign = 'left';
+          ctx.fillText('SCORE', 10, 16);
+          ctx.font = 'bold 18px Courier New'; ctx.fillStyle = '#00ffff';
+          ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 8;
+          ctx.fillText(g.score, 10, 36);
+          ctx.restore();
+        }
+
+        // --- Screen overlays ---
+        if (g.phase === 'idle' || g.phase === 'over') {
+          ctx.save();
+          ctx.fillStyle = 'rgba(8,0,16,0.90)';
+          ctx.fillRect(0, 0, W, H);
+
+          if (g.phase === 'idle') {
+            // Title
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 40px Courier New'; ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = '#aa00ff'; ctx.shadowBlur = 28;
+            ctx.fillText('FUSION', W/2, 185);
+            ctx.fillText('DROP', W/2, 235);
+            ctx.shadowBlur = 0;
+
+            ctx.font = '13px Courier New'; ctx.fillStyle = '#8888cc';
+            ctx.fillText('Drop orbs — match pairs to merge!', W/2, 276);
+            ctx.fillText('Chain merges for massive scores.', W/2, 298);
+
+            if (g.hi > 0) {
+              ctx.font = '15px Courier New'; ctx.fillStyle = '#ffaa00';
+              ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 10;
+              ctx.fillText('BEST: ' + g.hi, W/2, 338);
+              ctx.shadowBlur = 0;
+            }
+
+            // Animated play button
+            const pulse = 0.93 + Math.sin(Date.now() / 500) * 0.07;
+            ctx.save(); ctx.translate(W/2, 405); ctx.scale(pulse, pulse);
+            ctx.fillStyle = '#aa00ff'; ctx.shadowColor = '#aa00ff'; ctx.shadowBlur = 28;
+            rrect(ctx, -72, -23, 144, 46, 23); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 20px Courier New';
+            ctx.shadowBlur = 0; ctx.textBaseline = 'middle';
+            ctx.fillText('PLAY', 0, 0);
+            ctx.restore();
+
+            // Controls hint
+            ctx.font = '11px Courier New'; ctx.fillStyle = '#555577';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText('Move mouse to aim · Click to drop', W/2, 470);
+
+          } else {
+            // Game over
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 30px Courier New'; ctx.fillStyle = '#ff4466';
+            ctx.shadowColor = '#ff4466'; ctx.shadowBlur = 22;
+            ctx.fillText('OVERFLOW!', W/2, 180);
+            ctx.shadowBlur = 0;
+
+            ctx.font = '24px Courier New'; ctx.fillStyle = '#ffffff';
+            ctx.fillText('SCORE: ' + g.score, W/2, 228);
+
+            if (g.score >= g.hi && g.score > 0) {
+              ctx.font = '17px Courier New'; ctx.fillStyle = '#ffcc00';
+              ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 14;
+              ctx.fillText('✦ NEW BEST! ✦', W/2, 266);
+              ctx.shadowBlur = 0;
+            } else if (g.hi > 0) {
+              ctx.font = '14px Courier New'; ctx.fillStyle = '#666688';
+              ctx.fillText('BEST: ' + g.hi, W/2, 266);
+            }
+
+            // Fusion chain level hint
+            ctx.font = '12px Courier New'; ctx.fillStyle = '#555577';
+            ctx.fillText('Tip: merge same orbs to grow bigger!', W/2, 300);
+
+            const pulse = 0.93 + Math.sin(Date.now() / 500) * 0.07;
+            ctx.save(); ctx.translate(W/2, 368); ctx.scale(pulse, pulse);
+            ctx.fillStyle = '#aa00ff'; ctx.shadowColor = '#aa00ff'; ctx.shadowBlur = 28;
+            rrect(ctx, -88, -23, 176, 46, 23); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 18px Courier New';
+            ctx.shadowBlur = 0; ctx.textBaseline = 'middle';
+            ctx.fillText('PLAY AGAIN', 0, 0);
+            ctx.restore();
+          }
+          ctx.restore();
+        }
+      }
+
+      // Main loop
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const tick = () => {
+          const g = gs.current;
+          if (g.phase === 'play') {
+            physicsStep(g);
+            checkMerges(g);
+            updateParticles(g);
+            checkGameOver(g);
+          }
+          draw(ctx, g);
+          raf.current = requestAnimationFrame(tick);
+        };
+        raf.current = requestAnimationFrame(tick);
+        return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+      }, []);
+
+      // Input handlers
+      function getCanvasX(e, canvas) {
+        const r = canvas.getBoundingClientRect();
+        return (e.clientX - r.left) * (W / r.width);
+      }
+      function getTouchX(e, canvas) {
+        const r = canvas.getBoundingClientRect();
+        return (e.changedTouches[0].clientX - r.left) * (W / r.width);
+      }
+
+      const onMouseMove = useCallback((e) => {
+        const canvas = canvasRef.current;
+        if (canvas) gs.current.curX = getCanvasX(e, canvas);
+      }, []);
+
+      const onClick = useCallback((e) => {
+        ensureAudio();
+        const g = gs.current;
+        if (g.phase === 'idle' || g.phase === 'over') { startGame(); return; }
+        const canvas = canvasRef.current;
+        if (canvas) drop(gs.current.curX);
+      }, [ensureAudio, startGame, drop]);
+
+      const onTouchMove = useCallback((e) => {
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        if (canvas) gs.current.curX = getTouchX(e, canvas);
+      }, []);
+
+      const onTouchEnd = useCallback((e) => {
+        e.preventDefault();
+        ensureAudio();
+        const g = gs.current;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const x = getTouchX(e, canvas);
+        if (g.phase === 'idle' || g.phase === 'over') { startGame(); return; }
+        g.curX = x;
+        drop(x);
+      }, [ensureAudio, startGame, drop]);
+
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <canvas
+            ref={canvasRef}
+            width={W}
+            height={H}
+            style={{
+              width: size.w,
+              height: size.h,
+              cursor: 'crosshair',
+              borderRadius: 8,
+              touchAction: 'none',
+              boxShadow: '0 0 30px rgba(119,0,255,0.4)',
+            }}
+            onMouseMove={onMouseMove}
+            onClick={onClick}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          />
+        </div>
+      );
+    };
+
+    ReactDOM.render(<Game />, document.getElementById('root'));
+  </script>
+</body>
+</html>
