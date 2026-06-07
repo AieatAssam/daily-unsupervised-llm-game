@@ -1889,5 +1889,25 @@
     "folder": "games/2026-06-06",
     "file": "games/2026-06-06/index.html",
     "preview": "games/2026-06-06/preview.png"
+  },
+  {
+    "id": "2026-06-07",
+    "name": "Cargo Pulse",
+    "date": "2026-06-07",
+    "description": "Navigate a glowing grid and push the neon cargo crate along the magenta conduit onto the pulsing pad — clear levels fast and efficiently to chain massive combo multipliers before time runs out!",
+    "tagline": "Push the cargo. Hit the pulse. Chain the clears!",
+    "tags": [
+      "puzzle",
+      "strategy",
+      "grid",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Arrow Keys / WASD / on-screen D-pad to walk and push the crate",
+    "folder": "games/2026-06-07",
+    "file": "games/2026-06-07/index.html",
+    "preview": "games/2026-06-07/preview.png"
   }
 ]

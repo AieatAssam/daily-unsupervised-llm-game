@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cargo Pulse</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #07020f;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #root { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    button { font-family: 'Courier New', monospace; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const CELL = 48;
+    const MAX_SIZE = 10;
+    const CANVAS_PX = MAX_SIZE * CELL;
+
+    // ---------- Audio (Web Audio API synth blips) ----------
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+    function playTone(freq, dur, type = 'sine', vol = 0.15) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch (e) {}
+    }
+    function playStep() { playTone(360, 0.045, 'sine', 0.045); }
+    function playPush() { playTone(170, 0.09, 'square', 0.12); playTone(85, 0.13, 'triangle', 0.08); }
+    function playThud() { playTone(70, 0.08, 'square', 0.07); }
+    function playSolve() { [523, 659, 784, 1047, 1318].forEach((f, i) => setTimeout(() => playTone(f, 0.22, 'sine', 0.15), i * 80)); }
+    function playFail() { playTone(220, 0.25, 'sawtooth', 0.14); playTone(110, 0.4, 'sawtooth', 0.1); }
+    function playGameOver() { [392, 330, 262, 196].forEach((f, i) => setTimeout(() => playTone(f, 0.3, 'sawtooth', 0.14), i * 150)); }
+
+    // ---------- Procedural level generation ----------
+    // Every level is a guaranteed-solvable single-crate push puzzle: we build the
+    // path the crate must travel as a chain of perpendicular straight segments
+    // (an "L"/"Z"/"U" shaped conduit), confined to a region with a 1-cell buffer
+    // ring around it. The player always starts directly behind the crate on the
+    // first segment, and that buffer ring stays free for the whole level so the
+    // player can always walk around the crate to line up the next push direction.
+    const DIRS = [
+      { dr: -1, dc: 0, name: 'U' },
+      { dr: 1, dc: 0, name: 'D' },
+      { dr: 0, dc: -1, name: 'L' },
+      { dr: 0, dc: 1, name: 'R' },
+    ];
+    const OPP = { U: 'D', D: 'U', L: 'R', R: 'L' };
+    const FACE_VEC = { U: [0, -1], D: [0, 1], L: [-1, 0], R: [1, 0] };
+    function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+    function generateLevel(levelNum) {
+      const interiorSize = Math.min(6 + Math.floor((levelNum - 1) / 2), MAX_SIZE);
+      const regionMin = 1;
+      const regionMax = interiorSize - 2;
+      const numSegments = Math.min(1 + Math.floor((levelNum - 1) / 3), 3);
+
+      for (let attempt = 0; attempt < 400; attempt++) {
+        let pos = { r: randInt(regionMin, regionMax), c: randInt(regionMin, regionMax) };
+        const segPath = [{ ...pos }];
+        let lastDirName = null;
+        let firstDir = null;
+        let ok = true;
+
+        for (let s = 0; s < numSegments; s++) {
+          const cands = DIRS.filter(d => !lastDirName || (d.name !== lastDirName && d.name !== OPP[lastDirName]));
+          const dir = cands[randInt(0, cands.length - 1)];
+          if (s === 0) firstDir = dir;
+          let maxLen;
+          if (dir.dr === -1) maxLen = pos.r - regionMin;
+          else if (dir.dr === 1) maxLen = regionMax - pos.r;
+          else if (dir.dc === -1) maxLen = pos.c - regionMin;
+          else maxLen = regionMax - pos.c;
+          if (maxLen < 1) { ok = false; break; }
+          const len = randInt(1, maxLen);
+          pos = { r: pos.r + dir.dr * len, c: pos.c + dir.dc * len };
+          segPath.push({ ...pos });
+          lastDirName = dir.name;
+        }
+        if (!ok) continue;
+
+        const crateStart = segPath[0];
+        const padPos = segPath[segPath.length - 1];
+        const playerStart = { r: crateStart.r - firstDir.dr, c: crateStart.c - firstDir.dc };
+        if (playerStart.r < 0 || playerStart.r > interiorSize - 1 || playerStart.c < 0 || playerStart.c > interiorSize - 1) continue;
+
+        // expand into full cell-by-cell path for overlap checking
+        const fullPath = [];
+        for (let i = 0; i < segPath.length - 1; i++) {
+          const a = segPath[i], b = segPath[i + 1];
+          const dr = Math.sign(b.r - a.r), dc = Math.sign(b.c - a.c);
+          let cur = { ...a };
+          fullPath.push({ ...cur });
+          while (cur.r !== b.r || cur.c !== b.c) {
+            cur = { r: cur.r + dr, c: cur.c + dc };
+            fullPath.push({ ...cur });
+          }
+        }
+        if (fullPath.some(p => p.r === playerStart.r && p.c === playerStart.c)) continue;
+
+        const totalLen = fullPath.length - 1;
+        const par = totalLen + (numSegments - 1) * 4;
+        return { interiorSize, crateStart, padPos, playerStart, totalLen, par, route: segPath };
+      }
+
+      // Guaranteed-safe fallback (should essentially never trigger)
+      return {
+        interiorSize: 6, crateStart: { r: 2, c: 2 }, padPos: { r: 2, c: 4 },
+        playerStart: { r: 2, c: 1 }, totalLen: 2, par: 2,
+        route: [{ r: 2, c: 2 }, { r: 2, c: 4 }],
+      };
+    }
+
+    function dirName(dr, dc) {
+      if (dr === -1) return 'U';
+      if (dr === 1) return 'D';
+      if (dc === -1) return 'L';
+      return 'R';
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function CargoPulse() {
+      const canvasRef = useRef(null);
+      const stateRef = useRef(null);
+      const animRef = useRef(null);
+      const lastTimeRef = useRef(0);
+      const moveCooldownRef = useRef(0);
+      const lastShownTimeRef = useRef(-1);
+
+      const [overlay, setOverlay] = useState('start'); // start | playing | dead
+      const [score, setScore] = useState(0);
+      const [lives, setLives] = useState(3);
+      const [level, setLevel] = useState(1);
+      const [combo, setCombo] = useState(0);
+      const [moves, setMoves] = useState(0);
+      const [timeLeft, setTimeLeft] = useState(0);
+      const [toast, setToast] = useState(null);
+      const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('cargoPulseHighScore') || '0'));
+
+      const scoreRef = useRef(0);
+      const livesRef = useRef(3);
+      const levelRef = useRef(1);
+      const comboRef = useRef(0);
+
+      // Make sure the high-score key always exists (so persistence is detectable immediately)
+      useEffect(() => {
+        if (localStorage.getItem('cargoPulseHighScore') === null) {
+          localStorage.setItem('cargoPulseHighScore', '0');
+        }
+      }, []);
+
+      function buildGameState(levelNum) {
+        const lvl = generateLevel(levelNum);
+        const duration = 16 + lvl.totalLen * 5;
+        return {
+          interiorSize: lvl.interiorSize,
+          pad: { ...lvl.padPos },
+          crate: { ...lvl.crateStart },
+          player: { ...lvl.playerStart, facing: 'D' },
+          route: lvl.route,
+          par: lvl.par,
+          duration,
+          timeLeft: duration,
+          moves: 0,
+          particles: [],
+          solved: false,
+          paused: false,
+        };
+      }
+
+      function startGame() {
+        scoreRef.current = 0; livesRef.current = 3; levelRef.current = 1; comboRef.current = 0;
+        setScore(0); setLives(3); setLevel(1); setCombo(0); setMoves(0); setToast(null);
+        const gs = buildGameState(1);
+        stateRef.current = gs;
+        lastShownTimeRef.current = -1;
+        setTimeLeft(Math.ceil(gs.timeLeft));
+        setOverlay('playing');
+        getAudio();
+      }
+
+      function spawnPushParticles(gs, r, c, dr, dc) {
+        const x = c * CELL + CELL / 2, y = r * CELL + CELL / 2;
+        for (let i = 0; i < 7; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          gs.particles.push({
+            x, y,
+            vx: Math.cos(ang) * 1.6 - dc * 1.4,
+            vy: Math.sin(ang) * 1.6 - dr * 1.4,
+            life: 1, decay: 0.045 + Math.random() * 0.02,
+            size: 3 + Math.random() * 3, color: '#00eaff',
+          });
+        }
+      }
+      function spawnSolveParticles(gs) {
+        const x = gs.pad.c * CELL + CELL / 2, y = gs.pad.r * CELL + CELL / 2;
+        for (let i = 0; i < 30; i++) {
+          const ang = (Math.PI * 2 * i) / 30;
+          gs.particles.push({
+            x, y,
+            vx: Math.cos(ang) * (2 + Math.random() * 3.5),
+            vy: Math.sin(ang) * (2 + Math.random() * 3.5),
+            life: 1, decay: 0.018 + Math.random() * 0.012,
+            size: 4 + Math.random() * 4, color: i % 2 === 0 ? '#ffe600' : '#ff00cc',
+          });
+        }
+      }
+
+      function handleSolve(gs) {
+        gs.solved = true;
+        gs.paused = true;
+        const movesUsed = gs.moves;
+        const efficiency = Math.max(0, gs.par - movesUsed + 1);
+        const base = 150 + levelRef.current * 50;
+        const effBonus = efficiency * 22;
+        const timeBonus = Math.floor(gs.timeLeft) * 6;
+        comboRef.current = Math.min(comboRef.current + 1, 9);
+        const multiplier = comboRef.current;
+        const total = (base + effBonus + timeBonus) * multiplier;
+        scoreRef.current += total;
+        setScore(scoreRef.current);
+        setCombo(comboRef.current);
+        spawnSolveParticles(gs);
+        playSolve();
+        setToast({
+          big: `+${total}`,
+          small: multiplier > 1 ? `LEVEL CLEAR · COMBO x${multiplier}` : 'LEVEL CLEAR!',
+          color: multiplier > 2 ? '#ffe600' : '#00eaff',
+        });
+        setTimeout(() => {
+          levelRef.current++;
+          setLevel(levelRef.current);
+          setMoves(0);
+          setToast(null);
+          const ngs = buildGameState(levelRef.current);
+          stateRef.current = ngs;
+          lastShownTimeRef.current = -1;
+          setTimeLeft(Math.ceil(ngs.timeLeft));
+        }, 1150);
+      }
+
+      function loseLife(gs) {
+        gs.paused = true;
+        livesRef.current--;
+        setLives(livesRef.current);
+        comboRef.current = 0;
+        setCombo(0);
+        playFail();
+        if (livesRef.current <= 0) {
+          if (scoreRef.current > highScore) {
+            setHighScore(scoreRef.current);
+            localStorage.setItem('cargoPulseHighScore', String(scoreRef.current));
+          }
+          playGameOver();
+          setToast(null);
+          setTimeout(() => setOverlay('dead'), 700);
+        } else {
+          setToast({ big: 'TIME UP!', small: `-1 LIFE · ${livesRef.current} REMAINING`, color: '#ff2266' });
+          setTimeout(() => {
+            setToast(null);
+            setMoves(0);
+            const ngs = buildGameState(levelRef.current);
+            stateRef.current = ngs;
+            lastShownTimeRef.current = -1;
+            setTimeLeft(Math.ceil(ngs.timeLeft));
+          }, 1000);
+        }
+      }
+
+      function tryMove(gs, dr, dc) {
+        if (!gs || gs.solved || gs.paused) return;
+        const p = gs.player;
+        const nr = p.r + dr, nc = p.c + dc;
+        const sz = gs.interiorSize;
+        if (nr < 0 || nr >= sz || nc < 0 || nc >= sz) { playThud(); return; }
+        if (gs.crate.r === nr && gs.crate.c === nc) {
+          const cr = gs.crate.r + dr, cc = gs.crate.c + dc;
+          if (cr < 0 || cr >= sz || cc < 0 || cc >= sz) { playThud(); return; }
+          gs.crate.r = cr; gs.crate.c = cc;
+          p.r = nr; p.c = nc; p.facing = dirName(dr, dc);
+          gs.moves++;
+          setMoves(gs.moves);
+          spawnPushParticles(gs, nr, nc, dr, dc);
+          playPush();
+          if (cr === gs.pad.r && cc === gs.pad.c) handleSolve(gs);
+        } else {
+          p.r = nr; p.c = nc; p.facing = dirName(dr, dc);
+          playStep();
+        }
+      }
+
+      const handleDirInput = useCallback((dr, dc) => {
+        const now = performance.now();
+        if (now - moveCooldownRef.current < 105) return;
+        moveCooldownRef.current = now;
+        if (stateRef.current) tryMove(stateRef.current, dr, dc);
+      }, []);
+
+      const drawFrame = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || !stateRef.current) return;
+        const ctx = canvas.getContext('2d');
+        const gs = stateRef.current;
+        const W = canvas.width, H = canvas.height;
+        const size = gs.interiorSize;
+        const boardPx = size * CELL;
+        const offsetX = (W - boardPx) / 2;
+        const offsetY = (H - boardPx) / 2;
+
+        ctx.clearRect(0, 0, W, H);
+
+        // pulsing animated neon gradient backdrop (purple <-> cyan <-> pink)
+        const t = Date.now() / 4200;
+        const hue1 = (265 + Math.sin(t) * 50 + 360) % 360;
+        const hue2 = (185 + Math.cos(t * 0.85) * 50 + 360) % 360;
+        const bg = ctx.createLinearGradient(0, 0, W, H);
+        bg.addColorStop(0, `hsl(${hue1}, 65%, 7%)`);
+        bg.addColorStop(0.5, `hsl(${(hue1 + hue2) / 2}, 55%, 5%)`);
+        bg.addColorStop(1, `hsl(${hue2}, 65%, 7%)`);
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+
+        // board glow border
+        ctx.save();
+        ctx.shadowBlur = 24;
+        ctx.shadowColor = '#00eaff';
+        ctx.strokeStyle = 'rgba(0,234,255,0.55)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(1.5, 1.5, boardPx - 3, boardPx - 3);
+        ctx.restore();
+
+        // grid cells
+        for (let r = 0; r < size; r++) {
+          for (let c = 0; c < size; c++) {
+            const x = c * CELL, y = r * CELL;
+            ctx.fillStyle = (r + c) % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.05)';
+            ctx.fillRect(x, y, CELL, CELL);
+            ctx.strokeStyle = 'rgba(140,140,255,0.09)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+          }
+        }
+
+        // flowing route guide (shows the conduit shape the crate must travel)
+        if (gs.route && gs.route.length > 1) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255,0,204,0.25)';
+          ctx.lineWidth = 4;
+          ctx.lineCap = 'round';
+          ctx.setLineDash([12, 10]);
+          ctx.lineDashOffset = -((Date.now() / 35) % 22);
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = '#ff00cc';
+          ctx.beginPath();
+          gs.route.forEach((pt, i) => {
+            const x = pt.c * CELL + CELL / 2, y = pt.r * CELL + CELL / 2;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+
+        // target pad — pulsing rings
+        const padX = gs.pad.c * CELL + CELL / 2, padY = gs.pad.r * CELL + CELL / 2;
+        const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 320);
+        ctx.save();
+        ctx.shadowBlur = 16;
+        ctx.shadowColor = '#ff00cc';
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.arc(padX, padY, (8 + i * 7) * pulse + 4, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(255,0,204,${0.55 - i * 0.14})`;
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(255,0,204,0.18)';
+        ctx.beginPath();
+        ctx.arc(padX, padY, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // crate — glows gold once seated on the pad
+        const onPad = gs.crate.r === gs.pad.r && gs.crate.c === gs.pad.c;
+        const cx = gs.crate.c * CELL + CELL / 2, cy = gs.crate.r * CELL + CELL / 2;
+        const crateColor = onPad ? '#ffe600' : '#00eaff';
+        ctx.save();
+        ctx.shadowBlur = 22;
+        ctx.shadowColor = crateColor;
+        ctx.fillStyle = crateColor;
+        const cs = CELL * 0.66;
+        roundRect(ctx, cx - cs / 2, cy - cs / 2, cs, cs, 9);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(5,5,15,0.45)';
+        roundRect(ctx, cx - cs / 2 + 6, cy - cs / 2 + 6, cs - 12, cs - 12, 6);
+        ctx.fill();
+        ctx.strokeStyle = crateColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx - cs / 4, cy); ctx.lineTo(cx + cs / 4, cy);
+        ctx.moveTo(cx, cy - cs / 4); ctx.lineTo(cx, cy + cs / 4);
+        ctx.stroke();
+        ctx.restore();
+
+        // player — glowing diamond with a facing dot
+        const p = gs.player;
+        const px = p.c * CELL + CELL / 2, py = p.r * CELL + CELL / 2;
+        ctx.save();
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = '#b266ff';
+        ctx.fillStyle = '#cf8bff';
+        const ps = CELL * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(px, py - ps); ctx.lineTo(px + ps, py); ctx.lineTo(px, py + ps); ctx.lineTo(px - ps, py);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        const fv = FACE_VEC[p.facing] || [0, 1];
+        ctx.beginPath();
+        ctx.arc(px + fv[0] * ps * 0.55, py + fv[1] * ps * 0.55, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // particles
+        for (const pt of gs.particles) {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, pt.life);
+          ctx.fillStyle = pt.color;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = pt.color;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, pt.size * Math.max(0.1, pt.life), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.restore();
+      }, []);
+
+      useEffect(() => {
+        if (overlay !== 'playing') return;
+
+        const handleKeyDown = (e) => {
+          const map = {
+            ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
+            KeyW: [-1, 0], KeyS: [1, 0], KeyA: [0, -1], KeyD: [0, 1],
+          };
+          if (map[e.code]) {
+            e.preventDefault();
+            handleDirInput(map[e.code][0], map[e.code][1]);
+          }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+
+        const tick = (ts) => {
+          if (overlay !== 'playing') return;
+          let dt = ts - lastTimeRef.current;
+          lastTimeRef.current = ts;
+          if (dt > 100) dt = 100;
+          const gs = stateRef.current;
+          if (gs) {
+            if (!gs.paused && !gs.solved) {
+              gs.timeLeft -= dt / 1000;
+              const shown = Math.max(0, Math.ceil(gs.timeLeft));
+              if (shown !== lastShownTimeRef.current) {
+                lastShownTimeRef.current = shown;
+                setTimeLeft(shown);
+              }
+              if (gs.timeLeft <= 0) {
+                gs.timeLeft = 0;
+                loseLife(gs);
+              }
+            }
+            for (const pt of gs.particles) {
+              pt.x += pt.vx; pt.y += pt.vy;
+              pt.vx *= 0.96; pt.vy *= 0.96;
+              pt.life -= pt.decay;
+            }
+            gs.particles = gs.particles.filter(pp => pp.life > 0);
+          }
+          drawFrame();
+          animRef.current = requestAnimationFrame(tick);
+        };
+        lastTimeRef.current = performance.now();
+        animRef.current = requestAnimationFrame(tick);
+
+        return () => {
+          cancelAnimationFrame(animRef.current);
+          window.removeEventListener('keydown', handleKeyDown);
+        };
+      }, [overlay, drawFrame, handleDirInput]);
+
+      const dim = Math.min(CANVAS_PX, window.innerWidth - 24, window.innerHeight - 290);
+      const hudWidth = Math.min(window.innerWidth - 16, CANVAS_PX + 40);
+      const gs = stateRef.current;
+      const timerFrac = gs ? Math.max(0, Math.min(1, gs.timeLeft / gs.duration)) : 1;
+      const timerColor = timerFrac > 0.5 ? '#00eaff' : timerFrac > 0.22 ? '#ffaa00' : '#ff2266';
+
+      return (
+        <div className="cargo-pulse-game" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100vw', height: '100vh', position: 'relative', justifyContent: 'center' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            width: hudWidth, padding: '6px 14px', color: '#00eaff',
+            fontSize: '13px', letterSpacing: '1px',
+          }}>
+            <div>
+              <span style={{ color: '#888' }}>SCORE </span>
+              <span style={{ color: '#ffe600', fontSize: '17px', fontWeight: 'bold' }}>{score}</span>
+              <span style={{ color: '#666', marginLeft: 10, fontSize: '11px' }}>BEST {highScore}</span>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ color: '#ff88aa', fontSize: '18px' }}>{'♥'.repeat(Math.max(0, lives))}{'♡'.repeat(Math.max(0, 3 - lives))}</span>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ color: '#888' }}>LV </span>
+              <span style={{ color: '#aa88ff', fontSize: '17px', fontWeight: 'bold' }}>{level}</span>
+              {combo > 1 && <span style={{ color: '#ffe600', marginLeft: 8 }}>x{combo}</span>}
+            </div>
+          </div>
+
+          <div style={{ width: hudWidth, padding: '0 14px 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ flex: 1, height: 8, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden', boxShadow: 'inset 0 0 4px rgba(0,0,0,0.5)' }}>
+              <div style={{ width: `${timerFrac * 100}%`, height: '100%', background: timerColor, boxShadow: `0 0 10px ${timerColor}`, transition: 'width 0.2s linear, background 0.3s' }} />
+            </div>
+            <span style={{ color: '#888', fontSize: '11px', minWidth: 78, textAlign: 'right' }}>MOVES {moves}{gs ? `/${gs.par}` : ''}</span>
+          </div>
+
+          <div style={{ position: 'relative' }}>
+            <canvas
+              ref={canvasRef}
+              width={CANVAS_PX}
+              height={CANVAS_PX}
+              style={{ display: 'block', width: dim, height: dim, border: '1px solid #2a0a5a', borderRadius: 6, boxShadow: '0 0 34px #4400aa55' }}
+            />
+
+            {toast && (
+              <div style={{
+                position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                background: 'rgba(8,2,20,0.78)', borderRadius: 10, padding: '16px 28px',
+                border: `1px solid ${toast.color}66`, boxShadow: `0 0 30px ${toast.color}55`,
+                pointerEvents: 'none',
+              }}>
+                <div style={{ fontSize: 30, fontWeight: 'bold', color: toast.color, textShadow: `0 0 16px ${toast.color}` }}>{toast.big}</div>
+                <div style={{ fontSize: 13, color: '#ddd', marginTop: 4, letterSpacing: 1 }}>{toast.small}</div>
+              </div>
+            )}
+
+            {overlay === 'start' && (
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(7,2,15,0.93)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', borderRadius: 6, overflowY: 'auto', padding: '14px 8px',
+              }}>
+                <div style={{ fontSize: 'clamp(22px, 6vw, 38px)', fontWeight: 'bold', color: '#00eaff',
+                  textShadow: '0 0 20px #00eaff, 0 0 42px #00eaff', marginBottom: 4, letterSpacing: '4px', textAlign: 'center' }}>CARGO PULSE</div>
+                <div style={{ color: '#ff88dd', marginBottom: 10, letterSpacing: '1.5px', fontSize: '11px', textAlign: 'center' }}>
+                  PUSH THE CRATE · LAND ON THE PULSE · CHAIN THE COMBOS
+                </div>
+                <div style={{ color: '#aaa', fontSize: '11px', marginBottom: 6, textAlign: 'center', maxWidth: 320, lineHeight: '1.6', padding: '0 12px' }}>
+                  Arrow Keys / WASD to walk and push the glowing crate<br/>
+                  Follow the magenta conduit onto the pulsing pad<br/>
+                  Fewer moves + more time left = bigger bonus &amp; combo
+                </div>
+                <div style={{ color: '#ffe600', fontSize: '11px', marginBottom: 12 }}>Best Score: {highScore}</div>
+                <button onClick={startGame} style={{
+                  background: 'linear-gradient(135deg,#00ccdd,#aa44ff)',
+                  border: 'none', color: '#fff', padding: '12px 36px',
+                  fontSize: '16px', fontWeight: 'bold', cursor: 'pointer',
+                  borderRadius: '6px', letterSpacing: '2px',
+                  boxShadow: '0 0 20px #00eaff88', flexShrink: 0,
+                }}>START GAME</button>
+              </div>
+            )}
+
+            {overlay === 'dead' && (
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(7,2,15,0.93)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', borderRadius: 6, overflowY: 'auto', padding: '14px 8px',
+              }}>
+                <div style={{ fontSize: 'clamp(22px, 6vw, 32px)', fontWeight: 'bold', color: '#ff2266',
+                  textShadow: '0 0 20px #ff2266', marginBottom: 6, letterSpacing: '2px', textAlign: 'center' }}>OUT OF TIME</div>
+                <div style={{ color: '#ffe600', fontSize: 20, marginBottom: 4 }}>Score: {score}</div>
+                <div style={{ color: '#aa88ff', fontSize: 13, marginBottom: 4 }}>Reached Level {level}</div>
+                <div style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>Best: {Math.max(score, highScore)}</div>
+                <button onClick={startGame} style={{
+                  background: 'linear-gradient(135deg,#ff2266,#aa44ff)',
+                  border: 'none', color: '#fff', padding: '11px 32px',
+                  fontSize: '15px', fontWeight: 'bold', cursor: 'pointer',
+                  borderRadius: '6px', letterSpacing: '2px', flexShrink: 0,
+                }}>TRY AGAIN</button>
+              </div>
+            )}
+          </div>
+
+          {overlay === 'playing' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 10, gap: 4 }}>
+              <button onTouchStart={(e) => { e.preventDefault(); handleDirInput(-1, 0); }} onClick={() => handleDirInput(-1, 0)} style={btnStyle}>▲</button>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button onTouchStart={(e) => { e.preventDefault(); handleDirInput(0, -1); }} onClick={() => handleDirInput(0, -1)} style={btnStyle}>◀</button>
+                <button onTouchStart={(e) => { e.preventDefault(); handleDirInput(1, 0); }} onClick={() => handleDirInput(1, 0)} style={btnStyle}>▼</button>
+                <button onTouchStart={(e) => { e.preventDefault(); handleDirInput(0, 1); }} onClick={() => handleDirInput(0, 1)} style={btnStyle}>▶</button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const btnStyle = {
+      width: 50, height: 50,
+      background: '#ffffff11',
+      border: '1px solid #ffffff33',
+      color: '#00eaff',
+      fontSize: '20px',
+      cursor: 'pointer',
+      borderRadius: '8px',
+      touchAction: 'manipulation',
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<CargoPulse />);
+  </script>
+</body>
+</html>
