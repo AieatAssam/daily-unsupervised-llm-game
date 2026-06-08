@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vector Slash</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #060212;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    #root { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    button { font-family: 'Courier New', monospace; cursor: pointer; }
+    canvas { display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ---------- Audio (Web Audio API synth) ----------
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+    function playTone(freq, dur, type = 'sine', vol = 0.15, delay = 0) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type; osc.frequency.value = freq;
+        const t0 = ctx.currentTime + delay;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.start(t0); osc.stop(t0 + dur + 0.02);
+      } catch (e) {}
+    }
+    function playSlash() { playTone(820, 0.09, 'sawtooth', 0.09); playTone(1240, 0.07, 'sine', 0.06, 0.02); }
+    function playMiss() { playTone(160, 0.22, 'square', 0.1); }
+    function playExpire() { playTone(120, 0.3, 'sawtooth', 0.09); }
+    function playCombo(level) {
+      const base = 660 + level * 70;
+      [base, base * 1.25, base * 1.5].forEach((f, i) => playTone(f, 0.12, 'sine', 0.08, i * 0.04));
+    }
+    function playStart() { [440, 660, 880].forEach((f, i) => playTone(f, 0.16, 'triangle', 0.1, i * 0.06)); }
+    function playGameOver() { [392, 330, 262, 196].forEach((f, i) => playTone(f, 0.32, 'sawtooth', 0.12, i * 0.15)); }
+
+    // ---------- Helpers ----------
+    function rand(min, max) { return Math.random() * (max - min) + min; }
+    function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
+    function pick(arr) { return arr[randInt(0, arr.length - 1)]; }
+    function angleDiff(a, b) {
+      let d = Math.abs(a - b) % 360;
+      return d > 180 ? 360 - d : d;
+    }
+    // distance from point p to segment (a -> b)
+    function pointSegDist(px, py, ax, ay, bx, by) {
+      const dx = bx - ax, dy = by - ay;
+      const lenSq = dx * dx + dy * dy;
+      let t = lenSq === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      const cx = ax + t * dx, cy = ay + t * dy;
+      return Math.hypot(px - cx, py - cy);
+    }
+
+    const HUES = [
+      { name: 'cyan', hue: 185, glow: 'rgba(80,255,240,' },
+      { name: 'magenta', hue: 310, glow: 'rgba(255,90,230,' },
+      { name: 'amber', hue: 38, glow: 'rgba(255,200,80,' },
+      { name: 'violet', hue: 265, glow: 'rgba(170,120,255,' },
+      { name: 'lime', hue: 100, glow: 'rgba(150,255,110,' },
+    ];
+    // 0=right, 90=down, 180=left, 270=up (canvas y-down convention); diagonals added at higher levels
+    const CARDINAL = [0, 90, 180, 270];
+    const DIAGONAL = [45, 135, 225, 315];
+
+    function arrowPoints(cx, cy, dirDeg, size) {
+      const rad = dirDeg * Math.PI / 180;
+      const tipX = cx + Math.cos(rad) * size;
+      const tipY = cy + Math.sin(rad) * size;
+      const back = size * 0.78;
+      const spread = 0.62;
+      const a1 = rad + Math.PI - spread;
+      const a2 = rad + Math.PI + spread;
+      return [
+        [tipX, tipY],
+        [cx + Math.cos(a1) * back, cy + Math.sin(a1) * back],
+        [cx + Math.cos(rad + Math.PI) * (back * 0.45), cy + Math.sin(rad + Math.PI) * (back * 0.45)],
+        [cx + Math.cos(a2) * back, cy + Math.sin(a2) * back],
+      ];
+    }
+
+    const HS_KEY = 'vectorSlashHighScore';
+
+    const VectorSlash = () => {
+      const [screen, setScreen] = useState('start'); // start | playing | gameover
+      const [score, setScore] = useState(0);
+      const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+      const [combo, setCombo] = useState(0);
+      const [multiplier, setMultiplier] = useState(1);
+      const [lives, setLives] = useState(3);
+      const [level, setLevel] = useState(1);
+      const [flash, setFlash] = useState(null); // { color, key }
+
+      const canvasRef = useRef(null);
+      const wrapRef = useRef(null);
+      const sizeRef = useRef({ w: 360, h: 640, dpr: 1 });
+      const rafRef = useRef(null);
+      const lastTRef = useRef(null);
+      const orbsRef = useRef([]);
+      const particlesRef = useRef([]);
+      const popupsRef = useRef([]);
+      const spawnTimerRef = useRef(0);
+      const bgPhaseRef = useRef(0);
+      const swipeRef = useRef(null); // { pts: [{x,y}], active }
+      const stateRef = useRef({ score: 0, combo: 0, multiplier: 1, lives: 3, level: 1, screen: 'start' });
+      const flashTimeoutRef = useRef(null);
+      const idCounter = useRef(0);
+
+      // keep a mirror of state for the rAF loop to read without stale closures
+      useEffect(() => {
+        stateRef.current = { score, combo, multiplier, lives, level, screen };
+      }, [score, combo, multiplier, lives, level, screen]);
+
+      // ensure the high-score key exists in localStorage from the very first load
+      useEffect(() => {
+        if (localStorage.getItem(HS_KEY) === null) {
+          localStorage.setItem(HS_KEY, '0');
+        }
+      }, []);
+
+      // ---------- sizing ----------
+      const resize = useCallback(() => {
+        const wrap = wrapRef.current;
+        const canvas = canvasRef.current;
+        if (!wrap || !canvas) return;
+        const w = wrap.clientWidth;
+        const h = wrap.clientHeight;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        sizeRef.current = { w, h, dpr };
+      }, []);
+
+      useEffect(() => {
+        resize();
+        window.addEventListener('resize', resize);
+        return () => window.removeEventListener('resize', resize);
+      }, [resize]);
+
+      // ---------- particles & popups ----------
+      function spawnBurst(x, y, color, count) {
+        for (let i = 0; i < count; i++) {
+          const ang = rand(0, Math.PI * 2);
+          const spd = rand(60, 280);
+          particlesRef.current.push({
+            x, y,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            life: rand(0.4, 0.9),
+            age: 0,
+            size: rand(2, 5),
+            color,
+          });
+        }
+      }
+      function spawnPopup(x, y, text, color) {
+        popupsRef.current.push({ x, y, text, color, age: 0, life: 0.9 });
+      }
+
+      // ---------- orb spawning ----------
+      function spawnOrb() {
+        const { w, h } = sizeRef.current;
+        const lvl = stateRef.current.level;
+        const margin = 64;
+        const x = rand(margin, Math.max(margin + 1, w - margin));
+        const y = rand(margin + 50, Math.max(margin + 51, h - margin));
+        const useDiagonal = lvl >= 3 && Math.random() < Math.min(0.55, 0.18 * (lvl - 2));
+        const dir = useDiagonal ? pick(DIAGONAL) : pick(CARDINAL);
+        const palette = pick(HUES);
+        const lifespan = Math.max(1450, 2900 - lvl * 180);
+        const golden = lvl >= 2 && Math.random() < 0.12;
+        idCounter.current += 1;
+        orbsRef.current.push({
+          id: idCounter.current,
+          x, y,
+          radius: golden ? 30 : 38,
+          dir,
+          palette,
+          golden,
+          spawnAt: performance.now(),
+          lifespan,
+          state: 'alive',
+          stamp: 0,
+        });
+      }
+
+      // ---------- game lifecycle ----------
+      const resetGame = useCallback(() => {
+        orbsRef.current = [];
+        particlesRef.current = [];
+        popupsRef.current = [];
+        spawnTimerRef.current = 0;
+        swipeRef.current = null;
+        setScore(0);
+        setCombo(0);
+        setMultiplier(1);
+        setLives(3);
+        setLevel(1);
+      }, []);
+
+      const startGame = useCallback(() => {
+        resetGame();
+        setScreen('playing');
+        try { getAudio(); } catch (e) {}
+        playStart();
+      }, [resetGame]);
+
+      const endGame = useCallback(() => {
+        setScreen('gameover');
+        playGameOver();
+        setHighScore(prev => {
+          const cur = stateRef.current.score;
+          if (cur > prev) {
+            localStorage.setItem(HS_KEY, String(cur));
+            return cur;
+          }
+          return prev;
+        });
+      }, []);
+
+      function loseLife() {
+        setLives(prev => {
+          const next = prev - 1;
+          if (next <= 0) {
+            setTimeout(() => endGame(), 50);
+            return 0;
+          }
+          return next;
+        });
+        setCombo(0);
+        setMultiplier(1);
+      }
+
+      function registerHit(orb) {
+        const lvl = stateRef.current.level;
+        const base = orb.golden ? 250 : 100;
+        setCombo(prevCombo => {
+          const nextCombo = prevCombo + 1;
+          setMultiplier(() => {
+            const mult = Math.min(5, 1 + Math.floor(nextCombo / 5));
+            const gained = Math.round(base * mult);
+            setScore(s => {
+              const ns = s + gained;
+              setLevel(() => Math.min(9, 1 + Math.floor(ns / 1200)));
+              return ns;
+            });
+            spawnPopup(orb.x, orb.y - orb.radius - 6, `+${gained}`, orb.palette.glow + '1)');
+            if (nextCombo > 0 && nextCombo % 5 === 0) {
+              playCombo(mult);
+              spawnPopup(orb.x, orb.y + orb.radius + 22, `COMBO x${mult}`, '#fff');
+            } else {
+              playSlash();
+            }
+            return mult;
+          });
+          return nextCombo;
+        });
+        spawnBurst(orb.x, orb.y, orb.palette.glow, orb.golden ? 36 : 22);
+      }
+
+      function evaluateSwipe(pts) {
+        if (!pts || pts.length < 2) return;
+        const a = pts[0];
+        const b = pts[pts.length - 1];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 26) return; // too short - ignore as a tap
+        const swipeAngle = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+
+        let best = null, bestDist = Infinity;
+        for (const orb of orbsRef.current) {
+          if (orb.state !== 'alive') continue;
+          const d = pointSegDist(orb.x, orb.y, a.x, a.y, b.x, b.y);
+          if (d < orb.radius + 30 && d < bestDist) { bestDist = d; best = orb; }
+        }
+        if (!best) return;
+
+        const diff = angleDiff(swipeAngle, best.dir);
+        if (diff <= 42) {
+          best.state = 'hit';
+          registerHit(best);
+        } else {
+          best.state = 'wrong';
+          best.stamp = performance.now();
+          playMiss();
+          setCombo(0);
+          setMultiplier(1);
+          spawnPopup(best.x, best.y, 'WRONG WAY', '#ff5577');
+          setFlash({ color: 'rgba(255,40,80,0.18)', key: Math.random() });
+        }
+      }
+
+      // ---------- pointer handling ----------
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        function getPos(e) {
+          const rect = canvas.getBoundingClientRect();
+          const t = (e.touches && e.touches[0]) || e;
+          return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+        }
+        function onDown(e) {
+          if (stateRef.current.screen !== 'playing') return;
+          e.preventDefault();
+          const p = getPos(e);
+          swipeRef.current = { pts: [p], active: true };
+        }
+        function onMove(e) {
+          const sw = swipeRef.current;
+          if (!sw || !sw.active) return;
+          e.preventDefault();
+          const p = getPos(e);
+          sw.pts.push(p);
+          if (sw.pts.length > 40) sw.pts.shift();
+        }
+        function onUp(e) {
+          const sw = swipeRef.current;
+          if (!sw || !sw.active) return;
+          sw.active = false;
+          evaluateSwipe(sw.pts);
+          setTimeout(() => { if (swipeRef.current === sw) swipeRef.current = null; }, 90);
+        }
+        canvas.addEventListener('mousedown', onDown);
+        canvas.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        canvas.addEventListener('touchstart', onDown, { passive: false });
+        canvas.addEventListener('touchmove', onMove, { passive: false });
+        canvas.addEventListener('touchend', onUp, { passive: false });
+        return () => {
+          canvas.removeEventListener('mousedown', onDown);
+          canvas.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+          canvas.removeEventListener('touchstart', onDown);
+          canvas.removeEventListener('touchmove', onMove);
+          canvas.removeEventListener('touchend', onUp);
+        };
+      }, [screen]);
+
+      // ---------- main loop ----------
+      useEffect(() => {
+        function frame(t) {
+          rafRef.current = requestAnimationFrame(frame);
+          if (lastTRef.current == null) lastTRef.current = t;
+          const dt = Math.min(0.05, (t - lastTRef.current) / 1000);
+          lastTRef.current = t;
+          bgPhaseRef.current += dt;
+          render(t, dt);
+        }
+        rafRef.current = requestAnimationFrame(frame);
+        return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); lastTRef.current = null; };
+      }, []);
+
+      function render(now, dt) {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const { w, h } = sizeRef.current;
+        const playing = stateRef.current.screen === 'playing';
+
+        // animated neon gradient background
+        const phase = bgPhaseRef.current;
+        const g = ctx.createLinearGradient(0, 0, w, h);
+        const hueA = (140 + Math.sin(phase * 0.18) * 80 + 360) % 360;
+        const hueB = (hueA + 120) % 360;
+        const hueC = (hueA + 240) % 360;
+        g.addColorStop(0, `hsl(${hueA}, 70%, 10%)`);
+        g.addColorStop(0.5, `hsl(${hueB}, 65%, 8%)`);
+        g.addColorStop(1, `hsl(${hueC}, 70%, 9%)`);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+
+        // soft drifting glow orbs in background
+        for (let i = 0; i < 4; i++) {
+          const ang = phase * 0.12 + i * (Math.PI / 2);
+          const cx = w / 2 + Math.cos(ang) * w * 0.32;
+          const cy = h / 2 + Math.sin(ang * 0.8) * h * 0.32;
+          const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.28);
+          rg.addColorStop(0, `hsla(${(hueA + i * 70) % 360}, 90%, 55%, 0.10)`);
+          rg.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = rg;
+          ctx.fillRect(0, 0, w, h);
+        }
+
+        if (!playing) {
+          drawParticles(ctx, dt);
+          return;
+        }
+
+        // spawn logic
+        const lvl = stateRef.current.level;
+        spawnTimerRef.current -= dt * 1000;
+        const maxOrbs = Math.min(5, 2 + Math.floor((lvl - 1) / 1.5));
+        const interval = Math.max(520, 1500 - lvl * 110);
+        const aliveCount = orbsRef.current.filter(o => o.state === 'alive').length;
+        if (spawnTimerRef.current <= 0 && aliveCount < maxOrbs) {
+          spawnOrb();
+          spawnTimerRef.current = interval * rand(0.6, 1.1);
+        }
+
+        // update orbs
+        for (const orb of orbsRef.current) {
+          if (orb.state === 'alive') {
+            const age = now - orb.spawnAt;
+            if (age > orb.lifespan) {
+              orb.state = 'expired';
+              spawnBurst(orb.x, orb.y, 'rgba(255,80,80,', 16);
+              spawnPopup(orb.x, orb.y, 'MISSED', '#ff5577');
+              playExpire();
+              loseLife();
+            }
+          }
+        }
+        // cull resolved orbs after their fade window
+        orbsRef.current = orbsRef.current.filter(o => {
+          if (o.state === 'alive') return true;
+          if (!o.stamp) o.stamp = now;
+          return now - o.stamp < 360;
+        });
+
+        drawOrbs(ctx, now);
+        drawSwipeTrail(ctx);
+        drawParticles(ctx, dt);
+        drawPopups(ctx, dt);
+      }
+
+      function drawOrbs(ctx, now) {
+        for (const orb of orbsRef.current) {
+          const age = now - orb.spawnAt;
+          const lifeFrac = Math.max(0, 1 - age / orb.lifespan);
+          const pulse = 0.85 + Math.sin(now / 220 + orb.id) * 0.15;
+          let alpha = 1;
+          let scale = 1;
+          if (orb.state === 'hit') {
+            const k = (now - (orb.stamp || now)) / 360;
+            alpha = Math.max(0, 1 - k);
+            scale = 1 + k * 0.9;
+          } else if (orb.state === 'wrong') {
+            const k = (now - (orb.stamp || now)) / 360;
+            alpha = Math.max(0, 1 - k);
+          } else if (orb.state === 'expired') {
+            const k = (now - (orb.stamp || now)) / 360;
+            alpha = Math.max(0, 1 - k);
+            scale = 1 - k * 0.4;
+          }
+          if (alpha <= 0) continue;
+
+          const r = orb.radius * scale * (orb.golden ? pulse : 1);
+          const glow = orb.state === 'wrong' ? 'rgba(255,70,90,' : (orb.golden ? 'rgba(255,225,110,' : orb.palette.glow);
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
+
+          // outer glow
+          ctx.shadowColor = glow + '0.9)';
+          ctx.shadowBlur = orb.golden ? 34 : 22;
+          ctx.beginPath();
+          ctx.arc(orb.x, orb.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = glow + '0.16)';
+          ctx.fill();
+
+          // ring (lifespan countdown)
+          ctx.beginPath();
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = glow + '0.85)';
+          ctx.arc(orb.x, orb.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lifeFrac);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+          ctx.arc(orb.x, orb.y, r, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // core
+          ctx.beginPath();
+          ctx.fillStyle = orb.golden ? 'rgba(255,250,225,0.9)' : 'rgba(20,10,30,0.55)';
+          ctx.arc(orb.x, orb.y, r * 0.62, 0, Math.PI * 2);
+          ctx.fill();
+
+          // direction arrow
+          const pts = arrowPoints(orb.x, orb.y, orb.dir, r * 0.62);
+          ctx.beginPath();
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+          ctx.closePath();
+          ctx.fillStyle = orb.golden ? 'rgba(120,80,10,0.9)' : glow + '1)';
+          ctx.shadowBlur = 8;
+          ctx.fill();
+
+          ctx.restore();
+        }
+      }
+
+      function drawSwipeTrail(ctx) {
+        const sw = swipeRef.current;
+        if (!sw || sw.pts.length < 2) return;
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = 'rgba(140,220,255,0.9)';
+        ctx.shadowBlur = 18;
+        for (let i = 1; i < sw.pts.length; i++) {
+          const k = i / sw.pts.length;
+          ctx.beginPath();
+          ctx.lineWidth = 3 + k * 7;
+          ctx.strokeStyle = `rgba(160,235,255,${0.12 + k * 0.55})`;
+          ctx.moveTo(sw.pts[i - 1].x, sw.pts[i - 1].y);
+          ctx.lineTo(sw.pts[i].x, sw.pts[i].y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawParticles(ctx, dt) {
+        const arr = particlesRef.current;
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const p = arr[i];
+          p.age += dt;
+          if (p.age >= p.life) { arr.splice(i, 1); continue; }
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= 0.94;
+          p.vy = p.vy * 0.94 + 60 * dt;
+          const k = 1 - p.age / p.life;
+          ctx.beginPath();
+          ctx.fillStyle = p.color + k.toFixed(3) + ')';
+          ctx.shadowColor = p.color + '0.8)';
+          ctx.shadowBlur = 10;
+          ctx.arc(p.x, p.y, p.size * k, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+      }
+
+      function drawPopups(ctx, dt) {
+        const arr = popupsRef.current;
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const p = arr[i];
+          p.age += dt;
+          if (p.age >= p.life) { arr.splice(i, 1); continue; }
+          const k = p.age / p.life;
+          ctx.save();
+          ctx.globalAlpha = 1 - k;
+          ctx.fillStyle = p.color;
+          ctx.font = 'bold 18px "Courier New", monospace';
+          ctx.textAlign = 'center';
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 10;
+          ctx.fillText(p.text, p.x, p.y - k * 30);
+          ctx.restore();
+        }
+      }
+
+      // clear screen flash after a moment
+      useEffect(() => {
+        if (!flash) return;
+        if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+        flashTimeoutRef.current = setTimeout(() => setFlash(null), 180);
+        return () => clearTimeout(flashTimeoutRef.current);
+      }, [flash]);
+
+      // ---------- keyboard shortcut: space/enter to start or restart ----------
+      useEffect(() => {
+        function onKey(e) {
+          if ((e.code === 'Space' || e.code === 'Enter') && screen !== 'playing') {
+            e.preventDefault();
+            startGame();
+          }
+        }
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [screen, startGame]);
+
+      const heartStr = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
+
+      return (
+        <div ref={wrapRef} style={styles.wrap}>
+          <canvas ref={canvasRef} style={styles.canvas} />
+
+          {flash && <div style={{ ...styles.flashOverlay, background: flash.color }} />}
+
+          {screen === 'playing' && (
+            <div style={styles.hud}>
+              <div style={styles.hudRow}>
+                <div style={styles.hudBlock}>
+                  <div style={styles.hudLabel}>SCORE</div>
+                  <div style={styles.hudValue}>{score}</div>
+                </div>
+                <div style={styles.hudBlock}>
+                  <div style={styles.hudLabel}>COMBO</div>
+                  <div style={{ ...styles.hudValue, color: '#ffd24a' }}>{combo} <span style={{ fontSize: 14, opacity: 0.8 }}>x{multiplier}</span></div>
+                </div>
+                <div style={styles.hudBlock}>
+                  <div style={styles.hudLabel}>LIVES</div>
+                  <div style={{ ...styles.hudValue, color: '#ff6b9d', letterSpacing: 2 }}>{heartStr}</div>
+                </div>
+              </div>
+              <div style={styles.levelTag}>LEVEL {level}</div>
+            </div>
+          )}
+
+          {screen === 'start' && (
+            <div style={styles.overlay}>
+              <div style={styles.title}>VECTOR SLASH</div>
+              <div style={styles.subtitle}>Swipe each glowing orb in the direction of its arrow</div>
+              <div style={styles.demoRow}>
+                <DemoArrow dir={0} color="rgba(80,255,240,1)" />
+                <DemoArrow dir={90} color="rgba(255,90,230,1)" />
+                <DemoArrow dir={225} color="rgba(170,120,255,1)" />
+              </div>
+              <div style={styles.instructions}>
+                Drag across an orb in the same direction its arrow points to slash it.<br/>
+                Wrong direction breaks your combo · Letting one expire costs a life.<br/>
+                Gold orbs are worth big bonus points!
+              </div>
+              <button style={styles.bigButton} onClick={startGame}>TAP TO START</button>
+              <div style={styles.highScoreLine}>HIGH SCORE: {highScore}</div>
+              <div style={styles.kbdHint}>or press SPACE / ENTER</div>
+            </div>
+          )}
+
+          {screen === 'gameover' && (
+            <div style={styles.overlay}>
+              <div style={styles.title} style={{ color: '#ff5577' }}>GAME OVER</div>
+              <div style={styles.finalScore}>{score}</div>
+              <div style={styles.subtitle}>
+                {score > highScore ? 'NEW HIGH SCORE!' : `HIGH SCORE: ${Math.max(score, highScore)}`}
+              </div>
+              <button style={styles.bigButton} onClick={startGame}>PLAY AGAIN</button>
+              <div style={styles.kbdHint}>or press SPACE / ENTER</div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const DemoArrow = ({ dir, color }) => {
+      const rad = dir * Math.PI / 180;
+      const tx = Math.cos(rad) * 16, ty = Math.sin(rad) * 16;
+      return (
+        <div style={{ width: 56, height: 56, borderRadius: '50%', border: `2px solid ${color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 18px ${color}`, position: 'relative' }}>
+          <svg width="40" height="40" viewBox="-20 -20 40 40">
+            <line x1={-tx} y1={-ty} x2={tx} y2={ty} stroke={color} strokeWidth="3" strokeLinecap="round" />
+            <polygon points={`${tx},${ty} ${tx - Math.cos(rad - 0.5) * 9},${ty - Math.sin(rad - 0.5) * 9} ${tx - Math.cos(rad + 0.5) * 9},${ty - Math.sin(rad + 0.5) * 9}`} fill={color} />
+          </svg>
+        </div>
+      );
+    };
+
+    const styles = {
+      wrap: {
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        maxWidth: 720,
+        maxHeight: 1280,
+        margin: '0 auto',
+        overflow: 'hidden',
+        borderRadius: 0,
+      },
+      canvas: { position: 'absolute', inset: 0, width: '100%', height: '100%' },
+      flashOverlay: { position: 'absolute', inset: 0, pointerEvents: 'none', transition: 'opacity 0.15s' },
+      hud: {
+        position: 'absolute', top: 0, left: 0, right: 0, padding: '14px 16px',
+        display: 'flex', flexDirection: 'column', gap: 6, pointerEvents: 'none',
+      },
+      hudRow: { display: 'flex', gap: 10, justifyContent: 'space-between' },
+      hudBlock: {
+        background: 'rgba(15,8,28,0.55)', border: '1px solid rgba(140,220,255,0.25)',
+        borderRadius: 10, padding: '6px 14px', minWidth: 84, textAlign: 'center',
+        backdropFilter: 'blur(4px)',
+      },
+      hudLabel: { fontSize: 10, letterSpacing: 2, color: 'rgba(180,220,255,0.7)' },
+      hudValue: { fontSize: 20, fontWeight: 'bold', color: '#7ef9ff', textShadow: '0 0 12px rgba(126,249,255,0.7)' },
+      levelTag: {
+        alignSelf: 'flex-start', fontSize: 12, letterSpacing: 3, color: 'rgba(255,255,255,0.55)',
+        background: 'rgba(15,8,28,0.4)', padding: '4px 10px', borderRadius: 6,
+        border: '1px solid rgba(255,255,255,0.12)',
+      },
+      overlay: {
+        position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24,
+        textAlign: 'center', background: 'rgba(6,2,18,0.55)', backdropFilter: 'blur(2px)',
+      },
+      title: {
+        fontSize: 'clamp(34px, 9vw, 56px)', fontWeight: 'bold', letterSpacing: 6,
+        color: '#7ef9ff', textShadow: '0 0 18px rgba(126,249,255,0.85), 0 0 40px rgba(255,90,230,0.4)',
+      },
+      subtitle: { fontSize: 15, color: 'rgba(255,255,255,0.8)', maxWidth: 420, lineHeight: 1.5 },
+      instructions: { fontSize: 12.5, color: 'rgba(200,220,255,0.65)', maxWidth: 440, lineHeight: 1.7 },
+      demoRow: { display: 'flex', gap: 18, margin: '4px 0' },
+      bigButton: {
+        marginTop: 8, padding: '14px 38px', fontSize: 18, fontWeight: 'bold', letterSpacing: 3,
+        color: '#06121a', background: 'linear-gradient(135deg, #7ef9ff, #ff8ad1)', border: 'none',
+        borderRadius: 999, boxShadow: '0 0 26px rgba(126,249,255,0.6)',
+      },
+      highScoreLine: { fontSize: 13, color: 'rgba(255,210,80,0.9)', letterSpacing: 2 },
+      finalScore: {
+        fontSize: 'clamp(46px, 14vw, 80px)', fontWeight: 'bold', color: '#ffd24a',
+        textShadow: '0 0 24px rgba(255,210,74,0.7)',
+      },
+      kbdHint: { fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: 1 },
+    };
+
+    ReactDOM.render(<VectorSlash />, document.getElementById('root'));
+  </script>
+</body>
+</html>
