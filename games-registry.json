@@ -1909,5 +1909,25 @@
     "folder": "games/2026-06-07",
     "file": "games/2026-06-07/index.html",
     "preview": "games/2026-06-07/preview.png"
+  },
+  {
+    "id": "2026-06-08",
+    "name": "Vector Slash",
+    "date": "2026-06-08",
+    "description": "Glowing neon orbs spawn across the screen, each branded with a directional arrow — swipe through them in the exact direction shown to slash them apart! Chain correct-direction hits for massive combo multipliers, but a wrong-way swipe shatters your combo and a missed orb costs a life.",
+    "tagline": "Read the arrow. Swipe the vector. Slash with precision!",
+    "tags": [
+      "reflex",
+      "precision",
+      "swipe",
+      "action",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click and drag / swipe through an orb in the direction of its arrow to slash it",
+    "folder": "games/2026-06-08",
+    "file": "games/2026-06-08/index.html",
+    "preview": "games/2026-06-08/preview.png"
   }
 ]
