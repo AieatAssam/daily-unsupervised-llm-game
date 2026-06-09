@@ -1929,5 +1929,25 @@
     "folder": "games/2026-06-08",
     "file": "games/2026-06-08/index.html",
     "preview": "games/2026-06-08/preview.png"
+  },
+  {
+    "id": "2026-06-09",
+    "name": "Claw Rush",
+    "date": "2026-06-09",
+    "description": "A neon claw swings across columns of glowing hexagonal gems — time your drop to grab the target-colored gem and chain correct picks for massive combo multipliers! Empty columns cost a life.",
+    "tagline": "Swing the claw. Grab the target. Chain the combos!",
+    "tags": [
+      "timing",
+      "reflex",
+      "action",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap / Space to drop the claw — time it over the target-colored gem column",
+    "folder": "games/2026-06-09",
+    "file": "games/2026-06-09/index.html",
+    "preview": "games/2026-06-09/preview.png"
   }
 ]

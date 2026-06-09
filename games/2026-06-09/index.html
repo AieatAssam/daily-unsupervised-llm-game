@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claw Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050015; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef } = React;
+
+    const COLS = 6;
+    const MAX_ROWS = 8;
+    const COLORS = ['#00ffff','#ff00ff','#ffff00','#ff6633','#00ff88','#ff3377'];
+    const CNAMES = ['Cyan','Magenta','Yellow','Orange','Lime','Pink'];
+
+    let actx = null;
+    const beep = (f, d = 0.12, t = 'sine', v = 0.25) => {
+      try {
+        if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.connect(g); g.connect(actx.destination);
+        o.type = t; o.frequency.value = f;
+        g.gain.setValueAtTime(v, actx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + d);
+        o.start(); o.stop(actx.currentTime + d);
+      } catch (e) {}
+    };
+
+    const mkGems = () => Array.from({ length: COLS }, () =>
+      Array.from({ length: MAX_ROWS }, () => Math.floor(Math.random() * COLORS.length))
+    );
+
+    function App() {
+      const canvasRef = useRef(null);
+      const G = useRef(null);
+
+      if (!G.current) {
+        const hi = parseInt(localStorage.getItem('clawRush_highScore') || '0');
+        localStorage.setItem('clawRush_highScore', String(hi));
+        G.current = {
+          phase: 'start',
+          score: 0, combo: 0, lives: 3, hi,
+          gems: mkGems(),
+          target: Math.floor(Math.random() * COLORS.length),
+          level: 1,
+          swingT: 0,
+          swingSpeed: 1.2,
+          dropPhase: 0, retractPhase: 0,
+          dropCol: 0, lockedX: 0,
+          grabbedColor: -1,
+          particles: [],
+          lastT: 0,
+          scoreFlash: 0,
+          scoreFlashVal: 0,
+        };
+      }
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const G_ = G.current;
+        let rafId;
+
+        const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        resize();
+        window.addEventListener('resize', resize);
+
+        const spark = (x, y, color, n = 14) => {
+          for (let i = 0; i < n; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const s = 1.5 + Math.random() * 5;
+            G_.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1.5, color, life: 1, sz: 2 + Math.random() * 5 });
+          }
+        };
+
+        const resetGame = () => {
+          G_.phase = 'playing';
+          G_.score = 0; G_.combo = 0; G_.lives = 3;
+          G_.gems = mkGems();
+          G_.level = 1; G_.swingSpeed = 1.2; G_.swingT = 0;
+          G_.dropPhase = 0; G_.retractPhase = 0; G_.grabbedColor = -1;
+          G_.target = Math.floor(Math.random() * COLORS.length);
+          G_.particles = [];
+          G_.scoreFlash = 0;
+        };
+
+        const doInput = () => {
+          if (G_.phase === 'start' || G_.phase === 'gameover') { resetGame(); return; }
+          if (G_.phase !== 'playing') return;
+          const W = canvas.width;
+          const cw = W / COLS;
+          const sx = W / 2 + Math.sin(G_.swingT) * (W / 2 - cw / 2);
+          G_.dropCol = Math.max(0, Math.min(COLS - 1, Math.floor(sx / cw)));
+          G_.lockedX = G_.dropCol * cw + cw / 2;
+          G_.phase = 'dropping';
+          G_.dropPhase = 0; G_.grabbedColor = -1;
+          beep(440, 0.08, 'square', 0.18);
+        };
+
+        canvas.addEventListener('click', doInput);
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); doInput(); }, { passive: false });
+        const kd = e => { if (e.code === 'Space') { e.preventDefault(); doInput(); } };
+        document.addEventListener('keydown', kd);
+
+        const draw = ts => {
+          const W = canvas.width, H = canvas.height;
+          const dt = Math.min((ts - G_.lastT) / 1000, 0.05);
+          G_.lastT = ts;
+
+          // Background
+          ctx.fillStyle = '#050015';
+          ctx.fillRect(0, 0, W, H);
+
+          // Subtle grid bg shimmer
+          const shimmer = (Math.sin(ts * 0.0008) + 1) * 0.5;
+          ctx.fillStyle = `rgba(80,40,160,${0.03 + shimmer * 0.03})`;
+          ctx.fillRect(0, 0, W, H);
+
+          const cw = W / COLS;
+          const gTop = H * 0.22, gH = H * 0.69;
+          const cellH = gH / MAX_ROWS;
+          const gr = Math.min(cw * 0.3, cellH * 0.33);
+
+          // Column guide lines
+          ctx.setLineDash([3, 7]);
+          ctx.strokeStyle = 'rgba(80,40,160,0.38)';
+          ctx.lineWidth = 1;
+          for (let c = 0; c <= COLS; c++) {
+            ctx.beginPath();
+            ctx.moveTo(c * cw, gTop);
+            ctx.lineTo(c * cw, gTop + gH);
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+
+          // Bottom floor
+          ctx.shadowBlur = 8; ctx.shadowColor = '#6633cc';
+          ctx.strokeStyle = 'rgba(120, 60, 220, 0.7)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, gTop + gH); ctx.lineTo(W, gTop + gH);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Gems
+          for (let c = 0; c < COLS; c++) {
+            const col = G_.gems[c];
+            for (let r = 0; r < Math.min(col.length, MAX_ROWS); r++) {
+              const ci = col[r];
+              const cx2 = c * cw + cw / 2;
+              const cy2 = gTop + gH - (r + 0.5) * cellH;
+              const pulse = 1 + Math.sin(ts * 0.002 + c * 0.7 + r * 0.5) * 0.08;
+
+              ctx.shadowBlur = 14; ctx.shadowColor = COLORS[ci];
+              ctx.beginPath();
+              for (let i = 0; i < 6; i++) {
+                const a = (Math.PI / 3) * i - Math.PI / 6;
+                const gx2 = cx2 + Math.cos(a) * gr * pulse;
+                const gy2 = cy2 + Math.sin(a) * gr * pulse;
+                if (i === 0) ctx.moveTo(gx2, gy2); else ctx.lineTo(gx2, gy2);
+              }
+              ctx.closePath();
+              ctx.fillStyle = COLORS[ci] + '52';
+              ctx.fill();
+              ctx.strokeStyle = COLORS[ci];
+              ctx.lineWidth = 2;
+              ctx.stroke();
+            }
+          }
+          ctx.shadowBlur = 0;
+
+          // Track rail
+          const trackY = H * 0.1;
+          const restY = trackY + 18;
+          ctx.shadowBlur = 8; ctx.shadowColor = '#7744cc';
+          ctx.strokeStyle = '#8855dd';
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.moveTo(0, trackY); ctx.lineTo(W, trackY);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Track end caps
+          for (const ex of [8, W - 8]) {
+            ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = '#00ffff';
+            ctx.beginPath();
+            ctx.arc(ex, trackY, 7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+
+          const maxDropY = gTop + gH - gr * 1.1;
+          let clawX, clawY;
+
+          if (G_.phase === 'playing') {
+            G_.swingT += dt * G_.swingSpeed;
+            clawX = W / 2 + Math.sin(G_.swingT) * (W / 2 - cw / 2);
+            clawY = restY;
+          } else if (G_.phase === 'dropping') {
+            G_.dropPhase = Math.min(G_.dropPhase + dt * 3.5, 1);
+            clawX = G_.lockedX;
+            clawY = restY + (maxDropY - restY) * G_.dropPhase;
+
+            if (G_.dropPhase >= 1) {
+              const col = G_.gems[G_.dropCol];
+              if (col.length > 0) {
+                G_.grabbedColor = col[col.length - 1];
+                col.pop();
+
+                if (G_.grabbedColor === G_.target) {
+                  G_.combo++;
+                  const pts = 100 * Math.min(G_.combo, 10);
+                  G_.score += pts;
+                  G_.scoreFlash = 1.2;
+                  G_.scoreFlashVal = pts;
+                  beep(660 + G_.combo * 35, 0.18, 'sine', 0.35);
+                  beep(990 + G_.combo * 20, 0.12, 'sine', 0.2);
+                  spark(clawX, clawY, COLORS[G_.grabbedColor], 22);
+                  // Flash claw area
+                  let nt = G_.target;
+                  while (nt === G_.target) nt = Math.floor(Math.random() * COLORS.length);
+                  G_.target = nt;
+                } else {
+                  G_.combo = 0;
+                  G_.score += 30;
+                  beep(300, 0.14, 'triangle', 0.2);
+                  spark(clawX, clawY, COLORS[G_.grabbedColor], 8);
+                }
+
+                G_.level = Math.floor(G_.score / 800) + 1;
+                G_.swingSpeed = 1.2 + (G_.level - 1) * 0.28;
+                for (let c2 = 0; c2 < COLS; c2++) {
+                  while (G_.gems[c2].length < 3) G_.gems[c2].unshift(Math.floor(Math.random() * COLORS.length));
+                }
+              } else {
+                // Empty column
+                G_.lives = Math.max(0, G_.lives - 1);
+                G_.combo = 0;
+                G_.grabbedColor = -1;
+                beep(130, 0.4, 'sawtooth', 0.3);
+                beep(100, 0.3, 'sawtooth', 0.25);
+              }
+
+              if (G_.lives <= 0) {
+                G_.hi = Math.max(G_.hi, G_.score);
+                localStorage.setItem('clawRush_highScore', String(G_.hi));
+                G_.phase = 'gameover';
+              } else {
+                G_.phase = 'retracting';
+                G_.retractPhase = 0;
+              }
+            }
+          } else if (G_.phase === 'retracting') {
+            G_.retractPhase = Math.min(G_.retractPhase + dt * 3.2, 1);
+            clawX = G_.lockedX;
+            clawY = restY + (maxDropY - restY) * (1 - G_.retractPhase);
+            if (G_.retractPhase >= 1) {
+              G_.phase = 'playing';
+              G_.grabbedColor = -1;
+            }
+          } else {
+            clawX = W / 2;
+            clawY = restY;
+          }
+
+          // Highlight column under claw (playing only)
+          if (G_.phase === 'playing' || G_.phase === 'dropping' || G_.phase === 'retracting') {
+            const highlightCol = G_.phase === 'playing'
+              ? Math.max(0, Math.min(COLS - 1, Math.floor(clawX / cw)))
+              : G_.dropCol;
+            ctx.fillStyle = 'rgba(120,80,255,0.07)';
+            ctx.fillRect(highlightCol * cw, gTop, cw, gH);
+          }
+
+          // Cable
+          ctx.shadowBlur = 6; ctx.shadowColor = '#9966ee';
+          ctx.strokeStyle = '#8855dd';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(clawX, trackY); ctx.lineTo(clawX, clawY);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Claw prongs
+          const isClosed = G_.phase === 'retracting';
+          const spread = isClosed ? 0.14 : 0.54;
+          const plen = 26;
+          ctx.shadowBlur = 18; ctx.shadowColor = '#00ffff';
+          ctx.strokeStyle = '#00ffff';
+          ctx.lineWidth = 3;
+          // Left prong
+          ctx.beginPath();
+          ctx.moveTo(clawX, clawY);
+          ctx.lineTo(clawX - Math.sin(spread) * plen, clawY + Math.cos(spread) * plen);
+          ctx.stroke();
+          // Right prong
+          ctx.beginPath();
+          ctx.moveTo(clawX, clawY);
+          ctx.lineTo(clawX + Math.sin(spread) * plen, clawY + Math.cos(spread) * plen);
+          ctx.stroke();
+          // Hub
+          ctx.beginPath();
+          ctx.arc(clawX, clawY, 9, 0, Math.PI * 2);
+          ctx.fillStyle = '#00ffff30';
+          ctx.fill();
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Grabbed gem (while retracting)
+          if (isClosed && G_.grabbedColor >= 0) {
+            const gy2 = clawY + plen + 10;
+            ctx.shadowBlur = 24; ctx.shadowColor = COLORS[G_.grabbedColor];
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+              const a = (Math.PI / 3) * i - Math.PI / 6;
+              if (i === 0) ctx.moveTo(clawX + Math.cos(a) * gr * 0.85, gy2 + Math.sin(a) * gr * 0.85);
+              else ctx.lineTo(clawX + Math.cos(a) * gr * 0.85, gy2 + Math.sin(a) * gr * 0.85);
+            }
+            ctx.closePath();
+            ctx.fillStyle = COLORS[G_.grabbedColor] + '99';
+            ctx.fill();
+            ctx.strokeStyle = COLORS[G_.grabbedColor];
+            ctx.lineWidth = 2; ctx.stroke();
+            ctx.shadowBlur = 0;
+          }
+
+          // Particles
+          G_.particles = G_.particles.filter(p => p.life > 0);
+          for (const p of G_.particles) {
+            p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= dt * 2;
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.shadowBlur = 8; ctx.shadowColor = p.color;
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz);
+          }
+          ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+          // Score flash popup
+          if (G_.scoreFlash > 0) {
+            G_.scoreFlash -= dt * 2;
+            const alpha = Math.min(1, G_.scoreFlash);
+            const fy = gTop + gH * 0.4 - (1 - Math.min(1, G_.scoreFlash)) * 50;
+            ctx.globalAlpha = alpha;
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 20; ctx.shadowColor = '#ffff00';
+            ctx.fillStyle = '#ffff00';
+            ctx.font = `bold ${Math.max(18, W * 0.032)}px monospace`;
+            ctx.fillText(`+${G_.scoreFlashVal}`, W / 2, fy);
+            ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+          }
+
+          // === HUD ===
+          const fs = Math.max(13, W * 0.018);
+
+          // Score
+          ctx.textAlign = 'left';
+          ctx.font = `bold ${fs * 1.35}px monospace`;
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowBlur = 6; ctx.shadowColor = '#ffffff44';
+          ctx.fillText(String(G_.score), 16, 38);
+          ctx.shadowBlur = 0;
+          ctx.font = `${fs * 0.82}px monospace`;
+          ctx.fillStyle = '#887799';
+          ctx.fillText(`BEST ${G_.hi}`, 16, 57);
+          ctx.fillText(`LV ${G_.level}`, 16, 73);
+
+          // Lives
+          ctx.textAlign = 'right';
+          ctx.font = `${fs * 1.1}px monospace`;
+          ctx.shadowBlur = 10; ctx.shadowColor = '#ff4466';
+          ctx.fillStyle = '#ff4466';
+          ctx.fillText('♦'.repeat(G_.lives) + '◇'.repeat(Math.max(0, 3 - G_.lives)), W - 16, 40);
+          ctx.shadowBlur = 0;
+
+          // Combo
+          if (G_.combo > 1) {
+            ctx.textAlign = 'right';
+            ctx.shadowBlur = 22; ctx.shadowColor = '#ffff00';
+            ctx.fillStyle = '#ffff00';
+            ctx.font = `bold ${fs * 1.3}px monospace`;
+            ctx.fillText(`×${G_.combo} COMBO`, W - 16, 70);
+            ctx.shadowBlur = 0;
+          }
+
+          // Target display (center)
+          if (G_.phase !== 'start' && G_.phase !== 'gameover') {
+            const tgx = W / 2, tgy = H * 0.15;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(200,180,255,0.72)';
+            ctx.font = `${fs * 0.74}px monospace`;
+            ctx.fillText('GRAB THIS', tgx, tgy - 26);
+
+            const tPulse = 1 + Math.sin(ts * 0.005) * 0.12;
+            ctx.shadowBlur = 28; ctx.shadowColor = COLORS[G_.target];
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+              const a = (Math.PI / 3) * i - Math.PI / 6;
+              if (i === 0) ctx.moveTo(tgx + Math.cos(a) * 19 * tPulse, tgy + Math.sin(a) * 19 * tPulse);
+              else ctx.lineTo(tgx + Math.cos(a) * 19 * tPulse, tgy + Math.sin(a) * 19 * tPulse);
+            }
+            ctx.closePath();
+            ctx.fillStyle = COLORS[G_.target] + 'bb';
+            ctx.fill();
+            ctx.strokeStyle = COLORS[G_.target];
+            ctx.lineWidth = 2.5; ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = COLORS[G_.target];
+            ctx.font = `bold ${fs * 0.72}px monospace`;
+            ctx.fillText(CNAMES[G_.target], tgx, tgy + 33);
+          }
+
+          // Swing speed indicator (subtle bar)
+          if (G_.phase !== 'start' && G_.phase !== 'gameover') {
+            const barW = 80, barH = 5;
+            const bx = W / 2 - barW / 2;
+            const by = H * 0.08;
+            const speedFrac = Math.min((G_.swingSpeed - 1.2) / 3.5, 1);
+            ctx.fillStyle = 'rgba(80,40,120,0.5)';
+            ctx.fillRect(bx, by, barW, barH);
+            ctx.fillStyle = `hsl(${200 - speedFrac * 150}, 100%, 60%)`;
+            ctx.fillRect(bx, by, barW * speedFrac, barH);
+          }
+
+          // Overlays
+          if (G_.phase === 'start' || G_.phase === 'gameover') {
+            ctx.fillStyle = 'rgba(5,0,21,0.88)';
+            ctx.fillRect(0, 0, W, H);
+            ctx.textAlign = 'center';
+
+            if (G_.phase === 'start') {
+              ctx.shadowBlur = 40; ctx.shadowColor = '#00ffff';
+              ctx.fillStyle = '#00ffff';
+              ctx.font = `bold ${Math.max(30, W * 0.065)}px monospace`;
+              ctx.fillText('CLAW RUSH', W / 2, H * 0.32);
+              ctx.shadowBlur = 0;
+
+              // Animated gem preview
+              for (let i = 0; i < 6; i++) {
+                const gx2 = W / 2 + (i - 2.5) * Math.max(40, W * 0.065);
+                const gy2 = H * 0.44;
+                const pulse2 = 1 + Math.sin(ts * 0.002 + i) * 0.1;
+                ctx.shadowBlur = 20; ctx.shadowColor = COLORS[i];
+                ctx.beginPath();
+                for (let j = 0; j < 6; j++) {
+                  const a = (Math.PI / 3) * j - Math.PI / 6;
+                  if (j === 0) ctx.moveTo(gx2 + Math.cos(a) * 16 * pulse2, gy2 + Math.sin(a) * 16 * pulse2);
+                  else ctx.lineTo(gx2 + Math.cos(a) * 16 * pulse2, gy2 + Math.sin(a) * 16 * pulse2);
+                }
+                ctx.closePath();
+                ctx.fillStyle = COLORS[i] + '88';
+                ctx.fill();
+                ctx.strokeStyle = COLORS[i];
+                ctx.lineWidth = 2; ctx.stroke();
+              }
+              ctx.shadowBlur = 0;
+
+              ctx.fillStyle = '#bbaadd';
+              ctx.font = `${Math.max(13, W * 0.021)}px monospace`;
+              ctx.fillText('Time your drop on the target-colored gem!', W / 2, H * 0.56);
+              ctx.fillText('Chain correct grabs for MASSIVE combo multipliers', W / 2, H * 0.62);
+              ctx.fillText('Empty column = lose a life ♦ (3 lives total)', W / 2, H * 0.68);
+
+              ctx.shadowBlur = 25; ctx.shadowColor = '#ff00ff';
+              ctx.fillStyle = '#ff00ff';
+              ctx.font = `bold ${Math.max(16, W * 0.03)}px monospace`;
+              ctx.fillText('CLICK · TAP · SPACE TO START', W / 2, H * 0.8);
+              ctx.shadowBlur = 0;
+            } else {
+              ctx.shadowBlur = 30; ctx.shadowColor = '#ff4466';
+              ctx.fillStyle = '#ff4466';
+              ctx.font = `bold ${Math.max(28, W * 0.062)}px monospace`;
+              ctx.fillText('GAME OVER', W / 2, H * 0.3);
+              ctx.shadowBlur = 0;
+
+              ctx.fillStyle = '#ffffff';
+              ctx.font = `bold ${Math.max(20, W * 0.038)}px monospace`;
+              ctx.fillText(`Score: ${G_.score}`, W / 2, H * 0.44);
+
+              if (G_.score > 0 && G_.score >= G_.hi) {
+                ctx.shadowBlur = 20; ctx.shadowColor = '#ffff00';
+                ctx.fillStyle = '#ffff00';
+                ctx.font = `bold ${Math.max(14, W * 0.026)}px monospace`;
+                ctx.fillText('✦ NEW HIGH SCORE! ✦', W / 2, H * 0.52);
+                ctx.shadowBlur = 0;
+              }
+
+              ctx.fillStyle = '#998899';
+              ctx.font = `${Math.max(12, W * 0.019)}px monospace`;
+              ctx.fillText(`Best: ${G_.hi}`, W / 2, H * 0.61);
+
+              ctx.shadowBlur = 22; ctx.shadowColor = '#00ffff';
+              ctx.fillStyle = '#00ffff';
+              ctx.font = `bold ${Math.max(15, W * 0.028)}px monospace`;
+              ctx.fillText('CLICK TO PLAY AGAIN', W / 2, H * 0.73);
+              ctx.shadowBlur = 0;
+            }
+          }
+
+          rafId = requestAnimationFrame(draw);
+        };
+
+        rafId = requestAnimationFrame(draw);
+
+        return () => {
+          cancelAnimationFrame(rafId);
+          window.removeEventListener('resize', resize);
+          canvas.removeEventListener('click', doInput);
+          document.removeEventListener('keydown', kd);
+        };
+      }, []);
+
+      return <canvas ref={canvasRef} style={{ cursor: 'pointer', display: 'block' }} />;
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
