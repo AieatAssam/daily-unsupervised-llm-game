@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Resonance Rush</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #1a0033, #001a33, #2b0033, #001f1a, #1a0033);
+    background-size: 400% 400%;
+    animation: gradientShift 18s ease infinite;
+    color: #fff;
+    user-select: none;
+  }
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  #root { width: 100vw; height: 100vh; position: relative; }
+  .game-app { width: 100%; height: 100%; position: relative; overflow: hidden; }
+  #gameCanvas {
+    position: fixed; top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    display: block;
+    touch-action: none;
+  }
+  .hud {
+    position: fixed; top: 14px; left: 14px;
+    display: flex; gap: 10px; z-index: 5;
+    pointer-events: none;
+  }
+  .hud-item {
+    background: rgba(10, 0, 30, 0.55);
+    border: 1px solid rgba(0, 240, 255, 0.4);
+    border-radius: 10px;
+    padding: 6px 12px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-align: center;
+    color: rgba(255,255,255,0.7);
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
+    backdrop-filter: blur(4px);
+  }
+  .hud-item span {
+    display: block;
+    font-size: 18px;
+    font-weight: 800;
+    color: #00f0ff;
+    text-shadow: 0 0 10px #00f0ff;
+    margin-top: 2px;
+  }
+  .hud-item.combo span { color: #ff00e6; text-shadow: 0 0 10px #ff00e6; }
+  .hud-item.level span { color: #ffe600; text-shadow: 0 0 10px #ffe600; }
+  .hud-item.best span { color: #7dff9a; text-shadow: 0 0 10px #7dff9a; }
+
+  .sound-toggle {
+    position: fixed; top: 14px; right: 14px; z-index: 6;
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 240, 255, 0.4);
+    background: rgba(10, 0, 30, 0.55);
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
+    backdrop-filter: blur(4px);
+  }
+  .sound-toggle:active { transform: scale(0.92); }
+
+  .hint {
+    position: fixed;
+    bottom: 64px; left: 50%; transform: translateX(-50%);
+    background: rgba(10, 0, 30, 0.6);
+    border: 1px solid rgba(255, 230, 0, 0.4);
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
+    text-align: center;
+    max-width: 90vw;
+    color: rgba(255,255,255,0.85);
+    box-shadow: 0 0 14px rgba(255, 230, 0, 0.2);
+    z-index: 5;
+    pointer-events: none;
+    animation: fadeInOut 4s ease forwards;
+  }
+  @keyframes fadeInOut {
+    0% { opacity: 0; }
+    10% { opacity: 1; }
+    85% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  .overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(5, 0, 15, 0.72);
+    backdrop-filter: blur(3px);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: clamp(32px, 9vw, 76px);
+    font-weight: 900;
+    letter-spacing: 6px;
+    margin: 0 0 10px 0;
+    background: linear-gradient(90deg, #00f0ff, #ff00e6, #ffe600, #00f0ff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hueShift 4s linear infinite, pulseTitle 2s ease-in-out infinite;
+    text-shadow: 0 0 30px rgba(0, 240, 255, 0.4);
+  }
+  @keyframes hueShift {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+  @keyframes pulseTitle {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.04); }
+  }
+  .subtitle {
+    font-size: clamp(13px, 2.6vw, 18px);
+    color: rgba(255,255,255,0.8);
+    margin: 0 0 18px 0;
+    letter-spacing: 1px;
+  }
+  .howto {
+    font-size: clamp(12px, 2.2vw, 15px);
+    line-height: 1.7;
+    color: rgba(255,255,255,0.65);
+    max-width: 540px;
+    margin: 0 0 22px 0;
+  }
+  .best-display {
+    font-size: 14px;
+    color: #7dff9a;
+    text-shadow: 0 0 10px #7dff9a;
+    margin-bottom: 22px;
+    letter-spacing: 1px;
+  }
+  .new-best {
+    font-size: 16px;
+    color: #ffe600;
+    text-shadow: 0 0 12px #ffe600;
+    margin-bottom: 18px;
+    letter-spacing: 2px;
+    animation: pulseTitle 1s ease-in-out infinite;
+  }
+  .final-score {
+    font-size: clamp(28px, 7vw, 48px);
+    font-weight: 800;
+    color: #00f0ff;
+    text-shadow: 0 0 20px #00f0ff;
+    margin-bottom: 6px;
+  }
+  .play-btn {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    padding: 16px 44px;
+    border-radius: 50px;
+    border: 2px solid #00f0ff;
+    background: linear-gradient(135deg, rgba(0,240,255,0.25), rgba(255,0,230,0.25));
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(0, 240, 255, 0.5), inset 0 0 14px rgba(255,255,255,0.1);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .play-btn:hover {
+    transform: scale(1.06);
+    box-shadow: 0 0 36px rgba(0, 240, 255, 0.8), inset 0 0 18px rgba(255,255,255,0.2);
+  }
+  .play-btn:active { transform: scale(0.97); }
+
+  @media (max-width: 520px) {
+    .hud { gap: 6px; }
+    .hud-item { padding: 5px 8px; font-size: 9px; }
+    .hud-item span { font-size: 14px; }
+    .howto { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const MIN_FREQ = 1.0;
+const MAX_FREQ = 6.0;
+const FREQ_RANGE = MAX_FREQ - MIN_FREQ;
+const BASE_TOLERANCE = 0.18;
+const MIN_TOLERANCE = 0.06;
+const HIGH_SCORE_KEY = 'resonanceRush_highScore';
+
+function freqToAudio(f) {
+  return 180 + ((f - MIN_FREQ) / FREQ_RANGE) * 420;
+}
+
+function randomTargetFreq(avoid, minSep) {
+  const sep = Math.min(minSep, FREQ_RANGE * 0.55);
+  let f, attempts = 0;
+  do {
+    f = MIN_FREQ + Math.random() * FREQ_RANGE;
+    attempts++;
+  } while (Math.abs(f - avoid) < sep && attempts < 25);
+  return f;
+}
+
+function createInitialGameState(width, height) {
+  const targetFreq = MIN_FREQ + Math.random() * FREQ_RANGE;
+  const playerFreq = randomTargetFreq(targetFreq, 1.2);
+  return {
+    width, height,
+    playerFreq,
+    targetFreq,
+    syncProgress: 0,
+    stability: 100,
+    score: 0,
+    combo: 0,
+    level: 1,
+    phase: 0,
+    particles: [],
+    flashTimer: 0,
+    lastPoints: 0,
+    shakeTimer: 0,
+    graceTimer: 2.5,
+    gameOverTriggered: false,
+  };
+}
+
+const App = () => {
+  const [screen, setScreen] = useState('start');
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [highScore, setHighScore] = useState(() => {
+    const saved = localStorage.getItem(HIGH_SCORE_KEY);
+    if (saved === null) {
+      localStorage.setItem(HIGH_SCORE_KEY, '0');
+      return 0;
+    }
+    return parseInt(saved, 10) || 0;
+  });
+  const [soundOn, setSoundOn] = useState(true);
+  const [showHint, setShowHint] = useState(false);
+
+  const canvasRef = useRef(null);
+  const gameRef = useRef(null);
+  const audioRef = useRef(null);
+  const rafRef = useRef(null);
+  const keysRef = useRef({});
+  const soundOnRef = useRef(true);
+  const screenRef = useRef('start');
+  const highScoreRef = useRef(highScore);
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+  useEffect(() => { highScoreRef.current = highScore; }, [highScore]);
+  useEffect(() => {
+    soundOnRef.current = soundOn;
+    updateMasterGain();
+  }, [soundOn]);
+
+  function updateMasterGain() {
+    const a = audioRef.current;
+    if (a) {
+      a.masterGain.gain.setTargetAtTime(soundOnRef.current ? 1 : 0, a.ctx.currentTime, 0.05);
+    }
+  }
+
+  function initAudio() {
+    if (audioRef.current) {
+      if (audioRef.current.ctx.state === 'suspended') audioRef.current.ctx.resume();
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    const masterGain = ctx.createGain();
+    masterGain.gain.value = soundOnRef.current ? 1 : 0;
+    masterGain.connect(ctx.destination);
+
+    const oscPlayer = ctx.createOscillator();
+    oscPlayer.type = 'sine';
+    oscPlayer.frequency.value = 300;
+    const gainPlayer = ctx.createGain();
+    gainPlayer.gain.value = 0.04;
+    oscPlayer.connect(gainPlayer);
+    gainPlayer.connect(masterGain);
+    oscPlayer.start();
+
+    const oscTarget = ctx.createOscillator();
+    oscTarget.type = 'sine';
+    oscTarget.frequency.value = 300;
+    const gainTarget = ctx.createGain();
+    gainTarget.gain.value = 0.04;
+    oscTarget.connect(gainTarget);
+    gainTarget.connect(masterGain);
+    oscTarget.start();
+
+    audioRef.current = { ctx, masterGain, oscPlayer, oscTarget };
+  }
+
+  function updateAudioFrequencies(g) {
+    const a = audioRef.current;
+    if (!a) return;
+    const now = a.ctx.currentTime;
+    a.oscPlayer.frequency.setTargetAtTime(freqToAudio(g.playerFreq), now, 0.04);
+    a.oscTarget.frequency.setTargetAtTime(freqToAudio(g.targetFreq), now, 0.08);
+  }
+
+  function playChime() {
+    const a = audioRef.current;
+    if (!a) return;
+    const ctx = a.ctx;
+    const now = ctx.currentTime;
+    [0, 0.08, 0.16].forEach((delay, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = 523.25 * Math.pow(2, (i * 4) / 12);
+      gain.gain.setValueAtTime(0, now + delay);
+      gain.gain.linearRampToValueAtTime(0.18, now + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.4);
+      osc.connect(gain);
+      gain.connect(a.masterGain);
+      osc.start(now + delay);
+      osc.stop(now + delay + 0.45);
+    });
+  }
+
+  function playGameOverSound() {
+    const a = audioRef.current;
+    if (!a) return;
+    const ctx = a.ctx;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.exponentialRampToValueAtTime(50, now + 0.8);
+    gain.gain.setValueAtTime(0.14, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+    osc.connect(gain);
+    gain.connect(a.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.85);
+  }
+
+  function startGame() {
+    initAudio();
+    const canvas = canvasRef.current;
+    gameRef.current = createInitialGameState(canvas.width, canvas.height);
+    setScore(0);
+    setCombo(0);
+    setLevel(1);
+    setScreen('playing');
+    setShowHint(true);
+    setTimeout(() => setShowHint(false), 4200);
+  }
+
+  function endGame(g) {
+    if (g.gameOverTriggered) return;
+    g.gameOverTriggered = true;
+    setScreen('gameover');
+    if (g.score > highScoreRef.current) {
+      highScoreRef.current = g.score;
+      localStorage.setItem(HIGH_SCORE_KEY, String(g.score));
+      setHighScore(g.score);
+    }
+    playGameOverSound();
+  }
+
+  function spawnResonanceParticles(g) {
+    const amplitude = Math.min(g.height * 0.16, 120);
+    const centerY = g.height * 0.42;
+    for (let i = 0; i < 36; i++) {
+      const x = Math.random() * g.width;
+      const y = centerY + amplitude * Math.sin(2 * Math.PI * g.playerFreq * (x / g.width) + g.phase);
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 200;
+      g.particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 60,
+        life: 0.5 + Math.random() * 0.6,
+        maxLife: 1.1,
+        color: ['#00f0ff', '#ff00e6', '#ffe600', '#7dff9a'][i % 4],
+        size: 2 + Math.random() * 3,
+      });
+    }
+  }
+
+  function triggerResonance(g) {
+    const newCombo = g.combo + 1;
+    const points = Math.round((80 + g.level * 12) * (1 + newCombo * 0.4));
+    g.score += points;
+    g.combo = newCombo;
+    g.lastPoints = points;
+    g.level = Math.floor(newCombo / 4) + 1;
+    g.syncProgress = 0;
+    g.flashTimer = 1.0;
+    g.shakeTimer = 0.3;
+
+    spawnResonanceParticles(g);
+
+    const minSep = Math.min(FREQ_RANGE * 0.5, 0.7 + g.level * 0.15);
+    g.targetFreq = randomTargetFreq(g.playerFreq, minSep);
+    g.graceTimer = 0.6;
+
+    playChime();
+    setScore(g.score);
+    setCombo(g.combo);
+    setLevel(g.level);
+  }
+
+  function update(dt) {
+    const g = gameRef.current;
+    if (!g) return;
+
+    g.phase += dt * (1.0 + (g.level - 1) * 0.05);
+
+    g.particles.forEach(p => {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 70 * dt;
+      p.life -= dt;
+    });
+    g.particles = g.particles.filter(p => p.life > 0);
+
+    if (g.flashTimer > 0) g.flashTimer = Math.max(0, g.flashTimer - dt);
+    if (g.shakeTimer > 0) g.shakeTimer = Math.max(0, g.shakeTimer - dt);
+
+    if (screenRef.current !== 'playing') return;
+
+    const rate = 1.7;
+    if (keysRef.current.ArrowUp) g.playerFreq += rate * dt;
+    if (keysRef.current.ArrowDown) g.playerFreq -= rate * dt;
+    g.playerFreq = Math.max(MIN_FREQ, Math.min(MAX_FREQ, g.playerFreq));
+
+    const tolerance = Math.max(MIN_TOLERANCE, BASE_TOLERANCE - (g.level - 1) * 0.012);
+    const diff = Math.abs(g.playerFreq - g.targetFreq);
+
+    if (g.graceTimer > 0) g.graceTimer = Math.max(0, g.graceTimer - dt);
+
+    if (diff < tolerance) {
+      const closeness = 1 - diff / tolerance;
+      g.syncProgress += dt * (35 + closeness * 75);
+      g.stability = Math.min(100, g.stability + dt * 8);
+    } else {
+      g.syncProgress = Math.max(0, g.syncProgress - dt * 50);
+      if (g.graceTimer <= 0) {
+        const drain = 5 + Math.min(diff, FREQ_RANGE) * 4 + (g.level - 1) * 0.6;
+        g.stability -= dt * drain;
+      }
+    }
+
+    if (g.syncProgress >= 100) {
+      triggerResonance(g);
+    }
+
+    if (g.stability <= 0) {
+      g.stability = 0;
+      endGame(g);
+    }
+
+    updateAudioFrequencies(g);
+  }
+
+  function draw(ctx) {
+    const g = gameRef.current;
+    if (!g) return;
+    const { width, height } = g;
+    ctx.clearRect(0, 0, width, height);
+
+    let shakeX = 0, shakeY = 0;
+    if (g.shakeTimer > 0) {
+      shakeX = (Math.random() - 0.5) * 10 * g.shakeTimer;
+      shakeY = (Math.random() - 0.5) * 10 * g.shakeTimer;
+    }
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
+    const centerY = height * 0.42;
+    const amplitude = Math.min(height * 0.16, 120);
+    const tolerance = Math.max(MIN_TOLERANCE, BASE_TOLERANCE - (g.level - 1) * 0.012);
+
+    const tunerX = width - 36;
+    const tunerTop = 80;
+    const tunerBottom = height - 80;
+    const tunerHeight = Math.max(40, tunerBottom - tunerTop);
+    const freqToTunerY = (f) => tunerTop + (1 - (f - MIN_FREQ) / FREQ_RANGE) * tunerHeight;
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(tunerX, tunerTop);
+    ctx.lineTo(tunerX, tunerBottom);
+    ctx.stroke();
+
+    const targetTunerY = freqToTunerY(g.targetFreq);
+    const bandHalf = (tolerance / FREQ_RANGE) * tunerHeight;
+    ctx.fillStyle = 'rgba(255,0,230,0.25)';
+    ctx.fillRect(tunerX - 14, targetTunerY - bandHalf, 28, bandHalf * 2);
+    ctx.strokeStyle = '#ff00e6';
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = '#ff00e6';
+    ctx.strokeRect(tunerX - 14, targetTunerY - bandHalf, 28, bandHalf * 2);
+    ctx.shadowBlur = 0;
+
+    const playerTunerY = freqToTunerY(g.playerFreq);
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = '#00f0ff';
+    ctx.beginPath();
+    ctx.moveTo(tunerX - 24, playerTunerY);
+    ctx.lineTo(tunerX - 8, playerTunerY - 8);
+    ctx.lineTo(tunerX - 8, playerTunerY + 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.beginPath();
+    for (let x = 0; x <= width; x += 4) {
+      const y = centerY + amplitude * Math.sin(2 * Math.PI * g.targetFreq * (x / width) + g.phase * 0.6);
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = 'rgba(255,0,230,0.85)';
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = '#ff00e6';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 8]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const closeNow = Math.abs(g.playerFreq - g.targetFreq) < tolerance;
+    ctx.beginPath();
+    for (let x = 0; x <= width; x += 4) {
+      const y = centerY + amplitude * Math.sin(2 * Math.PI * g.playerFreq * (x / width) + g.phase);
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = closeNow ? '#7dff9a' : '#00f0ff';
+    ctx.shadowBlur = 22;
+    ctx.shadowColor = closeNow ? '#7dff9a' : '#00f0ff';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    g.particles.forEach(p => {
+      const alpha = Math.max(0, p.life / p.maxLife);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    const meterWidth = Math.min(420, width * 0.6);
+    const meterX = (width - meterWidth) / 2;
+    const meterY = 26;
+    const meterH = 16;
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(meterX, meterY, meterWidth, meterH);
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = '#00f0ff';
+    ctx.fillRect(meterX, meterY, meterWidth * (g.syncProgress / 100), meterH);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(meterX, meterY, meterWidth, meterH);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = '11px Segoe UI, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('SYNC', width / 2, meterY - 6);
+
+    const stabW = meterWidth;
+    const stabX = meterX;
+    const stabY = height - 36;
+    const stabH = 14;
+    const stabRatio = g.stability / 100;
+    const stabColor = stabRatio > 0.5 ? '#7dff9a' : stabRatio > 0.25 ? '#ffe600' : '#ff3b3b';
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(stabX, stabY, stabW, stabH);
+    ctx.fillStyle = stabColor;
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = stabColor;
+    ctx.fillRect(stabX, stabY, stabW * stabRatio, stabH);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.strokeRect(stabX, stabY, stabW, stabH);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText('STABILITY', width / 2, stabY - 6);
+
+    if (g.flashTimer > 0) {
+      const a = g.flashTimer;
+      ctx.globalAlpha = Math.min(1, a * 1.5);
+      ctx.fillStyle = '#fff';
+      ctx.shadowBlur = 30;
+      ctx.shadowColor = '#7dff9a';
+      ctx.font = `bold ${Math.min(64, width * 0.09)}px Segoe UI, Arial, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('RESONANCE!', width / 2, height * 0.25);
+      ctx.font = `bold ${Math.min(32, width * 0.045)}px Segoe UI, Arial, sans-serif`;
+      ctx.fillText('+' + g.lastPoints, width / 2, height * 0.25 + 46);
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.restore();
+  }
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = w;
+      canvas.height = h;
+      if (gameRef.current) {
+        gameRef.current.width = w;
+        gameRef.current.height = h;
+      }
+    }
+    resize();
+    gameRef.current = createInitialGameState(canvas.width, canvas.height);
+    window.addEventListener('resize', resize);
+
+    function handlePointerY(clientY) {
+      if (screenRef.current !== 'playing') return;
+      const g = gameRef.current;
+      const ratio = Math.min(1, Math.max(0, clientY / g.height));
+      g.playerFreq = MAX_FREQ - ratio * FREQ_RANGE;
+    }
+    function onMouseMove(e) { handlePointerY(e.clientY); }
+    function onTouchMove(e) {
+      if (e.touches && e.touches[0]) {
+        handlePointerY(e.touches[0].clientY);
+        e.preventDefault();
+      }
+    }
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchstart', onTouchMove, { passive: false });
+
+    function onKeyDown(e) {
+      keysRef.current[e.key] = true;
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === ' ') e.preventDefault();
+    }
+    function onKeyUp(e) { keysRef.current[e.key] = false; }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.05, (now - lastTime) / 1000);
+      lastTime = now;
+      update(dt);
+      draw(ctx);
+      rafRef.current = requestAnimationFrame(loop);
+    }
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchstart', onTouchMove);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
+
+  return (
+    <div className="game-app">
+      <canvas ref={canvasRef} id="gameCanvas"></canvas>
+
+      <div className="hud">
+        <div className="hud-item score-hud">SCORE<span>{score}</span></div>
+        <div className="hud-item combo">COMBO<span>x{combo}</span></div>
+        <div className="hud-item level">LEVEL<span>{level}</span></div>
+        <div className="hud-item best">BEST<span>{highScore}</span></div>
+      </div>
+
+      <button className="sound-toggle" onClick={() => setSoundOn(s => !s)}>
+        {soundOn ? '\u{1F50A}' : '\u{1F507}'}
+      </button>
+
+      {showHint && screen === 'playing' && (
+        <div className="hint">
+          Move mouse / drag vertically (or press &#8593; &#8595;) to tune your cyan wave &mdash; match the magenta target wave to fill SYNC and trigger RESONANCE!
+        </div>
+      )}
+
+      {screen === 'start' && (
+        <div className="overlay">
+          <h1 className="title">RESONANCE RUSH</h1>
+          <p className="subtitle">Tune your wave. Lock the frequency. Chain the resonance.</p>
+          <p className="howto">
+            Move your mouse / finger up &amp; down (or press &#8593; &#8595;) to change your cyan wave's frequency.<br/>
+            Match the dashed magenta target wave to fill the SYNC meter and trigger a RESONANCE burst.<br/>
+            The further out of tune you are, the faster your STABILITY drains &mdash; don't let it hit zero!
+          </p>
+          <div className="best-display">Best Score: {highScore}</div>
+          <button className="play-btn" onClick={startGame}>START TUNING</button>
+        </div>
+      )}
+
+      {screen === 'gameover' && (
+        <div className="overlay">
+          <h1 className="title">SIGNAL LOST</h1>
+          <div className="final-score">{score}</div>
+          {score > 0 && score >= highScore && <div className="new-best">NEW BEST!</div>}
+          <div className="best-display">Best: {highScore}</div>
+          <button className="play-btn" onClick={startGame}>RETUNE</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
