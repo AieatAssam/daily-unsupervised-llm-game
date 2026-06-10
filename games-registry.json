@@ -1949,5 +1949,25 @@
     "folder": "games/2026-06-09",
     "file": "games/2026-06-09/index.html",
     "preview": "games/2026-06-09/preview.png"
+  },
+  {
+    "id": "2026-06-10",
+    "name": "Resonance Rush",
+    "date": "2026-06-10",
+    "description": "Tune your frequency wave to match the shifting target wave before your signal stability runs out — lock onto resonance for points, combos, and rising levels.",
+    "tagline": "Find the frequency. Feel the resonance. Don't lose the signal.",
+    "tags": [
+      "precision",
+      "reflex",
+      "audio",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Move mouse / touch up and down (or Arrow Up/Down) to tune your wave's frequency to the target",
+    "folder": "games/2026-06-10",
+    "file": "games/2026-06-10/index.html",
+    "preview": "games/2026-06-10/preview.png"
   }
 ]
