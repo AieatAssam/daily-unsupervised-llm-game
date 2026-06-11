@@ -1969,5 +1969,25 @@
     "folder": "games/2026-06-10",
     "file": "games/2026-06-10/index.html",
     "preview": "games/2026-06-10/preview.png"
+  },
+  {
+    "id": "2026-06-11",
+    "name": "Fulcrum Frenzy",
+    "date": "2026-06-11",
+    "description": "Catch falling weights and drop them on the left or right pan of a giant seesaw, keeping the balance needle in the green zone for combo-building perfect catches while red bombs and golden weights raise the stakes.",
+    "tagline": "Balance the load. Ride the tilt. Don't crash the scale!",
+    "tags": [
+      "balance",
+      "strategy",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "← / A : drop on left pan · → / D : drop on right pan | Tap left/right zones on mobile",
+    "folder": "games/2026-06-11",
+    "file": "games/2026-06-11/index.html",
+    "preview": "games/2026-06-11/preview.png"
   }
 ]
