@@ -1989,5 +1989,25 @@
     "folder": "games/2026-06-11",
     "file": "games/2026-06-11/index.html",
     "preview": "games/2026-06-11/preview.png"
+  },
+  {
+    "id": "2026-06-12",
+    "name": "Neon Trace",
+    "date": "2026-06-12",
+    "description": "Drag the glowing dot along ever-changing neon shapes - circles, waves, stars, spirals, hearts and more - chaining perfect traces for combo multipliers before each shape's timer burns out.",
+    "tagline": "Trace the glow. Chase the dot. Chain the precision!",
+    "tags": [
+      "precision",
+      "drawing",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click/tap and drag the glowing dot along the neon path · Release to stop tracing",
+    "folder": "games/2026-06-12",
+    "file": "games/2026-06-12/index.html",
+    "preview": "games/2026-06-12/preview.png"
   }
 ]
