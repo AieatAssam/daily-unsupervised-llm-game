@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Neon Trace</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #1a0033, #001a33, #2b0033, #001f1a, #1a0033);
+    background-size: 400% 400%;
+    animation: gradientShift 18s ease infinite;
+    color: #fff;
+    user-select: none;
+  }
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  #root { width: 100vw; height: 100vh; position: relative; }
+  .game-app { width: 100%; height: 100%; position: relative; overflow: hidden; }
+  #gameCanvas {
+    position: fixed; top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    display: block;
+    touch-action: none;
+  }
+
+  .hud {
+    position: fixed; top: 14px; left: 14px;
+    display: flex; gap: 10px; z-index: 5; flex-wrap: wrap; max-width: 60vw;
+    pointer-events: none;
+  }
+  .hud-item {
+    background: rgba(10, 0, 30, 0.55);
+    border: 1px solid rgba(0, 240, 255, 0.4);
+    border-radius: 10px;
+    padding: 6px 12px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-align: center;
+    color: rgba(255,255,255,0.7);
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
+    backdrop-filter: blur(4px);
+  }
+  .hud-item span {
+    display: block;
+    font-size: 18px;
+    font-weight: 800;
+    color: #00f0ff;
+    text-shadow: 0 0 10px #00f0ff;
+    margin-top: 2px;
+  }
+  .hud-item.combo span { color: #ff00e6; text-shadow: 0 0 10px #ff00e6; }
+  .hud-item.level span { color: #ffe600; text-shadow: 0 0 10px #ffe600; }
+  .hud-item.best span { color: #7dff9a; text-shadow: 0 0 10px #7dff9a; }
+  .hud-item.lives span { color: #ff3b3b; text-shadow: 0 0 10px #ff3b3b; font-size: 16px; letter-spacing: 3px; }
+
+  .shape-panel {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 5; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    width: min(320px, 60vw);
+  }
+  .shape-name {
+    background: rgba(10, 0, 30, 0.55);
+    border: 1px solid rgba(255, 0, 230, 0.4);
+    border-radius: 10px;
+    padding: 6px 18px;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 4px;
+    color: #ff00e6;
+    text-shadow: 0 0 10px #ff00e6;
+    box-shadow: 0 0 14px rgba(255, 0, 230, 0.25);
+    backdrop-filter: blur(4px);
+  }
+  .timer-track {
+    width: 100%; height: 8px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  .timer-fill {
+    height: 100%; width: 100%;
+    background: #7dff9a;
+    border-radius: 6px;
+    transition: background 0.2s ease;
+  }
+
+  .sound-toggle {
+    position: fixed; top: 14px; right: 14px; z-index: 6;
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 240, 255, 0.4);
+    background: rgba(10, 0, 30, 0.55);
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
+    backdrop-filter: blur(4px);
+  }
+  .sound-toggle:active { transform: scale(0.92); }
+
+  .hint {
+    position: fixed;
+    bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: rgba(10, 0, 30, 0.6);
+    border: 1px solid rgba(255, 230, 0, 0.4);
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
+    text-align: center;
+    max-width: 90vw;
+    color: rgba(255,255,255,0.85);
+    box-shadow: 0 0 14px rgba(255, 230, 0, 0.2);
+    z-index: 5;
+    pointer-events: none;
+    animation: fadeInOut 4.6s ease forwards;
+  }
+  @keyframes fadeInOut {
+    0% { opacity: 0; }
+    10% { opacity: 1; }
+    85% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  .overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(5, 0, 15, 0.72);
+    backdrop-filter: blur(3px);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: clamp(30px, 8.5vw, 72px);
+    font-weight: 900;
+    letter-spacing: 6px;
+    margin: 0 0 10px 0;
+    background: linear-gradient(90deg, #00f0ff, #ff00e6, #ffe600, #00f0ff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hueShift 4s linear infinite, pulseTitle 2s ease-in-out infinite;
+    text-shadow: 0 0 30px rgba(0, 240, 255, 0.4);
+  }
+  @keyframes hueShift {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+  @keyframes pulseTitle {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.04); }
+  }
+  .subtitle {
+    font-size: clamp(13px, 2.6vw, 18px);
+    color: rgba(255,255,255,0.8);
+    margin: 0 0 18px 0;
+    letter-spacing: 1px;
+  }
+  .howto {
+    font-size: clamp(12px, 2.2vw, 15px);
+    line-height: 1.7;
+    color: rgba(255,255,255,0.65);
+    max-width: 580px;
+    margin: 0 0 22px 0;
+  }
+  .howto b { color: #fff; }
+  .best-display {
+    font-size: 14px;
+    color: #7dff9a;
+    text-shadow: 0 0 10px #7dff9a;
+    margin-bottom: 22px;
+    letter-spacing: 1px;
+  }
+  .new-best {
+    font-size: 16px;
+    color: #ffe600;
+    text-shadow: 0 0 12px #ffe600;
+    margin-bottom: 18px;
+    letter-spacing: 2px;
+    animation: pulseTitle 1s ease-in-out infinite;
+  }
+  .final-score {
+    font-size: clamp(28px, 7vw, 48px);
+    font-weight: 800;
+    color: #00f0ff;
+    text-shadow: 0 0 20px #00f0ff;
+    margin-bottom: 6px;
+  }
+  .play-btn {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    padding: 16px 44px;
+    border-radius: 50px;
+    border: 2px solid #00f0ff;
+    background: linear-gradient(135deg, rgba(0,240,255,0.25), rgba(255,0,230,0.25));
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(0, 240, 255, 0.5), inset 0 0 14px rgba(255,255,255,0.1);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    position: relative;
+    z-index: 11;
+  }
+  .play-btn:hover {
+    transform: scale(1.06);
+    box-shadow: 0 0 36px rgba(0, 240, 255, 0.8), inset 0 0 18px rgba(255,255,255,0.2);
+  }
+  .play-btn:active { transform: scale(0.97); }
+
+  @media (max-width: 520px) {
+    .hud { gap: 6px; }
+    .hud-item { padding: 5px 8px; font-size: 9px; }
+    .hud-item span { font-size: 14px; }
+    .hud-item.lives span { font-size: 12px; }
+    .howto { font-size: 12px; }
+    .shape-name { font-size: 11px; letter-spacing: 2px; padding: 5px 12px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const HIGH_SCORE_KEY = 'neonTrace_highScore';
+const LIVES_START = 3;
+const SHAPES = ['circle', 'wave', 'zigzag', 'triangle', 'diamond', 'star', 'infinity', 'spiral', 'heart'];
+const SHAPE_PATH_POINTS = 80;
+
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function linePath(vertices, pointsPerSeg) {
+  const pts = [];
+  for (let i = 0; i < vertices.length - 1; i++) {
+    const a = vertices[i], b = vertices[i + 1];
+    for (let s = 0; s < pointsPerSeg; s++) {
+      const t = s / pointsPerSeg;
+      pts.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  pts.push({ x: vertices[vertices.length - 1].x, y: vertices[vertices.length - 1].y });
+  return pts;
+}
+
+function polyVertices(cx, cy, size, n, startAngle, innerRatio) {
+  const verts = [];
+  for (let i = 0; i < n; i++) {
+    const angle = startAngle + (i / n) * Math.PI * 2;
+    const r = (innerRatio && i % 2 === 1) ? size * innerRatio : size;
+    verts.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+  }
+  return verts;
+}
+
+function generatePath(type, w, h) {
+  const cx = w / 2, cy = h / 2;
+  const size = Math.min(w, h) * 0.3;
+  const N = SHAPE_PATH_POINTS;
+  let pts = [];
+  switch (type) {
+    case 'circle':
+      for (let i = 0; i <= N; i++) {
+        const a = -Math.PI / 2 + (i / N) * Math.PI * 2;
+        pts.push({ x: cx + size * Math.cos(a), y: cy + size * Math.sin(a) });
+      }
+      break;
+    case 'wave':
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        pts.push({
+          x: cx - size * 1.3 + t * size * 2.6,
+          y: cy + Math.sin(t * Math.PI * 2.5) * size * 0.55,
+        });
+      }
+      break;
+    case 'zigzag': {
+      const verts = [];
+      const segs = 6;
+      for (let i = 0; i <= segs; i++) {
+        verts.push({
+          x: cx - size * 1.3 + (i / segs) * size * 2.6,
+          y: cy + (i % 2 === 0 ? -size * 0.55 : size * 0.55),
+        });
+      }
+      pts = linePath(verts, Math.floor(N / segs));
+      break;
+    }
+    case 'triangle': {
+      const verts = polyVertices(cx, cy, size * 1.15, 3, -Math.PI / 2);
+      verts.push({ x: verts[0].x, y: verts[0].y });
+      pts = linePath(verts, Math.floor(N / 3));
+      break;
+    }
+    case 'diamond': {
+      const verts = polyVertices(cx, cy, size * 1.2, 4, -Math.PI / 2);
+      verts.push({ x: verts[0].x, y: verts[0].y });
+      pts = linePath(verts, Math.floor(N / 4));
+      break;
+    }
+    case 'star': {
+      const verts = polyVertices(cx, cy, size * 1.25, 10, -Math.PI / 2, 0.42);
+      verts.push({ x: verts[0].x, y: verts[0].y });
+      pts = linePath(verts, Math.floor(N / 10));
+      break;
+    }
+    case 'infinity':
+      for (let i = 0; i <= N; i++) {
+        const t = (i / N) * Math.PI * 2;
+        const denom = 1 + Math.sin(t) * Math.sin(t);
+        pts.push({
+          x: cx + (size * 1.3) * Math.cos(t) / denom,
+          y: cy + (size * 1.3) * Math.sin(t) * Math.cos(t) / denom,
+        });
+      }
+      break;
+    case 'spiral':
+      for (let i = 0; i <= N; i++) {
+        const t = (i / N) * Math.PI * 4;
+        const r = (i / N) * size * 1.1;
+        pts.push({
+          x: cx + r * Math.cos(t - Math.PI / 2),
+          y: cy + r * Math.sin(t - Math.PI / 2),
+        });
+      }
+      break;
+    case 'heart':
+      for (let i = 0; i <= N; i++) {
+        const t = (i / N) * Math.PI * 2;
+        const x = 16 * Math.pow(Math.sin(t), 3);
+        const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+        pts.push({ x: cx + x * size / 16, y: cy + y * size / 16 });
+      }
+      break;
+    default:
+      pts.push({ x: cx, y: cy });
+  }
+  return pts;
+}
+
+function shapeColor(type) {
+  const colors = {
+    circle: '#00f0ff', wave: '#ff00e6', zigzag: '#ffe600', triangle: '#7dff9a',
+    diamond: '#b14eff', star: '#ff9500', infinity: '#00ffae', spiral: '#ff5577', heart: '#ff3b6e',
+  };
+  return colors[type] || '#00f0ff';
+}
+
+function pickShape(prev) {
+  let next;
+  do { next = SHAPES[Math.floor(Math.random() * SHAPES.length)]; } while (next === prev && SHAPES.length > 1);
+  return next;
+}
+
+function getTolerance(level) { return Math.max(13, 32 - (level - 1) * 1.5); }
+function getTimeLimit(level) { return Math.max(3.2, 8 - (level - 1) * 0.35); }
+
+function createInitialGameState(w, h) {
+  const g = {
+    width: w, height: h, time: 0,
+    score: 0, combo: 0, multiplier: 1, lives: LIVES_START, level: 1, completedCount: 0,
+    shapeType: null, path: [], currentIndex: 0,
+    tolerance: 32, timeLimit: 8, timeLeft: 8,
+    pointerDown: false, pointerPos: { x: w / 2, y: h / 2 },
+    trail: [], particles: [], ambient: [],
+    flashTimer: 0, flashText: '', flashColor: '#fff',
+    gameOverTriggered: false,
+  };
+  for (let i = 0; i < 50; i++) {
+    g.ambient.push({
+      x: Math.random() * w, y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 12, vy: (Math.random() - 0.5) * 12,
+      size: 1 + Math.random() * 2.5,
+      color: ['#00f0ff', '#ff00e6', '#b14eff', '#ffe600', '#7dff9a'][Math.floor(Math.random() * 5)],
+      alpha: 0.08 + Math.random() * 0.2,
+    });
+  }
+  return g;
+}
+
+const App = () => {
+  const [screen, setScreen] = useState('start');
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [multiplier, setMultiplier] = useState(1);
+  const [level, setLevel] = useState(1);
+  const [lives, setLives] = useState(LIVES_START);
+  const [shapeName, setShapeName] = useState('CIRCLE');
+  const [highScore, setHighScore] = useState(() => {
+    const saved = localStorage.getItem(HIGH_SCORE_KEY);
+    if (saved === null) {
+      localStorage.setItem(HIGH_SCORE_KEY, '0');
+      return 0;
+    }
+    return parseInt(saved, 10) || 0;
+  });
+  const [soundOn, setSoundOn] = useState(true);
+  const [showHint, setShowHint] = useState(false);
+
+  const canvasRef = useRef(null);
+  const gameRef = useRef(null);
+  const audioRef = useRef(null);
+  const rafRef = useRef(null);
+  const screenRef = useRef('start');
+  const soundOnRef = useRef(true);
+  const highScoreRef = useRef(highScore);
+  const timerFillRef = useRef(null);
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+  useEffect(() => { highScoreRef.current = highScore; }, [highScore]);
+  useEffect(() => {
+    soundOnRef.current = soundOn;
+    const a = audioRef.current;
+    if (a) a.masterGain.gain.setTargetAtTime(soundOn ? 1 : 0, a.ctx.currentTime, 0.05);
+  }, [soundOn]);
+
+  function initAudio() {
+    if (audioRef.current) {
+      if (audioRef.current.ctx.state === 'suspended') audioRef.current.ctx.resume();
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    const masterGain = ctx.createGain();
+    masterGain.gain.value = soundOnRef.current ? 1 : 0;
+    masterGain.connect(ctx.destination);
+    audioRef.current = { ctx, masterGain };
+  }
+
+  function playTone(freq, type, dur, vol, delay, freqEnd) {
+    const a = audioRef.current;
+    if (!a) return;
+    const ctx = a.ctx;
+    const now = ctx.currentTime + (delay || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), now + dur);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(vol, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    osc.connect(gain);
+    gain.connect(a.masterGain);
+    osc.start(now);
+    osc.stop(now + dur + 0.05);
+  }
+
+  function playNoise(dur, vol) {
+    const a = audioRef.current;
+    if (!a) return;
+    const ctx = a.ctx;
+    const bufferSize = Math.floor(ctx.sampleRate * dur);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const gain = ctx.createGain();
+    gain.gain.value = vol;
+    src.connect(gain);
+    gain.connect(a.masterGain);
+    src.start();
+  }
+
+  function playTick(progress) {
+    playTone(260 + progress * 520, 'sine', 0.05, 0.05, 0);
+  }
+  function playComplete() {
+    playTone(523.25, 'triangle', 0.12, 0.16, 0);
+    playTone(659.25, 'triangle', 0.12, 0.16, 0.08);
+    playTone(880, 'triangle', 0.2, 0.16, 0.16);
+  }
+  function playPartial() {
+    playTone(440, 'sine', 0.18, 0.12, 0);
+  }
+  function playFail() {
+    playTone(180, 'sawtooth', 0.4, 0.16, 0, 50);
+    playNoise(0.25, 0.1);
+  }
+  function playLevelUp() {
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => playTone(f, 'triangle', 0.18, 0.15, i * 0.07));
+  }
+  function playGameOverSound() { playTone(280, 'sawtooth', 0.8, 0.16, 0, 40); }
+
+  function spawnBurst(g, x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const speed = 40 + Math.random() * 180;
+      g.particles.push({
+        x, y,
+        vx: Math.cos(ang) * speed,
+        vy: Math.sin(ang) * speed - 30,
+        life: 0.4 + Math.random() * 0.5,
+        maxLife: 0.9,
+        color,
+        size: 2 + Math.random() * 3,
+      });
+    }
+  }
+
+  function nextShape(g) {
+    const prevLevel = g.level;
+    g.shapeType = pickShape(g.shapeType);
+    g.path = generatePath(g.shapeType, g.width, g.height);
+    g.currentIndex = 0;
+    g.level = Math.floor(g.completedCount / 3) + 1;
+    g.tolerance = getTolerance(g.level);
+    g.timeLimit = getTimeLimit(g.level);
+    g.timeLeft = g.timeLimit;
+    g.trail = [];
+    setShapeName(g.shapeType.toUpperCase());
+    if (g.level > prevLevel) {
+      setLevel(g.level);
+      playLevelUp();
+    }
+  }
+
+  function completeShape(g) {
+    g.completedCount += 1;
+    g.combo += 1;
+    g.multiplier = Math.min(5, 1 + Math.floor(g.combo / 2));
+    const timeBonus = Math.max(0, Math.floor(g.timeLeft * 20));
+    const points = (100 + g.level * 10 + timeBonus) * g.multiplier;
+    g.score += points;
+
+    for (let i = 0; i < g.path.length; i += 4) {
+      spawnBurst(g, g.path[i].x, g.path[i].y, shapeColor(g.shapeType), 3);
+    }
+
+    g.flashTimer = 0.8;
+    g.flashText = '+' + points;
+    g.flashColor = '#7dff9a';
+
+    playComplete();
+
+    setScore(g.score);
+    setCombo(g.combo);
+    setMultiplier(g.multiplier);
+
+    nextShape(g);
+  }
+
+  function failShape(g) {
+    const progress = g.currentIndex / g.path.length;
+    g.combo = 0;
+    g.multiplier = 1;
+    setCombo(0);
+    setMultiplier(1);
+
+    if (progress >= 0.6) {
+      const points = Math.floor(progress * 60);
+      g.score += points;
+      g.flashTimer = 0.8;
+      g.flashText = 'CLOSE! +' + points;
+      g.flashColor = '#ffe600';
+      playPartial();
+      setScore(g.score);
+    } else {
+      g.lives -= 1;
+      g.flashTimer = 0.8;
+      g.flashText = 'MISSED!';
+      g.flashColor = '#ff3b3b';
+      spawnBurst(g, g.pointerPos.x, g.pointerPos.y, '#ff3b3b', 16);
+      playFail();
+      setLives(g.lives);
+      if (g.lives <= 0) {
+        endGame(g);
+        return;
+      }
+    }
+    nextShape(g);
+  }
+
+  function startGame() {
+    initAudio();
+    const canvas = canvasRef.current;
+    const g = createInitialGameState(canvas.width, canvas.height);
+    gameRef.current = g;
+    setScore(0); setCombo(0); setMultiplier(1); setLevel(1); setLives(LIVES_START);
+    nextShape(g);
+    setScreen('playing');
+    setShowHint(true);
+    setTimeout(() => setShowHint(false), 4500);
+  }
+
+  function endGame(g) {
+    if (g.gameOverTriggered) return;
+    g.gameOverTriggered = true;
+    setScreen('gameover');
+    if (g.score > highScoreRef.current) {
+      highScoreRef.current = g.score;
+      localStorage.setItem(HIGH_SCORE_KEY, String(g.score));
+      setHighScore(g.score);
+    }
+    playGameOverSound();
+  }
+
+  function getPointerPos(e, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const point = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+    return { x: point.clientX - rect.left, y: point.clientY - rect.top };
+  }
+
+  function update(g, dt) {
+    g.time += dt;
+
+    g.ambient.forEach(p => {
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.x < 0) p.x += g.width; if (p.x > g.width) p.x -= g.width;
+      if (p.y < 0) p.y += g.height; if (p.y > g.height) p.y -= g.height;
+    });
+
+    g.particles = g.particles.filter(p => {
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 220 * dt; p.life -= dt;
+      return p.life > 0;
+    });
+
+    if (g.flashTimer > 0) g.flashTimer -= dt;
+
+    g.trail.forEach(t => t.age += dt);
+    g.trail = g.trail.filter(t => t.age < 0.6);
+
+    if (screenRef.current !== 'playing') return;
+    if (!g.path.length) return;
+
+    g.timeLeft -= dt;
+
+    if (g.pointerDown) {
+      g.trail.push({ x: g.pointerPos.x, y: g.pointerPos.y, age: 0 });
+      if (g.trail.length > 40) g.trail.shift();
+
+      const lookahead = 6;
+      let newIndex = g.currentIndex;
+      for (let i = g.currentIndex; i < Math.min(g.path.length, g.currentIndex + lookahead); i++) {
+        if (dist(g.path[i], g.pointerPos) <= g.tolerance) newIndex = i + 1;
+      }
+      if (newIndex > g.currentIndex) {
+        g.currentIndex = Math.min(newIndex, g.path.length);
+        playTick(g.currentIndex / g.path.length);
+      }
+    }
+
+    if (g.currentIndex >= g.path.length) {
+      completeShape(g);
+      return;
+    }
+
+    if (g.timeLeft <= 0) {
+      failShape(g);
+    }
+  }
+
+  function draw(ctx, g) {
+    const w = g.width, h = g.height;
+    ctx.clearRect(0, 0, w, h);
+
+    g.ambient.forEach(p => {
+      ctx.beginPath();
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = p.alpha;
+      ctx.shadowBlur = 0;
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    if (g.path.length) {
+      const color = shapeColor(g.shapeType);
+
+      ctx.beginPath();
+      ctx.moveTo(g.path[0].x, g.path[0].y);
+      for (let i = 1; i < g.path.length; i++) ctx.lineTo(g.path[i].x, g.path[i].y);
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.18;
+      ctx.lineWidth = 4;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      if (g.currentIndex > 0) {
+        const endIdx = Math.min(g.currentIndex, g.path.length - 1);
+        ctx.beginPath();
+        ctx.moveTo(g.path[0].x, g.path[0].y);
+        for (let i = 1; i <= endIdx; i++) ctx.lineTo(g.path[i].x, g.path[i].y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 5;
+        ctx.shadowBlur = 18;
+        ctx.stroke();
+      }
+
+      if (g.currentIndex < g.path.length) {
+        const target = g.path[g.currentIndex];
+        const pulse = 1 + Math.sin(g.time * 6) * 0.15;
+
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, g.tolerance * pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        const aheadIdx = Math.min(g.path.length - 1, g.currentIndex + 4);
+        const ahead = g.path[aheadIdx];
+        const angle = Math.atan2(ahead.y - target.y, ahead.x - target.x);
+        ctx.save();
+        ctx.translate(target.x, target.y);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(g.tolerance * 0.6, 0);
+        ctx.lineTo(g.tolerance * 1.4, 0);
+        ctx.lineTo(g.tolerance * 1.1, -6);
+        ctx.moveTo(g.tolerance * 1.4, 0);
+        ctx.lineTo(g.tolerance * 1.1, 6);
+        ctx.strokeStyle = '#ffffff';
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+        ctx.globalAlpha = 1;
+
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, 7 * pulse, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 22;
+        ctx.fill();
+      }
+    }
+
+    ctx.shadowBlur = 0;
+
+    if (g.trail.length > 1) {
+      for (let i = 1; i < g.trail.length; i++) {
+        const t = g.trail[i];
+        const alpha = Math.max(0, 1 - t.age / 0.6);
+        ctx.beginPath();
+        ctx.moveTo(g.trail[i - 1].x, g.trail[i - 1].y);
+        ctx.lineTo(t.x, t.y);
+        ctx.strokeStyle = '#ffffff';
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+    }
+
+    g.particles.forEach(p => {
+      ctx.beginPath();
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+      ctx.shadowBlur = 0;
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    if (g.flashTimer > 0) {
+      const alpha = Math.min(1, g.flashTimer / 0.8);
+      ctx.font = 'bold 40px Segoe UI, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = g.flashColor;
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = g.flashColor;
+      ctx.shadowBlur = 24;
+      ctx.fillText(g.flashText, w / 2, h / 2 - 90);
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = w;
+      canvas.height = h;
+      if (gameRef.current) {
+        gameRef.current.width = w;
+        gameRef.current.height = h;
+        if (gameRef.current.shapeType) {
+          gameRef.current.path = generatePath(gameRef.current.shapeType, w, h);
+          gameRef.current.currentIndex = 0;
+        }
+      }
+    }
+    resize();
+    gameRef.current = createInitialGameState(canvas.width, canvas.height);
+    window.addEventListener('resize', resize);
+
+    function handleDown(e) {
+      e.preventDefault();
+      initAudio();
+      const g = gameRef.current;
+      if (!g) return;
+      g.pointerPos = getPointerPos(e, canvas);
+      if (screenRef.current !== 'playing') return;
+      g.pointerDown = true;
+    }
+    function handleMove(e) {
+      const g = gameRef.current;
+      if (!g) return;
+      g.pointerPos = getPointerPos(e, canvas);
+    }
+    function handleUp(e) {
+      const g = gameRef.current;
+      if (g) g.pointerDown = false;
+    }
+
+    canvas.addEventListener('mousedown', handleDown);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    canvas.addEventListener('touchstart', handleDown, { passive: false });
+    canvas.addEventListener('touchmove', handleMove, { passive: false });
+    canvas.addEventListener('touchend', handleUp);
+    canvas.addEventListener('touchcancel', handleUp);
+
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.05, (now - lastTime) / 1000);
+      lastTime = now;
+      const g = gameRef.current;
+      if (g) {
+        update(g, dt);
+        draw(ctx, g);
+        if (timerFillRef.current && screenRef.current === 'playing' && g.timeLimit > 0) {
+          const pct = Math.max(0, Math.min(1, g.timeLeft / g.timeLimit)) * 100;
+          timerFillRef.current.style.width = pct + '%';
+          timerFillRef.current.style.background = pct > 50 ? '#7dff9a' : pct > 25 ? '#ffe600' : '#ff3b3b';
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    }
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+      canvas.removeEventListener('mousedown', handleDown);
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+      canvas.removeEventListener('touchstart', handleDown);
+      canvas.removeEventListener('touchmove', handleMove);
+      canvas.removeEventListener('touchend', handleUp);
+      canvas.removeEventListener('touchcancel', handleUp);
+    };
+  }, []);
+
+  return (
+    <div className="game-app">
+      <canvas ref={canvasRef} id="gameCanvas"></canvas>
+
+      <div className="hud">
+        <div className="hud-item score-hud">SCORE<span>{score}</span></div>
+        <div className="hud-item combo">COMBO<span>x{multiplier}</span></div>
+        <div className="hud-item level">LEVEL<span>{level}</span></div>
+        <div className="hud-item lives">LIVES<span>{'♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, LIVES_START - lives))}</span></div>
+        <div className="hud-item best">BEST<span>{highScore}</span></div>
+      </div>
+
+      {screen === 'playing' && (
+        <div className="shape-panel">
+          <div className="shape-name">TRACE: {shapeName}</div>
+          <div className="timer-track">
+            <div className="timer-fill" ref={timerFillRef}></div>
+          </div>
+        </div>
+      )}
+
+      <button className="sound-toggle" onClick={() => setSoundOn(s => !s)}>
+        {soundOn ? '\u{1F50A}' : '\u{1F507}'}
+      </button>
+
+      {showHint && screen === 'playing' && (
+        <div className="hint">
+          Press and drag the glowing white dot along the neon path &mdash; follow the bright trail to the end before time runs out!
+        </div>
+      )}
+
+      {screen === 'start' && (
+        <div className="overlay">
+          <h1 className="title">NEON TRACE</h1>
+          <p className="subtitle">Trace the glow. Chase the dot. Chain the precision!</p>
+          <p className="howto">
+            A glowing neon shape appears with a pulsing white dot at its start. <b>Click and drag</b> (or
+            <b> touch and drag</b> on mobile) along the path, guiding the dot all the way to the end before
+            the timer runs out.<br/><br/>
+            Completing a shape with time to spare earns a big score bonus and builds your <b>combo multiplier</b>.
+            Get most of the way there for a smaller consolation score, or fall too far behind and lose a life.
+            New shapes get trickier &mdash; tighter tolerance, less time &mdash; as your level climbs!
+          </p>
+          <div className="best-display">Best Score: {highScore}</div>
+          <button className="play-btn" onClick={startGame}>START TRACING</button>
+        </div>
+      )}
+
+      {screen === 'gameover' && (
+        <div className="overlay">
+          <h1 className="title">SIGNAL LOST</h1>
+          <div className="final-score">{score}</div>
+          {score > 0 && score >= highScore && <div className="new-best">NEW BEST!</div>}
+          <div className="best-display">Best: {highScore}</div>
+          <button className="play-btn" onClick={startGame}>TRACE AGAIN</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
