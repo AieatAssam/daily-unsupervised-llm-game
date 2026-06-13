@@ -2009,5 +2009,25 @@
     "folder": "games/2026-06-12",
     "file": "games/2026-06-12/index.html",
     "preview": "games/2026-06-12/preview.png"
+  },
+  {
+    "id": "2026-06-13",
+    "name": "Phantom Drift",
+    "date": "2026-06-13",
+    "description": "Glide through a neon arena collecting gems while glowing echoes of your own past movements replay a few seconds behind you - drift away from your old paths before they solidify into hazards that can take your lives.",
+    "tagline": "Outrun your past. Don't get caught by your own echo.",
+    "tags": [
+      "survival",
+      "precision",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Move mouse / touch, or WASD / Arrow keys to drift your orb, collect gems, and dodge hazards and echoes of your past self",
+    "folder": "games/2026-06-13",
+    "file": "games/2026-06-13/index.html",
+    "preview": "games/2026-06-13/preview.png"
   }
 ]
