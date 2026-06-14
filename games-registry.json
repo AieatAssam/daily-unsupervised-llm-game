@@ -2029,5 +2029,25 @@
     "folder": "games/2026-06-13",
     "file": "games/2026-06-13/index.html",
     "preview": "games/2026-06-13/preview.png"
+  },
+  {
+    "id": "2026-06-14",
+    "name": "Forge Ahead",
+    "date": "2026-06-14",
+    "description": "Your glowing orb races forever forward along a crumbling neon track. A diamond marker lights up the tile just ahead before your orb arrives over a gap - tap or press space in that instant to forge a new tile and keep the track alive. Chain consecutive forges for combo multipliers and watch for golden gaps worth triple points.",
+    "tagline": "Forge the track before you fall through it.",
+    "tags": [
+      "reflex",
+      "timing",
+      "endless",
+      "arcade",
+      "combo"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click, tap, or press Space / ArrowUp / W the instant the diamond marker lights up over a gap to forge a new tile",
+    "folder": "games/2026-06-14",
+    "file": "games/2026-06-14/index.html",
+    "preview": "games/2026-06-14/preview.png"
   }
 ]
