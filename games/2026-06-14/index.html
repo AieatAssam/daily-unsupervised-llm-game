@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Forge Ahead</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; width: 100%; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #1a0010, #00263a, #3a1a00, #260033, #00332a);
+    background-size: 400% 400%;
+    animation: bgShift 18s ease infinite;
+    color: #fff;
+    touch-action: none;
+    user-select: none;
+  }
+  @keyframes bgShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  #root { width: 100vw; height: 100vh; display: flex; }
+  .app {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding: 10px;
+  }
+  .hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+    z-index: 5;
+  }
+  .hud-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 70px;
+  }
+  .hud-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #8fd9ff;
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+  .hud-value {
+    font-size: 22px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 8px #00eaff, 0 0 16px #00eaff;
+  }
+  .hud-value.gold { text-shadow: 0 0 8px #ffd700, 0 0 16px #ffd700; color: #ffe9a8; }
+  .hearts { font-size: 20px; letter-spacing: 2px; }
+  .heart-full { color: #ff5a5a; text-shadow: 0 0 8px #ff5a5a; }
+  .heart-empty { color: #333; }
+  .game-area {
+    position: relative;
+    flex: 1;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 0 30px rgba(0,234,255,0.25), inset 0 0 60px rgba(0,0,0,0.6);
+    border: 1px solid rgba(0,234,255,0.2);
+    min-height: 0;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: radial-gradient(circle at 50% 40%, rgba(30,10,0,0.85), rgba(5,5,15,0.95));
+    z-index: 10;
+    padding: 20px;
+    animation: fadeIn 0.4s ease;
+    overflow-y: auto;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .title {
+    font-size: clamp(34px, 9vw, 70px);
+    font-weight: 900;
+    letter-spacing: 6px;
+    margin: 0;
+    background: linear-gradient(90deg, #00eaff, #ffd700, #ff7b00, #00eaff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hueSlide 4s linear infinite;
+    text-shadow: 0 0 30px rgba(255,215,0,0.4);
+  }
+  @keyframes hueSlide {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+  .subtitle {
+    font-size: clamp(13px, 3vw, 17px);
+    color: #aef;
+    margin: 10px 0 22px;
+    letter-spacing: 1px;
+    max-width: 480px;
+    line-height: 1.6;
+  }
+  .key-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-weight: bold;
+    margin: 0 2px;
+    background: rgba(0,234,255,0.18);
+    color: #00eaff;
+  }
+  .gold-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-weight: bold;
+    margin: 0 2px;
+    background: rgba(255,215,0,0.18);
+    color: #ffd700;
+  }
+  .btn {
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 3px;
+    padding: 16px 48px;
+    border-radius: 50px;
+    border: 2px solid #00eaff;
+    background: rgba(0,234,255,0.08);
+    color: #00eaff;
+    cursor: pointer;
+    text-shadow: 0 0 10px #00eaff;
+    box-shadow: 0 0 20px rgba(0,234,255,0.4), inset 0 0 20px rgba(0,234,255,0.1);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); background: rgba(0,234,255,0.18); }
+  .btn:active { transform: scale(0.97); }
+  .final-score {
+    font-size: clamp(40px, 11vw, 80px);
+    font-weight: 900;
+    color: #ffd700;
+    text-shadow: 0 0 20px #ffd700, 0 0 40px #ff8c00;
+    margin: 6px 0;
+  }
+  .stat-row {
+    display: flex;
+    gap: 28px;
+    margin: 14px 0 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .stat-label { font-size: 11px; letter-spacing: 2px; color: #8fd9ff; text-transform: uppercase; }
+  .stat-value { font-size: 24px; font-weight: bold; color: #fff; }
+  .new-high {
+    color: #ffd700;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-shadow: 0 0 12px #ffd700;
+    animation: pulse 0.8s ease infinite;
+    margin-bottom: 8px;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.7; }
+  }
+  .announce {
+    position: absolute;
+    top: 14%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: clamp(20px, 5vw, 36px);
+    font-weight: 900;
+    letter-spacing: 4px;
+    z-index: 8;
+    pointer-events: none;
+    animation: announceAnim 1.4s ease forwards;
+    white-space: nowrap;
+  }
+  @keyframes announceAnim {
+    0% { opacity: 0; transform: translateX(-50%) translateY(-20px) scale(0.7); }
+    20% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.1); }
+    35% { transform: translateX(-50%) translateY(0) scale(1); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) translateY(10px) scale(0.95); }
+  }
+  .controls-hint {
+    text-align: center;
+    font-size: 11px;
+    color: #6cf;
+    opacity: 0.6;
+    padding: 4px 0 0;
+    letter-spacing: 1px;
+  }
+  @media (max-width: 600px) {
+    .hud-block { min-width: 56px; }
+    .hud-value { font-size: 17px; }
+    .hearts { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ---------- constants ---------- */
+const LOOKAHEAD = 2;          // cells ahead of the orb where the forge target sits
+const BASE_SPEED = 0.017;     // cells / frame at start
+const MAX_SPEED = 0.058;      // cells / frame cap
+const SPEED_SCALE = 0.00004;  // speed grows with score
+const BASE_POINTS = 10;
+const GOLDEN_POINTS = 30;
+const MAX_MULT = 6;
+const COMBO_PER_MULT = 5;
+const START_LIVES = 3;
+
+/* ---------- helpers ---------- */
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function drawGlow(ctx, x, y, r, color, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 22;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function spawnParticles(particles, x, y, color, count, speed) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = (0.4 + Math.random()) * speed;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd - 0.5,
+      life: 1,
+      decay: 0.02 + Math.random() * 0.03,
+      color,
+      size: 1.5 + Math.random() * 3,
+    });
+  }
+}
+
+/* ---------- audio ---------- */
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol, ramp) {
+  try {
+    const ctx = ensureAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    if (ramp) osc.frequency.exponentialRampToValueAtTime(ramp, ctx.currentTime + dur);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+  } catch (e) { /* audio unavailable */ }
+}
+function sndForge(mult) { tone(420 + mult * 55, 0.1, 'square', 0.18, 840 + mult * 70); }
+function sndGolden() {
+  tone(660, 0.08, 'square', 0.2, 1320);
+  setTimeout(() => tone(880, 0.09, 'square', 0.2, 1760), 70);
+  setTimeout(() => tone(1320, 0.16, 'square', 0.18, 2200), 140);
+}
+function sndMilestone() {
+  tone(523, 0.07, 'square', 0.15, 1046);
+  setTimeout(() => tone(659, 0.09, 'square', 0.15, 1318), 70);
+}
+function sndFail() {
+  tone(220, 0.3, 'sawtooth', 0.22, 60);
+  tone(110, 0.35, 'sine', 0.2, 40);
+}
+function sndStart() {
+  tone(440, 0.1, 'square', 0.15, 880);
+  setTimeout(() => tone(660, 0.15, 'square', 0.15, 1320), 100);
+}
+function sndGameOver() {
+  tone(440, 0.2, 'sawtooth', 0.2, 220);
+  setTimeout(() => tone(330, 0.2, 'sawtooth', 0.2, 165), 180);
+  setTimeout(() => tone(220, 0.3, 'sawtooth', 0.2, 110), 360);
+}
+
+/* ---------- track generation ---------- */
+function ensureCells(game, upTo) {
+  while (game.cells.length <= upTo) {
+    const i = game.cells.length;
+    if (i < 6) { game.cells.push('solid'); continue; }
+    const minSpacing = Math.max(2, 5 - Math.floor(game.score / 200));
+    const pGap = Math.min(0.42, 0.16 + game.score / 1500);
+    if (i - game.lastGapIndex >= minSpacing && Math.random() < pGap) {
+      game.gapCount++;
+      const golden = game.gapCount % 6 === 0;
+      game.cells.push(golden ? 'golden' : 'gap');
+      game.lastGapIndex = i;
+    } else {
+      game.cells.push('solid');
+    }
+  }
+}
+
+/* ---------- game state ---------- */
+function createGame(w, h) {
+  return {
+    w, h,
+    cellWidth: 60,
+    orbScreenX: w * 0.24,
+    trackY: h * 0.6,
+    trackHeight: 40,
+    orbRadius: 20,
+    progress: 0,
+    speed: BASE_SPEED,
+    cells: [],
+    lastGapIndex: -10,
+    gapCount: 0,
+    lastCurrentCell: 0,
+    score: 0,
+    combo: 0,
+    maxCombo: 0,
+    multiplier: 1,
+    lives: START_LIVES,
+    shakeTime: 0,
+    shakeMag: 0,
+    particles: [],
+    popups: [],
+    trailTimer: 0,
+    flashTime: 0,
+    flashColor: '#00eaff',
+    fallAnim: 0,
+    frame: 0,
+    over: false,
+  };
+}
+
+function tryForge(game, cb) {
+  if (game.over) return;
+  const currentCell = Math.floor(game.progress);
+  const targetIndex = currentCell + LOOKAHEAD;
+  ensureCells(game, targetIndex + 1);
+  const state = game.cells[targetIndex];
+  const tx = game.orbScreenX + (targetIndex - game.progress) * game.cellWidth + game.cellWidth / 2;
+  if (state === 'gap' || state === 'golden') {
+    const golden = state === 'golden';
+    game.cells[targetIndex] = golden ? 'goldenFilled' : 'filled';
+    game.combo++;
+    if (game.combo > game.maxCombo) game.maxCombo = game.combo;
+    const newMult = Math.min(MAX_MULT, 1 + Math.floor(game.combo / COMBO_PER_MULT));
+    const milestoneHit = newMult > game.multiplier;
+    game.multiplier = newMult;
+    const pts = (golden ? GOLDEN_POINTS : BASE_POINTS) * game.multiplier;
+    game.score += pts;
+    game.flashTime = 8;
+    game.flashColor = golden ? '#ffd700' : '#00eaff';
+    spawnParticles(game.particles, tx, game.trackY, golden ? '#ffd700' : '#00eaff', golden ? 26 : 14, golden ? 5 : 3.2);
+    game.popups.push({ x: tx, y: game.trackY - 10, text: '+' + pts, color: golden ? '#ffd700' : '#00eaff', life: 1 });
+    cb.onForge(golden, game.multiplier);
+    if (golden) cb.onGolden();
+    if (milestoneHit) cb.onMilestone(game.multiplier);
+  } else {
+    cb.onTapEmpty();
+  }
+}
+
+function spawnTrailParticle(game) {
+  const color = game.multiplier >= MAX_MULT ? '#ffd700' : '#00eaff';
+  game.particles.push({
+    x: game.orbScreenX - game.orbRadius * 0.6,
+    y: game.trackY - game.orbRadius - 4 + (Math.random() - 0.5) * 6,
+    vx: -1.4 - Math.random() * 1.0,
+    vy: (Math.random() - 0.5) * 0.6,
+    life: 1,
+    decay: 0.045 + Math.random() * 0.03,
+    color,
+    size: 1.2 + Math.random() * 2,
+  });
+}
+
+function updateGame(game, dt, w, h, cb) {
+  game.w = w; game.h = h;
+  game.cellWidth = clamp(w / 7, 46, 96);
+  game.orbScreenX = w * 0.24;
+  game.trackY = h * 0.6;
+  game.trackHeight = Math.max(34, h * 0.14);
+  game.orbRadius = game.cellWidth * 0.34;
+  game.frame += dt;
+
+  game.speed = Math.min(MAX_SPEED, BASE_SPEED + game.score * SPEED_SCALE);
+  game.progress += game.speed * dt;
+
+  const currentCell = Math.floor(game.progress);
+  ensureCells(game, currentCell + LOOKAHEAD + 6);
+
+  if (currentCell > game.lastCurrentCell) {
+    for (let c = game.lastCurrentCell + 1; c <= currentCell; c++) {
+      const st = game.cells[c];
+      if (st === 'gap' || st === 'golden') {
+        game.lives--;
+        game.combo = 0;
+        game.multiplier = 1;
+        game.shakeTime = 18;
+        game.shakeMag = 9;
+        game.fallAnim = 22;
+        game.flashTime = 6;
+        game.flashColor = '#ff3030';
+        spawnParticles(game.particles, game.orbScreenX, game.trackY, '#ff3030', 22, 4.2);
+        game.popups.push({ x: game.orbScreenX, y: game.trackY - 10, text: 'MISSED!', color: '#ff5a5a', life: 1 });
+        game.cells[c] = 'patched';
+        cb.onFail();
+        if (game.lives <= 0) {
+          game.over = true;
+          cb.onGameOver({ score: game.score, combo: game.maxCombo });
+          break;
+        }
+      }
+    }
+    game.lastCurrentCell = currentCell;
+  }
+
+  // continuous engine trail
+  game.trailTimer -= dt;
+  if (game.trailTimer <= 0 && !game.over) {
+    spawnTrailParticle(game);
+    game.trailTimer = 3;
+  }
+
+  // particles
+  for (let i = game.particles.length - 1; i >= 0; i--) {
+    const p = game.particles[i];
+    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= p.decay * dt;
+    if (p.life <= 0) game.particles.splice(i, 1);
+  }
+
+  // popups
+  for (let i = game.popups.length - 1; i >= 0; i--) {
+    const p = game.popups[i];
+    p.y -= 0.6 * dt;
+    p.life -= 0.022 * dt;
+    if (p.life <= 0) game.popups.splice(i, 1);
+  }
+
+  if (game.shakeTime > 0) game.shakeTime -= dt;
+  if (game.flashTime > 0) game.flashTime -= dt;
+  if (game.fallAnim > 0) game.fallAnim -= dt;
+}
+
+/* ---------- rendering ---------- */
+function drawCell(ctx, game, x, state) {
+  const y = game.trackY;
+  const cw = game.cellWidth;
+  const ch = game.trackHeight;
+  const gap = 4;
+
+  if (state === 'gap' || state === 'golden') {
+    const glow = state === 'golden' ? '#ffd700' : '#ff5a5a';
+    ctx.save();
+    ctx.strokeStyle = glow;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = state === 'golden' ? 16 : 8;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    roundRect(ctx, x + gap / 2, y, cw - gap, ch, 6);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (state === 'golden') {
+      const pulse = 0.5 + 0.5 * Math.sin(game.frame * 0.15);
+      ctx.globalAlpha = 0.2 + pulse * 0.25;
+      ctx.fillStyle = '#ffd700';
+      roundRect(ctx, x + gap / 2, y, cw - gap, ch, 6);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+    return;
+  }
+
+  let color = '#1b9bd8';
+  let glow = '#00eaff';
+  if (state === 'filled') { color = '#0f6b3a'; glow = '#39ff8c'; }
+  if (state === 'goldenFilled') { color = '#7a5a00'; glow = '#ffd700'; }
+  if (state === 'patched') { color = '#5a1010'; glow = '#ff8a5a'; }
+  ctx.save();
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = color;
+  roundRect(ctx, x + gap / 2, y, cw - gap, ch, 6);
+  ctx.fill();
+  ctx.strokeStyle = glow;
+  ctx.lineWidth = 2;
+  roundRect(ctx, x + gap / 2, y, cw - gap, ch, 6);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLookaheadMarker(ctx, game, x, state) {
+  const y = game.trackY - 16;
+  const actionable = state === 'gap' || state === 'golden';
+  const pulse = 0.7 + 0.3 * Math.sin(game.frame * 0.25);
+  const color = state === 'golden' ? '#ffd700' : (actionable ? '#00eaff' : '#4a5a7a');
+  const r = actionable ? 11 * pulse : 5;
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = actionable ? 18 : 4;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.globalAlpha = actionable ? 1 : 0.35;
+  ctx.beginPath();
+  ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y);
+  ctx.closePath();
+  ctx.stroke();
+  if (actionable) {
+    ctx.beginPath();
+    ctx.moveTo(x - 6, y + r + 2);
+    ctx.lineTo(x + 6, y + r + 2);
+    ctx.lineTo(x, y + r + 11);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 10;
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawOrb(ctx, game) {
+  const bob = Math.sin(game.frame * 0.12) * 3;
+  let yOff = bob;
+  let color = game.multiplier >= MAX_MULT ? '#ffd700' : '#00eaff';
+  if (game.fallAnim > 0) {
+    const fallProgress = 1 - game.fallAnim / 22;
+    yOff = bob + Math.sin(fallProgress * Math.PI) * 32;
+    color = '#ff5a5a';
+  }
+  const x = game.orbScreenX;
+  const y = game.trackY - game.orbRadius - 6 + yOff;
+  drawGlow(ctx, x, y, game.orbRadius, color, 1);
+  ctx.save();
+  ctx.globalAlpha = 0.65;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(x - game.orbRadius * 0.25, y - game.orbRadius * 0.3, game.orbRadius * 0.32, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function renderGame(ctx, game, w, h) {
+  ctx.save();
+  if (game.shakeTime > 0) {
+    const m = game.shakeMag * (game.shakeTime / 18);
+    ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
+  }
+
+  // hue-shifting fade
+  const hue = (game.frame * 0.18) % 360;
+  ctx.fillStyle = `hsla(${hue}, 60%, 6%, 0.25)`;
+  ctx.fillRect(-30, -30, w + 60, h + 60);
+
+  // speed streak lines above the track
+  ctx.strokeStyle = 'rgba(0,234,255,0.06)';
+  ctx.lineWidth = 1;
+  const lineSpacing = 70;
+  const offset = (game.progress * game.cellWidth * 0.6) % lineSpacing;
+  for (let y = 30; y < game.trackY - 24; y += 46) {
+    for (let x = -offset; x < w; x += lineSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 30, y);
+      ctx.stroke();
+    }
+  }
+
+  // chasm below the track
+  const chasmGrad = ctx.createLinearGradient(0, game.trackY, 0, h);
+  chasmGrad.addColorStop(0, 'rgba(40,0,60,0.9)');
+  chasmGrad.addColorStop(1, 'rgba(5,0,15,1)');
+  ctx.fillStyle = chasmGrad;
+  ctx.fillRect(0, game.trackY + game.trackHeight, w, Math.max(0, h - game.trackY - game.trackHeight));
+
+  // track cells
+  const startCell = Math.max(0, Math.floor(game.progress) - 1);
+  const endCell = Math.ceil((w - game.orbScreenX) / game.cellWidth) + Math.floor(game.progress) + LOOKAHEAD + 3;
+  ensureCells(game, endCell + 1);
+  for (let c = startCell; c <= endCell; c++) {
+    const state = game.cells[c];
+    const x = game.orbScreenX + (c - game.progress) * game.cellWidth;
+    if (x < -game.cellWidth || x > w + game.cellWidth) continue;
+    drawCell(ctx, game, x, state);
+  }
+
+  // lookahead marker
+  const targetIndex = Math.floor(game.progress) + LOOKAHEAD;
+  const tx = game.orbScreenX + (targetIndex - game.progress) * game.cellWidth + game.cellWidth / 2;
+  drawLookaheadMarker(ctx, game, tx, game.cells[targetIndex]);
+
+  // particles
+  game.particles.forEach(p => {
+    ctx.globalAlpha = Math.max(p.life, 0);
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+
+  // orb
+  drawOrb(ctx, game);
+
+  // popups
+  game.popups.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = Math.max(p.life, 0);
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 10;
+    ctx.font = 'bold 18px Segoe UI, Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.restore();
+  });
+
+  // flash overlay
+  if (game.flashTime > 0) {
+    ctx.globalAlpha = (game.flashTime / 8) * 0.3;
+    ctx.fillStyle = game.flashColor;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+/* ---------- main component ---------- */
+function App() {
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
+  const gameRef = useRef(null);
+  const [screen, setScreen] = useState('start'); // start | playing | gameover
+  const [hud, setHud] = useState({ score: 0, combo: 0, multiplier: 1, lives: START_LIVES, level: 1 });
+  const [highScore, setHighScore] = useState(0);
+  const [announce, setAnnounce] = useState(null);
+  const [finalStats, setFinalStats] = useState(null);
+  const [isNewHigh, setIsNewHigh] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('forgeAheadHighscore');
+    if (stored === null) {
+      localStorage.setItem('forgeAheadHighscore', '0');
+      setHighScore(0);
+    } else {
+      setHighScore(parseInt(stored, 10));
+    }
+  }, []);
+
+  // size the canvas to its container
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    function resize() {
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+      if (gameRef.current && !gameRef.current.over) {
+        gameRef.current.w = canvas.width;
+        gameRef.current.h = canvas.height;
+      }
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  const showAnnounce = useCallback((text, color) => {
+    setAnnounce({ text, color, key: Math.random() });
+    setTimeout(() => setAnnounce(null), 1400);
+  }, []);
+
+  const startGame = useCallback(() => {
+    const canvas = canvasRef.current;
+    ensureAudio();
+    sndStart();
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#06061a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    gameRef.current = createGame(canvas.width, canvas.height);
+    setFinalStats(null);
+    setIsNewHigh(false);
+    setAnnounce(null);
+    setHud({ score: 0, combo: 0, multiplier: 1, lives: START_LIVES, level: 1 });
+    setScreen('playing');
+  }, []);
+
+  // input handling - taps / clicks / space forge the lookahead tile
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    function forgeNow(e) {
+      if (e) e.preventDefault();
+      ensureAudio();
+      const game = gameRef.current;
+      if (game && !game.over && callbacksRef.current) tryForge(game, callbacksRef.current);
+    }
+    function onKeyDown(e) {
+      const k = e.key;
+      if (k === ' ' || k === 'Spacebar' || k === 'ArrowUp' || k === 'w' || k === 'W') {
+        if (!e.repeat) forgeNow(e);
+        e.preventDefault();
+      }
+    }
+    canvas.addEventListener('mousedown', forgeNow);
+    canvas.addEventListener('touchstart', forgeNow, { passive: false });
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      canvas.removeEventListener('mousedown', forgeNow);
+      canvas.removeEventListener('touchstart', forgeNow);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  // keep latest callbacks reachable from the stable input handlers above
+  const callbacksRef = useRef(null);
+
+  // main loop
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    let rafId;
+    let lastTime = performance.now();
+    let accumulator = 0;
+
+    const callbacks = {
+      onForge: (golden, mult) => { if (!golden) sndForge(mult); },
+      onGolden: () => sndGolden(),
+      onMilestone: (mult) => { sndMilestone(); showAnnounce(`COMBO x${mult}!`, '#ffd700'); },
+      onTapEmpty: () => {},
+      onFail: () => sndFail(),
+      onGameOver: (stats) => {
+        sndGameOver();
+        const prevHigh = parseInt(localStorage.getItem('forgeAheadHighscore') || '0', 10);
+        if (stats.score > prevHigh) {
+          localStorage.setItem('forgeAheadHighscore', String(stats.score));
+          setHighScore(stats.score);
+          setIsNewHigh(true);
+        }
+        setFinalStats(stats);
+        setScreen('gameover');
+      },
+    };
+    callbacksRef.current = callbacks;
+
+    function loop(now) {
+      const frameTime = Math.min((now - lastTime) / 16.6667, 5);
+      lastTime = now;
+      accumulator += frameTime;
+      const canvas = canvasRef.current;
+      const game = gameRef.current;
+      let steps = 0;
+      while (accumulator >= 1 && steps < 5) {
+        if (game && canvas && !game.over) {
+          updateGame(game, 1, canvas.width, canvas.height, callbacks);
+        }
+        accumulator -= 1;
+        steps++;
+      }
+      if (game && canvas) {
+        renderGame(canvas.getContext('2d'), game, canvas.width, canvas.height);
+        if (!game.over) {
+          setHud({
+            score: game.score,
+            combo: game.combo,
+            multiplier: game.multiplier,
+            lives: game.lives,
+            level: 1 + Math.floor(game.score / 200),
+          });
+        }
+      }
+      rafId = requestAnimationFrame(loop);
+    }
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, [screen, showAnnounce]);
+
+  const isMobile = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hud-block">
+          <div className="hud-label">Score</div>
+          <div className="hud-value">{hud.score}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Combo</div>
+          <div className="hud-value gold">x{hud.multiplier}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Level</div>
+          <div className="hud-value">{hud.level}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Lives</div>
+          <div className="hearts">
+            {[0, 1, 2].map(i => (
+              <span key={i} className={i < hud.lives ? 'heart-full' : 'heart-empty'}>&#9829;</span>
+            ))}
+          </div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Best</div>
+          <div className="hud-value" style={{ fontSize: '16px' }}>{highScore}</div>
+        </div>
+      </div>
+
+      <div className="game-area" ref={containerRef}>
+        <canvas ref={canvasRef}></canvas>
+
+        {announce && (
+          <div className="announce" key={announce.key} style={{ color: announce.color, textShadow: `0 0 12px ${announce.color}, 0 0 24px ${announce.color}` }}>
+            {announce.text}
+          </div>
+        )}
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <h1 className="title">FORGE AHEAD</h1>
+            <p className="subtitle">
+              Your glowing orb is racing forever forward along a crumbling neon track.
+              A <span className="key-tag">DIAMOND MARKER</span> shows the tile just ahead of you &mdash;
+              when it lights up over a gap, tap it just in time to forge a new tile before your orb arrives!
+              Forge consecutive gaps to build combo multipliers, and watch for{' '}
+              <span className="gold-tag">GOLDEN</span> gaps worth triple points.
+              Miss one and you lose a life as your combo collapses.
+            </p>
+            <button className="btn" onClick={startGame}>START</button>
+            <p className="controls-hint">
+              {isMobile ? 'Tap anywhere to forge the next tile' : 'Click or press SPACE / ↑ to forge the next tile'}
+            </p>
+          </div>
+        )}
+
+        {screen === 'gameover' && finalStats && (
+          <div className="overlay">
+            {isNewHigh && <div className="new-high">★ NEW HIGH SCORE ★</div>}
+            <h1 className="title" style={{ fontSize: 'clamp(28px, 6vw, 48px)' }}>TRACK COLLAPSED</h1>
+            <div className="final-score">{finalStats.score}</div>
+            <div className="stat-row">
+              <div className="stat">
+                <div className="stat-label">Best</div>
+                <div className="stat-value">{highScore}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Best Combo</div>
+                <div className="stat-value">x{Math.min(MAX_MULT, 1 + Math.floor(finalStats.combo / COMBO_PER_MULT))}</div>
+              </div>
+            </div>
+            <button className="btn" onClick={startGame}>FORGE AGAIN</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
