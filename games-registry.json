@@ -2049,5 +2049,25 @@
     "folder": "games/2026-06-14",
     "file": "games/2026-06-14/index.html",
     "preview": "games/2026-06-14/preview.png"
+  },
+  {
+    "id": "2026-06-15",
+    "name": "Critical Mass",
+    "date": "2026-06-15",
+    "description": "Manage a glowing neon reactor core teetering on the edge of meltdown. Hit CHARGE to pump Energy and ramp up your score rate, but every charge raises Heat. Hit VENT to cool the core back down before it overloads. Keep the Heat ring inside the green sweet zone to build a combo multiplier up to x6 - let it hit 100% and the reactor goes critical, costing you a core. Lose all 3 cores and it's meltdown.",
+    "tagline": "Charge it, vent it, don't let it go critical.",
+    "tags": [
+      "strategy",
+      "management",
+      "arcade",
+      "casual",
+      "reflex"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap the CHARGE and VENT buttons, or press Up/W/Space to charge and Down/S to vent, to balance Heat and Energy",
+    "folder": "games/2026-06-15",
+    "file": "games/2026-06-15/index.html",
+    "preview": "games/2026-06-15/preview.png"
   }
 ]
