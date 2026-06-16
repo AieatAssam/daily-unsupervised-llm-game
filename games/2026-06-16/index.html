@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chroma Collapse</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #080012; overflow: hidden; font-family: 'Courier New', monospace; }
+    @keyframes pulseBorder {
+      0%,100% { box-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff33; }
+      50% { box-shadow: 0 0 35px #00ffff, 0 0 70px #00ffff55; }
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+  const { useState, useEffect, useRef, useCallback } = React;
+
+  const COLS = 12;
+  const ROWS = 8;
+  const COLORS = ['#00ffff', '#ff00ff', '#ffff00', '#00ff88', '#ff6600'];
+  const GAME_DURATION = 90;
+
+  let audioCtx = null;
+  function getAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+    }
+    return audioCtx;
+  }
+
+  function playPop(colorIdx, n) {
+    const ctx = getAudio();
+    if (!ctx) return;
+    try {
+      const freqs = [330, 415, 523, 392, 466];
+      const base = freqs[colorIdx % 5];
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(base, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(base * 1.6, ctx.currentTime + 0.12);
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.25);
+      if (n >= 5) {
+        const osc2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        osc2.connect(g2); g2.connect(ctx.destination);
+        osc2.frequency.value = base * 2.5;
+        osc2.type = 'triangle';
+        g2.gain.setValueAtTime(0.15, ctx.currentTime + 0.05);
+        g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+        osc2.start(ctx.currentTime + 0.05);
+        osc2.stop(ctx.currentTime + 0.4);
+      }
+    } catch(e) {}
+  }
+
+  function playCombo(combo) {
+    const ctx = getAudio();
+    if (!ctx) return;
+    try {
+      const note = 440 * Math.pow(2, (combo - 1) / 4);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = note;
+      osc.type = 'square';
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.2);
+    } catch(e) {}
+  }
+
+  function makeBoard() {
+    const b = [];
+    for (let r = 0; r < ROWS; r++) {
+      b.push(new Array(COLS).fill(0).map(() => Math.floor(Math.random() * COLORS.length)));
+    }
+    return b;
+  }
+
+  function floodFind(board, sr, sc) {
+    const color = board[sr][sc];
+    if (color === -1) return [];
+    const seen = new Set();
+    const group = [];
+    const stack = [[sr, sc]];
+    while (stack.length) {
+      const [r, c] = stack.pop();
+      if (r < 0 || r >= ROWS || c < 0 || c >= COLS) continue;
+      const key = r * COLS + c;
+      if (seen.has(key)) continue;
+      if (board[r][c] !== color) continue;
+      seen.add(key);
+      group.push([r, c]);
+      stack.push([r-1,c],[r+1,c],[r,c-1],[r,c+1]);
+    }
+    return group;
+  }
+
+  function applyGravity(board) {
+    const b = board.map(r => [...r]);
+    for (let c = 0; c < COLS; c++) {
+      const stack = [];
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (b[r][c] !== -1) stack.push(b[r][c]);
+      }
+      for (let r = ROWS - 1; r >= 0; r--) {
+        b[r][c] = stack.length ? stack.shift() : -1;
+      }
+    }
+    return b;
+  }
+
+  function hasMoves(board) {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (board[r][c] !== -1 && floodFind(board, r, c).length >= 2) return true;
+      }
+    }
+    return false;
+  }
+
+  const Game = () => {
+    const canvasRef = useRef(null);
+    const g = useRef({
+      board: null, particles: [],
+      score: 0, combo: 0, comboTime: 0,
+      timeLeft: GAME_DURATION, phase: 'start',
+      highScore: parseInt(localStorage.getItem('highScore_chromaCollapse') || '0'),
+      hoverGroup: null, raf: null,
+      cW: 0, cH: 0, offX: 0, offY: 0,
+      bgT: 0, flashT: 0, flashCombo: 0,
+    });
+    const [ui, setUi] = useState({ phase: 'start', score: 0, hs: 0, combo: 0 });
+
+    const syncUi = useCallback(() => {
+      const s = g.current;
+      setUi({ phase: s.phase, score: s.score, hs: s.highScore, combo: s.combo });
+    }, []);
+
+    function beginGame() {
+      const s = g.current;
+      s.board = makeBoard();
+      s.particles = [];
+      s.score = 0; s.combo = 0; s.comboTime = 0;
+      s.timeLeft = GAME_DURATION;
+      s.phase = 'playing';
+      s.hoverGroup = null;
+      s.flashT = 0; s.flashCombo = 0;
+      localStorage.setItem('highScore_chromaCollapse', String(s.highScore));
+      syncUi();
+    }
+
+    function spawnParticles(cells, ci) {
+      const s = g.current;
+      const color = COLORS[ci];
+      cells.forEach(([r, c]) => {
+        const x = s.offX + c * s.cW + s.cW / 2;
+        const y = s.offY + r * s.cH + s.cH / 2;
+        for (let i = 0; i < 10; i++) {
+          const a = Math.PI * 2 * i / 10 + Math.random() * 0.5;
+          const sp = 1.5 + Math.random() * 5;
+          s.particles.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, color, life: 1, sz: 2 + Math.random()*4 });
+        }
+      });
+    }
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      const s = g.current;
+      let lastT = performance.now();
+
+      const resize = () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      };
+      resize();
+      window.addEventListener('resize', resize);
+
+      const draw = (now) => {
+        const dt = Math.min((now - lastT) / 1000, 0.05);
+        lastT = now;
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height;
+
+        const hdrH = 72;
+        const padX = Math.max(20, W * 0.04);
+        const padY = 16;
+        const cW = Math.floor((W - padX*2) / COLS);
+        const cH = Math.floor((H - hdrH - padY*2) / ROWS);
+        const actualW = cW * COLS, actualH = cH * ROWS;
+        s.cW = cW; s.cH = cH;
+        s.offX = Math.floor((W - actualW) / 2);
+        s.offY = hdrH + Math.floor((H - hdrH - actualH) / 2);
+
+        s.bgT += dt;
+
+        // Animated bg
+        const bg = ctx.createLinearGradient(0, 0, W, H);
+        const h1 = (s.bgT * 15) % 360;
+        bg.addColorStop(0, `hsl(${h1},70%,4%)`);
+        bg.addColorStop(0.5, `hsl(${(h1+100)%360},60%,6%)`);
+        bg.addColorStop(1, `hsl(${(h1+200)%360},70%,5%)`);
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        // Grid border glow
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = 'rgba(0,255,255,0.15)';
+        ctx.strokeStyle = 'rgba(0,255,255,0.2)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(s.offX - 1, s.offY - 1, actualW + 2, actualH + 2);
+        ctx.shadowBlur = 0;
+
+        // Board
+        if (s.board) {
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              const ci = s.board[r][c];
+              if (ci === -1) {
+                // Empty cell subtle bg
+                ctx.fillStyle = 'rgba(255,255,255,0.02)';
+                ctx.fillRect(s.offX + c*cW, s.offY + r*cH, cW, cH);
+                continue;
+              }
+              const col = COLORS[ci];
+              const x = s.offX + c * cW;
+              const y = s.offY + r * cH;
+              const hov = s.hoverGroup?.some(([hr,hc]) => hr===r && hc===c);
+              const gap = 2;
+
+              // Cell bg tint
+              ctx.fillStyle = col + '18';
+              ctx.fillRect(x, y, cW, cH);
+
+              // Main block
+              if (hov) {
+                ctx.shadowBlur = 18;
+                ctx.shadowColor = col;
+              }
+              const innerX = x + gap, innerY = y + gap;
+              const innerW = cW - gap*2, innerH = cH - gap*2;
+
+              // Gradient fill
+              const blockGrad = ctx.createLinearGradient(innerX, innerY, innerX + innerW, innerY + innerH);
+              blockGrad.addColorStop(0, col + (hov ? 'ff' : 'bb'));
+              blockGrad.addColorStop(1, col + (hov ? 'cc' : '88'));
+              ctx.fillStyle = blockGrad;
+              ctx.fillRect(innerX, innerY, innerW, innerH);
+              ctx.shadowBlur = 0;
+
+              // Shine
+              ctx.fillStyle = 'rgba(255,255,255,0.3)';
+              ctx.fillRect(innerX + 2, innerY + 2, innerW - 4, Math.max(3, innerH * 0.25));
+
+              // Bottom shadow line
+              ctx.fillStyle = 'rgba(0,0,0,0.4)';
+              ctx.fillRect(innerX, innerY + innerH - 3, innerW, 3);
+            }
+          }
+        }
+
+        // Particles
+        s.particles = s.particles.filter(p => p.life > 0);
+        for (const p of s.particles) {
+          p.x += p.vx; p.y += p.vy; p.vy += 0.18;
+          p.life -= dt * 2.2;
+          ctx.globalAlpha = Math.max(0, p.life);
+          ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.sz * p.life + 0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+        ctx.globalAlpha = 1;
+
+        // Game update
+        if (s.phase === 'playing') {
+          s.timeLeft -= dt;
+          s.comboTime = Math.max(0, s.comboTime - dt);
+          if (s.comboTime === 0 && s.combo > 1) {
+            s.combo = 0;
+            syncUi();
+          }
+          if (s.flashT > 0) s.flashT -= dt;
+
+          if (s.timeLeft <= 0 || (s.board && !hasMoves(s.board))) {
+            s.timeLeft = 0;
+            s.phase = 'gameover';
+            if (s.score > s.highScore) {
+              s.highScore = s.score;
+              localStorage.setItem('highScore_chromaCollapse', String(s.highScore));
+            }
+            syncUi();
+          }
+        }
+
+        // HUD
+        const hdrY = 46;
+        // Score
+        ctx.shadowBlur = 12; ctx.shadowColor = '#00ffff';
+        ctx.fillStyle = '#00ffff';
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 22px "Courier New"';
+        ctx.fillText(`SCORE: ${s.score.toLocaleString()}`, 16, hdrY);
+        ctx.shadowBlur = 0;
+
+        // Timer
+        const tl = Math.max(0, s.timeLeft);
+        const tColor = tl < 15 ? '#ff4444' : '#ffffff';
+        ctx.shadowBlur = tl < 15 ? 20 : 6;
+        ctx.shadowColor = tColor;
+        ctx.fillStyle = tColor;
+        ctx.textAlign = 'center';
+        ctx.font = `bold 28px "Courier New"`;
+        ctx.fillText(`${Math.ceil(tl)}`, W/2, hdrY);
+        ctx.shadowBlur = 0;
+
+        // Best
+        ctx.shadowBlur = 8; ctx.shadowColor = '#ff00ff';
+        ctx.fillStyle = '#ff00ff';
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 16px "Courier New"';
+        ctx.fillText(`BEST: ${s.highScore.toLocaleString()}`, W - 16, hdrY);
+        ctx.shadowBlur = 0;
+
+        // Combo
+        if (s.combo >= 2) {
+          const cf = Math.min(s.combo * 3, 24);
+          ctx.textAlign = 'center';
+          ctx.font = `bold ${16 + cf}px "Courier New"`;
+          ctx.shadowBlur = 20; ctx.shadowColor = '#ffff00';
+          ctx.fillStyle = '#ffff00';
+          ctx.fillText(`×${s.combo} COMBO!`, W/2, hdrY + 24);
+          ctx.shadowBlur = 0;
+        }
+
+        // Flash overlay for big groups
+        if (s.flashT > 0) {
+          ctx.globalAlpha = s.flashT * 0.15;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, W, H);
+          ctx.globalAlpha = 1;
+        }
+
+        s.raf = requestAnimationFrame(draw);
+      };
+
+      s.raf = requestAnimationFrame(draw);
+      return () => {
+        window.removeEventListener('resize', resize);
+        if (s.raf) cancelAnimationFrame(s.raf);
+      };
+    }, []);
+
+    function onClick(e) {
+      const s = g.current;
+      if (s.phase !== 'playing') {
+        beginGame();
+        return;
+      }
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const scX = canvas.width / rect.width;
+      const scY = canvas.height / rect.height;
+      const raw = e.touches ? e.touches[0] : e;
+      const mx = (raw.clientX - rect.left) * scX;
+      const my = (raw.clientY - rect.top) * scY;
+
+      const c = Math.floor((mx - s.offX) / s.cW);
+      const r = Math.floor((my - s.offY) / s.cH);
+      if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+      if (!s.board || s.board[r][c] === -1) return;
+
+      const group = floodFind(s.board, r, c);
+      if (group.length < 2) return;
+
+      const ci = s.board[r][c];
+      spawnParticles(group, ci);
+      playPop(ci, group.length);
+
+      if (group.length >= 8) s.flashT = 0.5;
+
+      const nb = s.board.map(row => [...row]);
+      group.forEach(([gr, gc]) => { nb[gr][gc] = -1; });
+      s.board = applyGravity(nb);
+      s.hoverGroup = null;
+
+      if (s.comboTime > 0) s.combo++;
+      else s.combo = 1;
+      s.comboTime = 1.8;
+
+      if (s.combo >= 2) playCombo(s.combo);
+
+      const n = group.length;
+      const gained = n * n * 10 * Math.max(1, s.combo);
+      s.score += gained;
+      localStorage.setItem('highScore_chromaCollapse', String(Math.max(s.highScore, s.score)));
+      syncUi();
+    }
+
+    function onMove(e) {
+      const s = g.current;
+      if (s.phase !== 'playing' || !s.board) return;
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const scX = canvas.width / rect.width;
+      const scY = canvas.height / rect.height;
+      const mx = (e.clientX - rect.left) * scX;
+      const my = (e.clientY - rect.top) * scY;
+      const c = Math.floor((mx - s.offX) / s.cW);
+      const r = Math.floor((my - s.offY) / s.cH);
+      if (r < 0 || r >= ROWS || c < 0 || c >= COLS || s.board[r][c] === -1) {
+        s.hoverGroup = null; return;
+      }
+      const group = floodFind(s.board, r, c);
+      s.hoverGroup = group.length >= 2 ? group : null;
+    }
+
+    const s = g.current;
+
+    return (
+      <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+        <canvas
+          ref={canvasRef}
+          style={{ display: 'block', cursor: 'pointer' }}
+          onClick={onClick}
+          onMouseMove={onMove}
+          onTouchStart={e => { e.preventDefault(); onClick(e); }}
+        />
+
+        {ui.phase === 'start' && (
+          <div onClick={beginGame} style={{
+            position: 'absolute', inset: 0, cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            animation: 'fadeIn 0.4s ease',
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: 36 }}>
+              <div style={{ fontSize: 'clamp(36px,8vw,64px)', fontWeight: 900, letterSpacing: 4, lineHeight: 1.1,
+                color: '#00ffff', textShadow: '0 0 30px #00ffff, 0 0 60px #00ffff44' }}>
+                CHROMA
+              </div>
+              <div style={{ fontSize: 'clamp(36px,8vw,64px)', fontWeight: 900, letterSpacing: 4, lineHeight: 1.1,
+                color: '#ff00ff', textShadow: '0 0 30px #ff00ff, 0 0 60px #ff00ff44' }}>
+                COLLAPSE
+              </div>
+            </div>
+            <div style={{ color: '#cccccc', fontSize: 16, textAlign: 'center', marginBottom: 6, maxWidth: 380 }}>
+              Click groups of <span style={{color:'#ffff00'}}>2+ matching blocks</span> to shatter them
+            </div>
+            <div style={{ color: '#666', fontSize: 13, textAlign: 'center', marginBottom: 36, maxWidth: 380 }}>
+              Bigger groups = massive scores · Chain combos for multipliers
+            </div>
+            <div style={{
+              padding: '14px 52px', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: 22, fontWeight: 'bold', borderRadius: 8,
+              animation: 'pulseBorder 1.5s ease-in-out infinite',
+            }}>
+              PLAY NOW
+            </div>
+            <div style={{ color: '#444', fontSize: 13, marginTop: 20 }}>
+              Best: {s.highScore.toLocaleString()}
+            </div>
+          </div>
+        )}
+
+        {ui.phase === 'gameover' && (
+          <div onClick={beginGame} style={{
+            position: 'absolute', inset: 0, cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(8,0,18,0.9)',
+            animation: 'fadeIn 0.3s ease',
+          }}>
+            <div style={{ fontSize: 'clamp(32px,6vw,50px)', fontWeight: 900,
+              color: '#ff3333', textShadow: '0 0 24px #ff3333', marginBottom: 24 }}>
+              COLLAPSED!
+            </div>
+            <div style={{ fontSize: 'clamp(24px,5vw,38px)', color: '#00ffff',
+              textShadow: '0 0 12px #00ffff', marginBottom: 10 }}>
+              {ui.score.toLocaleString()} pts
+            </div>
+            {ui.score > 0 && ui.score >= s.highScore && (
+              <div style={{ fontSize: 18, color: '#ffff00',
+                textShadow: '0 0 15px #ffff00', marginBottom: 12 }}>
+                ★ NEW HIGH SCORE! ★
+              </div>
+            )}
+            <div style={{ fontSize: 15, color: '#666', marginBottom: 40 }}>
+              Best: {s.highScore.toLocaleString()}
+            </div>
+            <div style={{
+              padding: '13px 44px', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: 20, fontWeight: 'bold', borderRadius: 8,
+              boxShadow: '0 0 15px #00ffff',
+            }}>
+              PLAY AGAIN
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
+  </script>
+</body>
+</html>

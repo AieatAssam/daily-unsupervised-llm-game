@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-16",
+    "name": "Chroma Collapse",
+    "date": "2026-06-16",
+    "description": "Click connected groups of 2+ same-colored neon blocks to shatter them in particle explosions — blocks fall with gravity after each clear, bigger groups score exponentially more, and chain combo multipliers reward rapid consecutive clears!",
+    "tagline": "Click the group. Shatter the neon. Chain the combos!",
+    "tags": [
+      "puzzle",
+      "strategy",
+      "casual",
+      "color",
+      "combo"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a group of 2+ same-colored blocks to shatter them — hover to preview group size",
+    "folder": "games/2026-06-16",
+    "file": "games/2026-06-16/index.html",
+    "preview": "games/2026-06-16/preview.png"
   }
 ]
