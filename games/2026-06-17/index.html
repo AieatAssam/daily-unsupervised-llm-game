@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Overclock Rush</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #050314; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+  }
+  #root { width: 100vw; height: 100vh; position: relative; }
+
+  .bg {
+    position: absolute; inset: 0; z-index: 1;
+    background: linear-gradient(125deg, #1a0b3a, #07142e, #2a0a3a, #0a2a3a);
+    background-size: 400% 400%;
+    animation: bgshift 14s ease infinite;
+  }
+  @keyframes bgshift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  canvas#fx {
+    position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  }
+
+  .flash {
+    position: absolute; inset: 0; background: #fff; pointer-events: none; z-index: 5;
+    opacity: 0; transition: opacity 0.08s linear;
+  }
+  .flash.on { opacity: 0.5; transition: opacity 0.02s linear; }
+
+  .shake { animation: shakeAnim 0.4s ease; }
+  @keyframes shakeAnim {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-6px,4px); }
+    40% { transform: translate(6px,-4px); }
+    60% { transform: translate(-4px,-3px); }
+    80% { transform: translate(4px,3px); }
+  }
+
+  .ui {
+    position: relative; z-index: 10; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    color: #fff;
+  }
+
+  .hud {
+    width: 100%; max-width: 900px; display: flex; justify-content: space-between;
+    padding: 12px 18px; font-weight: bold; flex-wrap: wrap; gap: 6px; z-index: 3;
+  }
+  .hud-item { text-align: center; min-width: 80px; }
+  .hud-label { font-size: 11px; opacity: 0.6; letter-spacing: 1px; text-transform: uppercase; }
+  .hud-value { font-size: 22px; text-shadow: 0 0 10px currentColor; }
+  .watts-color { color: #ffd23f; }
+  .score-color { color: #4ef0ff; }
+  .time-color { color: #ff5fd6; }
+
+  .core-area {
+    flex: 1; width: 100%; display: flex; align-items: center; justify-content: center;
+    position: relative; z-index: 3;
+  }
+
+  .surge-ring {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    border-radius: 50%; border: 4px solid #fff86b;
+    pointer-events: none; opacity: 0;
+    box-shadow: 0 0 30px 8px #fff86b;
+  }
+  .surge-ring.active {
+    animation: surgepulse 0.9s ease-in-out infinite;
+  }
+  @keyframes surgepulse {
+    0% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+    50% { transform: translate(-50%, -50%) scale(1.18); opacity: 0.4; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+  }
+
+  .core {
+    width: 44vmin; height: 44vmin; max-width: 320px; max-height: 320px;
+    min-width: 160px; min-height: 160px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #9af7ff, #2da7ff 35%, #6a1fd0 70%, #1a0a3a 100%);
+    border: none; cursor: pointer;
+    box-shadow: 0 0 40px 10px rgba(80,180,255,0.6), inset 0 0 40px rgba(255,255,255,0.3);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    position: relative;
+    transition: transform 0.08s ease, box-shadow 0.15s ease;
+  }
+  .core:active { transform: scale(0.95); }
+  .core .core-label {
+    font-size: 18px; font-weight: 800; letter-spacing: 2px; color: #fff;
+    text-shadow: 0 0 12px #fff;
+  }
+  .core .combo-label {
+    font-size: 14px; margin-top: 6px; color: #ffe27a; font-weight: 700;
+    text-shadow: 0 0 8px #ffb300;
+  }
+
+  .panel {
+    width: 100%; max-width: 900px; display: flex; gap: 10px; padding: 10px 14px 18px;
+    justify-content: center; flex-wrap: wrap; z-index: 3;
+  }
+  .upcard {
+    flex: 1; min-width: 100px; max-width: 220px;
+    background: rgba(20, 10, 50, 0.55);
+    border: 2px solid rgba(120, 200, 255, 0.35);
+    border-radius: 14px; padding: 10px 8px; text-align: center;
+    cursor: pointer; transition: transform 0.1s, border-color 0.2s, background 0.2s;
+    backdrop-filter: blur(4px);
+  }
+  .upcard:active { transform: scale(0.96); }
+  .upcard.afford { border-color: #4ef0ff; box-shadow: 0 0 16px rgba(78,240,255,0.45); }
+  .upcard.cant { opacity: 0.45; cursor: default; }
+  .upcard .uc-name { font-size: 13px; font-weight: 800; letter-spacing: 1px; }
+  .upcard .uc-desc { font-size: 10px; opacity: 0.75; margin: 4px 0; min-height: 24px; }
+  .upcard .uc-cost { font-size: 14px; font-weight: 800; color: #ffd23f; }
+  .upcard .uc-lvl { font-size: 10px; opacity: 0.6; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 30;
+    background: rgba(5, 3, 20, 0.88);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 20px;
+  }
+  .title {
+    font-size: clamp(32px, 8vw, 64px); font-weight: 900; letter-spacing: 3px;
+    background: linear-gradient(90deg, #4ef0ff, #ff5fd6, #ffd23f, #4ef0ff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: titleshift 4s linear infinite;
+    text-shadow: 0 0 40px rgba(150,150,255,0.4);
+    margin: 0 0 6px;
+  }
+  @keyframes titleshift { 0% { background-position: 0% 0; } 100% { background-position: 300% 0; } }
+  .tagline { font-size: 16px; opacity: 0.85; margin-bottom: 22px; color: #cde; }
+  .howto { font-size: 14px; opacity: 0.7; max-width: 480px; line-height: 1.6; margin-bottom: 24px; }
+  .bigscore { font-size: 56px; font-weight: 900; color: #4ef0ff; text-shadow: 0 0 24px #4ef0ff; margin: 6px 0; }
+  .newbest { color: #ffd23f; font-weight: 800; font-size: 18px; text-shadow: 0 0 16px #ffd23f; margin-bottom: 10px; animation: pulseText 0.8s ease-in-out infinite; }
+  @keyframes pulseText { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+  .sub { font-size: 14px; opacity: 0.7; margin-bottom: 18px; }
+
+  .btn {
+    background: linear-gradient(135deg, #ff5fd6, #4ef0ff);
+    border: none; color: #0a0a1a; font-weight: 900; font-size: 18px;
+    padding: 14px 38px; border-radius: 30px; cursor: pointer;
+    box-shadow: 0 0 24px rgba(255,95,214,0.5);
+    letter-spacing: 1px;
+    transition: transform 0.1s;
+  }
+  .btn:active { transform: scale(0.94); }
+
+  .floattext {
+    position: absolute; pointer-events: none; font-weight: 800; z-index: 4;
+    text-shadow: 0 0 8px currentColor;
+    transform: translate(-50%, -50%);
+  }
+
+  @media (max-width: 480px) {
+    .hud-value { font-size: 17px; }
+    .core { width: 50vmin; height: 50vmin; }
+    .upcard { padding: 8px 4px; }
+    .upcard .uc-desc { font-size: 9px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const DURATION = 75; // seconds
+const HIGH_SCORE_KEY = 'overclockRushHighScore';
+
+const UPGRADE_DEFS = {
+  amplify: {
+    name: 'AMPLIFY',
+    desc: lvl => `+1 Watt/tap (now ${1 + lvl}/tap)`,
+    baseCost: 15,
+    costMult: 1.6,
+  },
+  generator: {
+    name: 'GENERATOR',
+    desc: lvl => `+1.2 Watt/sec (now ${(lvl * 1.2).toFixed(1)}/s)`,
+    baseCost: 25,
+    costMult: 1.7,
+  },
+};
+
+function costFor(def, level) {
+  return Math.ceil(def.baseCost * Math.pow(def.costMult, level));
+}
+
+function makeAudio() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  function tone(freq, dur, type, gain, delay, freqEnd) {
+    const t0 = ctx.currentTime + (delay || 0);
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(Math.max(freqEnd, 1), t0 + dur);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(gain || 0.2, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(t0); osc.stop(t0 + dur + 0.02);
+  }
+  return {
+    ctx,
+    click(mult) {
+      tone(220 + Math.min(mult, 5) * 60, 0.09, 'triangle', 0.15);
+    },
+    purchase() {
+      tone(440, 0.08, 'square', 0.12);
+      tone(660, 0.1, 'square', 0.12, 0.07);
+    },
+    overdrive() {
+      tone(120, 0.5, 'sawtooth', 0.18, 0, 600);
+      tone(800, 0.5, 'sine', 0.1, 0, 1400);
+    },
+    surge() {
+      tone(880, 0.18, 'sine', 0.18);
+      tone(1320, 0.22, 'sine', 0.12, 0.05);
+    },
+    gameover(good) {
+      const notes = good ? [523, 659, 784, 1046] : [400, 350, 300];
+      notes.forEach((f, i) => tone(f, 0.22, 'triangle', 0.15, i * 0.13));
+    },
+  };
+}
+
+let particleId = 0;
+
+const App = () => {
+  const [screen, setScreen] = useState('start'); // start | playing | gameover
+  const [highScore, setHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
+  const [isNewBest, setIsNewBest] = useState(false);
+  const [, setTick] = useState(0);
+  const [flash, setFlash] = useState(false);
+  const [shake, setShake] = useState(false);
+  const [floatTexts, setFloatTexts] = useState([]);
+
+  const canvasRef = useRef(null);
+  const coreRef = useRef(null);
+  const audioRef = useRef(null);
+  const rafRef = useRef(null);
+
+  const state = useRef({
+    watts: 0,
+    score: 0,
+    timeLeft: DURATION,
+    lastFrame: 0,
+    upgrades: { amplify: 0, generator: 0 },
+    overdriveUses: 0,
+    overdriveActive: false,
+    overdriveEnd: 0,
+    comboCount: 0,
+    comboMult: 1,
+    lastTapAt: -99999,
+    surgeActive: false,
+    surgeEnd: 0,
+    nextSurgeAt: 4,
+    elapsed: 0,
+    particles: [],
+  });
+
+  useEffect(() => {
+    if (localStorage.getItem(HIGH_SCORE_KEY) === null) {
+      localStorage.setItem(HIGH_SCORE_KEY, '0');
+    }
+  }, []);
+
+  const triggerFlash = () => {
+    setFlash(true);
+    setTimeout(() => setFlash(false), 90);
+  };
+  const triggerShake = () => {
+    setShake(true);
+    setTimeout(() => setShake(false), 400);
+  };
+
+  const addFloatText = (x, y, text, color) => {
+    const id = particleId++;
+    setFloatTexts(ft => [...ft, { id, x, y, text, color, born: performance.now() }]);
+    setTimeout(() => {
+      setFloatTexts(ft => ft.filter(f => f.id !== id));
+    }, 900);
+  };
+
+  const spawnParticles = (x, y, color, count) => {
+    const s = state.current;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 4;
+      s.particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        size: 2 + Math.random() * 3,
+        color,
+      });
+    }
+  };
+
+  const clickPower = () => 1 + state.current.upgrades.amplify;
+  const generatorRate = () => state.current.upgrades.generator * 1.2;
+
+  const currentComboWindow = () => {
+    const s = state.current;
+    const progress = Math.min(1, s.elapsed / DURATION);
+    return 900 - progress * 400; // 900ms -> 500ms
+  };
+
+  const startGame = () => {
+    if (!audioRef.current) {
+      try { audioRef.current = makeAudio(); } catch (e) { audioRef.current = null; }
+    } else if (audioRef.current.ctx.state === 'suspended') {
+      audioRef.current.ctx.resume();
+    }
+    state.current = {
+      watts: 0,
+      score: 0,
+      timeLeft: DURATION,
+      lastFrame: performance.now(),
+      upgrades: { amplify: 0, generator: 0 },
+      overdriveUses: 0,
+      overdriveActive: false,
+      overdriveEnd: 0,
+      comboCount: 0,
+      comboMult: 1,
+      lastTapAt: -99999,
+      surgeActive: false,
+      surgeEnd: 0,
+      nextSurgeAt: 5 + Math.random() * 3,
+      elapsed: 0,
+      particles: [],
+    };
+    setIsNewBest(false);
+    setFloatTexts([]);
+    setScreen('playing');
+  };
+
+  const overdriveCost = () => 50 + state.current.overdriveUses * 25;
+
+  const buyUpgrade = (key) => {
+    const s = state.current;
+    const def = UPGRADE_DEFS[key];
+    const cost = costFor(def, s.upgrades[key]);
+    if (s.watts < cost) return;
+    s.watts -= cost;
+    s.upgrades[key] += 1;
+    audioRef.current && audioRef.current.purchase();
+    setTick(t => t + 1);
+  };
+
+  const activateOverdrive = () => {
+    const s = state.current;
+    const cost = overdriveCost();
+    if (s.watts < cost || s.overdriveActive) return;
+    s.watts -= cost;
+    s.overdriveUses += 1;
+    s.overdriveActive = true;
+    s.overdriveEnd = s.elapsed + 5;
+    audioRef.current && audioRef.current.overdrive();
+    triggerFlash();
+    triggerShake();
+    setTick(t => t + 1);
+  };
+
+  const handleCoreTap = (e) => {
+    const s = state.current;
+    const now = performance.now();
+    const rect = coreRef.current.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+    const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+    const px = (typeof clientX === 'number') ? clientX : cx + (Math.random() - 0.5) * 40;
+    const py = (typeof clientY === 'number') ? clientY : cy + (Math.random() - 0.5) * 40;
+
+    const elapsedMs = now - s.lastTapAt;
+    if (elapsedMs < currentComboWindow()) {
+      s.comboCount += 1;
+    } else {
+      s.comboCount = 0;
+    }
+    s.lastTapAt = now;
+    s.comboMult = Math.min(5, 1 + s.comboCount * 0.15);
+
+    let gain = clickPower() * s.comboMult;
+    let bonus = false;
+    if (s.surgeActive) {
+      gain *= 6;
+      s.surgeActive = false;
+      bonus = true;
+      audioRef.current && audioRef.current.surge();
+      triggerFlash();
+    }
+    if (s.overdriveActive) gain *= 3;
+    gain = Math.round(gain);
+
+    s.watts += gain;
+    s.score += gain;
+
+    spawnParticles(px, py, bonus ? '#fff86b' : (s.overdriveActive ? '#ff5fd6' : '#4ef0ff'), bonus ? 26 : 10);
+    addFloatText(px, py, '+' + gain, bonus ? '#fff86b' : '#9af7ff');
+
+    audioRef.current && audioRef.current.click(s.comboMult);
+  };
+
+  // main loop
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    const s = state.current;
+
+    const loop = (now) => {
+      const dt = Math.min(0.05, (now - s.lastFrame) / 1000);
+      s.lastFrame = now;
+      s.elapsed += dt;
+      s.timeLeft = Math.max(0, DURATION - s.elapsed);
+
+      // generator passive income
+      if (s.upgrades.generator > 0) {
+        let rate = generatorRate();
+        if (s.overdriveActive) rate *= 3;
+        const earn = rate * dt;
+        s.watts += earn;
+        s.score += earn;
+      }
+
+      // overdrive timeout
+      if (s.overdriveActive && s.elapsed >= s.overdriveEnd) {
+        s.overdriveActive = false;
+      }
+
+      // combo decay
+      if (performance.now() - s.lastTapAt > currentComboWindow() + 150) {
+        s.comboCount = 0;
+        s.comboMult = 1;
+      }
+
+      // surge spawn / expire
+      if (!s.surgeActive && s.elapsed >= s.nextSurgeAt) {
+        s.surgeActive = true;
+        s.surgeEnd = s.elapsed + 1.7;
+      } else if (s.surgeActive && s.elapsed >= s.surgeEnd) {
+        s.surgeActive = false;
+        s.nextSurgeAt = s.elapsed + 5 + Math.random() * 3;
+      }
+
+      // particles update
+      s.particles.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        p.vy += 0.08;
+        p.life -= 0.025;
+      });
+      s.particles = s.particles.filter(p => p.life > 0);
+
+      // render canvas
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (canvas.width !== window.innerWidth) canvas.width = window.innerWidth;
+        if (canvas.height !== window.innerHeight) canvas.height = window.innerHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        s.particles.forEach(p => {
+          ctx.globalAlpha = Math.max(0, p.life);
+          ctx.beginPath();
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 12;
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+      }
+
+      setTick(t => t + 1);
+
+      if (s.timeLeft <= 0) {
+        finishGame();
+        return;
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafRef.current);
+    // eslint-disable-next-line
+  }, [screen]);
+
+  const finishGame = () => {
+    const s = state.current;
+    const finalScore = Math.round(s.score);
+    let best = highScore;
+    let newBest = false;
+    if (finalScore > best) {
+      best = finalScore;
+      newBest = true;
+      localStorage.setItem(HIGH_SCORE_KEY, String(best));
+    }
+    setHighScore(best);
+    setIsNewBest(newBest);
+    audioRef.current && audioRef.current.gameover(newBest || finalScore > 0);
+    setScreen('gameover');
+  };
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (screen !== 'playing') return;
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
+        e.preventDefault();
+        handleCoreTap({ clientX: undefined, clientY: undefined });
+      } else if (e.key === '1') buyUpgrade('amplify');
+      else if (e.key === '2') buyUpgrade('generator');
+      else if (e.key === '3') activateOverdrive();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [screen]);
+
+  const s = state.current;
+  const wattsDisp = Math.floor(s.watts);
+  const scoreDisp = Math.round(s.score);
+  const timeDisp = Math.ceil(s.timeLeft);
+
+  return (
+    <div className={shake ? 'ui shake' : 'ui'}>
+      <div className="bg"></div>
+      <canvas id="fx" ref={canvasRef}></canvas>
+      <div className={flash ? 'flash on' : 'flash'}></div>
+
+      {floatTexts.map(f => (
+        <div key={f.id} className="floattext" style={{ left: f.x, top: f.y, color: f.color, fontSize: 20 }}>
+          {f.text}
+        </div>
+      ))}
+
+      {screen === 'playing' && (
+        <React.Fragment>
+          <div className="hud">
+            <div className="hud-item">
+              <div className="hud-label">Score</div>
+              <div className="hud-value score-color">{scoreDisp}</div>
+            </div>
+            <div className="hud-item">
+              <div className="hud-label">Watts</div>
+              <div className="hud-value watts-color">{wattsDisp}</div>
+            </div>
+            <div className="hud-item">
+              <div className="hud-label">Time</div>
+              <div className="hud-value time-color">{timeDisp}s</div>
+            </div>
+            <div className="hud-item">
+              <div className="hud-label">Best</div>
+              <div className="hud-value" style={{ color: '#bbb' }}>{highScore}</div>
+            </div>
+          </div>
+
+          <div className="core-area">
+            <div
+              className={s.surgeActive ? 'surge-ring active' : 'surge-ring'}
+              style={{ width: '50vmin', height: '50vmin', maxWidth: 360, maxHeight: 360 }}
+            ></div>
+            <button
+              ref={coreRef}
+              className="core"
+              onClick={handleCoreTap}
+              style={{
+                boxShadow: `0 0 ${30 + s.comboMult * 12}px ${10 + s.comboMult * 4}px rgba(${s.overdriveActive ? '255,95,214' : '80,180,255'},0.6), inset 0 0 40px rgba(255,255,255,0.3)`
+              }}
+            >
+              <div className="core-label">{s.overdriveActive ? 'OVERDRIVE!' : 'TAP'}</div>
+              <div className="combo-label">{s.comboMult > 1 ? `x${s.comboMult.toFixed(1)} combo` : '+' + clickPower() + '/tap'}</div>
+            </button>
+          </div>
+
+          <div className="panel">
+            <div
+              className={'upcard ' + (s.watts >= costFor(UPGRADE_DEFS.amplify, s.upgrades.amplify) ? 'afford' : 'cant')}
+              onClick={() => buyUpgrade('amplify')}
+            >
+              <div className="uc-name">⚡ AMPLIFY</div>
+              <div className="uc-desc">{UPGRADE_DEFS.amplify.desc(s.upgrades.amplify)}</div>
+              <div className="uc-cost">{costFor(UPGRADE_DEFS.amplify, s.upgrades.amplify)}w</div>
+              <div className="uc-lvl">Lv {s.upgrades.amplify}</div>
+            </div>
+            <div
+              className={'upcard ' + (s.watts >= costFor(UPGRADE_DEFS.generator, s.upgrades.generator) ? 'afford' : 'cant')}
+              onClick={() => buyUpgrade('generator')}
+            >
+              <div className="uc-name">⚙ GENERATOR</div>
+              <div className="uc-desc">{UPGRADE_DEFS.generator.desc(s.upgrades.generator)}</div>
+              <div className="uc-cost">{costFor(UPGRADE_DEFS.generator, s.upgrades.generator)}w</div>
+              <div className="uc-lvl">Lv {s.upgrades.generator}</div>
+            </div>
+            <div
+              className={'upcard ' + (s.watts >= overdriveCost() && !s.overdriveActive ? 'afford' : 'cant')}
+              onClick={activateOverdrive}
+            >
+              <div className="uc-name">🔥 OVERDRIVE</div>
+              <div className="uc-desc">{s.overdriveActive ? 'ACTIVE! x3 boost' : 'x3 all gains, 5s burst'}</div>
+              <div className="uc-cost">{overdriveCost()}w</div>
+              <div className="uc-lvl">Used {s.overdriveUses}x</div>
+            </div>
+          </div>
+        </React.Fragment>
+      )}
+
+      {screen === 'start' && (
+        <div className="overlay">
+          <h1 className="title">OVERCLOCK RUSH</h1>
+          <div className="tagline">Tap to charge. Spend to scale. Beat the clock.</div>
+          <div className="howto">
+            Tap the glowing core to generate Watts. Spend Watts on AMPLIFY (more per tap),
+            GENERATOR (passive income), and OVERDRIVE (temporary x3 burst). Build tap combos
+            for bonus multipliers, catch golden SURGE rings for a huge payout, and rack up the
+            highest Score before the 75-second clock hits zero!
+          </div>
+          <div className="sub">High Score: {highScore}</div>
+          <button className="btn" onClick={startGame}>START</button>
+        </div>
+      )}
+
+      {screen === 'gameover' && (
+        <div className="overlay">
+          <h1 className="title" style={{ fontSize: 'clamp(24px,6vw,40px)' }}>TIME'S UP</h1>
+          {isNewBest && <div className="newbest">🏆 NEW HIGH SCORE!</div>}
+          <div className="bigscore">{Math.round(state.current.score)}</div>
+          <div className="sub">Best: {highScore} &nbsp;·&nbsp; Amplify Lv{state.current.upgrades.amplify} &nbsp;·&nbsp; Generator Lv{state.current.upgrades.generator} &nbsp;·&nbsp; Overdrive x{state.current.overdriveUses}</div>
+          <button className="btn" onClick={startGame}>PLAY AGAIN</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>

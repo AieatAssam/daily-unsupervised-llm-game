@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-17",
+    "name": "Overclock Rush",
+    "date": "2026-06-17",
+    "description": "Tap the glowing reactor core to generate Watts, then funnel them into upgrades before the clock runs out. Buy AMPLIFY to boost every tap, GENERATOR for passive income, and OVERDRIVE for a temporary x3 burst. Keep tapping in a steady rhythm to build a combo multiplier that decays fast if you stop, and watch for randomly-timed Surge windows that supercharge your gains. Squeeze out the highest Watt total before the 75 second overclock window closes.",
+    "tagline": "Tap, upgrade, and ride the surge before time runs out.",
+    "tags": [
+      "clicker",
+      "idle",
+      "strategy",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "75 seconds",
+    "controls": "Click/tap the core or press Space/Up to tap, click upgrade cards or press 1/2/3 to buy AMPLIFY/GENERATOR/OVERDRIVE",
+    "folder": "games/2026-06-17",
+    "file": "games/2026-06-17/index.html",
+    "preview": "games/2026-06-17/preview.png"
   }
 ]
