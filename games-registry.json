@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-18",
+    "name": "Cut Loose",
+    "date": "2026-06-18",
+    "description": "A glowing gem hangs from neon ropes anchored above a landing zone. Click or tap a rope to snip it and let physics swing the gem on its remaining ropes - cut wisely and chain releases to drop the gem into the glowing target below. Grab golden stars for bonus points, dodge red hazards once they appear, and beat the clock for time bonuses and massive combo multipliers.",
+    "tagline": "Snip the right rope. Swing it home.",
+    "tags": [
+      "physics",
+      "puzzle",
+      "precision",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap a rope, or press Space / 1-5, to snip it and swing the gem into the landing zone",
+    "folder": "games/2026-06-18",
+    "file": "games/2026-06-18/index.html",
+    "preview": "games/2026-06-18/preview.png"
   }
 ]

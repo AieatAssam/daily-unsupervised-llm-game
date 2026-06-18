@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Cut Loose</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; width: 100%; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #1a0030, #00131a, #2a1400, #1a0030, #001a2a);
+    background-size: 400% 400%;
+    animation: bgShift 18s ease infinite;
+    color: #fff;
+    touch-action: none;
+    user-select: none;
+  }
+  @keyframes bgShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  #root { width: 100vw; height: 100vh; display: flex; }
+  .app {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding: 10px;
+    gap: 8px;
+  }
+  .hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+    z-index: 5;
+  }
+  .hud-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 56px;
+  }
+  .hud-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #8fd9ff;
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+  .hud-value {
+    font-size: 22px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 8px #00eaff, 0 0 16px #00eaff;
+  }
+  .hud-value.gold { text-shadow: 0 0 8px #ffd700, 0 0 16px #ffd700; color: #ffe9a8; }
+  .lives { font-size: 18px; letter-spacing: 3px; }
+  .life-full { color: #ff5fc0; text-shadow: 0 0 8px #ff5fc0; }
+  .life-empty { color: #333; }
+  .timer-track {
+    width: 70px;
+    height: 8px;
+    border-radius: 5px;
+    background: rgba(255,255,255,0.12);
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .timer-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.12s linear, background 0.2s linear;
+  }
+  .game-area {
+    position: relative;
+    flex: 1;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 0 30px rgba(0,234,255,0.25), inset 0 0 60px rgba(0,0,0,0.6);
+    border: 1px solid rgba(0,234,255,0.2);
+    min-height: 0;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: radial-gradient(circle at 50% 40%, rgba(40,5,30,0.85), rgba(5,5,15,0.95));
+    z-index: 10;
+    padding: 20px;
+    animation: fadeIn 0.4s ease;
+    overflow-y: auto;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .title {
+    font-size: clamp(28px, 8vw, 60px);
+    font-weight: 900;
+    letter-spacing: 5px;
+    margin: 0;
+    background: linear-gradient(90deg, #00eaff, #ff5fc0, #ffd700, #00eaff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hueSlide 4s linear infinite;
+    text-shadow: 0 0 30px rgba(255,80,180,0.4);
+  }
+  @keyframes hueSlide {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+  .subtitle {
+    font-size: clamp(12px, 2.6vw, 16px);
+    color: #aef;
+    margin: 10px 0 22px;
+    letter-spacing: 0.5px;
+    max-width: 480px;
+    line-height: 1.7;
+  }
+  .key-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-weight: bold;
+    margin: 0 2px;
+    background: rgba(0,234,255,0.18);
+    color: #00eaff;
+  }
+  .btn {
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 3px;
+    padding: 16px 48px;
+    border-radius: 50px;
+    border: 2px solid #00eaff;
+    background: rgba(0,234,255,0.08);
+    color: #00eaff;
+    cursor: pointer;
+    text-shadow: 0 0 10px #00eaff;
+    box-shadow: 0 0 20px rgba(0,234,255,0.4), inset 0 0 20px rgba(0,234,255,0.1);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); background: rgba(0,234,255,0.18); }
+  .btn:active { transform: scale(0.97); }
+  .final-score {
+    font-size: clamp(40px, 11vw, 80px);
+    font-weight: 900;
+    color: #ffd700;
+    text-shadow: 0 0 20px #ffd700, 0 0 40px #ff5fc0;
+    margin: 6px 0;
+  }
+  .stat-row {
+    display: flex;
+    gap: 28px;
+    margin: 14px 0 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .stat-label { font-size: 11px; letter-spacing: 2px; color: #8fd9ff; text-transform: uppercase; }
+  .stat-value { font-size: 24px; font-weight: bold; color: #fff; }
+  .new-high {
+    color: #ffd700;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-shadow: 0 0 12px #ffd700;
+    animation: pulse 0.8s ease infinite;
+    margin-bottom: 8px;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.7; }
+  }
+  .announce {
+    position: absolute;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: clamp(18px, 4.6vw, 32px);
+    font-weight: 900;
+    letter-spacing: 4px;
+    z-index: 8;
+    pointer-events: none;
+    animation: announceAnim 1.4s ease forwards;
+    white-space: nowrap;
+  }
+  @keyframes announceAnim {
+    0% { opacity: 0; transform: translateX(-50%) translateY(-20px) scale(0.7); }
+    20% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.1); }
+    35% { transform: translateX(-50%) translateY(0) scale(1); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) translateY(10px) scale(0.95); }
+  }
+  .controls-hint {
+    text-align: center;
+    font-size: 11px;
+    color: #6cf;
+    opacity: 0.7;
+    padding: 4px 0 0;
+    letter-spacing: 1px;
+  }
+  @media (max-width: 600px) {
+    .hud-block { min-width: 44px; }
+    .hud-value { font-size: 15px; }
+    .lives { font-size: 14px; }
+    .timer-track { width: 46px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ---------- constants ---------- */
+const START_LIVES = 3;
+const HIGH_SCORE_KEY = 'cutLooseHighScore';
+const MAX_MULTIPLIER = 6;
+const BASE_LAND_SCORE = 150;
+const STAR_SCORE = 60;
+const TIME_BONUS_SCALE = 80;
+const G_FACTOR = 1.55;
+const CONSTRAINT_ITER = 5;
+const SNIP_THRESHOLD_FACTOR = 0.05;
+const GEM_RADIUS_FACTOR = 0.028;
+const TARGET_RADIUS_START_FACTOR = 0.105;
+const TARGET_RADIUS_MIN_FACTOR = 0.062;
+const TARGET_RADIUS_STEP = 0.0035;
+const HAZARD_RADIUS_FACTOR = 0.05;
+const BASE_TIME_LIMIT = 15;
+const MIN_TIME_LIMIT = 8;
+const TIME_LIMIT_STEP = 0.45;
+const PAUSE_DURATION = 1.05;
+const ROPE_BASE_COUNT = 2;
+const ROPE_PALETTE = ['#00eaff', '#b388ff', '#ff70d8', '#7dffb3', '#ffd24a'];
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const dist = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
+
+/* ---------- audio ---------- */
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol, ramp) {
+  try {
+    const ctx = ensureAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    if (ramp) osc.frequency.exponentialRampToValueAtTime(ramp, ctx.currentTime + dur);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+  } catch (e) { /* audio unavailable */ }
+}
+function noiseBurst(dur, vol, filterFreq) {
+  try {
+    const ctx = ensureAudio();
+    const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(filterFreq, ctx.currentTime);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+  } catch (e) { /* audio unavailable */ }
+}
+function sndSnip() { noiseBurst(0.05, 0.16, 2600); tone(900, 0.04, 'square', 0.08, 500); }
+function sndStar() { tone(740, 0.07, 'sine', 0.15, 1200); setTimeout(() => tone(1100, 0.08, 'sine', 0.13, 1500), 60); }
+function sndLand(mult) {
+  tone(523, 0.08, 'square', 0.16, 1046);
+  setTimeout(() => tone(659, 0.1, 'square', 0.16, 1318), 80);
+  setTimeout(() => tone(880 + mult * 20, 0.14, 'square', 0.16, 1568), 160);
+}
+function sndMiss() { noiseBurst(0.3, 0.26, 1100); tone(180, 0.3, 'sawtooth', 0.18, 80); }
+function sndComboUp(mult) { tone(440 + mult * 60, 0.1, 'square', 0.15, 800 + mult * 80); }
+function sndGameOver() {
+  tone(440, 0.2, 'sawtooth', 0.2, 220);
+  setTimeout(() => tone(330, 0.2, 'sawtooth', 0.2, 165), 180);
+  setTimeout(() => tone(220, 0.3, 'sawtooth', 0.2, 110), 360);
+}
+function sndStart() {
+  tone(330, 0.1, 'sine', 0.15, 660);
+  setTimeout(() => tone(440, 0.12, 'sine', 0.15, 880), 100);
+}
+
+/* ---------- particles & popups ---------- */
+function spawnSnipSpark(game, x, y) {
+  for (let i = 0; i < 12; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 60 + Math.random() * 140;
+    game.particles.push({
+      x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      life: 1, decay: 2.2 + Math.random() * 1.2,
+      color: Math.random() < 0.5 ? '#fff' : '#ffd24a', size: 1.5 + Math.random() * 2.5,
+    });
+  }
+}
+function spawnLandBurst(game, x, y) {
+  const palette = ['#50ff90', '#ffd700', '#00eaff', '#7dffb3'];
+  for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 80 + Math.random() * 260;
+    game.particles.push({
+      x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      life: 1, decay: 0.9 + Math.random() * 0.8,
+      color: palette[Math.floor(Math.random() * palette.length)], size: 2.5 + Math.random() * 4,
+    });
+  }
+}
+function spawnFailBurst(game, x, y) {
+  const palette = ['#ff4040', '#ff9020', '#ff5fc0'];
+  for (let i = 0; i < 36; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 70 + Math.random() * 220;
+    game.particles.push({
+      x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      life: 1, decay: 1.0 + Math.random() * 0.9,
+      color: palette[Math.floor(Math.random() * palette.length)], size: 2.5 + Math.random() * 3.5,
+    });
+  }
+}
+function spawnStarSparkle(game, x, y) {
+  for (let i = 0; i < 16; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 50 + Math.random() * 120;
+    game.particles.push({
+      x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 20,
+      life: 1, decay: 1.6 + Math.random() * 1.0,
+      color: '#ffd700', size: 2 + Math.random() * 2.5,
+    });
+  }
+}
+function addPopup(game, x, y, text, color) {
+  game.popups.push({ x, y, text, color, life: 1 });
+}
+function updateParticles(game, dt) {
+  for (let i = game.particles.length - 1; i >= 0; i--) {
+    const p = game.particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 140 * dt;
+    p.life -= p.decay * dt;
+    if (p.life <= 0) game.particles.splice(i, 1);
+  }
+  for (let i = game.popups.length - 1; i >= 0; i--) {
+    const pu = game.popups[i];
+    pu.y -= 36 * dt;
+    pu.life -= dt * 0.85;
+    if (pu.life <= 0) game.popups.splice(i, 1);
+  }
+}
+
+/* ---------- reachability simulation (used to place a guaranteed-reachable target) ---------- */
+function simulateCutSequence(ropesArr, gemStart, w, h, cutSchedule, minClearance) {
+  const gem = { x: gemStart.x, y: gemStart.y, vx: 0, vy: 0 };
+  const cutState = ropesArr.map(() => false);
+  const gravity = h * G_FACTOR;
+  const DT = 1 / 60;
+  let t = 0;
+  while (t < 6) {
+    t += DT;
+    for (const cs of cutSchedule) { if (t >= cs.time) cutState[cs.idx] = true; }
+    gem.vy += gravity * DT;
+    gem.vx *= Math.max(0, 1 - 1.6 * DT);
+    gem.vy *= Math.max(0, 1 - 0.12 * DT);
+    gem.x += gem.vx * DT;
+    gem.y += gem.vy * DT;
+    for (let iter = 0; iter < CONSTRAINT_ITER; iter++) {
+      for (let ri = 0; ri < ropesArr.length; ri++) {
+        if (cutState[ri]) continue;
+        const rope = ropesArr[ri];
+        const dx = gem.x - rope.ax, dy = gem.y - rope.ay;
+        const d = Math.hypot(dx, dy) || 0.0001;
+        if (d > rope.length) {
+          const excess = d - rope.length;
+          const nx = dx / d, ny = dy / d;
+          gem.x -= nx * excess;
+          gem.y -= ny * excess;
+          const vAlong = gem.vx * nx + gem.vy * ny;
+          if (vAlong > 0) { gem.vx -= nx * vAlong * 0.9; gem.vy -= ny * vAlong * 0.9; }
+        }
+      }
+    }
+    const allCut = cutState.every(Boolean);
+    if (allCut && gem.y > h * 0.5 && gem.y < h * 0.92 && gem.x > w * 0.06 && gem.x < w * 0.94) {
+      if (dist(gem.x, gem.y, gemStart.x, gemStart.y) >= minClearance) {
+        return { x: gem.x, y: gem.y };
+      }
+    }
+    if (gem.y > h * 1.3 || gem.x < -w * 0.3 || gem.x > w * 1.3) return null;
+  }
+  return null;
+}
+function findReachableSpot(ropes, gemX, gemY, w, h, ropeCount, minClearance) {
+  const candidates = [];
+  for (let attempt = 0; attempt < 14; attempt++) {
+    const order = Array.from({ length: ropeCount }, (_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const cutSchedule = order.map((idx, i) => ({ idx, time: 0.25 + i * (0.3 + Math.random() * 0.55) + Math.random() * 0.3 }));
+    const result = simulateCutSequence(ropes, { x: gemX, y: gemY }, w, h, cutSchedule, minClearance);
+    if (result) candidates.push(result);
+  }
+  if (!candidates.length) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+/* ---------- level generation ---------- */
+function generateLevel(level, w, h) {
+  const ropeCount = clamp(ROPE_BASE_COUNT + Math.floor((level - 1) / 2), 2, 5);
+  const minDim = Math.min(w, h);
+  // Anchor horizontal spread is tied to canvas HEIGHT (not width) and kept
+  // close to the vertical anchor-to-gem drop so a single remaining rope
+  // can never pendulum-swing the gem out of the canvas bounds.
+  const anchorY = h * 0.08;
+  const gemY = h * 0.42 + Math.random() * h * 0.05;
+  const drop = gemY - anchorY;
+  const spreadHalf = Math.min(drop * 0.95, w * 0.34);
+  const midX = w * 0.5 + (Math.random() - 0.5) * w * 0.1;
+  const anchors = [];
+  for (let i = 0; i < ropeCount; i++) {
+    const t = ropeCount === 1 ? 0 : (i / (ropeCount - 1)) * 2 - 1;
+    const jitter = (Math.random() - 0.5) * 0.04 * w;
+    anchors.push({ x: clamp(midX + t * spreadHalf + jitter, w * 0.08, w * 0.92), y: anchorY + Math.random() * h * 0.02 });
+  }
+  const avgX = anchors.reduce((s, a) => s + a.x, 0) / anchors.length;
+  const gemX = clamp(avgX + (Math.random() - 0.5) * w * 0.06, w * 0.18, w * 0.82);
+  const ropes = anchors.map((a, i) => ({ ax: a.x, ay: a.y, length: dist(a.x, a.y, gemX, gemY), cut: false, color: ROPE_PALETTE[i % ROPE_PALETTE.length] }));
+
+  const targetRadius = Math.max(TARGET_RADIUS_MIN_FACTOR, TARGET_RADIUS_START_FACTOR - (level - 1) * TARGET_RADIUS_STEP) * minDim;
+  const gemR = GEM_RADIUS_FACTOR * minDim;
+  const minClearance = gemR + targetRadius + minDim * 0.05;
+  const reachable = findReachableSpot(ropes, gemX, gemY, w, h, ropeCount, minClearance);
+  let targetX, targetY;
+  if (reachable) {
+    targetX = clamp(reachable.x, w * 0.08 + targetRadius, w * 0.92 - targetRadius);
+    targetY = clamp(reachable.y, h * 0.5, h - targetRadius - h * 0.03);
+  } else {
+    targetX = clamp(gemX, w * 0.1 + targetRadius, w * 0.9 - targetRadius);
+    targetY = clamp(h * 0.8, h * 0.55, h - targetRadius - h * 0.03);
+  }
+  if (dist(targetX, targetY, gemX, gemY) < minClearance) {
+    targetY = clamp(gemY + minClearance, h * 0.5, h - targetRadius - h * 0.03);
+  }
+
+  const hazardCount = level >= 3 ? Math.min(3, Math.floor((level - 1) / 2)) : 0;
+  const hazards = [];
+  for (let i = 0; i < hazardCount; i++) {
+    let hx, hy, tries = 0;
+    do {
+      hx = w * 0.15 + Math.random() * w * 0.7;
+      hy = h * 0.42 + Math.random() * h * 0.32;
+      tries++;
+    } while ((dist(hx, hy, targetX, targetY) < targetRadius * 3 || dist(hx, hy, gemX, gemY) < minClearance) && tries < 20);
+    hazards.push({ x: hx, y: hy, r: HAZARD_RADIUS_FACTOR * minDim * (0.8 + Math.random() * 0.4), rot: Math.random() * Math.PI * 2 });
+  }
+
+  const starCount = 1 + Math.floor(Math.random() * 3);
+  const stars = [];
+  for (let i = 0; i < starCount; i++) {
+    let sx, sy, tries = 0, ok = false;
+    do {
+      sx = w * 0.2 + Math.random() * w * 0.6;
+      sy = h * 0.35 + Math.random() * h * 0.34;
+      ok = dist(sx, sy, targetX, targetY) > targetRadius * 2.2 && hazards.every(hz => dist(sx, sy, hz.x, hz.y) > hz.r * 2.2);
+      tries++;
+    } while (!ok && tries < 25);
+    stars.push({ x: sx, y: sy, collected: false });
+  }
+
+  const timeLimit = Math.max(MIN_TIME_LIMIT, BASE_TIME_LIMIT - (level - 1) * TIME_LIMIT_STEP);
+
+  return {
+    anchors, ropes,
+    gem: { x: gemX, y: gemY, vx: 0, vy: 0 },
+    target: { x: targetX, y: targetY, r: targetRadius },
+    hazards, stars,
+    timeLimit, dropTimer: timeLimit,
+  };
+}
+
+/* ---------- game state ---------- */
+function createGame(w, h) {
+  const layout = generateLevel(1, w, h);
+  const ambient = [];
+  for (let i = 0; i < 36; i++) {
+    ambient.push({ x: Math.random() * w, y: Math.random() * h, r: 0.5 + Math.random() * 1.6, phase: Math.random() * Math.PI * 2, speed: 0.3 + Math.random() * 0.5 });
+  }
+  return Object.assign({
+    level: 1, score: 0, lives: START_LIVES, multiplier: 1, comboCount: 0,
+    phase: 'falling', pauseTimer: 0, pendingNextLevel: null, starsThisDrop: 0,
+    trail: [], particles: [], popups: [], ambient,
+    shakeTime: 0, shakeMag: 0, frame: 0, over: false,
+  }, layout);
+}
+
+function regenerate(game, canvas, levelNumber) {
+  const layout = generateLevel(levelNumber, canvas.width, canvas.height);
+  Object.assign(game, layout);
+  game.level = levelNumber;
+  game.trail = [];
+  game.starsThisDrop = 0;
+  game.phase = 'falling';
+}
+
+/* ---------- geometry & cutting ---------- */
+function pointSegProject(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq > 0 ? ((px - ax) * dx + (py - ay) * dy) / lenSq : 0;
+  t = clamp(t, 0, 1);
+  const cx = ax + t * dx, cy = ay + t * dy;
+  return { d: Math.hypot(px - cx, py - cy), cx, cy };
+}
+function tryCutRope(game, px, py, canvas, cb) {
+  if (game.over || game.phase !== 'falling') return false;
+  const threshold = Math.max(canvas.width, canvas.height) * SNIP_THRESHOLD_FACTOR;
+  let best = null, bestDist = Infinity, bestPt = null;
+  for (const rope of game.ropes) {
+    if (rope.cut) continue;
+    const proj = pointSegProject(px, py, rope.ax, rope.ay, game.gem.x, game.gem.y);
+    if (proj.d < threshold && proj.d < bestDist) { bestDist = proj.d; best = rope; bestPt = proj; }
+  }
+  if (best) {
+    best.cut = true;
+    spawnSnipSpark(game, bestPt.cx, bestPt.cy);
+    cb.onSnip();
+    return true;
+  }
+  return false;
+}
+function cutRopeByIndex(game, idx, cb) {
+  if (game.over || game.phase !== 'falling') return;
+  const uncut = game.ropes.filter(r => !r.cut);
+  if (idx < 0 || idx >= uncut.length) return;
+  const rope = uncut[idx];
+  rope.cut = true;
+  spawnSnipSpark(game, (rope.ax + game.gem.x) / 2, (rope.ay + game.gem.y) / 2);
+  cb.onSnip();
+}
+
+/* ---------- outcome handling ---------- */
+function triggerLand(game, canvas, cb) {
+  const starsThisDrop = game.starsThisDrop || 0;
+  game.comboCount++;
+  game.multiplier = Math.min(MAX_MULTIPLIER, 1 + game.comboCount);
+  const timeFrac = clamp(game.dropTimer / game.timeLimit, 0, 1);
+  const gained = Math.round((BASE_LAND_SCORE + starsThisDrop * STAR_SCORE + timeFrac * TIME_BONUS_SCALE) * game.multiplier);
+  game.score += gained;
+  spawnLandBurst(game, game.gem.x, game.gem.y);
+  addPopup(game, game.gem.x, game.gem.y, '+' + gained, '#ffd700');
+  game.starsThisDrop = 0;
+  game.phase = 'paused';
+  game.pauseTimer = PAUSE_DURATION;
+  game.pendingNextLevel = game.level + 1;
+  cb.onLand(game.multiplier);
+}
+function triggerMiss(game, canvas, cb, reason) {
+  game.lives--;
+  game.multiplier = 1;
+  game.comboCount = 0;
+  game.starsThisDrop = 0;
+  spawnFailBurst(game, game.gem.x, game.gem.y);
+  game.shakeTime = 0.4;
+  game.shakeMag = 16;
+  if (game.lives <= 0) {
+    game.over = true;
+    cb.onGameOver(Math.floor(game.score));
+  } else {
+    addPopup(game, game.gem.x, game.gem.y, reason, '#ff4040');
+    game.phase = 'paused';
+    game.pauseTimer = PAUSE_DURATION;
+    game.pendingNextLevel = game.level;
+    cb.onMiss(reason);
+  }
+}
+
+/* ---------- physics update ---------- */
+function updatePhysics(game, dt, canvas, cb) {
+  if (game.over) return;
+  game.frame++;
+  updateParticles(game, dt);
+  if (game.shakeTime > 0) game.shakeTime = Math.max(0, game.shakeTime - dt);
+
+  if (game.phase === 'paused') {
+    game.pauseTimer -= dt;
+    if (game.pauseTimer <= 0 && game.pendingNextLevel != null) {
+      regenerate(game, canvas, game.pendingNextLevel);
+      game.pendingNextLevel = null;
+    }
+    return;
+  }
+
+  game.dropTimer -= dt;
+  const w = canvas.width, h = canvas.height;
+  const gravity = h * G_FACTOR;
+  const gem = game.gem;
+  gem.vy += gravity * dt;
+  gem.vx *= Math.max(0, 1 - 1.6 * dt);
+  gem.vy *= Math.max(0, 1 - 0.12 * dt);
+  gem.x += gem.vx * dt;
+  gem.y += gem.vy * dt;
+
+  for (let iter = 0; iter < CONSTRAINT_ITER; iter++) {
+    for (const rope of game.ropes) {
+      if (rope.cut) continue;
+      const dx = gem.x - rope.ax, dy = gem.y - rope.ay;
+      const d = Math.hypot(dx, dy) || 0.0001;
+      if (d > rope.length) {
+        const excess = d - rope.length;
+        const nx = dx / d, ny = dy / d;
+        gem.x -= nx * excess;
+        gem.y -= ny * excess;
+        const vAlong = gem.vx * nx + gem.vy * ny;
+        if (vAlong > 0) { gem.vx -= nx * vAlong * 0.9; gem.vy -= ny * vAlong * 0.9; }
+      }
+    }
+  }
+
+  game.trail.push({ x: gem.x, y: gem.y });
+  if (game.trail.length > 20) game.trail.shift();
+
+  const gemR = Math.min(w, h) * GEM_RADIUS_FACTOR;
+
+  for (const star of game.stars) {
+    if (star.collected) continue;
+    if (dist(gem.x, gem.y, star.x, star.y) < gemR + Math.min(w, h) * 0.025) {
+      star.collected = true;
+      game.starsThisDrop = (game.starsThisDrop || 0) + 1;
+      spawnStarSparkle(game, star.x, star.y);
+      cb.onStar();
+    }
+  }
+
+  for (const hz of game.hazards) {
+    if (dist(gem.x, gem.y, hz.x, hz.y) < gemR + hz.r) {
+      triggerMiss(game, canvas, cb, 'ZAPPED!');
+      return;
+    }
+  }
+
+  if (dist(gem.x, gem.y, game.target.x, game.target.y) < gemR + game.target.r) {
+    triggerLand(game, canvas, cb);
+    return;
+  }
+
+  if (game.dropTimer <= 0) {
+    triggerMiss(game, canvas, cb, 'TIME UP!');
+    return;
+  }
+
+  const margin = Math.min(w, h) * 0.16;
+  if (gem.y > h + margin || gem.x < -margin || gem.x > w + margin) {
+    triggerMiss(game, canvas, cb, 'MISSED!');
+    return;
+  }
+}
+
+/* ---------- rendering ---------- */
+function draw(ctx, canvas, game) {
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!game) return;
+
+  ctx.save();
+  if (game.shakeTime > 0) {
+    const mag = game.shakeMag * (game.shakeTime / 0.4);
+    ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
+  }
+
+  // ambient backdrop glow
+  const grad = ctx.createRadialGradient(w / 2, h * 0.3, 0, w / 2, h * 0.3, Math.max(w, h) * 0.8);
+  grad.addColorStop(0, 'rgba(70,30,120,0.18)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  // ambient twinkles
+  for (const a of game.ambient) {
+    const tw = 0.4 + 0.4 * Math.sin(game.frame * 0.02 * a.speed + a.phase);
+    ctx.globalAlpha = Math.max(0, tw);
+    ctx.fillStyle = '#bfe9ff';
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  const minDim = Math.min(w, h);
+
+  // hazards
+  for (const hz of game.hazards) {
+    const rot = hz.rot + game.frame * 0.01;
+    const spikes = 8;
+    ctx.save();
+    ctx.translate(hz.x, hz.y);
+    ctx.rotate(rot);
+    ctx.shadowColor = '#ff3030';
+    ctx.shadowBlur = 14 + Math.sin(game.frame * 0.15) * 4;
+    ctx.fillStyle = 'rgba(255,40,40,0.55)';
+    ctx.strokeStyle = '#ff8080';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const ang = (Math.PI * 2 * i) / (spikes * 2);
+      const rr = i % 2 === 0 ? hz.r : hz.r * 0.5;
+      const px = Math.cos(ang) * rr, py = Math.sin(ang) * rr;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+
+  // target zone
+  const tgt = game.target;
+  const pulse = 1 + 0.08 * Math.sin(game.frame * 0.08);
+  ctx.save();
+  ctx.translate(tgt.x, tgt.y);
+  ctx.rotate(game.frame * 0.012);
+  ctx.strokeStyle = '#50ff90';
+  ctx.shadowColor = '#50ff90';
+  ctx.shadowBlur = 16;
+  ctx.lineWidth = Math.max(2, tgt.r * 0.08);
+  ctx.setLineDash([tgt.r * 0.35, tgt.r * 0.22]);
+  ctx.beginPath();
+  ctx.arc(0, 0, tgt.r * pulse, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+  ctx.fillStyle = 'rgba(80,255,144,0.14)';
+  ctx.beginPath();
+  ctx.arc(tgt.x, tgt.y, tgt.r * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // stars
+  for (const star of game.stars) {
+    if (star.collected) continue;
+    const tw = 0.7 + 0.3 * Math.sin(game.frame * 0.1 + star.x);
+    ctx.save();
+    ctx.translate(star.x, star.y);
+    ctx.rotate(game.frame * 0.02);
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 12 * tw;
+    ctx.fillStyle = '#ffd700';
+    const r1 = minDim * 0.022, r2 = r1 * 0.42;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const ang = (Math.PI * 2 * i) / 8;
+      const rr = i % 2 === 0 ? r1 : r2;
+      const px = Math.cos(ang) * rr, py = Math.sin(ang) * rr;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.shadowBlur = 0;
+
+  // anchors + ropes
+  for (let i = 0; i < game.ropes.length; i++) {
+    const rope = game.ropes[i];
+    const anchor = game.anchors[i];
+    ctx.strokeStyle = 'rgba(180,200,255,0.5)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(anchor.x, 0);
+    ctx.lineTo(anchor.x, anchor.y);
+    ctx.stroke();
+    ctx.fillStyle = '#cfe8ff';
+    ctx.shadowColor = '#cfe8ff';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(anchor.x, anchor.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (rope.cut) continue;
+    const curD = dist(rope.ax, rope.ay, game.gem.x, game.gem.y);
+    const frac = clamp(curD / rope.length, 0, 1);
+    const taut = frac > 0.9;
+    ctx.strokeStyle = taut ? '#ffffff' : rope.color;
+    ctx.shadowColor = rope.color;
+    ctx.shadowBlur = taut ? 16 : 8;
+    ctx.lineWidth = taut ? 3.4 : 2.6;
+    ctx.beginPath();
+    ctx.moveTo(rope.ax, rope.ay);
+    ctx.lineTo(game.gem.x, game.gem.y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // gem trail
+  for (let i = 0; i < game.trail.length; i++) {
+    const t = game.trail[i];
+    const frac = i / game.trail.length;
+    ctx.globalAlpha = frac * 0.35;
+    ctx.fillStyle = '#ff70d8';
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, minDim * GEM_RADIUS_FACTOR * frac, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // gem
+  const gemR = minDim * GEM_RADIUS_FACTOR;
+  const hue = (game.frame * 2.4) % 360;
+  const gemGrad = ctx.createRadialGradient(game.gem.x - gemR * 0.3, game.gem.y - gemR * 0.3, 0, game.gem.x, game.gem.y, gemR);
+  gemGrad.addColorStop(0, `hsl(${hue}, 100%, 80%)`);
+  gemGrad.addColorStop(0.55, `hsl(${(hue + 50) % 360}, 100%, 60%)`);
+  gemGrad.addColorStop(1, `hsl(${(hue + 200) % 360}, 100%, 35%)`);
+  ctx.shadowColor = `hsl(${hue},100%,60%)`;
+  ctx.shadowBlur = 22;
+  ctx.fillStyle = gemGrad;
+  ctx.beginPath();
+  ctx.arc(game.gem.x, game.gem.y, gemR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // particles
+  for (const p of game.particles) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(0.5, p.size * p.life), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // popups
+  for (const pu of game.popups) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, pu.life);
+    ctx.fillStyle = pu.color;
+    ctx.shadowColor = pu.color;
+    ctx.shadowBlur = 10;
+    ctx.font = `900 ${Math.max(16, Math.round(minDim * 0.045))}px Segoe UI, Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(pu.text, pu.x, pu.y);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/* ---------- canvas helpers ---------- */
+function fitCanvas(canvas) {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+  return { width: canvas.width, height: canvas.height };
+}
+function getCanvasPoint(e, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const point = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+  const scaleX = canvas.width / Math.max(1, rect.width);
+  const scaleY = canvas.height / Math.max(1, rect.height);
+  return { x: (point.clientX - rect.left) * scaleX, y: (point.clientY - rect.top) * scaleY };
+}
+
+/* ---------- main app ---------- */
+function App() {
+  const canvasRef = useRef(null);
+  const gameRef = useRef(null);
+  const rafRef = useRef(null);
+  const lastTimeRef = useRef(0);
+  const hudFrameRef = useRef(0);
+  const announceIdRef = useRef(0);
+
+  const [screen, setScreen] = useState('start');
+  const [hud, setHud] = useState({ score: 0, lives: START_LIVES, level: 1, multiplier: 1, timeFrac: 1 });
+  const [highScore, setHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
+  const [finalScore, setFinalScore] = useState(0);
+  const [isNewBest, setIsNewBest] = useState(false);
+  const [announce, setAnnounce] = useState(null);
+
+  useEffect(() => {
+    if (localStorage.getItem(HIGH_SCORE_KEY) === null) {
+      localStorage.setItem(HIGH_SCORE_KEY, '0');
+    }
+  }, []);
+
+  const triggerAnnounce = useCallback((text, color) => {
+    announceIdRef.current++;
+    setAnnounce({ text, color, id: announceIdRef.current });
+  }, []);
+
+  const callbacksRef = useRef({});
+  callbacksRef.current = {
+    onSnip: () => sndSnip(),
+    onStar: () => sndStar(),
+    onLand: (mult) => {
+      sndLand(mult);
+      if (mult > 1) sndComboUp(mult);
+      triggerAnnounce(mult > 1 ? `LANDED! ×${mult}` : 'LANDED!', '#50ff90');
+    },
+    onMiss: (reason) => { sndMiss(); triggerAnnounce(reason, '#ff4040'); },
+    onGameOver: (score) => {
+      sndMiss();
+      setTimeout(() => sndGameOver(), 200);
+      setFinalScore(score);
+      const prevBest = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+      if (score > prevBest) {
+        localStorage.setItem(HIGH_SCORE_KEY, String(score));
+        setHighScore(score);
+        setIsNewBest(true);
+      } else {
+        setIsNewBest(false);
+      }
+      setScreen('gameover');
+    },
+  };
+
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    function resize() { fitCanvas(canvas); }
+    resize();
+    window.addEventListener('resize', resize);
+
+    lastTimeRef.current = performance.now();
+    let active = true;
+
+    function loop(now) {
+      if (!active) return;
+      const dt = Math.min(0.05, (now - lastTimeRef.current) / 1000);
+      lastTimeRef.current = now;
+      const game = gameRef.current;
+      if (game && !game.over) {
+        updatePhysics(game, dt, canvas, callbacksRef.current);
+        hudFrameRef.current++;
+        if (hudFrameRef.current % 2 === 0) {
+          setHud({
+            score: Math.floor(game.score),
+            lives: game.lives,
+            level: game.level,
+            multiplier: game.multiplier,
+            timeFrac: game.phase === 'falling' ? clamp(game.dropTimer / game.timeLimit, 0, 1) : 1,
+          });
+        }
+      }
+      draw(ctx, canvas, game);
+      rafRef.current = requestAnimationFrame(loop);
+    }
+    rafRef.current = requestAnimationFrame(loop);
+
+    function handlePointerDown(e) {
+      e.preventDefault();
+      ensureAudio();
+      const game = gameRef.current;
+      if (!game) return;
+      const pt = getCanvasPoint(e, canvas);
+      tryCutRope(game, pt.x, pt.y, canvas, callbacksRef.current);
+    }
+    canvas.addEventListener('mousedown', handlePointerDown);
+    canvas.addEventListener('touchstart', handlePointerDown, { passive: false });
+
+    function onKeyDown(e) {
+      const game = gameRef.current;
+      if (!game) return;
+      if (e.code === 'Space') { e.preventDefault(); cutRopeByIndex(game, 0, callbacksRef.current); return; }
+      const m = /^Digit([1-5])$/.exec(e.code);
+      if (m) { e.preventDefault(); cutRopeByIndex(game, Number(m[1]) - 1, callbacksRef.current); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      active = false;
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+      canvas.removeEventListener('mousedown', handlePointerDown);
+      canvas.removeEventListener('touchstart', handlePointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [screen]);
+
+  function startGame() {
+    ensureAudio();
+    const canvas = canvasRef.current;
+    const { width, height } = fitCanvas(canvas);
+    gameRef.current = createGame(width, height);
+    hudFrameRef.current = 0;
+    setHud({ score: 0, lives: START_LIVES, level: 1, multiplier: 1, timeFrac: 1 });
+    setAnnounce(null);
+    setIsNewBest(false);
+    setScreen('playing');
+    sndStart();
+  }
+
+  const timerColor = hud.timeFrac > 0.5 ? '#50ff90' : hud.timeFrac > 0.25 ? '#ffd700' : '#ff4040';
+
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hud-block">
+          <div className="hud-label">Score</div>
+          <div className="hud-value">{hud.score}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Best</div>
+          <div className="hud-value gold">{Math.max(highScore, hud.score)}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Lives</div>
+          <div className="lives">
+            {Array.from({ length: START_LIVES }).map((_, i) => (
+              <span key={i} className={i < hud.lives ? 'life-full' : 'life-empty'}>&#9830;</span>
+            ))}
+          </div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Level</div>
+          <div className="hud-value">{hud.level}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Combo</div>
+          <div className="hud-value" style={{ color: hud.multiplier > 1 ? '#ffd700' : '#fff', textShadow: hud.multiplier > 1 ? '0 0 8px #ffd700, 0 0 16px #ffd700' : '0 0 8px #00eaff, 0 0 16px #00eaff' }}>
+            &times;{hud.multiplier}
+          </div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Time</div>
+          <div className="timer-track"><div className="timer-fill" style={{ width: (hud.timeFrac * 100) + '%', background: timerColor }}></div></div>
+        </div>
+      </div>
+
+      <div className="game-area">
+        <canvas ref={canvasRef}></canvas>
+
+        {announce && (
+          <div key={announce.id} className="announce" style={{ color: announce.color, textShadow: `0 0 16px ${announce.color}` }}>
+            {announce.text}
+          </div>
+        )}
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <h1 className="title">CUT LOOSE</h1>
+            <p className="subtitle">
+              A glowing gem hangs from neon ropes &mdash; <span className="key-tag">Click / Tap</span> a rope to snip it!<br/>
+              Cut wisely to swing the gem into the glowing <span style={{ color: '#50ff90' }}>landing zone</span> below.<br/>
+              Grab golden stars for bonus points, but stay clear of the <span style={{ color: '#ff4040' }}>red hazards</span>.<br/>
+              Chain consecutive landings for massive combo multipliers!
+            </p>
+            <button className="btn" onClick={startGame}>START</button>
+            <div className="controls-hint">Click / Tap a rope to snip it &middot; Keys 1-5 or Space also snip ropes</div>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <h1 className="title">ROPES SPENT</h1>
+            {isNewBest && <div className="new-high">NEW BEST!</div>}
+            <div className="final-score">{finalScore}</div>
+            <div className="stat-row">
+              <div className="stat"><div className="stat-label">Best</div><div className="stat-value">{highScore}</div></div>
+              <div className="stat"><div className="stat-label">Level Reached</div><div className="stat-value">{hud.level}</div></div>
+            </div>
+            <button className="btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
