@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Vial Sort</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; width: 100%; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #1a0030, #001a3a, #2a0030, #3a1400, #00261a);
+    background-size: 400% 400%;
+    animation: bgShift 18s ease infinite;
+    color: #fff;
+    touch-action: none;
+    user-select: none;
+  }
+  @keyframes bgShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  #root { width: 100vw; height: 100vh; display: flex; }
+  .app { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 10px; gap: 8px; }
+  .hud {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 14px; flex-wrap: wrap; gap: 8px; z-index: 5;
+  }
+  .hud-block { display: flex; flex-direction: column; align-items: center; min-width: 56px; }
+  .hud-label { font-size: 10px; letter-spacing: 2px; color: #8fd9ff; text-transform: uppercase; opacity: 0.8; }
+  .hud-value { font-size: 22px; font-weight: bold; color: #fff; text-shadow: 0 0 8px #00eaff, 0 0 16px #00eaff; }
+  .hud-value.gold { text-shadow: 0 0 8px #ffd700, 0 0 16px #ffd700; color: #ffe9a8; }
+  .lives { font-size: 18px; letter-spacing: 3px; }
+  .life-full { color: #ff2bd6; text-shadow: 0 0 8px #ff2bd6; }
+  .life-empty { color: #333; }
+  .timer-wrap {
+    flex: 1; min-width: 90px; max-width: 220px; height: 10px; border-radius: 6px;
+    background: rgba(255,255,255,0.08); overflow: hidden; border: 1px solid rgba(0,234,255,0.25);
+  }
+  .timer-bar { height: 100%; border-radius: 6px; transition: width 0.15s linear, background 0.3s ease; }
+  .game-area {
+    position: relative; flex: 1; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 0 30px rgba(0,234,255,0.25), inset 0 0 60px rgba(0,0,0,0.6);
+    border: 1px solid rgba(0,234,255,0.2); min-height: 0;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; background: radial-gradient(circle at 50% 40%, rgba(40,5,30,0.85), rgba(5,5,15,0.95));
+    z-index: 10; padding: 20px; animation: fadeIn 0.4s ease; overflow-y: auto;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .title {
+    font-size: clamp(30px, 8vw, 62px); font-weight: 900; letter-spacing: 4px; margin: 0;
+    background: linear-gradient(90deg, #00eaff, #ff2bd6, #ffd700, #39ff14, #00eaff);
+    background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: hueSlide 4s linear infinite; text-shadow: 0 0 30px rgba(255,80,200,0.4);
+  }
+  @keyframes hueSlide { 0% { background-position: 0% 50%; } 100% { background-position: 300% 50%; } }
+  .subtitle { font-size: clamp(12px, 2.6vw, 16px); color: #aef; margin: 10px 0 22px; letter-spacing: 0.5px; max-width: 480px; line-height: 1.7; }
+  .key-tag { display: inline-block; padding: 1px 8px; border-radius: 6px; font-weight: bold; margin: 0 2px; background: rgba(0,234,255,0.18); color: #00eaff; }
+  .gold-tag { display: inline-block; padding: 1px 8px; border-radius: 6px; font-weight: bold; margin: 0 2px; background: rgba(255,215,0,0.18); color: #ffd700; }
+  .btn {
+    font-size: 20px; font-weight: bold; letter-spacing: 3px; padding: 16px 48px; border-radius: 50px;
+    border: 2px solid #00eaff; background: rgba(0,234,255,0.08); color: #00eaff; cursor: pointer;
+    text-shadow: 0 0 10px #00eaff; box-shadow: 0 0 20px rgba(0,234,255,0.4), inset 0 0 20px rgba(0,234,255,0.1);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); background: rgba(0,234,255,0.18); }
+  .btn:active { transform: scale(0.97); }
+  .final-score { font-size: clamp(40px, 11vw, 76px); font-weight: 900; color: #ffd700; text-shadow: 0 0 20px #ffd700, 0 0 40px #ff2bd6; margin: 6px 0; }
+  .stat-row { display: flex; gap: 28px; margin: 14px 0 24px; flex-wrap: wrap; justify-content: center; }
+  .stat { display: flex; flex-direction: column; align-items: center; }
+  .stat-label { font-size: 11px; letter-spacing: 2px; color: #8fd9ff; text-transform: uppercase; }
+  .stat-value { font-size: 24px; font-weight: bold; color: #fff; }
+  .new-high { color: #ffd700; font-weight: bold; letter-spacing: 2px; text-shadow: 0 0 12px #ffd700; animation: pulse 0.8s ease infinite; margin-bottom: 8px; }
+  @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.7; } }
+  .announce {
+    position: absolute; top: 8%; left: 50%; transform: translateX(-50%);
+    font-size: clamp(18px, 4.6vw, 34px); font-weight: 900; letter-spacing: 3px; z-index: 8;
+    pointer-events: none; animation: announceAnim 1.4s ease forwards; white-space: nowrap; text-align: center;
+  }
+  @keyframes announceAnim {
+    0% { opacity: 0; transform: translateX(-50%) translateY(-20px) scale(0.7); }
+    20% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.1); }
+    35% { transform: translateX(-50%) translateY(0) scale(1); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) translateY(10px) scale(0.95); }
+  }
+  .controls-hint { text-align: center; font-size: 11px; color: #6cf; opacity: 0.7; padding: 4px 0 0; letter-spacing: 1px; }
+  .controls-row { display: flex; gap: 12px; }
+  .ctrl-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    padding: 12px 8px; border-radius: 16px; font-size: 14px; font-weight: 900; letter-spacing: 2px; cursor: pointer;
+    border: 2px solid; transition: transform 0.08s ease, opacity 0.15s ease; user-select: none; background: none; font-family: inherit;
+  }
+  .ctrl-btn:active { transform: scale(0.95); }
+  .ctrl-btn.undo {
+    background: rgba(176,38,255,0.1); border-color: #b026ff; color: #c97bff; text-shadow: 0 0 10px #b026ff;
+    box-shadow: 0 0 20px rgba(176,38,255,0.3), inset 0 0 20px rgba(176,38,255,0.08);
+  }
+  .ctrl-btn.reshuffle {
+    background: rgba(255,140,0,0.1); border-color: #ff9020; color: #ff9020; text-shadow: 0 0 10px #ff9020;
+    box-shadow: 0 0 20px rgba(255,140,0,0.3), inset 0 0 20px rgba(255,140,0,0.08);
+  }
+  .ctrl-btn:disabled { opacity: 0.25; cursor: default; }
+  .ctrl-sub { font-size: 9px; opacity: 0.75; letter-spacing: 1px; font-weight: 600; }
+  @media (max-width: 600px) {
+    .hud-block { min-width: 44px; }
+    .hud-value { font-size: 15px; }
+    .lives { font-size: 14px; }
+    .ctrl-btn { font-size: 12px; padding: 10px 4px; }
+    .timer-wrap { max-width: 110px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ---------- constants ---------- */
+const COLORS = [
+  { hex: '#00f6ff' }, { hex: '#ff2bd6' }, { hex: '#fff400' }, { hex: '#39ff14' },
+  { hex: '#ff7b00' }, { hex: '#b026ff' }, { hex: '#ff2f5e' }, { hex: '#2f8cff' },
+];
+const START_LIVES = 3;
+const HIGH_SCORE_KEY = 'vialSortHighScore';
+const BEST_LEVEL_KEY = 'vialSortBestLevel';
+const MAX_HISTORY = 20;
+const POUR_SCORE_BASE = 8;
+const COMBO_SCORE_MULT = 4;
+const TUBE_COMPLETE_BASE = 110;
+const LEVEL_COMPLETE_BASE = 240;
+const TIME_BONUS_PER_SEC = 8;
+const UNDO_TIME_COST = 3;
+const RESHUFFLE_TIME_COST = 6;
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function getLevelConfig(level) {
+  const colorCount = Math.min(3 + (level - 1), COLORS.length);
+  const emptyTubes = level <= 6 ? 2 : 1;
+  const capacity = 4 + Math.floor(Math.max(0, level - 9) / 4);
+  const timeLimit = Math.max(25, 62 - (level - 1) * 4);
+  return { colorCount, emptyTubes, capacity: clamp(capacity, 4, 6), timeLimit, tubeCount: colorCount + emptyTubes };
+}
+
+function generateLevel(level) {
+  const cfg = getLevelConfig(level);
+  const pool = [];
+  for (let c = 0; c < cfg.colorCount; c++) {
+    for (let i = 0; i < cfg.capacity; i++) pool.push(c);
+  }
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+  }
+  const tubes = [];
+  let idx = 0;
+  for (let t = 0; t < cfg.colorCount; t++) {
+    tubes.push(pool.slice(idx, idx + cfg.capacity));
+    idx += cfg.capacity;
+  }
+  for (let e = 0; e < cfg.emptyTubes; e++) tubes.push([]);
+  return { tubes, capacity: cfg.capacity, timeLimit: cfg.timeLimit };
+}
+
+function isTubeComplete(tube, capacity) {
+  return tube.length === capacity && tube.every(c => c === tube[0]);
+}
+function isLevelComplete(tubes, capacity) {
+  return tubes.every(t => t.length === 0 || isTubeComplete(t, capacity));
+}
+function attemptPour(tubes, from, to, capacity) {
+  if (from === to) return { valid: false };
+  const src = tubes[from], dst = tubes[to];
+  if (!src.length) return { valid: false };
+  const topColor = src[src.length - 1];
+  let run = 0;
+  for (let i = src.length - 1; i >= 0 && src[i] === topColor; i--) run++;
+  const space = capacity - dst.length;
+  if (space <= 0) return { valid: false };
+  if (dst.length > 0 && dst[dst.length - 1] !== topColor) return { valid: false };
+  const amount = Math.min(run, space);
+  return { valid: true, amount, color: topColor };
+}
+
+/* ---------- audio ---------- */
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol, ramp) {
+  try {
+    const ctx = ensureAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    if (ramp) osc.frequency.exponentialRampToValueAtTime(ramp, ctx.currentTime + dur);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+  } catch (e) { /* audio unavailable */ }
+}
+function noiseBurst(dur, vol, filterFreq) {
+  try {
+    const ctx = ensureAudio();
+    const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(filterFreq, ctx.currentTime);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+  } catch (e) { /* audio unavailable */ }
+}
+function sndSelect() { tone(520, 0.07, 'sine', 0.1, 720); }
+function sndPour() { noiseBurst(0.18, 0.08, 2200); tone(300, 0.1, 'sine', 0.05, 220); }
+function sndInvalid() { tone(140, 0.18, 'square', 0.15, 90); }
+function sndComplete() {
+  tone(660, 0.08, 'square', 0.14, 990);
+  setTimeout(() => tone(880, 0.1, 'square', 0.14, 1320), 70);
+}
+function sndLevelUp() {
+  tone(523, 0.08, 'square', 0.14, 1046);
+  setTimeout(() => tone(659, 0.1, 'square', 0.14, 1318), 80);
+  setTimeout(() => tone(784, 0.12, 'square', 0.14, 1568), 160);
+  setTimeout(() => tone(1046, 0.16, 'square', 0.14, 2092), 240);
+}
+function sndUndo() { tone(380, 0.12, 'sawtooth', 0.1, 240); }
+function sndReshuffle() { noiseBurst(0.3, 0.15, 1500); tone(260, 0.15, 'sine', 0.08, 420); }
+function sndTimeUp() { noiseBurst(0.35, 0.25, 700); tone(140, 0.35, 'sawtooth', 0.18, 50); }
+function sndStart() {
+  tone(330, 0.1, 'sine', 0.15, 660);
+  setTimeout(() => tone(440, 0.12, 'sine', 0.15, 880), 100);
+}
+function sndGameOver() {
+  tone(440, 0.2, 'sawtooth', 0.2, 220);
+  setTimeout(() => tone(330, 0.2, 'sawtooth', 0.2, 165), 180);
+  setTimeout(() => tone(220, 0.3, 'sawtooth', 0.2, 110), 360);
+}
+
+/* ---------- color helper ---------- */
+function lighten(hex, amt) {
+  const r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
+  const nr = Math.round(r + (255 - r) * amt), ng = Math.round(g + (255 - g) * amt), nb = Math.round(b + (255 - b) * amt);
+  return `rgb(${nr},${ng},${nb})`;
+}
+
+/* ---------- particles ---------- */
+function spawnBurst(game, x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 60 + Math.random() * 220;
+    game.particles.push({
+      kind: 'burst', x, y,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 40,
+      life: 1, decay: 0.9 + Math.random() * 0.9,
+      color, size: 2 + Math.random() * 4,
+    });
+  }
+}
+function spawnPourStream(game, from, to, color) {
+  const n = 9;
+  for (let i = 0; i < n; i++) {
+    game.particles.push({
+      kind: 'stream', from, to, color,
+      delay: i * 0.025, t: 0, duration: 0.32 + Math.random() * 0.08,
+      size: 2.5 + Math.random() * 2,
+    });
+  }
+}
+function addPopup(game, x, y, text, color) {
+  game.popups.push({ x, y, text, color, life: 1, vy: -42 - Math.random() * 14 });
+}
+function updateParticles(game, dt) {
+  for (let i = game.particles.length - 1; i >= 0; i--) {
+    const p = game.particles[i];
+    if (p.kind === 'stream') {
+      if (p.delay > 0) { p.delay -= dt; continue; }
+      p.t += dt / p.duration;
+      if (p.t >= 1) {
+        spawnBurst(game, p.to.x, p.to.y, p.color, 5);
+        game.particles.splice(i, 1);
+      }
+    } else {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 220 * dt;
+      p.life -= p.decay * dt;
+      if (p.life <= 0) game.particles.splice(i, 1);
+    }
+  }
+  for (let i = game.popups.length - 1; i >= 0; i--) {
+    const pu = game.popups[i];
+    pu.y += pu.vy * dt;
+    pu.life -= dt * 0.7;
+    if (pu.life <= 0) game.popups.splice(i, 1);
+  }
+  for (const k of Object.keys(game.flashes)) {
+    game.flashes[k] -= dt;
+    if (game.flashes[k] <= 0) delete game.flashes[k];
+  }
+  for (const k of Object.keys(game.tubeFx)) {
+    game.tubeFx[k].t += dt;
+    if (game.tubeFx[k].t > 0.3) delete game.tubeFx[k];
+  }
+  for (const a of game.ambient) {
+    a.x += a.vx * dt; a.y += a.vy * dt;
+    if (a.x < -20) a.x = game.w + 20; if (a.x > game.w + 20) a.x = -20;
+    if (a.y < -20) a.y = game.h + 20; if (a.y > game.h + 20) a.y = -20;
+  }
+}
+
+/* ---------- layout ---------- */
+function computeLayout(width, height, tubeCount, capacity) {
+  const maxPerRow = 5;
+  const rows = Math.max(1, Math.ceil(tubeCount / maxPerRow));
+  const perRow = Math.ceil(tubeCount / rows);
+  const padding = Math.min(width, height) * 0.06;
+  const availW = width - padding * 2;
+  const availH = height - padding * 2;
+  const cellW = availW / perRow;
+  const rowH = availH / rows;
+  const tubeW = clamp(cellW * 0.6, 24, 100);
+  const tubeH = clamp(rowH * 0.74, tubeW * 1.8, tubeW * (capacity * 0.9 + 1.4));
+  const layout = [];
+  let placed = 0;
+  for (let r = 0; r < rows; r++) {
+    const remaining = tubeCount - placed;
+    const colsThisRow = Math.min(perRow, remaining);
+    const rowWidthUsed = colsThisRow * cellW;
+    const rowStartX = padding + (availW - rowWidthUsed) / 2;
+    for (let c = 0; c < colsThisRow; c++) {
+      const cx = rowStartX + cellW * c + cellW / 2;
+      const cy = padding + rowH * r + rowH / 2;
+      layout.push({ index: placed, cx, cy, x: cx - tubeW / 2, y: cy - tubeH / 2, w: tubeW, h: tubeH });
+      placed++;
+    }
+  }
+  return layout;
+}
+
+/* ---------- game state ---------- */
+function createGame() {
+  const game = {
+    tubes: [], capacity: 4, level: 1, score: 0, combo: 0, lives: START_LIVES,
+    selected: -1, timeLeft: 60, history: [], particles: [], popups: [],
+    flashes: {}, tubeFx: {}, ambient: [], transition: null, bestLevelReached: 1,
+    shakeTime: 0, shakeMag: 0, frame: 0, over: false, w: 100, h: 100,
+  };
+  for (let i = 0; i < 20; i++) {
+    game.ambient.push({
+      x: Math.random() * 100, y: Math.random() * 100,
+      vx: (Math.random() - 0.5) * 12, vy: (Math.random() - 0.5) * 12,
+      r: 1 + Math.random() * 2.2, color: COLORS[Math.floor(Math.random() * COLORS.length)].hex,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+  startLevel(game, 1);
+  return game;
+}
+function startLevel(game, levelNum) {
+  const gen = generateLevel(levelNum);
+  game.level = levelNum;
+  game.tubes = gen.tubes;
+  game.capacity = gen.capacity;
+  game.timeLeft = gen.timeLimit;
+  game.maxTime = gen.timeLimit;
+  game.selected = -1;
+  game.history = [];
+  game.tubeFx = {};
+  game.flashes = {};
+}
+function pushHistory(game) {
+  game.history.push({ tubes: game.tubes.map(t => t.slice()), score: game.score, combo: game.combo });
+  if (game.history.length > MAX_HISTORY) game.history.shift();
+}
+
+function doUndo(game, cb) {
+  if (game.over || game.transition || !game.history.length) return;
+  const snap = game.history.pop();
+  game.tubes = snap.tubes.map(t => t.slice());
+  game.score = snap.score;
+  game.combo = snap.combo;
+  game.selected = -1;
+  game.timeLeft = Math.max(0.5, game.timeLeft - UNDO_TIME_COST);
+  sndUndo();
+  cb.onAction();
+}
+function doReshuffle(game, cb) {
+  if (game.over || game.transition || game.timeLeft <= RESHUFFLE_TIME_COST) return;
+  const gen = generateLevel(game.level);
+  game.tubes = gen.tubes;
+  game.capacity = gen.capacity;
+  game.selected = -1;
+  game.history = [];
+  game.timeLeft = Math.max(1, game.timeLeft - RESHUFFLE_TIME_COST);
+  sndReshuffle();
+  cb.onAction();
+}
+
+function tubeCenter(layout, idx) {
+  const cell = layout[idx];
+  return { x: cell.cx, y: cell.y + cell.h * 0.18 };
+}
+
+function handleTubeTap(game, index, canvas, cb) {
+  if (game.over || game.transition) return;
+  const layout = computeLayout(canvas.width, canvas.height, game.tubes.length, game.capacity);
+  if (game.selected === index) { game.selected = -1; return; }
+  if (game.selected === -1) {
+    const tube = game.tubes[index];
+    if (tube.length > 0 && !isTubeComplete(tube, game.capacity)) {
+      game.selected = index;
+      sndSelect();
+    }
+    return;
+  }
+  const result = attemptPour(game.tubes, game.selected, index, game.capacity);
+  if (!result.valid) {
+    game.flashes[game.selected] = 0.35;
+    game.flashes[index] = 0.35;
+    game.combo = 0;
+    sndInvalid();
+    game.selected = -1;
+    return;
+  }
+  pushHistory(game);
+  const fromIdx = game.selected, toIdx = index;
+  for (let i = 0; i < result.amount; i++) game.tubes[fromIdx].pop();
+  for (let i = 0; i < result.amount; i++) game.tubes[toIdx].push(result.color);
+  game.combo++;
+  const gain = POUR_SCORE_BASE + game.combo * COMBO_SCORE_MULT;
+  game.score += gain;
+  const fromPos = tubeCenter(layout, fromIdx);
+  const toPos = tubeCenter(layout, toIdx);
+  spawnPourStream(game, fromPos, toPos, COLORS[result.color].hex);
+  addPopup(game, toPos.x, toPos.y - 6, '+' + gain, '#bdf4ff');
+  game.tubeFx[toIdx] = { t: 0 };
+  sndPour();
+  game.selected = -1;
+
+  if (isTubeComplete(game.tubes[toIdx], game.capacity)) {
+    const bonus = TUBE_COMPLETE_BASE * game.level;
+    game.score += bonus;
+    game.combo += 2;
+    spawnBurst(game, toPos.x, toPos.y, COLORS[result.color].hex, 30);
+    addPopup(game, toPos.x, toPos.y - 26, '+' + bonus + ' VIAL!', '#ffd700');
+    sndComplete();
+  }
+
+  if (isLevelComplete(game.tubes, game.capacity)) {
+    const bonus = LEVEL_COMPLETE_BASE * game.level + Math.floor(game.timeLeft) * TIME_BONUS_PER_SEC;
+    game.score += bonus;
+    game.bestLevelReached = Math.max(game.bestLevelReached, game.level);
+    for (let i = 0; i < layout.length; i++) {
+      spawnBurst(game, layout[i].cx, layout[i].cy, COLORS[i % COLORS.length].hex, 14);
+    }
+    sndLevelUp();
+    cb.onLevelComplete(game.level, bonus);
+    game.transition = { type: 'levelComplete', timer: 1.5, nextLevel: game.level + 1 };
+  }
+}
+
+function update(game, dt, canvas, cb) {
+  if (game.over) return;
+  game.frame++;
+  game.w = canvas.width; game.h = canvas.height;
+  updateParticles(game, dt);
+  if (game.shakeTime > 0) game.shakeTime = Math.max(0, game.shakeTime - dt);
+
+  if (game.transition) {
+    game.transition.timer -= dt;
+    if (game.transition.timer <= 0) {
+      if (game.transition.type === 'levelComplete') {
+        startLevel(game, game.transition.nextLevel);
+      } else if (game.transition.type === 'lifeLost') {
+        startLevel(game, game.level);
+      }
+      game.transition = null;
+    }
+    return;
+  }
+
+  game.timeLeft -= dt;
+  if (game.timeLeft <= 0) {
+    game.timeLeft = 0;
+    game.lives--;
+    game.combo = 0;
+    game.shakeTime = 0.4;
+    game.shakeMag = 16;
+    sndTimeUp();
+    if (game.lives <= 0) {
+      game.over = true;
+      cb.onGameOver(Math.floor(game.score), game.bestLevelReached);
+    } else {
+      cb.onTimeUp(game.lives);
+      game.transition = { type: 'lifeLost', timer: 1.2 };
+    }
+  }
+}
+
+/* ---------- rendering ---------- */
+function pathRoundedTube(ctx, x, y, w, h, topR, botR) {
+  ctx.beginPath();
+  ctx.moveTo(x + topR, y);
+  ctx.lineTo(x + w - topR, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + topR);
+  ctx.lineTo(x + w, y + h - botR);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - botR, y + h);
+  ctx.lineTo(x + botR, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - botR);
+  ctx.lineTo(x, y + topR);
+  ctx.quadraticCurveTo(x, y, x + topR, y);
+  ctx.closePath();
+}
+
+function drawTube(ctx, cell, tube, idx, game) {
+  const { x, y, w, h } = cell;
+  const capacity = game.capacity;
+  const isSelected = game.selected === idx;
+  const flashT = game.flashes[idx];
+  const complete = isTubeComplete(tube, capacity);
+  const lift = isSelected ? -(8 + Math.sin(game.frame * 0.15) * 4) : 0;
+  const topR = w * 0.16, botR = w * 0.48;
+
+  ctx.save();
+  ctx.translate(0, lift);
+
+  pathRoundedTube(ctx, x, y, w, h, topR, botR);
+  ctx.fillStyle = 'rgba(255,255,255,0.04)';
+  ctx.fill();
+
+  ctx.save();
+  pathRoundedTube(ctx, x, y, w, h, topR, botR);
+  ctx.clip();
+  const segH = (h - topR * 0.6) / capacity;
+  for (let i = 0; i < tube.length; i++) {
+    const col = COLORS[tube[i]].hex;
+    let drawY = y + h - (i + 1) * segH;
+    let segHeight = segH;
+    if (i === tube.length - 1 && game.tubeFx[idx]) {
+      const bt = clamp(game.tubeFx[idx].t / 0.3, 0, 1);
+      const pop = 1 + (1 - bt) * 0.22;
+      const extra = segH * (pop - 1);
+      drawY -= extra; segHeight = segH * pop;
+    }
+    const grad = ctx.createLinearGradient(x, drawY, x, drawY + segHeight);
+    grad.addColorStop(0, lighten(col, 0.3));
+    grad.addColorStop(1, col);
+    ctx.shadowColor = col; ctx.shadowBlur = 9;
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, drawY, w, segHeight + 1.5);
+    ctx.shadowBlur = 0;
+    if (i === tube.length - 1) {
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillRect(x, drawY, w, Math.max(2, segHeight * 0.14));
+    }
+  }
+  ctx.restore();
+
+  pathRoundedTube(ctx, x, y, w, h, topR, botR);
+  if (flashT && flashT > 0) {
+    ctx.strokeStyle = `rgba(255,40,40,${0.55 + 0.4 * Math.sin(game.frame * 0.9)})`;
+    ctx.lineWidth = 4; ctx.shadowColor = '#ff2020'; ctx.shadowBlur = 18;
+  } else if (complete) {
+    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 3;
+    ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 14 + Math.sin(game.frame * 0.08) * 5;
+  } else if (isSelected) {
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+    ctx.shadowColor = '#9be8ff'; ctx.shadowBlur = 20;
+  } else {
+    ctx.strokeStyle = 'rgba(170,230,255,0.35)'; ctx.lineWidth = 2;
+    ctx.shadowColor = 'rgba(0,234,255,0.4)'; ctx.shadowBlur = 7;
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.save();
+  pathRoundedTube(ctx, x, y, w, h, topR, botR);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.16, y); ctx.lineTo(x + w * 0.32, y);
+  ctx.lineTo(x + w * 0.14, y + h); ctx.lineTo(x, y + h);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function quadPoint(p0, p1, p2, t) {
+  const u = 1 - t;
+  return {
+    x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+    y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+  };
+}
+
+function draw(ctx, canvas, game) {
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!game) return;
+
+  ctx.save();
+  if (game.shakeTime > 0) {
+    const mag = game.shakeMag * (game.shakeTime / 0.4);
+    ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
+  }
+
+  const grad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
+  grad.addColorStop(0, 'rgba(60,20,90,0.25)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  const sx = w / 100, sy = h / 100;
+  for (const a of game.ambient) {
+    const flick = 0.4 + 0.3 * Math.sin(game.frame * 0.03 + a.phase);
+    ctx.globalAlpha = flick;
+    ctx.shadowColor = a.color; ctx.shadowBlur = 8;
+    ctx.fillStyle = a.color;
+    ctx.beginPath();
+    ctx.arc(a.x * sx, a.y * sy, a.r * Math.min(sx, sy) * 14, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+
+  const layout = computeLayout(w, h, game.tubes.length, game.capacity);
+  for (let i = 0; i < layout.length; i++) {
+    drawTube(ctx, layout[i], game.tubes[i], i, game);
+  }
+
+  for (const p of game.particles) {
+    if (p.kind === 'stream') {
+      if (p.delay > 0) continue;
+      const mid = { x: (p.from.x + p.to.x) / 2, y: Math.min(p.from.y, p.to.y) - 36 };
+      const pos = quadPoint(p.from, mid, p.to, clamp(p.t, 0, 1));
+      ctx.globalAlpha = 0.9;
+      ctx.shadowColor = p.color; ctx.shadowBlur = 10;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.shadowColor = p.color; ctx.shadowBlur = 12;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.5, p.size * p.life), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+  for (const pu of game.popups) {
+    ctx.globalAlpha = Math.max(0, pu.life);
+    ctx.font = `900 ${Math.max(13, Math.round(Math.min(w, h) * 0.032))}px Segoe UI, Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = pu.color;
+    ctx.shadowColor = pu.color; ctx.shadowBlur = 10;
+    ctx.fillText(pu.text, pu.x, pu.y);
+  }
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+/* ---------- main app ---------- */
+function App() {
+  const canvasRef = useRef(null);
+  const gameRef = useRef(null);
+  const rafRef = useRef(null);
+  const lastTimeRef = useRef(0);
+  const hudFrameRef = useRef(0);
+  const announceIdRef = useRef(0);
+
+  const [screen, setScreen] = useState('start');
+  const [hud, setHud] = useState({ score: 0, lives: START_LIVES, level: 1, combo: 0, timeLeft: 60, maxTime: 60, canUndo: false, canReshuffle: true });
+  const [highScore, setHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
+  const [bestLevel, setBestLevel] = useState(() => Number(localStorage.getItem(BEST_LEVEL_KEY)) || 1);
+  const [finalScore, setFinalScore] = useState(0);
+  const [finalLevel, setFinalLevel] = useState(1);
+  const [isNewBest, setIsNewBest] = useState(false);
+  const [announce, setAnnounce] = useState(null);
+
+  useEffect(() => {
+    if (localStorage.getItem(HIGH_SCORE_KEY) === null) localStorage.setItem(HIGH_SCORE_KEY, '0');
+    if (localStorage.getItem(BEST_LEVEL_KEY) === null) localStorage.setItem(BEST_LEVEL_KEY, '1');
+  }, []);
+
+  const triggerAnnounce = useCallback((text, color) => {
+    announceIdRef.current++;
+    setAnnounce({ text, color, id: announceIdRef.current });
+  }, []);
+
+  const callbacksRef = useRef({});
+  callbacksRef.current = {
+    onLevelComplete: (level, bonus) => triggerAnnounce(`LEVEL ${level} CLEAR! +${bonus}`, '#ffd700'),
+    onTimeUp: (livesLeft) => triggerAnnounce('OUT OF TIME!', '#ff3050'),
+    onAction: () => {},
+    onGameOver: (score, bestLevelReached) => {
+      sndGameOver();
+      setFinalScore(score);
+      setFinalLevel(bestLevelReached);
+      const prevBest = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+      const prevBestLevel = Number(localStorage.getItem(BEST_LEVEL_KEY)) || 1;
+      let newBest = false;
+      if (score > prevBest) { localStorage.setItem(HIGH_SCORE_KEY, String(score)); setHighScore(score); newBest = true; }
+      if (bestLevelReached > prevBestLevel) { localStorage.setItem(BEST_LEVEL_KEY, String(bestLevelReached)); setBestLevel(bestLevelReached); }
+      setIsNewBest(newBest);
+      setScreen('gameover');
+    },
+  };
+
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    lastTimeRef.current = performance.now();
+    let active = true;
+
+    function loop(now) {
+      if (!active) return;
+      const dt = Math.min(0.05, (now - lastTimeRef.current) / 1000);
+      lastTimeRef.current = now;
+      const game = gameRef.current;
+      if (game && !game.over) {
+        update(game, dt, canvas, callbacksRef.current);
+        hudFrameRef.current++;
+        if (hudFrameRef.current % 2 === 0) {
+          setHud({
+            score: Math.floor(game.score), lives: game.lives, level: game.level,
+            combo: game.combo, timeLeft: game.timeLeft, maxTime: game.maxTime || 60,
+            canUndo: game.history.length > 0 && !game.transition,
+            canReshuffle: game.timeLeft > RESHUFFLE_TIME_COST && !game.transition,
+          });
+        }
+      }
+      draw(ctx, canvas, game);
+      rafRef.current = requestAnimationFrame(loop);
+    }
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      active = false;
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+    };
+  }, [screen]);
+
+  const handleTap = useCallback((clientX, clientY) => {
+    const canvas = canvasRef.current;
+    const game = gameRef.current;
+    if (!canvas || !game || game.over) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const px = (clientX - rect.left) * scaleX, py = (clientY - rect.top) * scaleY;
+    const layout = computeLayout(canvas.width, canvas.height, game.tubes.length, game.capacity);
+    let hitIndex = -1;
+    for (const cell of layout) {
+      const padTop = cell.h * 0.4;
+      if (px >= cell.x - cell.w * 0.08 && px <= cell.x + cell.w * 1.08 && py >= cell.y - padTop && py <= cell.y + cell.h + cell.h * 0.06) {
+        hitIndex = cell.index; break;
+      }
+    }
+    if (hitIndex < 0) return;
+    handleTubeTap(game, hitIndex, canvas, callbacksRef.current);
+  }, []);
+
+  const onCanvasClick = useCallback((e) => { handleTap(e.clientX, e.clientY); }, [handleTap]);
+
+  const handleUndo = useCallback(() => {
+    const game = gameRef.current;
+    if (!game) return;
+    doUndo(game, callbacksRef.current);
+  }, []);
+  const handleReshuffle = useCallback(() => {
+    const game = gameRef.current;
+    if (!game) return;
+    doReshuffle(game, callbacksRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    function onKeyDown(e) {
+      if (e.code === 'KeyU') { e.preventDefault(); handleUndo(); }
+      else if (e.code === 'KeyR') { e.preventDefault(); handleReshuffle(); }
+      else {
+        const n = parseInt(e.key, 10);
+        if (!isNaN(n) && n >= 1 && n <= 9) {
+          const game = gameRef.current;
+          const canvas = canvasRef.current;
+          if (game && n <= game.tubes.length) handleTubeTap(game, n - 1, canvas, callbacksRef.current);
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [screen, handleUndo, handleReshuffle]);
+
+  function startGame() {
+    ensureAudio();
+    gameRef.current = createGame();
+    hudFrameRef.current = 0;
+    setHud({ score: 0, lives: START_LIVES, level: 1, combo: 0, timeLeft: gameRef.current.timeLeft, maxTime: gameRef.current.maxTime, canUndo: false, canReshuffle: true });
+    setAnnounce(null);
+    setIsNewBest(false);
+    setScreen('playing');
+    sndStart();
+  }
+
+  const timeFrac = clamp(hud.timeLeft / Math.max(1, hud.maxTime), 0, 1);
+  const timerColor = timeFrac > 0.5 ? '#39ff14' : timeFrac > 0.22 ? '#ffd700' : '#ff3050';
+
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hud-block">
+          <div className="hud-label">Score</div>
+          <div className="hud-value">{hud.score}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Best</div>
+          <div className="hud-value gold">{Math.max(highScore, hud.score)}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Lives</div>
+          <div className="lives">
+            {Array.from({ length: START_LIVES }).map((_, i) => (
+              <span key={i} className={i < hud.lives ? 'life-full' : 'life-empty'}>&#9670;</span>
+            ))}
+          </div>
+        </div>
+        <div className="timer-wrap">
+          <div className="timer-bar" style={{ width: (timeFrac * 100) + '%', background: timerColor, boxShadow: `0 0 8px ${timerColor}` }}></div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Level</div>
+          <div className="hud-value">{hud.level}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Combo</div>
+          <div className="hud-value" style={{ color: hud.combo > 1 ? '#ffd700' : '#fff', textShadow: hud.combo > 1 ? '0 0 8px #ffd700, 0 0 16px #ffd700' : '0 0 8px #00eaff, 0 0 16px #00eaff' }}>
+            &times;{hud.combo}
+          </div>
+        </div>
+      </div>
+
+      <div className="game-area">
+        <canvas
+          ref={canvasRef}
+          onClick={onCanvasClick}
+        ></canvas>
+
+        {announce && (
+          <div key={announce.id} className="announce" style={{ color: announce.color, textShadow: `0 0 16px ${announce.color}` }}>
+            {announce.text}
+          </div>
+        )}
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <h1 className="title">VIAL SORT</h1>
+            <p className="subtitle">
+              Tap a vial to lift it, tap another to <span style={{ color: '#00eaff' }}>pour</span> the top color in.<br/>
+              Sort every color into its own glowing vial before the <span className="key-tag">TIMER</span> runs dry.<br/>
+              Chain pours without a mistake for huge <span className="gold-tag">COMBO</span> multipliers.<br/>
+              Stuck? Use <span className="key-tag">UNDO</span> or <span className="key-tag">RESHUFFLE</span> &mdash; both cost precious seconds!
+            </p>
+            <button className="btn" onClick={startGame}>START</button>
+            <div className="controls-hint">Click / Tap vials to select &amp; pour &nbsp;&middot;&nbsp; Number keys also select &nbsp;&middot;&nbsp; U = Undo &middot; R = Reshuffle</div>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <h1 className="title">DRAINED OUT</h1>
+            {isNewBest && <div className="new-high">NEW BEST!</div>}
+            <div className="final-score">{finalScore}</div>
+            <div className="stat-row">
+              <div className="stat"><div className="stat-label">Best Score</div><div className="stat-value">{highScore}</div></div>
+              <div className="stat"><div className="stat-label">Level Reached</div><div className="stat-value">{finalLevel}</div></div>
+              <div className="stat"><div className="stat-label">Best Level</div><div className="stat-value">{bestLevel}</div></div>
+            </div>
+            <button className="btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      <div className="controls-row">
+        <button className="ctrl-btn undo" onClick={handleUndo} disabled={screen !== 'playing' || !hud.canUndo}>
+          <span>&#8634; UNDO</span>
+          <span className="ctrl-sub">-{UNDO_TIME_COST}s</span>
+        </button>
+        <button className="ctrl-btn reshuffle" onClick={handleReshuffle} disabled={screen !== 'playing' || !hud.canReshuffle}>
+          <span>&#9889; RESHUFFLE</span>
+          <span className="ctrl-sub">-{RESHUFFLE_TIME_COST}s</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>

@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-19",
+    "name": "Vial Sort",
+    "date": "2026-06-19",
+    "description": "Tap a glowing vial to lift its top liquid, then tap another vial to pour it in. Pour same-color runs onto empty vials or matching colors to consolidate every hue into its own vial before the timer runs out. Chain clean pours for a growing combo multiplier, finish a vial for a big bonus, and clear the whole board for an even bigger one. Stuck with a bad layout? Spend a few seconds to UNDO your last pour or RESHUFFLE the level entirely.",
+    "tagline": "Pour, sort, and consolidate neon liquids before time runs dry.",
+    "tags": [
+      "puzzle",
+      "strategy",
+      "casual",
+      "color-matching",
+      "logic"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click/tap a vial to select it, then click/tap another to pour; number keys also select a vial; U = Undo, R = Reshuffle",
+    "folder": "games/2026-06-19",
+    "file": "games/2026-06-19/index.html",
+    "preview": "games/2026-06-19/preview.png"
   }
 ]
