@@ -2069,5 +2069,24 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-20",
+    "name": "Cut Loose",
+    "date": "2026-06-20",
+    "description": "A glowing orb swings on a rope above a row of target rings. Time your cut precisely - click, tap, or hit space at the right instant in the swing to launch the orb on a physics-true arc and land it inside the rings. Land dead center for a BULLSEYE, chain hits for a rising combo multiplier, and dodge spike hazards that appear as rounds get tougher. Missing the rings costs nothing, but timing out or landing on a hazard costs a life.",
+    "tagline": "Cut at the perfect instant. Stick the landing.",
+    "tags": [
+      "precision",
+      "timing",
+      "physics",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap / Space to cut the rope at the right moment",
+    "folder": "games/2026-06-20",
+    "file": "games/2026-06-20/index.html",
+    "preview": "games/2026-06-20/preview.png"
   }
 ]
