@@ -2069,5 +2069,19 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-21",
+    "name": "Gravity Burn",
+    "date": "2026-06-21",
+    "description": "Pilot a fragile lander down through the dark onto narrow glowing landing pads. Rotate left and right and fire your thruster to fight gravity and steer, but fuel burns fast and won't refill mid-fall. Touch down too hard, too tilted, or off the pad and you'll lose a ship in a burst of sparks. Chain perfect landings for a rising combo multiplier while gravity gets stronger, the pad shrinks, and crosswinds kick in at higher levels.",
+    "tagline": "Fight gravity. Stick the landing. Don't run dry.",
+    "tags": ["physics", "precision", "arcade", "gravity", "space"],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Press ←/A and →/D or tap the ROTATE buttons to turn, hold ↑/W/Space or the THRUST button to fire your engine, and ease down onto the glowing pad",
+    "folder": "games/2026-06-21",
+    "file": "games/2026-06-21/index.html",
+    "preview": "games/2026-06-21/preview.png"
   }
 ]

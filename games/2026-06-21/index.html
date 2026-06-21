@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Gravity Burn</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; width: 100%; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #05021a, #001233, #1a0030, #00121f, #030018);
+    background-size: 400% 400%;
+    animation: bgShift 20s ease infinite;
+    color: #fff;
+    touch-action: none;
+    user-select: none;
+  }
+  @keyframes bgShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  #root { width: 100vw; height: 100vh; display: flex; }
+  .app {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding: 10px;
+    gap: 8px;
+  }
+  .hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+    z-index: 5;
+  }
+  .hud-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 56px;
+  }
+  .hud-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #8fd9ff;
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+  .hud-value {
+    font-size: 22px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 8px #00eaff, 0 0 16px #00eaff;
+  }
+  .hud-value.gold { text-shadow: 0 0 8px #ffd700, 0 0 16px #ffd700; color: #ffe9a8; }
+  .lives { font-size: 18px; letter-spacing: 2px; }
+  .life-full { filter: none; opacity: 1; }
+  .life-empty { filter: grayscale(1); opacity: 0.25; }
+  .fuel-block { min-width: 120px; flex: 1; max-width: 220px; }
+  .fuel-track {
+    width: 100%;
+    height: 12px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    overflow: hidden;
+    margin-top: 2px;
+  }
+  .fuel-fill {
+    height: 100%;
+    border-radius: 8px;
+    transition: width 0.1s linear, background 0.3s ease;
+  }
+  .game-area {
+    position: relative;
+    flex: 1;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 0 30px rgba(0,234,255,0.2), inset 0 0 60px rgba(0,0,0,0.6);
+    border: 1px solid rgba(0,234,255,0.2);
+    min-height: 0;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: radial-gradient(circle at 50% 40%, rgba(20,10,45,0.88), rgba(3,3,12,0.96));
+    z-index: 10;
+    padding: 20px;
+    animation: fadeIn 0.4s ease;
+    overflow-y: auto;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .title {
+    font-size: clamp(28px, 7.5vw, 60px);
+    font-weight: 900;
+    letter-spacing: 4px;
+    margin: 0;
+    background: linear-gradient(90deg, #00eaff, #b388ff, #ffd700, #00eaff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hueSlide 4s linear infinite;
+    text-shadow: 0 0 30px rgba(120,80,255,0.4);
+  }
+  @keyframes hueSlide {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+  .subtitle {
+    font-size: clamp(12px, 2.4vw, 15px);
+    color: #aef;
+    margin: 10px 0 20px;
+    letter-spacing: 0.5px;
+    max-width: 480px;
+    line-height: 1.7;
+  }
+  .key-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-weight: bold;
+    margin: 0 2px;
+    background: rgba(0,234,255,0.18);
+    color: #00eaff;
+  }
+  .thrust-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-weight: bold;
+    margin: 0 2px;
+    background: rgba(255,174,0,0.18);
+    color: #ffae00;
+  }
+  .btn {
+    font-size: 19px;
+    font-weight: bold;
+    letter-spacing: 3px;
+    padding: 15px 46px;
+    border-radius: 50px;
+    border: 2px solid #00eaff;
+    background: rgba(0,234,255,0.08);
+    color: #00eaff;
+    cursor: pointer;
+    text-shadow: 0 0 10px #00eaff;
+    box-shadow: 0 0 20px rgba(0,234,255,0.4), inset 0 0 20px rgba(0,234,255,0.1);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); background: rgba(0,234,255,0.18); }
+  .btn:active { transform: scale(0.97); }
+  .final-score {
+    font-size: clamp(38px, 10vw, 76px);
+    font-weight: 900;
+    color: #ffd700;
+    text-shadow: 0 0 20px #ffd700, 0 0 40px #b388ff;
+    margin: 6px 0;
+  }
+  .stat-row {
+    display: flex;
+    gap: 26px;
+    margin: 14px 0 22px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .stat { display: flex; flex-direction: column; align-items: center; }
+  .stat-label { font-size: 11px; letter-spacing: 2px; color: #8fd9ff; text-transform: uppercase; }
+  .stat-value { font-size: 24px; font-weight: bold; color: #fff; }
+  .new-high {
+    color: #ffd700;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-shadow: 0 0 12px #ffd700;
+    animation: pulse 0.8s ease infinite;
+    margin-bottom: 8px;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.7; }
+  }
+  .announce {
+    position: absolute;
+    top: 8%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: clamp(18px, 4.4vw, 32px);
+    font-weight: 900;
+    letter-spacing: 3px;
+    z-index: 8;
+    pointer-events: none;
+    animation: announceAnim 1.3s ease forwards;
+    white-space: nowrap;
+  }
+  @keyframes announceAnim {
+    0% { opacity: 0; transform: translateX(-50%) translateY(-20px) scale(0.7); }
+    20% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.1); }
+    35% { transform: translateX(-50%) translateY(0) scale(1); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) translateY(10px) scale(0.95); }
+  }
+  .controls-hint {
+    text-align: center;
+    font-size: 11px;
+    color: #6cf;
+    opacity: 0.7;
+    padding: 4px 0 0;
+    letter-spacing: 1px;
+  }
+  .controls-row {
+    display: flex;
+    gap: 10px;
+  }
+  .ctrl-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 16px 8px;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    cursor: pointer;
+    border: 2px solid;
+    transition: transform 0.08s ease, opacity 0.15s ease, background 0.1s ease;
+    user-select: none;
+    background: none;
+    font-family: inherit;
+  }
+  .ctrl-btn.rotate { flex: 1; border-color: #b388ff; color: #b388ff; text-shadow: 0 0 10px #b388ff; box-shadow: 0 0 16px rgba(179,136,255,0.3), inset 0 0 16px rgba(179,136,255,0.08); background: rgba(179,136,255,0.08); }
+  .ctrl-btn.thrust { flex: 1.6; border-color: #ffae00; color: #ffae00; text-shadow: 0 0 10px #ffae00; box-shadow: 0 0 20px rgba(255,174,0,0.35), inset 0 0 20px rgba(255,174,0,0.1); background: rgba(255,174,0,0.1); }
+  .ctrl-btn:active, .ctrl-btn.pressed { transform: scale(0.94); filter: brightness(1.5); }
+  .ctrl-btn:disabled { opacity: 0.2; cursor: default; }
+  .ctrl-icon { font-size: 22px; }
+  @media (max-width: 600px) {
+    .hud-block { min-width: 44px; }
+    .hud-value { font-size: 15px; }
+    .fuel-block { max-width: 100px; }
+    .ctrl-btn { font-size: 11px; padding: 13px 4px; }
+    .ctrl-icon { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ---------- constants ---------- */
+const START_LIVES = 3;
+const FUEL_MAX = 100;
+const FUEL_BURN_RATE = 32;
+const ROTATE_SPEED = 150;
+const THRUST_ACCEL_FRAC = 0.95;
+const GRAVITY_FRAC = 0.26;
+const GRAVITY_LEVEL_STEP = 0.05;
+const SAFE_VY_FRAC = 0.165;
+const SAFE_VX_FRAC = 0.11;
+const SAFE_ANGLE = 17;
+const PERFECT_VY_FRAC = 0.055;
+const PERFECT_VX_FRAC = 0.04;
+const PERFECT_ANGLE = 5;
+const PAD_WIDTH_START_FRAC = 0.24;
+const PAD_WIDTH_MIN_FRAC = 0.11;
+const PAD_WIDTH_STEP_FRAC = 0.013;
+const MAX_COMBO = 8;
+const WIND_START_LEVEL = 4;
+const HIGH_SCORE_KEY = 'gravityBurnHighScore';
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ---------- audio ---------- */
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol, ramp) {
+  try {
+    const ctx = ensureAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    if (ramp) osc.frequency.exponentialRampToValueAtTime(ramp, ctx.currentTime + dur);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+  } catch (e) { /* audio unavailable */ }
+}
+function noiseBurst(dur, vol, filterFreq) {
+  try {
+    const ctx = ensureAudio();
+    const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(filterFreq, ctx.currentTime);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+  } catch (e) { /* audio unavailable */ }
+}
+let thrustOsc = null, thrustGain = null;
+function startThrustSound() {
+  if (thrustOsc) return;
+  try {
+    const ctx = ensureAudio();
+    thrustOsc = ctx.createOscillator();
+    thrustOsc.type = 'sawtooth';
+    thrustOsc.frequency.setValueAtTime(68, ctx.currentTime);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(420, ctx.currentTime);
+    thrustGain = ctx.createGain();
+    thrustGain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    thrustGain.gain.linearRampToValueAtTime(0.085, ctx.currentTime + 0.06);
+    thrustOsc.connect(filter);
+    filter.connect(thrustGain);
+    thrustGain.connect(ctx.destination);
+    thrustOsc.start();
+  } catch (e) { /* audio unavailable */ }
+}
+function stopThrustSound() {
+  if (!thrustOsc) return;
+  try {
+    const ctx = ensureAudio();
+    thrustGain.gain.cancelScheduledValues(ctx.currentTime);
+    thrustGain.gain.setValueAtTime(thrustGain.gain.value, ctx.currentTime);
+    thrustGain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.1);
+    const osc = thrustOsc;
+    setTimeout(() => { try { osc.stop(); } catch (e) {} }, 140);
+  } catch (e) { /* audio unavailable */ }
+  thrustOsc = null;
+  thrustGain = null;
+}
+function sndSafeLand() {
+  tone(440, 0.1, 'sine', 0.16, 660);
+  setTimeout(() => tone(660, 0.14, 'sine', 0.14, 880), 90);
+}
+function sndPerfectLand() {
+  tone(523, 0.1, 'sine', 0.18, 784);
+  setTimeout(() => tone(659, 0.1, 'sine', 0.16, 988), 80);
+  setTimeout(() => tone(784, 0.1, 'sine', 0.16, 1318), 160);
+  setTimeout(() => tone(1046, 0.2, 'sine', 0.14, 1568), 240);
+}
+function sndCrash() {
+  noiseBurst(0.4, 0.32, 900);
+  tone(150, 0.4, 'sawtooth', 0.2, 50);
+}
+function sndLevelUp() {
+  tone(392, 0.08, 'square', 0.12, 784);
+  setTimeout(() => tone(523, 0.1, 'square', 0.12, 1046), 80);
+}
+function sndStart() {
+  tone(330, 0.1, 'sine', 0.15, 660);
+  setTimeout(() => tone(440, 0.12, 'sine', 0.15, 880), 100);
+}
+function sndGameOver() {
+  tone(440, 0.2, 'sawtooth', 0.2, 220);
+  setTimeout(() => tone(330, 0.2, 'sawtooth', 0.2, 165), 180);
+  setTimeout(() => tone(220, 0.3, 'sawtooth', 0.2, 110), 360);
+}
+
+/* ---------- level generation ---------- */
+function buildLevel(level) {
+  const segments = 22;
+  const points = [];
+  let fy = 0.6 + Math.random() * 0.08;
+  for (let i = 0; i <= segments; i++) {
+    const fx = i / segments;
+    if (i > 0) {
+      fy += (Math.random() - 0.5) * 0.09;
+      fy = clamp(fy, 0.5, 0.86);
+    }
+    points.push({ fx, fy });
+  }
+  const padWidthFrac = Math.max(PAD_WIDTH_MIN_FRAC, PAD_WIDTH_START_FRAC - (level - 1) * PAD_WIDTH_STEP_FRAC);
+  const padSegSpan = Math.max(2, Math.round(padWidthFrac * segments));
+  const startIdx = 2 + Math.floor(Math.random() * Math.max(1, segments - padSegSpan - 4));
+  const endIdx = Math.min(segments, startIdx + padSegSpan);
+  const padY = points[startIdx].fy;
+  for (let i = startIdx; i <= endIdx; i++) points[i].fy = padY;
+  return {
+    terrain: points,
+    pad: { fxStart: points[startIdx].fx, fxEnd: points[endIdx].fx, fy: padY },
+  };
+}
+function getGroundFy(terrain, fx) {
+  if (fx <= terrain[0].fx) return terrain[0].fy;
+  const last = terrain[terrain.length - 1];
+  if (fx >= last.fx) return last.fy;
+  for (let i = 0; i < terrain.length - 1; i++) {
+    const a = terrain[i], b = terrain[i + 1];
+    if (fx >= a.fx && fx <= b.fx) {
+      const t = (fx - a.fx) / (b.fx - a.fx || 1);
+      return a.fy + (b.fy - a.fy) * t;
+    }
+  }
+  return last.fy;
+}
+
+/* ---------- particles ---------- */
+function spawnFlameParticles(game) {
+  const rad = (game.ship.angle * Math.PI) / 180;
+  const ex = -Math.sin(rad), ey = Math.cos(rad);
+  const px = ex * 60, py = ey * 60;
+  for (let i = 0; i < 2; i++) {
+    const spread = (Math.random() - 0.5) * 70;
+    game.particles.push({
+      x: game.ship.x + ex * 10,
+      y: game.ship.y + ey * 10,
+      vx: px + ey * spread,
+      vy: py - ex * spread,
+      life: 1,
+      decay: 3.4 + Math.random() * 2,
+      color: Math.random() < 0.5 ? '#ffae00' : '#fff36b',
+      size: 2 + Math.random() * 3,
+    });
+  }
+}
+function spawnLandingParticles(game, perfect) {
+  const color = perfect ? '#ffd700' : '#00eaff';
+  for (let i = 0; i < 22; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const speed = 40 + Math.random() * 90;
+    game.particles.push({
+      x: game.ship.x, y: game.ship.y,
+      vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed - 40,
+      life: 1, decay: 1.2 + Math.random() * 1,
+      color, size: 2 + Math.random() * 3,
+    });
+  }
+}
+function spawnExplosion(game) {
+  const palette = ['#ff3b3b', '#ffae00', '#ffd700', '#ff7b50'];
+  for (let i = 0; i < 50; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const speed = 80 + Math.random() * 260;
+    game.particles.push({
+      x: game.ship.x, y: game.ship.y,
+      vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+      life: 1, decay: 0.8 + Math.random() * 0.8,
+      color: palette[Math.floor(Math.random() * palette.length)],
+      size: 3 + Math.random() * 5,
+    });
+  }
+}
+function updateParticles(game, dt) {
+  for (let i = game.particles.length - 1; i >= 0; i--) {
+    const p = game.particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 50 * dt;
+    p.life -= p.decay * dt;
+    if (p.life <= 0) game.particles.splice(i, 1);
+  }
+}
+
+/* ---------- game state ---------- */
+function makeStars() {
+  return Array.from({ length: 90 }, () => ({
+    fx: Math.random(), fy: Math.random() * 0.7,
+    r: Math.random() * 1.5 + 0.4,
+    phase: Math.random() * Math.PI * 2,
+  }));
+}
+function startLevel(game, canvas, level) {
+  const { terrain, pad } = buildLevel(level);
+  game.level = level;
+  game.terrain = terrain;
+  game.pad = pad;
+  game.ship = { x: canvas.width * (0.4 + Math.random() * 0.2), y: canvas.height * 0.1, vx: 0, vy: 0, angle: 0 };
+  game.fuel = FUEL_MAX;
+  game.fuelWarned = false;
+  game.phase = 'flying';
+  game.transitionTimer = 0;
+  game.windStrengthFrac = level >= WIND_START_LEVEL ? (level - WIND_START_LEVEL + 1) * 0.016 : 0;
+  game.windPhase = Math.random() * Math.PI * 2;
+  game.wasThrusting = false;
+}
+function createGame(canvas) {
+  const game = {
+    level: 1, lives: START_LIVES, score: 0, combo: 1,
+    particles: [], stars: makeStars(),
+    time: 0, shakeTime: 0, shakeMag: 0,
+    over: false, prevW: canvas.width, prevH: canvas.height,
+  };
+  startLevel(game, canvas, 1);
+  return game;
+}
+
+function updateGame(game, dt, canvas, controls, cb) {
+  if (game.over) return;
+  game.time += dt;
+  const W = canvas.width, H = canvas.height;
+
+  if (game.phase !== 'flying') {
+    game.transitionTimer -= dt;
+    if (game.shakeTime > 0) game.shakeTime = Math.max(0, game.shakeTime - dt);
+    updateParticles(game, dt);
+    if (game.transitionTimer <= 0) {
+      if (game.phase === 'landed') {
+        const nextLevel = game.level + 1;
+        startLevel(game, canvas, nextLevel);
+        cb.onLevelReady(nextLevel);
+      } else if (game.phase === 'crashed') {
+        if (game.lives <= 0) {
+          game.over = true;
+          cb.onGameOver(Math.floor(game.score));
+          return;
+        }
+        startLevel(game, canvas, game.level);
+        cb.onRetryReady(game.level);
+      }
+    }
+    return;
+  }
+
+  const gravity = GRAVITY_FRAC * H * Math.pow(1 + GRAVITY_LEVEL_STEP, game.level - 1);
+  const thrustAccel = THRUST_ACCEL_FRAC * H;
+  const safeVy = SAFE_VY_FRAC * H, safeVx = SAFE_VX_FRAC * H;
+  const perfectVy = PERFECT_VY_FRAC * H, perfectVx = PERFECT_VX_FRAC * H;
+
+  if (controls.left) game.ship.angle -= ROTATE_SPEED * dt;
+  if (controls.right) game.ship.angle += ROTATE_SPEED * dt;
+
+  let ax = 0, ay = gravity;
+  if (game.windStrengthFrac > 0) {
+    ax += Math.sin(game.time * 0.6 + game.windPhase) * game.windStrengthFrac * H;
+  }
+
+  const thrusting = controls.thrust && game.fuel > 0;
+  if (thrusting) {
+    const rad = (game.ship.angle * Math.PI) / 180;
+    ax += Math.sin(rad) * thrustAccel;
+    ay += -Math.cos(rad) * thrustAccel;
+    game.fuel = Math.max(0, game.fuel - FUEL_BURN_RATE * dt);
+    spawnFlameParticles(game);
+    if (game.fuel <= 0 && !game.fuelWarned) {
+      game.fuelWarned = true;
+      cb.onFuelEmpty();
+    }
+  }
+  if (thrusting && !game.wasThrusting) cb.onThrustStart();
+  if (!thrusting && game.wasThrusting) cb.onThrustEnd();
+  game.wasThrusting = thrusting;
+
+  game.ship.vx += ax * dt;
+  game.ship.vy += ay * dt;
+  game.ship.x += game.ship.vx * dt;
+  game.ship.y += game.ship.vy * dt;
+
+  if (game.ship.x < 0) game.ship.x += W;
+  if (game.ship.x > W) game.ship.x -= W;
+  if (game.ship.y < 0) { game.ship.y = 0; game.ship.vy = Math.max(0, game.ship.vy); }
+
+  const shipRadius = H * 0.022;
+  const fx = game.ship.x / W;
+  const groundY = getGroundFy(game.terrain, fx) * H;
+
+  if (game.ship.y + shipRadius >= groundY) {
+    game.ship.y = groundY - shipRadius;
+    const shipHalfWidthFx = (shipRadius * 1.1) / W;
+    const onPad = (fx - shipHalfWidthFx) >= game.pad.fxStart && (fx + shipHalfWidthFx) <= game.pad.fxEnd;
+    const vyAbs = Math.abs(game.ship.vy), vxAbs = Math.abs(game.ship.vx);
+    const angleNorm = ((game.ship.angle % 360) + 540) % 360 - 180;
+    const angleAbs = Math.abs(angleNorm);
+    const safe = onPad && vyAbs <= safeVy && vxAbs <= safeVx && angleAbs <= SAFE_ANGLE;
+
+    if (safe) {
+      const perfect = vyAbs <= perfectVy && vxAbs <= perfectVx && angleAbs <= PERFECT_ANGLE;
+      const base = 100 + (game.level - 1) * 15;
+      const softness = Math.max(0, Math.round((1 - vyAbs / safeVy) * 150));
+      const fuelBonus = Math.round(game.fuel * 1.5);
+      const perfectBonus = perfect ? 250 : 0;
+      const gained = Math.round((base + softness + fuelBonus + perfectBonus) * game.combo);
+      game.score += gained;
+      game.combo = Math.min(MAX_COMBO, game.combo + 1);
+      spawnLandingParticles(game, perfect);
+      game.phase = 'landed';
+      game.transitionTimer = 1.15;
+      if (thrustOsc) cb.onThrustEnd();
+      cb.onLand(gained, perfect, game.level);
+    } else {
+      game.lives -= 1;
+      game.combo = 1;
+      game.shakeTime = 0.5;
+      game.shakeMag = H * 0.035;
+      spawnExplosion(game);
+      game.phase = 'crashed';
+      game.transitionTimer = 1.3;
+      if (thrustOsc) cb.onThrustEnd();
+      cb.onCrash(game.lives);
+    }
+    game.ship.vx = 0;
+    game.ship.vy = 0;
+  }
+
+  updateParticles(game, dt);
+  if (game.shakeTime > 0) game.shakeTime = Math.max(0, game.shakeTime - dt);
+}
+
+/* ---------- rendering ---------- */
+function draw(ctx, canvas, game) {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!game) return;
+
+  ctx.save();
+  if (game.shakeTime > 0) {
+    const mag = game.shakeMag * (game.shakeTime / 0.5);
+    ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
+  }
+
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#040116');
+  bgGrad.addColorStop(1, '#0c0726');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  for (const s of game.stars) {
+    const alpha = 0.35 + 0.55 * Math.abs(Math.sin(game.time * 1.4 + s.phase));
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#cfe8ff';
+    ctx.beginPath();
+    ctx.arc(s.fx * W, s.fy * H, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  ctx.lineTo(game.terrain[0].fx * W, game.terrain[0].fy * H);
+  for (const p of game.terrain) ctx.lineTo(p.fx * W, p.fy * H);
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  const groundGrad = ctx.createLinearGradient(0, H * 0.5, 0, H);
+  groundGrad.addColorStop(0, 'rgba(60,30,110,0.95)');
+  groundGrad.addColorStop(1, 'rgba(10,5,20,0.98)');
+  ctx.fillStyle = groundGrad;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(game.terrain[0].fx * W, game.terrain[0].fy * H);
+  for (const p of game.terrain) ctx.lineTo(p.fx * W, p.fy * H);
+  ctx.strokeStyle = '#b388ff';
+  ctx.lineWidth = Math.max(1.5, H * 0.004);
+  ctx.shadowColor = '#b388ff';
+  ctx.shadowBlur = 10;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  const padX1 = game.pad.fxStart * W, padX2 = game.pad.fxEnd * W, padY = game.pad.fy * H;
+  const padPulse = 0.7 + 0.3 * Math.sin(game.time * 4);
+  ctx.strokeStyle = '#00eaff';
+  ctx.lineWidth = Math.max(2, H * 0.007);
+  ctx.shadowColor = '#00eaff';
+  ctx.shadowBlur = 16 * padPulse;
+  ctx.beginPath();
+  ctx.moveTo(padX1, padY);
+  ctx.lineTo(padX2, padY);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  const pylonH = H * 0.035;
+  ctx.strokeStyle = '#00eaff';
+  ctx.lineWidth = Math.max(1.5, H * 0.004);
+  [padX1, padX2].forEach((px) => {
+    ctx.beginPath();
+    ctx.moveTo(px, padY);
+    ctx.lineTo(px, padY - pylonH);
+    ctx.stroke();
+  });
+
+  for (const p of game.particles) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(0.5, p.size * p.life), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+
+  if (game.phase !== 'crashed') {
+    const shipSize = H * 0.026;
+    ctx.save();
+    ctx.translate(game.ship.x, game.ship.y);
+    ctx.rotate((game.ship.angle * Math.PI) / 180);
+    ctx.shadowColor = '#e8f6ff';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = '#0c1428';
+    ctx.strokeStyle = '#e8f6ff';
+    ctx.lineWidth = Math.max(1.2, shipSize * 0.12);
+    ctx.beginPath();
+    ctx.moveTo(0, -shipSize * 1.3);
+    ctx.lineTo(shipSize * 0.85, shipSize * 0.9);
+    ctx.lineTo(0, shipSize * 0.5);
+    ctx.lineTo(-shipSize * 0.85, shipSize * 0.9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#00eaff';
+    ctx.shadowColor = '#00eaff';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(0, -shipSize * 0.35, shipSize * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-shipSize * 0.85, shipSize * 0.9);
+    ctx.lineTo(-shipSize * 1.25, shipSize * 1.4);
+    ctx.moveTo(shipSize * 0.85, shipSize * 0.9);
+    ctx.lineTo(shipSize * 1.25, shipSize * 1.4);
+    ctx.strokeStyle = '#8fa0c0';
+    ctx.lineWidth = Math.max(1, shipSize * 0.1);
+    ctx.shadowBlur = 0;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/* ---------- main app ---------- */
+function App() {
+  const canvasRef = useRef(null);
+  const gameRef = useRef(null);
+  const rafRef = useRef(null);
+  const lastTimeRef = useRef(0);
+  const hudFrameRef = useRef(0);
+  const announceIdRef = useRef(0);
+  const controlsRef = useRef({ left: false, right: false, thrust: false });
+
+  const [screen, setScreen] = useState('start');
+  const [hud, setHud] = useState({ score: 0, fuel: FUEL_MAX, lives: START_LIVES, level: 1, combo: 1 });
+  const [highScore, setHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
+  const [finalScore, setFinalScore] = useState(0);
+  const [isNewBest, setIsNewBest] = useState(false);
+  const [announce, setAnnounce] = useState(null);
+
+  useEffect(() => {
+    if (localStorage.getItem(HIGH_SCORE_KEY) === null) {
+      localStorage.setItem(HIGH_SCORE_KEY, '0');
+    }
+  }, []);
+
+  const triggerAnnounce = useCallback((text, color) => {
+    announceIdRef.current++;
+    setAnnounce({ text, color, id: announceIdRef.current });
+  }, []);
+
+  const callbacksRef = useRef({});
+  callbacksRef.current = {
+    onThrustStart: () => startThrustSound(),
+    onThrustEnd: () => stopThrustSound(),
+    onFuelEmpty: () => triggerAnnounce('FUEL EMPTY!', '#ff9020'),
+    onLand: (gained, perfect, level) => {
+      if (perfect) { sndPerfectLand(); triggerAnnounce(`PERFECT LANDING +${gained}`, '#ffd700'); }
+      else { sndSafeLand(); triggerAnnounce(`SAFE LANDING +${gained}`, '#00eaff'); }
+    },
+    onCrash: (livesLeft) => {
+      sndCrash();
+      triggerAnnounce(livesLeft > 0 ? 'CRASHED!' : 'CRASHED! NO LIVES LEFT', '#ff3b3b');
+    },
+    onLevelReady: (level) => { sndLevelUp(); triggerAnnounce(`LEVEL ${level}`, '#b388ff'); },
+    onRetryReady: (level) => { triggerAnnounce(`LEVEL ${level} — RETRY`, '#ff9020'); },
+    onGameOver: (score) => {
+      stopThrustSound();
+      setTimeout(() => sndGameOver(), 150);
+      setFinalScore(score);
+      const prevBest = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+      if (score > prevBest) {
+        localStorage.setItem(HIGH_SCORE_KEY, String(score));
+        setHighScore(score);
+        setIsNewBest(true);
+      } else {
+        setIsNewBest(false);
+      }
+      setScreen('gameover');
+    },
+  };
+
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const newW = Math.max(1, Math.floor(rect.width * dpr));
+      const newH = Math.max(1, Math.floor(rect.height * dpr));
+      const game = gameRef.current;
+      if (game && game.prevW && game.prevH) {
+        const sx = newW / game.prevW, sy = newH / game.prevH;
+        game.ship.x *= sx; game.ship.y *= sy;
+        game.ship.vx *= sx; game.ship.vy *= sy;
+      }
+      canvas.width = newW;
+      canvas.height = newH;
+      if (game) { game.prevW = newW; game.prevH = newH; }
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    lastTimeRef.current = performance.now();
+    let active = true;
+
+    function loop(now) {
+      if (!active) return;
+      const dt = Math.min(0.05, (now - lastTimeRef.current) / 1000);
+      lastTimeRef.current = now;
+      const game = gameRef.current;
+      if (game && !game.over) {
+        updateGame(game, dt, canvas, controlsRef.current, callbacksRef.current);
+        hudFrameRef.current++;
+        if (hudFrameRef.current % 2 === 0) {
+          setHud({
+            score: Math.floor(game.score),
+            fuel: game.fuel,
+            lives: game.lives,
+            level: game.level,
+            combo: game.combo,
+          });
+        }
+      }
+      draw(ctx, canvas, game);
+      rafRef.current = requestAnimationFrame(loop);
+    }
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      active = false;
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+    };
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    function onKeyDown(e) {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); controlsRef.current.left = true; }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); controlsRef.current.right = true; }
+      else if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') { e.preventDefault(); controlsRef.current.thrust = true; }
+    }
+    function onKeyUp(e) {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') controlsRef.current.left = false;
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') controlsRef.current.right = false;
+      else if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') controlsRef.current.thrust = false;
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      controlsRef.current.left = false;
+      controlsRef.current.right = false;
+      controlsRef.current.thrust = false;
+    };
+  }, [screen]);
+
+  function startGame() {
+    ensureAudio();
+    const canvas = canvasRef.current;
+    gameRef.current = canvas ? createGame(canvas) : null;
+    hudFrameRef.current = 0;
+    setHud({ score: 0, fuel: FUEL_MAX, lives: START_LIVES, level: 1, combo: 1 });
+    setAnnounce(null);
+    setIsNewBest(false);
+    setScreen('playing');
+    sndStart();
+  }
+
+  function bindHold(key) {
+    return {
+      onMouseDown: () => { controlsRef.current[key] = true; },
+      onMouseUp: () => { controlsRef.current[key] = false; },
+      onMouseLeave: () => { controlsRef.current[key] = false; },
+      onTouchStart: (e) => { e.preventDefault(); controlsRef.current[key] = true; },
+      onTouchEnd: (e) => { e.preventDefault(); controlsRef.current[key] = false; },
+      onTouchCancel: () => { controlsRef.current[key] = false; },
+    };
+  }
+
+  const fuelColor = hud.fuel > 50 ? '#00eaff' : hud.fuel > 20 ? '#ffae00' : '#ff3b3b';
+
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hud-block">
+          <div className="hud-label">Score</div>
+          <div className="hud-value">{hud.score}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Best</div>
+          <div className="hud-value gold">{Math.max(highScore, hud.score)}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Lives</div>
+          <div className="lives">
+            {Array.from({ length: START_LIVES }).map((_, i) => (
+              <span key={i} className={i < hud.lives ? 'life-full' : 'life-empty'}>&#128640;</span>
+            ))}
+          </div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Level</div>
+          <div className="hud-value">{hud.level}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Combo</div>
+          <div className="hud-value" style={{ color: hud.combo > 1 ? '#ffd700' : '#fff', textShadow: hud.combo > 1 ? '0 0 8px #ffd700, 0 0 16px #ffd700' : '0 0 8px #00eaff, 0 0 16px #00eaff' }}>
+            &times;{hud.combo}
+          </div>
+        </div>
+        <div className="hud-block fuel-block">
+          <div className="hud-label">Fuel</div>
+          <div className="fuel-track">
+            <div className="fuel-fill" style={{ width: `${hud.fuel}%`, background: fuelColor, boxShadow: `0 0 8px ${fuelColor}` }}></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="game-area">
+        <canvas ref={canvasRef}></canvas>
+
+        {announce && (
+          <div key={announce.id} className="announce" style={{ color: announce.color, textShadow: `0 0 16px ${announce.color}` }}>
+            {announce.text}
+          </div>
+        )}
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <h1 className="title">GRAVITY BURN</h1>
+            <p className="subtitle">
+              Rotate your lander and fire the <span className="thrust-tag">THRUST</span>er to fight gravity.<br/>
+              Touch down gently and level inside the glowing <span style={{ color: '#00eaff' }}>cyan pad</span> to score &mdash; too fast, too tilted, or off the pad and you'll crash!<br/>
+              Fuel is limited, the pad shrinks, and gravity gets stronger every level. Chain safe landings for a rising combo multiplier.
+            </p>
+            <button className="btn" onClick={startGame}>LAUNCH</button>
+            <div className="controls-hint">&larr;/A &amp; &rarr;/D = Rotate &nbsp;&middot;&nbsp; &uarr;/W/Space = Thrust &nbsp;&middot;&nbsp; or use the buttons below</div>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <h1 className="title">GRAVITY BURN</h1>
+            {isNewBest && <div className="new-high">NEW BEST!</div>}
+            <div className="final-score">{finalScore}</div>
+            <div className="stat-row">
+              <div className="stat"><div className="stat-label">Best</div><div className="stat-value">{highScore}</div></div>
+              <div className="stat"><div className="stat-label">Level Reached</div><div className="stat-value">{hud.level}</div></div>
+            </div>
+            <button className="btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      <div className="controls-row">
+        <button className="ctrl-btn rotate" disabled={screen !== 'playing'} {...bindHold('left')}>
+          <span className="ctrl-icon">&#9664;</span>
+          <span>ROTATE</span>
+        </button>
+        <button className="ctrl-btn thrust" disabled={screen !== 'playing'} {...bindHold('thrust')}>
+          <span className="ctrl-icon">&#128293;</span>
+          <span>THRUST</span>
+        </button>
+        <button className="ctrl-btn rotate" disabled={screen !== 'playing'} {...bindHold('right')}>
+          <span className="ctrl-icon">&#9654;</span>
+          <span>ROTATE</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
