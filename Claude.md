@@ -87,7 +87,7 @@ Create a complete **HTML file** with React and JSX support:
   <title>Game Name</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
   <style>
     body { margin: 0; overflow: hidden; }
     /* ... game styles ... */

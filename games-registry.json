@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-22",
+    "name": "Hue Forge",
+    "date": "2026-06-22",
+    "description": "Run an alchemist's color forge against the clock. Drop two orbs from the tray into the forge to blend them, matching the TARGET swatch using the RECIPE hint shown above. Correct fusions build a combo multiplier up to x6 and unlock exotic new pigments like gold, teal, indigo, magenta, and lime as your streak grows. Wrong blends or letting the timer run out costs a life - lose all 3 and the forge goes cold.",
+    "tagline": "Blend the hues, beat the clock, don't let the forge go cold.",
+    "tags": [
+      "puzzle",
+      "color",
+      "arcade",
+      "casual",
+      "reflex"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap an orb to drop it into the forge, then click/tap a second orb to blend them; click a filled slot to take an orb back",
+    "folder": "games/2026-06-22",
+    "file": "games/2026-06-22/index.html",
+    "preview": "games/2026-06-22/preview.png"
   }
 ]
