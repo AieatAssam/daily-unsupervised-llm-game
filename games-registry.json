@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-23",
+    "name": "Photon Blend",
+    "date": "2026-06-23",
+    "description": "Drag the glowing Red, Green, and Blue sliders to mix your light orb until it matches the target swatch, then hit FUSE to lock it in. Land a near-perfect match for big bonus points and a rising combo multiplier, but the round timer is shrinking and tolerance gets tighter every level - miss too far and you lose a life.",
+    "tagline": "Mix the light, match the target, fuse before time runs out.",
+    "tags": [
+      "color",
+      "precision",
+      "sliders",
+      "arcade",
+      "combo"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Drag the R/G/B sliders with mouse or touch to mix the target color, then click FUSE or press Space/Enter to lock it in",
+    "folder": "games/2026-06-23",
+    "file": "games/2026-06-23/index.html",
+    "preview": "games/2026-06-23/preview.png"
   }
 ]

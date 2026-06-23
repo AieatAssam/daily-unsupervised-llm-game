@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Photon Blend</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: #0a0014; font-family: 'Segoe UI', Arial, sans-serif; user-select: none; touch-action: none; }
+  #root { width: 100%; height: 100%; position: relative; }
+
+  .bg-gradient {
+    position: fixed; inset: 0; z-index: 0;
+    background: linear-gradient(125deg, #1a0033, #001a33, #330022, #002a2a, #1a0033);
+    background-size: 400% 400%;
+    animation: gradientShift 16s ease infinite;
+  }
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .bg-canvas { position: fixed; inset: 0; z-index: 1; pointer-events: none; width: 100%; height: 100%; }
+
+  .game-root {
+    position: relative; z-index: 2; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff;
+  }
+
+  .overlay-screen {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; gap: 14px;
+    padding: 20px; z-index: 5;
+  }
+
+  .neon-title {
+    font-size: clamp(32px, 9vw, 64px); font-weight: 800; letter-spacing: 4px;
+    color: #fff; margin: 0;
+    text-shadow: 0 0 10px #0ff, 0 0 22px #f0f, 0 0 44px #0ff;
+    animation: titlePulse 2.4s ease-in-out infinite;
+  }
+  @keyframes titlePulse {
+    0%, 100% { text-shadow: 0 0 10px #0ff, 0 0 22px #f0f, 0 0 44px #0ff; }
+    50% { text-shadow: 0 0 18px #0ff, 0 0 36px #f0f, 0 0 70px #0ff; }
+  }
+
+  .subtitle { font-size: clamp(13px, 3vw, 17px); color: #b6ffff; opacity: 0.85; max-width: 480px; margin: 0; }
+
+  .neon-btn {
+    font-size: clamp(16px, 4vw, 20px); font-weight: 700; letter-spacing: 2px;
+    padding: 14px 38px; border-radius: 40px; border: 2px solid #0ff; color: #021;
+    background: linear-gradient(135deg, #0ff, #f0f);
+    box-shadow: 0 0 18px #0ff, 0 0 36px #f0f7;
+    cursor: pointer; margin-top: 8px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .neon-btn:active { transform: scale(0.94); box-shadow: 0 0 8px #0ff; }
+
+  .demo-row { display: flex; gap: 10px; margin: 6px 0; }
+  .demo-chip { width: 34px; height: 34px; border-radius: 50%; box-shadow: 0 0 12px currentColor; }
+
+  .score-line { font-size: clamp(12px, 3vw, 15px); color: #ffd86b; opacity: 0.9; margin: 0; }
+
+  .hud-top {
+    position: absolute; top: 10px; left: 0; right: 0; z-index: 4;
+    display: flex; justify-content: space-around; padding: 0 8px;
+  }
+  .hud-item {
+    text-align: center; font-size: clamp(9px, 2.2vw, 11px); letter-spacing: 1px; color: #9fe;
+    background: rgba(10,0,30,0.45); border: 1px solid rgba(0,255,255,0.3); border-radius: 10px;
+    padding: 4px 10px; min-width: 56px; backdrop-filter: blur(2px);
+  }
+  .hud-item span { display: block; font-size: clamp(14px, 4vw, 19px); font-weight: 800; color: #fff; text-shadow: 0 0 8px #0ff; }
+
+  .timer-track {
+    position: absolute; top: 56px; left: 8%; right: 8%; height: 8px; z-index: 4;
+    background: rgba(255,255,255,0.08); border-radius: 6px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  .timer-fill {
+    height: 100%; width: 100%; border-radius: 6px;
+    background: linear-gradient(90deg, #0ff, #f0f);
+    box-shadow: 0 0 10px #0ff;
+    transition: background 0.3s;
+  }
+
+  .play-area {
+    position: relative; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(8px, 2vh, 18px); padding-top: 70px; padding-bottom: 10px;
+  }
+
+  .swatches { display: flex; gap: clamp(20px, 8vw, 60px); align-items: center; justify-content: center; }
+  .swatch-block { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .swatch-label { font-size: clamp(10px, 2.4vw, 12px); letter-spacing: 2px; color: #9fe; opacity: 0.8; }
+  .swatch {
+    width: clamp(70px, 22vw, 110px); height: clamp(70px, 22vw, 110px); border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.5);
+    transition: background-color 0.05s linear, box-shadow 0.2s;
+  }
+
+  .result-banner {
+    position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%) scale(1);
+    font-size: clamp(22px, 6vw, 38px); font-weight: 800; letter-spacing: 2px; z-index: 6;
+    text-shadow: 0 0 14px currentColor, 0 0 30px currentColor;
+    animation: bannerPop 0.9s ease forwards; pointer-events: none; white-space: nowrap;
+  }
+  @keyframes bannerPop {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+    20% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+    70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -65%) scale(1); }
+  }
+
+  .sliders { display: flex; gap: clamp(18px, 6vw, 40px); align-items: flex-end; }
+  .slider-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .slider-track {
+    position: relative; width: clamp(46px, 12vw, 64px); height: clamp(140px, 32vh, 240px);
+    border-radius: 16px; background: rgba(255,255,255,0.06);
+    border: 2px solid rgba(255,255,255,0.25); overflow: hidden; cursor: pointer;
+    touch-action: none;
+  }
+  .slider-fill { position: absolute; bottom: 0; left: 0; width: 100%; transition: none; }
+  .slider-col.r .slider-fill { background: linear-gradient(180deg, #ff3b6b, #5e0017); }
+  .slider-col.g .slider-fill { background: linear-gradient(180deg, #3bff7a, #00501f); }
+  .slider-col.b .slider-fill { background: linear-gradient(180deg, #3b9bff, #001f50); }
+  .slider-knob {
+    position: absolute; left: 50%; width: 80%; height: 10px; border-radius: 6px;
+    background: #fff; transform: translate(-50%, 50%); box-shadow: 0 0 10px #fff;
+  }
+  .slider-value { font-size: clamp(12px, 3vw, 15px); font-weight: 700; color: #fff; }
+  .slider-label { font-size: clamp(10px, 2.6vw, 13px); letter-spacing: 2px; opacity: 0.75; }
+  .slider-col.r .slider-label { color: #ff6b8f; }
+  .slider-col.g .slider-label { color: #6bff9b; }
+  .slider-col.b .slider-label { color: #6bb6ff; }
+
+  .fuse-btn {
+    font-size: clamp(16px, 4vw, 20px); font-weight: 800; letter-spacing: 3px;
+    padding: 12px 44px; border-radius: 40px; border: 2px solid #ffd86b; color: #1a1300;
+    background: linear-gradient(135deg, #ffd86b, #ff8a3b);
+    box-shadow: 0 0 16px #ffd86b99;
+    cursor: pointer; margin-top: 4px;
+  }
+  .fuse-btn:active { transform: scale(0.94); }
+
+  .accuracy-hint {
+    font-size: clamp(10px, 2.6vw, 12px); color: #cdf; opacity: 0.7; letter-spacing: 1px;
+  }
+
+  @media (max-height: 560px) {
+    .play-area { padding-top: 60px; gap: 6px; }
+    .swatch { width: 56px; height: 56px; }
+    .slider-track { height: 110px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'photonBlendHighScore';
+const CH = ['r', 'g', 'b'];
+const MAX_DIST = Math.sqrt(3 * 215 * 215);
+
+function randomColor() {
+  return {
+    r: 20 + Math.floor(Math.random() * 216),
+    g: 20 + Math.floor(Math.random() * 216),
+    b: 20 + Math.floor(Math.random() * 216),
+  };
+}
+
+function colorDist(a, b) {
+  const dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+function rgbStr(c) {
+  return `rgb(${c.r}, ${c.g}, ${c.b})`;
+}
+
+const GameComponent = () => {
+  const [phase, setPhase] = useState('start');
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [round, setRound] = useState(0);
+  const [target, setTarget] = useState({ r: 130, g: 130, b: 130 });
+  const [mix, setMix] = useState({ r: 0, g: 0, b: 0 });
+  const [banner, setBanner] = useState(null);
+
+  const canvasRef = useRef(null);
+  const timerFillRef = useRef(null);
+  const mixSwatchRef = useRef(null);
+  const targetSwatchRef = useRef(null);
+
+  const scoreRef = useRef(0);
+  const highScoreRef = useRef(0);
+  const livesRef = useRef(3);
+  const comboRef = useRef(0);
+  const levelRef = useRef(0);
+  const roundRef = useRef(0);
+  const phaseRef = useRef('start');
+  const targetRef = useRef({ r: 130, g: 130, b: 130 });
+  const mixRef = useRef({ r: 0, g: 0, b: 0 });
+  const timeLeftRef = useRef(9);
+  const roundTimeRef = useRef(9);
+  const pausedRef = useRef(true);
+  const dragRectRef = useRef({ r: null, g: null, b: null });
+  const particlesRef = useRef([]);
+  const audioCtxRef = useRef(null);
+  const bannerTimerRef = useRef(null);
+
+  // ---------- audio ----------
+  const getCtx = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new AC();
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur = 0.15, type = 'sine', vol = 0.2, delay = 0) => {
+    try {
+      const ctx = getCtx();
+      const t0 = ctx.currentTime + delay;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(vol, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.03);
+    } catch (e) {}
+  }, [getCtx]);
+
+  const sndStart = useCallback(() => { beep(440, 0.1, 'sine', 0.2); beep(660, 0.12, 'sine', 0.18, 0.08); beep(880, 0.16, 'sine', 0.18, 0.16); }, [beep]);
+  const sndFuse = useCallback(() => beep(500, 0.07, 'square', 0.12), [beep]);
+  const sndPerfect = useCallback(() => { beep(880, 0.12, 'sine', 0.22); beep(1108, 0.12, 'sine', 0.2, 0.08); beep(1318, 0.2, 'sine', 0.22, 0.16); }, [beep]);
+  const sndGood = useCallback(() => { beep(620, 0.16, 'triangle', 0.2); }, [beep]);
+  const sndMiss = useCallback(() => { beep(160, 0.3, 'sawtooth', 0.22); }, [beep]);
+  const sndGameOver = useCallback(() => { beep(440, 0.18, 'sawtooth', 0.2); beep(330, 0.18, 'sawtooth', 0.2, 0.16); beep(220, 0.3, 'sawtooth', 0.22, 0.32); }, [beep]);
+
+  // ---------- particles ----------
+  const spawnAmbient = useCallback((w, h, count) => {
+    const colors = ['#0ff', '#f0f', '#ffd86b', '#3bff9b'];
+    for (let i = 0; i < count; i++) {
+      particlesRef.current.push({
+        ambient: true,
+        x: Math.random() * w, y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 8, vy: -6 - Math.random() * 14,
+        size: 1 + Math.random() * 2.2,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        alpha: 0.25 + Math.random() * 0.35,
+      });
+    }
+  }, []);
+
+  const spawnBurst = useCallback((cx, cy, color, count = 28) => {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 180;
+      particlesRef.current.push({
+        ambient: false,
+        x: cx, y: cy,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 0, maxLife: 0.5 + Math.random() * 0.5,
+        size: 2 + Math.random() * 3.5,
+        color,
+      });
+    }
+  }, []);
+
+  // ---------- registry of mutable+display state sync helpers ----------
+  const setLivesBoth = (v) => { livesRef.current = v; setLives(v); };
+  const setComboBoth = (v) => { comboRef.current = v; setCombo(v); };
+  const setScoreBoth = (v) => { scoreRef.current = v; setScore(v); };
+  const setRoundBoth = (v) => { roundRef.current = v; setRound(v); };
+
+  const startRound = useCallback(() => {
+    const lvl = levelRef.current;
+    const rt = Math.max(3.4, 9 - lvl * 0.45);
+    roundTimeRef.current = rt;
+    timeLeftRef.current = rt;
+    if (timerFillRef.current) {
+      timerFillRef.current.style.width = '100%';
+      timerFillRef.current.style.background = 'linear-gradient(90deg, #0ff, #f0f)';
+    }
+    const t = randomColor();
+    targetRef.current = t;
+    setTarget(t);
+    mixRef.current = { r: 0, g: 0, b: 0 };
+    setMix({ r: 0, g: 0, b: 0 });
+    pausedRef.current = false;
+  }, []);
+
+  const endGame = useCallback(() => {
+    phaseRef.current = 'gameover';
+    setPhase('gameover');
+    if (scoreRef.current > highScoreRef.current) {
+      highScoreRef.current = scoreRef.current;
+      setHighScore(scoreRef.current);
+      try { localStorage.setItem(HS_KEY, String(scoreRef.current)); } catch (e) {}
+    }
+    sndGameOver();
+  }, [sndGameOver]);
+
+  const proceedAfterResult = useCallback(() => {
+    if (livesRef.current <= 0) {
+      endGame();
+      return;
+    }
+    const nextRound = roundRef.current + 1;
+    setRoundBoth(nextRound);
+    if (nextRound % 4 === 0) levelRef.current += 1;
+    startRound();
+  }, [endGame, startRound]);
+
+  const showBanner = useCallback((text, color) => {
+    setBanner({ text, color, key: Date.now() + Math.random() });
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = setTimeout(() => {
+      setBanner(null);
+      proceedAfterResult();
+    }, 900);
+  }, [proceedAfterResult]);
+
+  const resolveResult = useCallback((dist, fromTimeout) => {
+    const lvl = levelRef.current;
+    const perfectDist = Math.max(10, 36 - lvl * 2.2);
+    const goodDist = Math.max(34, 92 - lvl * 5);
+    const timeFrac = Math.max(0, timeLeftRef.current / roundTimeRef.current);
+    const multiplier = 1 + Math.min(4, Math.floor(comboRef.current / 3));
+
+    const swatchEl = mixSwatchRef.current;
+    const rect = swatchEl ? swatchEl.getBoundingClientRect() : { left: window.innerWidth / 2, top: window.innerHeight / 2, width: 0, height: 0 };
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    if (!fromTimeout && dist <= perfectDist) {
+      const pts = Math.round((900 + timeFrac * 300) * multiplier);
+      setScoreBoth(scoreRef.current + pts);
+      setComboBoth(comboRef.current + 1);
+      spawnBurst(cx, cy, '#0ff', 32);
+      sndPerfect();
+      showBanner(`PERFECT! +${pts}`, '#0ff');
+    } else if (!fromTimeout && dist <= goodDist) {
+      const pts = Math.round((350 + timeFrac * 150) * multiplier);
+      setScoreBoth(scoreRef.current + pts);
+      setComboBoth(comboRef.current + 1);
+      spawnBurst(cx, cy, '#ffd86b', 20);
+      sndGood();
+      showBanner(`GOOD +${pts}`, '#ffd86b');
+    } else {
+      setComboBoth(0);
+      setLivesBoth(livesRef.current - 1);
+      spawnBurst(cx, cy, '#ff3b6b', 24);
+      sndMiss();
+      showBanner(fromTimeout ? "TIME'S UP!" : 'MISS!', '#ff3b6b');
+    }
+  }, [spawnBurst, sndPerfect, sndGood, sndMiss, showBanner]);
+
+  const handleFuse = useCallback(() => {
+    if (phaseRef.current !== 'playing' || pausedRef.current) return;
+    pausedRef.current = true;
+    sndFuse();
+    const dist = colorDist(mixRef.current, targetRef.current);
+    resolveResult(dist, false);
+  }, [sndFuse, resolveResult]);
+
+  const handleTimeout = useCallback(() => {
+    if (phaseRef.current !== 'playing' || pausedRef.current) return;
+    pausedRef.current = true;
+    resolveResult(MAX_DIST, true);
+  }, [resolveResult]);
+
+  const startGame = useCallback(() => {
+    getCtx();
+    scoreRef.current = 0; setScore(0);
+    livesRef.current = 3; setLives(3);
+    comboRef.current = 0; setCombo(0);
+    levelRef.current = 0;
+    roundRef.current = 0; setRound(0);
+    phaseRef.current = 'playing';
+    setPhase('playing');
+    setBanner(null);
+    startRound();
+    sndStart();
+  }, [getCtx, startRound, sndStart]);
+
+  // ---------- high score load ----------
+  useEffect(() => {
+    let stored = 0;
+    try {
+      const raw = localStorage.getItem(HS_KEY);
+      if (raw === null) {
+        localStorage.setItem(HS_KEY, '0');
+      } else {
+        stored = parseInt(raw, 10) || 0;
+      }
+    } catch (e) {}
+    highScoreRef.current = stored;
+    setHighScore(stored);
+  }, []);
+
+  // ---------- keyboard ----------
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        if (phaseRef.current === 'playing') handleFuse();
+        else if (phaseRef.current === 'start' || phaseRef.current === 'gameover') startGame();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleFuse, startGame]);
+
+  // ---------- main animation loop (timer + particles) ----------
+  useEffect(() => {
+    let rafId;
+    let lastTs = null;
+    const canvas = canvasRef.current;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    spawnAmbient(window.innerWidth, window.innerHeight, 50);
+
+    function loop(ts) {
+      if (lastTs == null) lastTs = ts;
+      const dt = Math.min(0.05, (ts - lastTs) / 1000);
+      lastTs = ts;
+
+      if (phaseRef.current === 'playing' && !pausedRef.current) {
+        timeLeftRef.current -= dt;
+        const pct = Math.max(0, timeLeftRef.current / roundTimeRef.current);
+        if (timerFillRef.current) {
+          timerFillRef.current.style.width = (pct * 100) + '%';
+          timerFillRef.current.style.background = pct < 0.25
+            ? 'linear-gradient(90deg, #ff3b6b, #ffd86b)'
+            : 'linear-gradient(90deg, #0ff, #f0f)';
+        }
+        if (timeLeftRef.current <= 0) {
+          timeLeftRef.current = 0;
+          handleTimeout();
+        }
+      }
+
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const arr = particlesRef.current;
+      const next = [];
+      for (let i = 0; i < arr.length; i++) {
+        const p = arr[i];
+        if (p.ambient) {
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          if (p.y < -10) { p.y = h + 10; p.x = Math.random() * w; }
+          if (p.x < -10) p.x = w + 10;
+          if (p.x > w + 10) p.x = -10;
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          next.push(p);
+        } else {
+          p.life += dt;
+          if (p.life >= p.maxLife) continue;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= 0.94;
+          p.vy *= 0.94;
+          const alpha = 1 - p.life / p.maxLife;
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          next.push(p);
+        }
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+      particlesRef.current = next;
+
+      rafId = requestAnimationFrame(loop);
+    }
+    rafId = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', resize);
+    };
+  }, [handleTimeout, spawnAmbient]);
+
+  // ---------- slider pointer handling ----------
+  const updateFromY = (clientY, ch, rect) => {
+    let pct = 1 - (clientY - rect.top) / rect.height;
+    pct = Math.max(0, Math.min(1, pct));
+    const val = Math.round(pct * 255);
+    mixRef.current = { ...mixRef.current, [ch]: val };
+    setMix(mixRef.current);
+  };
+
+  const onSliderDown = (e, ch) => {
+    if (phaseRef.current !== 'playing' || pausedRef.current) return;
+    try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+    const rect = e.currentTarget.getBoundingClientRect();
+    dragRectRef.current[ch] = rect;
+    updateFromY(e.clientY, ch, rect);
+  };
+  const onSliderMove = (e, ch) => {
+    const rect = dragRectRef.current[ch];
+    if (!rect) return;
+    updateFromY(e.clientY, ch, rect);
+  };
+  const onSliderUp = (e, ch) => {
+    dragRectRef.current[ch] = null;
+  };
+
+  const comboMultiplier = 1 + Math.min(4, Math.floor(combo / 3));
+  const liveDist = colorDist(mix, target);
+  const liveAccuracy = Math.max(0, Math.round(100 - (liveDist / MAX_DIST) * 100));
+
+  return (
+    <div className="game-root">
+      <div className="bg-gradient"></div>
+      <canvas ref={canvasRef} className="bg-canvas"></canvas>
+
+      {phase === 'start' && (
+        <div className="overlay-screen">
+          <h1 className="neon-title">PHOTON BLEND</h1>
+          <p className="subtitle">Drag the R G B beams to mix a light matching the glowing target. Lock in fast and precise for PERFECT combos!</p>
+          <div className="demo-row">
+            <div className="demo-chip" style={{ background: '#ff3b6b', color: '#ff3b6b' }}></div>
+            <div className="demo-chip" style={{ background: '#3bff7a', color: '#3bff7a' }}></div>
+            <div className="demo-chip" style={{ background: '#3b9bff', color: '#3b9bff' }}></div>
+          </div>
+          <button className="neon-btn" onClick={startGame}>TAP TO START</button>
+          <p className="score-line">Best Score: {highScore}</p>
+        </div>
+      )}
+
+      {phase === 'gameover' && (
+        <div className="overlay-screen">
+          <h1 className="neon-title" style={{ fontSize: 'clamp(26px, 7vw, 46px)' }}>SPECTRUM LOST</h1>
+          <p className="score-line">Final Score: {score}</p>
+          <p className="score-line">Best Score: {highScore}</p>
+          <button className="neon-btn" onClick={startGame}>TRY AGAIN</button>
+        </div>
+      )}
+
+      {phase === 'playing' && (
+        <div className="play-area">
+          <div className="hud-top">
+            <div className="hud-item">SCORE<span>{score}</span></div>
+            <div className="hud-item">BEST<span>{highScore}</span></div>
+            <div className="hud-item">LIVES<span>{'♥'.repeat(Math.max(0, lives))}</span></div>
+            <div className="hud-item">COMBO<span>x{comboMultiplier}</span></div>
+          </div>
+          <div className="timer-track"><div className="timer-fill" ref={timerFillRef}></div></div>
+
+          <div className="swatches">
+            <div className="swatch-block">
+              <div className="swatch-label">TARGET</div>
+              <div
+                ref={targetSwatchRef}
+                className="swatch"
+                style={{ backgroundColor: rgbStr(target), boxShadow: `0 0 26px ${rgbStr(target)}` }}
+              ></div>
+            </div>
+            <div className="swatch-block">
+              <div className="swatch-label">YOUR BLEND</div>
+              <div
+                ref={mixSwatchRef}
+                className="swatch"
+                style={{ backgroundColor: rgbStr(mix), boxShadow: `0 0 26px ${rgbStr(mix)}` }}
+              ></div>
+            </div>
+          </div>
+
+          <div className="accuracy-hint">MATCH: {liveAccuracy}%</div>
+
+          {banner && <div key={banner.key} className="result-banner" style={{ color: banner.color }}>{banner.text}</div>}
+
+          <div className="sliders">
+            {CH.map((ch) => (
+              <div key={ch} className={`slider-col ${ch}`}>
+                <div
+                  className="slider-track"
+                  onPointerDown={(e) => onSliderDown(e, ch)}
+                  onPointerMove={(e) => onSliderMove(e, ch)}
+                  onPointerUp={(e) => onSliderUp(e, ch)}
+                  onPointerCancel={(e) => onSliderUp(e, ch)}
+                >
+                  <div className="slider-fill" style={{ height: `${(mix[ch] / 255) * 100}%` }}></div>
+                  <div className="slider-knob" style={{ bottom: `${(mix[ch] / 255) * 100}%` }}></div>
+                </div>
+                <div className="slider-value">{mix[ch]}</div>
+                <div className="slider-label">{ch.toUpperCase()}</div>
+              </div>
+            ))}
+          </div>
+
+          <button className="fuse-btn" onClick={handleFuse}>FUSE</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+ReactDOM.render(<GameComponent />, document.getElementById('root'));
+</script>
+</body>
+</html>
