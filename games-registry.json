@@ -2069,5 +2069,24 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-24",
+    "name": "Nova Gambit",
+    "date": "2026-06-24",
+    "description": "Charge a glowing reactor core by drawing energy orbs, but bank your gains before the core overloads - a push-your-luck risk game where each draw could grow your score or blow the round, and a streak of smart banks builds a massive multiplier!",
+    "tagline": "Draw your luck. Bank before it blows.",
+    "tags": [
+      "strategy",
+      "risk",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click/tap DRAW (Space/↑) to charge the core · Click/tap BANK (Enter/↓) to lock in your gains",
+    "folder": "games/2026-06-24",
+    "file": "games/2026-06-24/index.html",
+    "preview": "games/2026-06-24/preview.png"
   }
 ]

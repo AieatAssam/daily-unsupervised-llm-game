@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Nova Gambit</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #05000d; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: #fff;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  #root { width: 100vw; height: 100vh; }
+
+  .app-root { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+  .app-root.shake { animation: shakeAnim 0.4s; }
+  @keyframes shakeAnim {
+    10%, 90% { transform: translate(-3px, 0); }
+    20%, 80% { transform: translate(5px, -2px); }
+    30%, 50%, 70% { transform: translate(-7px, 2px); }
+    40%, 60% { transform: translate(7px, -2px); }
+  }
+
+  .bg-gradient {
+    position: absolute; inset: -20%;
+    background: conic-gradient(from 0deg, #6e00ff, #00e5ff, #ff00aa, #ff8800, #00ffc8, #6e00ff);
+    filter: blur(70px) saturate(1.5);
+    animation: spinHue 22s linear infinite, pulseFade 7s ease-in-out infinite;
+    z-index: 0;
+  }
+  @keyframes spinHue { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes pulseFade { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.75; } }
+  .bg-vignette {
+    position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(circle at 50% 38%, rgba(8,0,18,0.15), rgba(4,0,12,0.9) 78%);
+  }
+  .fx-canvas { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  .flash-overlay {
+    position: absolute; inset: 0; z-index: 5; pointer-events: none;
+    background: rgba(255, 40, 70, 0.35);
+    animation: flashFade 0.3s ease-out;
+  }
+  @keyframes flashFade { from { opacity: 1; } to { opacity: 0; } }
+
+  .layout { position: relative; z-index: 3; width: 100%; height: 100%; display: flex; flex-direction: column; }
+
+  .hud { padding: clamp(8px,2vw,16px) clamp(10px,3vw,24px) 0; }
+  .hud-row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .hud-item { display: flex; flex-direction: column; align-items: center; min-width: 60px; }
+  .hud-label { font-size: clamp(9px,2vw,11px); letter-spacing: 2px; opacity: 0.65; }
+  .hud-value { font-size: clamp(16px,4vw,24px); font-weight: 800; color: #00f7ff; text-shadow: 0 0 10px #00f7ffaa; }
+  .hud-item.lives .hud-value { color: #ff4f7e; text-shadow: 0 0 10px #ff4f7eaa; letter-spacing: 3px; }
+  .round-row { margin-top: 4px; }
+  .round-row .hud-value { color: #ffd700; text-shadow: 0 0 10px #ffd700aa; font-size: clamp(14px,3.4vw,20px); }
+
+  .core-zone { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+  .core-ring-wrap { position: relative; width: clamp(160px,42vw,220px); height: clamp(160px,42vw,220px); }
+  .core-gauge { width: 100%; height: 100%; }
+  .gauge-bg { fill: rgba(255,255,255,0.04); stroke: rgba(255,255,255,0.12); stroke-width: 10; }
+  .gauge-fill { fill: none; stroke-width: 12; stroke-linecap: round; transition: stroke-dashoffset 0.25s ease, stroke 0.3s ease; }
+  .gauge-fill.safe { stroke: #00ffaa; filter: drop-shadow(0 0 8px #00ffaa); }
+  .gauge-fill.warn { stroke: #ffd700; filter: drop-shadow(0 0 10px #ffd700); }
+  .gauge-fill.danger { stroke: #ff3355; filter: drop-shadow(0 0 14px #ff3355); }
+  .core-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .core-total { font-size: clamp(30px,8vw,46px); font-weight: 900; color: #fff; text-shadow: 0 0 16px rgba(0,247,255,0.7); }
+  .core-threshold { font-size: clamp(12px,3vw,15px); opacity: 0.6; margin-top: -4px; letter-spacing: 1px; }
+  .quick-badge {
+    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(90deg,#ffd700,#ff8800); color: #1a0033; font-weight: 800;
+    font-size: clamp(10px,2.4vw,12px); padding: 4px 10px; border-radius: 12px; letter-spacing: 1px;
+    box-shadow: 0 0 14px #ffd700aa; animation: quickPulse 0.6s ease-in-out infinite alternate;
+  }
+  @keyframes quickPulse { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.08); } }
+
+  .popup {
+    position: absolute; left: 50%; top: 36%; transform: translate(-50%, -50%);
+    font-size: clamp(18px,4.4vw,28px); font-weight: 800; pointer-events: none;
+    text-shadow: 0 0 10px currentColor; animation: popupFloat 0.9s ease-out forwards;
+  }
+  @keyframes popupFloat {
+    0% { opacity: 0; transform: translate(-50%, -30%) scale(0.7); }
+    20% { opacity: 1; transform: translate(-50%, -60%) scale(1.1); }
+    100% { opacity: 0; transform: translate(-50%, -130%) scale(1); }
+  }
+
+  .multiplier-badge {
+    margin-top: 10px; font-size: clamp(13px,3.2vw,17px); font-weight: 800; color: #ff8a00;
+    text-shadow: 0 0 10px #ff8a00aa; letter-spacing: 1px;
+  }
+
+  .controls { display: flex; gap: clamp(10px,3vw,22px); justify-content: center; padding: clamp(14px,4vw,28px); }
+  .action-btn {
+    flex: 1; max-width: 220px; padding: clamp(14px,4vw,20px) 8px; font-size: clamp(17px,4.6vw,24px);
+    font-weight: 800; letter-spacing: 2px; border-radius: 18px; border: 2px solid;
+    cursor: pointer; color: #fff; background: rgba(10,10,28,0.65);
+    transition: transform 0.1s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+  .action-btn.draw { border-color: #00f7ff; box-shadow: 0 0 20px #00f7ff77, inset 0 0 14px #00f7ff22; }
+  .action-btn.draw:active { transform: scale(0.94); }
+  .action-btn.bank { border-color: #ffd700; box-shadow: 0 0 20px #ffd70077, inset 0 0 14px #ffd70022; }
+  .action-btn.bank:active:not(:disabled) { transform: scale(0.94); }
+  .action-btn.bank:disabled { opacity: 0.32; box-shadow: none; cursor: not-allowed; }
+  .action-btn .sub { display: block; font-size: 0.55em; opacity: 0.9; margin-top: 4px; letter-spacing: 1px; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; padding: 24px;
+    background: rgba(5,0,14,0.55); backdrop-filter: blur(6px);
+  }
+  .title {
+    font-size: clamp(34px,9vw,62px); font-weight: 900; letter-spacing: 4px; margin: 0 0 6px;
+    background: linear-gradient(90deg, #00f7ff, #ff00ea, #ffae00);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 18px rgba(255,0,234,0.55));
+    animation: titleGlow 3s ease-in-out infinite alternate;
+  }
+  @keyframes titleGlow {
+    0% { filter: drop-shadow(0 0 10px #00f7ff); }
+    100% { filter: drop-shadow(0 0 26px #ff00ea); }
+  }
+  .tagline { opacity: 0.85; font-size: clamp(13px,3vw,17px); margin: 0 0 18px; max-width: 420px; }
+  .best-score-display { font-size: clamp(13px,3vw,16px); letter-spacing: 2px; color: #ffd700; margin-bottom: 18px; text-shadow: 0 0 10px #ffd70088; }
+  .big-btn {
+    padding: 16px 48px; font-size: clamp(18px,4.4vw,24px); font-weight: 800; letter-spacing: 3px;
+    border-radius: 50px; border: 2px solid #00f7ff; background: rgba(0,247,255,0.12); color: #fff;
+    box-shadow: 0 0 26px #00f7ff88, inset 0 0 16px #00f7ff33; cursor: pointer; margin-bottom: 22px;
+    transition: transform 0.15s ease;
+  }
+  .big-btn:active { transform: scale(0.95); }
+  .instructions { font-size: clamp(11px,2.6vw,14px); opacity: 0.75; max-width: 420px; line-height: 1.7; }
+  .instructions strong { color: #00f7ff; }
+
+  .final-score { font-size: clamp(28px,7vw,42px); font-weight: 900; color: #fff; text-shadow: 0 0 18px #ff8a00aa; margin-bottom: 6px; }
+  .new-best { color: #ffd700; font-weight: 800; letter-spacing: 2px; margin-bottom: 10px; text-shadow: 0 0 14px #ffd700aa; animation: quickPulse 0.5s ease-in-out infinite alternate; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const HIGH_SCORE_KEY = 'novaGambitHighScore';
+const LIVES_START = 3;
+const MULTIPLIER_MAX = 4;
+const QUICK_WINDOW_MS = 1600;
+
+const DRAW_COLORS = ['#00f7ff', '#33d9ff', '#7af0ff'];
+const SURGE_COLORS = ['#ff00ea', '#ff66f5', '#c700ff'];
+const BANK_COLORS = ['#ffd700', '#ffec80', '#ff8a00'];
+const BUST_COLORS = ['#ff3355', '#ff8a00', '#ff6688'];
+
+function randomThreshold() {
+  return Math.round(70 + Math.random() * 55);
+}
+
+function NovaGambit() {
+  const [screen, setScreen] = useState('start');
+  const [score, setScore] = useState(0);
+  const [bestScore, setBestScore] = useState(0);
+  const [lives, setLives] = useState(LIVES_START);
+  const [round, setRound] = useState(1);
+  const [roundTotal, setRoundTotal] = useState(0);
+  const [threshold, setThreshold] = useState(randomThreshold());
+  const [multiplier, setMultiplier] = useState(1);
+  const [quickActive, setQuickActive] = useState(false);
+  const [shake, setShake] = useState(false);
+  const [flash, setFlash] = useState(false);
+  const [popups, setPopups] = useState([]);
+  const [canvasSize, setCanvasSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+
+  const canvasRef = useRef(null);
+  const particlesRef = useRef([]);
+  const audioCtxRef = useRef(null);
+  const quickTimerRef = useRef(null);
+  const popupIdRef = useRef(0);
+
+  useEffect(() => {
+    if (localStorage.getItem(HIGH_SCORE_KEY) === null) {
+      localStorage.setItem(HIGH_SCORE_KEY, '0');
+    }
+    setBestScore(Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
+  }, []);
+
+  useEffect(() => {
+    function resize() {
+      const c = canvasRef.current;
+      if (!c) return;
+      c.width = window.innerWidth;
+      c.height = window.innerHeight;
+      setCanvasSize({ w: window.innerWidth, h: window.innerHeight });
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    function tick() {
+      const c = canvasRef.current;
+      const ctx = c && c.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, c.width, c.height);
+        const list = particlesRef.current;
+        for (let i = list.length - 1; i >= 0; i--) {
+          const p = list[i];
+          if (p.orb) {
+            p.x += (p.tx - p.x) * 0.14;
+            p.y += (p.ty - p.y) * 0.14;
+            const dist = Math.hypot(p.tx - p.x, p.ty - p.y);
+            if (dist < 12) { list.splice(i, 1); continue; }
+          } else {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.05;
+            p.life -= p.decay;
+            if (p.life <= 0) { list.splice(i, 1); continue; }
+          }
+          ctx.globalAlpha = p.orb ? 1 : Math.max(p.life, 0);
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 14;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+      }
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (screen !== 'playing') return;
+      if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); handleDraw(); }
+      else if (e.code === 'Enter' || e.code === 'ArrowDown') { e.preventDefault(); handleBank(); }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  function ensureAudio() {
+    if (!audioCtxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtxRef.current = new AC();
+    }
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+  }
+
+  function playTone(freq, dur, type, vol, delay) {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const t0 = ctx.currentTime + (delay || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(vol || 0.2, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }
+
+  function playDrawTone(surge) {
+    playTone(surge ? 880 : 520, 0.12, 'triangle', 0.18, 0);
+    if (surge) playTone(1320, 0.16, 'triangle', 0.15, 0.05);
+  }
+  function playBankTone() {
+    playTone(660, 0.1, 'square', 0.14, 0);
+    playTone(880, 0.1, 'square', 0.14, 0.08);
+    playTone(1100, 0.18, 'square', 0.16, 0.16);
+  }
+  function playBustTone() {
+    playTone(180, 0.35, 'sawtooth', 0.22, 0);
+    playTone(90, 0.4, 'sawtooth', 0.18, 0.05);
+  }
+
+  function coreXY() {
+    return { x: canvasSize.w / 2, y: canvasSize.h * 0.4 };
+  }
+
+  function spawnBurst(count, colors, opts) {
+    opts = opts || {};
+    const { x, y } = coreXY();
+    const speed = opts.speed || 4;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = (0.5 + Math.random()) * speed;
+      particlesRef.current.push({
+        x, y,
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd - (opts.upward ? 2.5 : 0),
+        life: 1,
+        decay: 0.012 + Math.random() * 0.02,
+        size: 2 + Math.random() * 3.5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+      });
+    }
+  }
+
+  function spawnOrbFlight() {
+    const { x: tx, y: ty } = coreXY();
+    const w = canvasSize.w, h = canvasSize.h;
+    const edge = Math.floor(Math.random() * 4);
+    let sx, sy;
+    if (edge === 0) { sx = Math.random() * w; sy = -20; }
+    else if (edge === 1) { sx = w + 20; sy = Math.random() * h; }
+    else if (edge === 2) { sx = Math.random() * w; sy = h + 20; }
+    else { sx = -20; sy = Math.random() * h; }
+    particlesRef.current.push({ x: sx, y: sy, orb: true, tx, ty, size: 5, color: '#00f7ff' });
+  }
+
+  function showPopup(text, color) {
+    const id = ++popupIdRef.current;
+    setPopups(prev => [...prev, { id, text, color }]);
+    setTimeout(() => {
+      setPopups(prev => prev.filter(p => p.id !== id));
+    }, 900);
+  }
+
+  function activateQuickWindow() {
+    if (quickTimerRef.current) clearTimeout(quickTimerRef.current);
+    setQuickActive(true);
+    quickTimerRef.current = setTimeout(() => setQuickActive(false), QUICK_WINDOW_MS);
+  }
+
+  function startNewRound(nextRound) {
+    setRound(nextRound);
+    setThreshold(randomThreshold());
+    setRoundTotal(0);
+    activateQuickWindow();
+  }
+
+  function startGame() {
+    ensureAudio();
+    setScore(0);
+    setLives(LIVES_START);
+    setMultiplier(1);
+    setRound(1);
+    setRoundTotal(0);
+    setThreshold(randomThreshold());
+    setPopups([]);
+    particlesRef.current = [];
+    setScreen('playing');
+    activateQuickWindow();
+  }
+
+  function finishGame(finalScore) {
+    setScreen('gameover');
+    if (finalScore > bestScore) {
+      setBestScore(finalScore);
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalScore));
+    }
+  }
+
+  function triggerBust(reason) {
+    playBustTone();
+    spawnBurst(40, BUST_COLORS, { speed: 6 });
+    setShake(true);
+    setTimeout(() => setShake(false), 400);
+    setFlash(true);
+    setTimeout(() => setFlash(false), 300);
+    showPopup(reason === 'bomb' ? 'BOMB! OVERLOAD!' : 'OVERLOAD!', '#ff3355');
+    setMultiplier(1);
+    const nextLives = lives - 1;
+    setLives(nextLives);
+    if (nextLives <= 0) {
+      finishGame(score);
+    } else {
+      startNewRound(round + 1);
+    }
+  }
+
+  function handleDraw() {
+    if (screen !== 'playing') return;
+    ensureAudio();
+    spawnOrbFlight();
+    const bombChance = Math.min(0.04 + round * 0.012, 0.22);
+    const roll = Math.random();
+    if (roll < bombChance) {
+      triggerBust('bomb');
+      return;
+    }
+    let value = 6 + Math.floor(Math.random() * 13) + Math.floor(Math.random() * Math.min(round, 10));
+    let surge = false;
+    if (Math.random() < 0.12) { value *= 2; surge = true; }
+    if (quickActive) { value = Math.round(value * 1.25); }
+    const newTotal = roundTotal + value;
+    if (newTotal > threshold) {
+      triggerBust('overload');
+      return;
+    }
+    setRoundTotal(newTotal);
+    showPopup(`+${value}${surge ? ' SURGE!' : ''}`, surge ? '#ff00ea' : '#00f7ff');
+    playDrawTone(surge);
+    setTimeout(() => spawnBurst(surge ? 22 : 10, surge ? SURGE_COLORS : DRAW_COLORS, { speed: 3 }), 280);
+    if (quickActive) {
+      setQuickActive(false);
+      if (quickTimerRef.current) clearTimeout(quickTimerRef.current);
+    }
+  }
+
+  function handleBank() {
+    if (screen !== 'playing' || roundTotal <= 0) return;
+    ensureAudio();
+    const gained = Math.round(roundTotal * multiplier);
+    const newScore = score + gained;
+    setScore(newScore);
+    showPopup(`BANKED +${gained}!`, '#ffd700');
+    playBankTone();
+    spawnBurst(30, BANK_COLORS, { speed: 5, upward: true });
+    setMultiplier(m => Math.min(Math.round((m + 0.25) * 100) / 100, MULTIPLIER_MAX));
+    startNewRound(round + 1);
+  }
+
+  const pct = Math.min(roundTotal / threshold, 1);
+  const r = 78;
+  const circ = 2 * Math.PI * r;
+  let gaugeState = 'safe';
+  if (pct > 0.85) gaugeState = 'danger';
+  else if (pct > 0.55) gaugeState = 'warn';
+
+  return (
+    <div className={`app-root${shake ? ' shake' : ''}`}>
+      <div className="bg-gradient"></div>
+      <div className="bg-vignette"></div>
+      <canvas ref={canvasRef} className="fx-canvas"></canvas>
+      {flash && <div className="flash-overlay"></div>}
+
+      <div className="layout">
+        {screen === 'playing' && (
+          <div className="hud">
+            <div className="hud-row">
+              <div className="hud-item"><span className="hud-label">SCORE</span><span className="hud-value">{score}</span></div>
+              <div className="hud-item"><span className="hud-label">BEST</span><span className="hud-value">{bestScore}</span></div>
+              <div className="hud-item lives"><span className="hud-label">LIVES</span><span className="hud-value">{'⬡'.repeat(lives)}</span></div>
+            </div>
+            <div className="hud-row round-row">
+              <div className="hud-item"><span className="hud-label">ROUND</span><span className="hud-value">{round}</span></div>
+              <div className="hud-item"><span className="hud-label">COMBO</span><span className="hud-value">x{multiplier.toFixed(2)}</span></div>
+            </div>
+          </div>
+        )}
+
+        {screen === 'playing' && (
+          <div className="core-zone">
+            <div className="core-ring-wrap">
+              {quickActive && <div className="quick-badge">QUICK!</div>}
+              <svg viewBox="0 0 180 180" className="core-gauge">
+                <circle cx="90" cy="90" r={r} className="gauge-bg" />
+                <circle
+                  cx="90" cy="90" r={r}
+                  className={`gauge-fill ${gaugeState}`}
+                  style={{ strokeDasharray: circ, strokeDashoffset: circ - pct * circ }}
+                  transform="rotate(-90 90 90)"
+                />
+              </svg>
+              <div className="core-center">
+                <div className="core-total">{roundTotal}</div>
+                <div className="core-threshold">/ {threshold}</div>
+              </div>
+            </div>
+            <div className="multiplier-badge">NEXT BANK MULT x{multiplier.toFixed(2)}</div>
+            {popups.map(p => (
+              <div key={p.id} className="popup" style={{ color: p.color }}>{p.text}</div>
+            ))}
+          </div>
+        )}
+
+        {screen === 'playing' && (
+          <div className="controls">
+            <button className="action-btn bank" disabled={roundTotal <= 0} onClick={handleBank}>
+              BANK
+              <span className="sub">{roundTotal > 0 ? `+${Math.round(roundTotal * multiplier)}` : '—'}</span>
+            </button>
+            <button className="action-btn draw" onClick={handleDraw}>
+              DRAW
+              <span className="sub">risk it</span>
+            </button>
+          </div>
+        )}
+
+        {screen === 'start' && (
+          <div className="overlay start-screen">
+            <h1 className="title">NOVA GAMBIT</h1>
+            <p className="tagline">Charge the reactor core. Bank your gains before it overloads. Push too far and lose it all.</p>
+            <div className="best-score-display">BEST: {bestScore}</div>
+            <button className="big-btn start-btn" onClick={startGame}>START</button>
+            <div className="instructions">
+              <p><strong>DRAW</strong> — Space / &uarr; / tap right &mdash; charge the core, risk overload</p>
+              <p><strong>BANK</strong> — Enter / &darr; / tap left &mdash; lock in your charge, grow your multiplier</p>
+            </div>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay gameover-screen">
+            <h1 className="title">CORE SHUTDOWN</h1>
+            <div className="final-score">SCORE: {score}</div>
+            {score >= bestScore && score > 0 && <div className="new-best">NEW BEST!</div>}
+            <div className="best-score-display">BEST: {bestScore}</div>
+            <button className="big-btn start-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<NovaGambit />, document.getElementById('root'));
+</script>
+</body>
+</html>
