@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-25",
+    "name": "Core Siege",
+    "date": "2026-06-25",
+    "description": "Pilot a lone ship guarding the glowing Core from a relentless boss above. Your auto-fire chips away at the boss's shield while you dodge radial bursts, telegraphed sweep lasers, and homing seeker orbs. Skim a bullet without touching it to graze for bonus score and build a combo multiplier, but get hit and the combo resets. Break the boss's shield to push it into a tougher tier with deadlier patterns.",
+    "tagline": "Dodge the patterns. Drain the Core. Survive the siege.",
+    "tags": [
+      "arcade",
+      "bullet-hell",
+      "reflex",
+      "action",
+      "combo"
+    ],
+    "difficulty": "hard",
+    "avgPlayTime": "2 minutes",
+    "controls": "WASD or Arrow keys to move (or drag with mouse/touch); auto-fires while you dodge boss attack patterns",
+    "folder": "games/2026-06-25",
+    "file": "games/2026-06-25/index.html",
+    "preview": "games/2026-06-25/preview.png"
   }
 ]
