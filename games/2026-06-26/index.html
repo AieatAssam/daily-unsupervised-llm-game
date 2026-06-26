@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Cut Loose</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: #060114; font-family: 'Segoe UI', Arial, sans-serif; touch-action: none; user-select: none; }
+  #root { width: 100%; height: 100%; position: relative; }
+
+  .bg {
+    position: absolute; inset: 0;
+    background: linear-gradient(125deg, #1a0033, #001f3f, #2d0a4e, #3f0d2b, #042a2d, #1a0033);
+    background-size: 400% 400%;
+    animation: bgshift 18s ease infinite;
+  }
+  @keyframes bgshift {
+    0% { background-position: 0% 30%; }
+    50% { background-position: 100% 70%; }
+    100% { background-position: 0% 30%; }
+  }
+
+  .blob {
+    position: absolute; border-radius: 50%;
+    filter: blur(40px); opacity: 0.35; pointer-events: none;
+    animation: float 12s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translate(0,0) scale(1); }
+    50% { transform: translate(30px,-40px) scale(1.15); }
+  }
+
+  canvas { position: absolute; inset: 0; display: block; touch-action: none; }
+
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 14px 18px; pointer-events: none; z-index: 5;
+    font-variant-numeric: tabular-nums;
+  }
+  .hud-box {
+    color: #fff; text-shadow: 0 0 10px rgba(0,255,255,0.8), 0 0 2px #fff;
+    font-weight: 700; letter-spacing: 1px;
+  }
+  .score-val { font-size: 28px; color: #6ffcff; }
+  .label { font-size: 11px; opacity: 0.75; letter-spacing: 2px; }
+  .combo-val { font-size: 22px; color: #ff7ad9; text-align: right; }
+  .lives { display: flex; gap: 6px; margin-top: 4px; justify-content: flex-end; }
+  .heart {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ff6ad5, #b300ff);
+    box-shadow: 0 0 8px #ff6ad5;
+  }
+  .heart.lost { background: rgba(255,255,255,0.08); box-shadow: none; }
+  .level-tag {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    color: #ffd76f; font-weight: 700; font-size: 13px; letter-spacing: 3px;
+    text-shadow: 0 0 10px rgba(255,215,111,0.9);
+  }
+
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: radial-gradient(circle at 50% 40%, rgba(20,0,40,0.55), rgba(0,0,0,0.85));
+    z-index: 10; padding: 20px;
+  }
+  .title {
+    font-size: clamp(38px, 10vw, 76px); font-weight: 800; letter-spacing: 4px;
+    margin: 0; background: linear-gradient(90deg, #6ffcff, #ff7ad9, #ffd76f, #6ffcff);
+    background-size: 300% 100%; -webkit-background-clip: text; background-clip: text;
+    color: transparent; animation: hue 6s linear infinite;
+    filter: drop-shadow(0 0 22px rgba(140,80,255,0.7));
+  }
+  @keyframes hue { 0% { background-position: 0% 50%; } 100% { background-position: 300% 50%; } }
+  .tagline { color: #d8d2ff; font-size: clamp(13px, 2.6vw, 18px); margin: 10px 0 22px; opacity: 0.9; letter-spacing: 1px; }
+  .howto {
+    color: #9af; font-size: 13px; max-width: 380px; line-height: 1.6; margin-bottom: 26px; opacity: 0.85;
+  }
+  .btn {
+    pointer-events: auto; cursor: pointer; border: none; border-radius: 50px;
+    padding: 16px 46px; font-size: 20px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(90deg, #ff5ad1, #6f6fff, #5af0ff);
+    color: #06010f; box-shadow: 0 0 30px rgba(180,80,255,0.8), 0 6px 0 rgba(0,0,0,0.3);
+    transition: transform 0.15s ease;
+  }
+  .btn:active { transform: scale(0.94); }
+  .hs {
+    margin-top: 18px; color: #ffd76f; font-size: 14px; letter-spacing: 1px;
+    text-shadow: 0 0 10px rgba(255,215,111,0.6);
+  }
+  .gameover-title {
+    font-size: clamp(34px, 8vw, 60px); font-weight: 800; color: #ff5a7a;
+    text-shadow: 0 0 26px rgba(255,80,100,0.9); margin: 0 0 8px;
+    letter-spacing: 3px;
+  }
+  .final-score { color: #fff; font-size: 22px; margin: 6px 0; }
+  .newbest { color: #ffd76f; font-size: 16px; font-weight: 700; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  @media (max-width: 480px) {
+    .score-val { font-size: 22px; }
+    .combo-val { font-size: 17px; }
+    .btn { padding: 13px 34px; font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const STORAGE_KEY = 'cutLooseHighScore';
+const GRAVITY = 0.46;
+const DAMPING = 0.997;
+const CONSTRAINT_ITERS = 6;
+const ORB_RADIUS = 14;
+const HIT_PAD = 24;
+
+function getHighScore() {
+  const v = parseInt(localStorage.getItem(STORAGE_KEY), 10);
+  return Number.isFinite(v) ? v : 0;
+}
+if (localStorage.getItem(STORAGE_KEY) === null) {
+  localStorage.setItem(STORAGE_KEY, '0');
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq > 0 ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * dx, cy = y1 + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function generateLevel(n, W, H) {
+  const ropeCount = n <= 1 ? 1 : n <= 4 ? 2 : 3;
+  const anchorY = H * 0.07;
+  const margin = W * 0.16;
+  const usable = W - margin * 2;
+  const anchors = [];
+  for (let i = 0; i < ropeCount; i++) {
+    const base = margin + usable * ((i + 0.5) / ropeCount);
+    anchors.push({ x: base + (Math.random() - 0.5) * usable * 0.1, y: anchorY });
+  }
+  const avgX = anchors.reduce((s, a) => s + a.x, 0) / anchors.length;
+  const orbStart = {
+    x: avgX + (Math.random() < 0.5 ? -1 : 1) * W * (0.05 + Math.random() * 0.05),
+    y: anchorY + H * (0.12 + Math.random() * 0.04),
+  };
+  const ropes = anchors.map((a) => ({
+    anchor: a,
+    length: Math.hypot(orbStart.x - a.x, orbStart.y - a.y),
+    cut: false,
+  }));
+
+  const dir = Math.random() < 0.5 ? -1 : 1;
+  const targetX = Math.max(W * 0.12, Math.min(W * 0.88, orbStart.x + dir * W * (0.2 + Math.random() * 0.18)));
+  const targetY = H * (0.74 + Math.random() * 0.13);
+  const targetR = Math.max(W * 0.06, W * 0.105 - n * 0.0022 * W);
+  const target = { x: targetX, y: targetY, r: targetR };
+
+  const hazardCount = n <= 3 ? 0 : Math.min(4, Math.floor((n - 3) / 2) + 1);
+  const hazards = [];
+  for (let i = 0; i < hazardCount; i++) {
+    const t = (i + 1) / (hazardCount + 1);
+    const hx = orbStart.x + (targetX - orbStart.x) * t + (Math.random() - 0.5) * W * 0.15;
+    const hy = orbStart.y + (targetY - orbStart.y) * t + (Math.random() - 0.5) * H * 0.08;
+    hazards.push({
+      cx: Math.max(W * 0.08, Math.min(W * 0.92, hx)),
+      cy: Math.max(H * 0.3, Math.min(H * 0.85, hy)),
+      r: Math.max(W * 0.022, 14),
+      angle: Math.random() * Math.PI * 2,
+      speed: 0.03 + Math.random() * 0.03,
+    });
+  }
+
+  const starCount = 2 + Math.min(2, Math.floor(n / 4));
+  const stars = [];
+  for (let i = 0; i < starCount; i++) {
+    const t = (i + 1) / (starCount + 1);
+    const sx = orbStart.x + (targetX - orbStart.x) * t + (Math.random() - 0.5) * W * 0.12;
+    const sy = orbStart.y + (targetY - orbStart.y) * t * 0.85 + (Math.random() - 0.5) * H * 0.05;
+    stars.push({ x: Math.max(W * 0.06, Math.min(W * 0.94, sx)), y: Math.max(H * 0.18, sy), collected: false, r: 9 });
+  }
+
+  return {
+    n, anchors, ropes, target, hazards, stars,
+    orb: { x: orbStart.x, y: orbStart.y, px: orbStart.x, py: orbStart.y },
+    trail: [],
+  };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const ensure = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+  const tone = (freq, dur, type = 'sine', vol = 0.18, slideTo = null, delay = 0) => {
+    try {
+      const ctx = ensure();
+      const t0 = ctx.currentTime + delay;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  };
+  return {
+    unlock: ensure,
+    snip: () => tone(900, 0.07, 'square', 0.13, 500),
+    collect: () => { tone(1100, 0.1, 'sine', 0.18); tone(1500, 0.12, 'sine', 0.12, null, 0.05); },
+    land: () => { tone(560, 0.1, 'sine', 0.2); tone(840, 0.14, 'sine', 0.2, null, 0.08); tone(1120, 0.16, 'sine', 0.18, null, 0.16); },
+    fail: () => tone(220, 0.32, 'sawtooth', 0.2, 70),
+    combo: () => { tone(1300, 0.08, 'triangle', 0.16); tone(1700, 0.1, 'triangle', 0.14, null, 0.06); },
+    over: () => { tone(300, 0.25, 'sawtooth', 0.2, 80); tone(180, 0.4, 'sawtooth', 0.18, 60, 0.15); },
+  };
+}
+
+function makeParticles(arr, x, y, color, count, speed, life) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = speed * (0.4 + Math.random() * 0.6);
+    arr.push({
+      x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - speed * 0.2,
+      life, maxLife: life, color, size: 2 + Math.random() * 3,
+    });
+  }
+}
+
+function CutLoose() {
+  const [phase, setPhase] = useState('start');
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [multiplier, setMultiplier] = useState(1);
+  const [lives, setLives] = useState(3);
+  const [level, setLevel] = useState(1);
+  const [highScore, setHighScore] = useState(getHighScore());
+  const [isNewBest, setIsNewBest] = useState(false);
+  const [flashMsg, setFlashMsg] = useState(null);
+
+  const canvasRef = useRef(null);
+  const wrapRef = useRef(null);
+  const audio = useAudio();
+  const gsRef = useRef(null);
+  const runningRef = useRef(false);
+  const dimsRef = useRef({ W: 800, H: 600 });
+  const shakeRef = useRef(0);
+  const phaseRef = useRef('start');
+  const liveLockRef = useRef(false);
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const sizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { W: rect.width, H: rect.height };
+  }, []);
+
+  useEffect(() => {
+    sizeCanvas();
+    const onResize = () => sizeCanvas();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [sizeCanvas]);
+
+  const startLevel = useCallback((n) => {
+    const { W, H } = dimsRef.current;
+    const lvl = generateLevel(n, W, H);
+    gsRef.current = { ...gsRef.current, ...lvl, particles: gsRef.current ? gsRef.current.particles : [] };
+  }, []);
+
+  const triggerFail = useCallback((isHazard) => {
+    if (liveLockRef.current) return;
+    liveLockRef.current = true;
+    audio.fail();
+    shakeRef.current = 14;
+    const gs = gsRef.current;
+    if (gs) makeParticles(gs.particles, gs.orb.x, gs.orb.y, isHazard ? '#ff4d6d' : '#888', 26, 6, 36);
+    setCombo(0);
+    setMultiplier(1);
+    setLives((prev) => {
+      const next = prev - 1;
+      if (next <= 0) {
+        setTimeout(() => {
+          setPhase((p) => {
+            if (p === 'gameover') return p;
+            audio.over();
+            return 'gameover';
+          });
+        }, 380);
+      } else {
+        setTimeout(() => {
+          startLevel(gs.n);
+          liveLockRef.current = false;
+        }, 480);
+      }
+      return Math.max(0, next);
+    });
+  }, [audio, startLevel]);
+
+  const triggerLand = useCallback(() => {
+    if (liveLockRef.current) return;
+    liveLockRef.current = true;
+    audio.land();
+    const gs = gsRef.current;
+    makeParticles(gs.particles, gs.target.x, gs.target.y, '#6ffcff', 36, 7, 44);
+    setCombo((prevCombo) => {
+      const nextCombo = prevCombo + 1;
+      const nextMult = Math.min(5, 1 + Math.floor(nextCombo / 2));
+      setMultiplier((prevMult) => {
+        if (nextMult > prevMult) audio.combo();
+        return nextMult;
+      });
+      const starsLeft = gs.stars.filter((s) => !s.collected).length;
+      const collectedStars = gs.stars.length - starsLeft;
+      const gained = (100 + collectedStars * 25) * nextMult;
+      setScore((s) => {
+        const ns = s + gained;
+        setHighScore((hs) => {
+          if (ns > hs) {
+            setIsNewBest(true);
+            localStorage.setItem(STORAGE_KEY, String(ns));
+            return ns;
+          }
+          return hs;
+        });
+        return ns;
+      });
+      setFlashMsg(`+${gained}`);
+      setTimeout(() => setFlashMsg(null), 700);
+      return nextCombo;
+    });
+    setLevel((lv) => {
+      const nextLevel = lv + 1;
+      setTimeout(() => {
+        startLevel(nextLevel);
+        liveLockRef.current = false;
+      }, 500);
+      return nextLevel;
+    });
+  }, [audio, startLevel]);
+
+  const attemptCut = useCallback((px, py) => {
+    const gs = gsRef.current;
+    if (!gs || phaseRef.current !== 'playing') return;
+    let bestIdx = -1, bestDist = Infinity;
+    gs.ropes.forEach((rope, i) => {
+      if (rope.cut) return;
+      const d = distToSegment(px, py, rope.anchor.x, rope.anchor.y, gs.orb.x, gs.orb.y);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    });
+    if (bestIdx >= 0 && bestDist < HIT_PAD) {
+      gs.ropes[bestIdx].cut = true;
+      audio.unlock();
+      audio.snip();
+      const r = gs.ropes[bestIdx];
+      const mx = (r.anchor.x + gs.orb.x) / 2, my = (r.anchor.y + gs.orb.y) / 2;
+      makeParticles(gs.particles, mx, my, '#ffd76f', 12, 4, 22);
+    }
+  }, [audio]);
+
+  const cutByIndex = useCallback((idx) => {
+    const gs = gsRef.current;
+    if (!gs || phaseRef.current !== 'playing') return;
+    const rope = gs.ropes[idx];
+    if (!rope || rope.cut) return;
+    rope.cut = true;
+    audio.unlock();
+    audio.snip();
+    const mx = (rope.anchor.x + gs.orb.x) / 2, my = (rope.anchor.y + gs.orb.y) / 2;
+    makeParticles(gs.particles, mx, my, '#ffd76f', 12, 4, 22);
+  }, [audio]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === '1') cutByIndex(0);
+      else if (e.key === '2') cutByIndex(1);
+      else if (e.key === '3') cutByIndex(2);
+      else if ((e.key === ' ' || e.key === 'Enter') && phaseRef.current !== 'playing') {
+        e.preventDefault();
+        startGame();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  const startGame = useCallback(() => {
+    audio.unlock();
+    sizeCanvas();
+    setScore(0);
+    setCombo(0);
+    setMultiplier(1);
+    setLives(3);
+    setLevel(1);
+    setIsNewBest(false);
+    setFlashMsg(null);
+    liveLockRef.current = false;
+    gsRef.current = { particles: [] };
+    startLevel(1);
+    setPhase('playing');
+  }, [audio, sizeCanvas, startLevel]);
+
+  useEffect(() => {
+    runningRef.current = phase === 'playing';
+    if (phase !== 'playing') return;
+    let raf;
+    const loop = () => {
+      if (!runningRef.current) return;
+      const gs = gsRef.current;
+      const { W, H } = dimsRef.current;
+      if (gs && gs.orb && !liveLockRef.current) {
+        const orb = gs.orb;
+        const vx = (orb.x - orb.px) * DAMPING;
+        const vy = (orb.y - orb.py) * DAMPING;
+        orb.px = orb.x; orb.py = orb.y;
+        orb.x += vx;
+        orb.y += vy + GRAVITY;
+        for (let it = 0; it < CONSTRAINT_ITERS; it++) {
+          for (const rope of gs.ropes) {
+            if (rope.cut) continue;
+            const dx = orb.x - rope.anchor.x, dy = orb.y - rope.anchor.y;
+            const dist = Math.hypot(dx, dy) || 0.0001;
+            const diff = (dist - rope.length) / dist;
+            orb.x -= dx * diff * 0.92;
+            orb.y -= dy * diff * 0.92;
+          }
+        }
+        gs.trail.push({ x: orb.x, y: orb.y });
+        if (gs.trail.length > 14) gs.trail.shift();
+
+        gs.hazards.forEach((hz) => { hz.angle += hz.speed; });
+
+        gs.stars.forEach((s) => {
+          if (!s.collected && Math.hypot(orb.x - s.x, orb.y - s.y) < s.r + ORB_RADIUS) {
+            s.collected = true;
+            audio.collect();
+            makeParticles(gs.particles, s.x, s.y, '#ffe98a', 16, 4, 26);
+          }
+        });
+
+        const distTarget = Math.hypot(orb.x - gs.target.x, orb.y - gs.target.y);
+        if (distTarget < gs.target.r) {
+          triggerLand();
+        } else {
+          let hazardHit = false;
+          gs.hazards.forEach((hz) => {
+            if (Math.hypot(orb.x - hz.cx, orb.y - hz.cy) < hz.r + ORB_RADIUS) hazardHit = true;
+          });
+          if (hazardHit) {
+            triggerFail(true);
+          } else if (orb.y > H + 80 || orb.x < -80 || orb.x > W + 80) {
+            triggerFail(false);
+          }
+        }
+      }
+      if (gs) {
+        gs.particles = gs.particles.filter((p) => p.life > 0);
+        gs.particles.forEach((p) => {
+          p.x += p.vx; p.y += p.vy; p.vy += 0.18; p.life -= 1;
+        });
+      }
+      if (shakeRef.current > 0) shakeRef.current -= 1;
+      render();
+      raf = requestAnimationFrame(loop);
+    };
+
+    function render() {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const { W, H } = dimsRef.current;
+      ctx.clearRect(0, 0, W, H);
+      const gs = gsRef.current;
+      if (!gs) return;
+
+      const shake = shakeRef.current;
+      ctx.save();
+      if (shake > 0) {
+        ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+      }
+
+      gs.anchors.forEach((a) => {
+        ctx.save();
+        ctx.shadowColor = '#9d6bff';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = '#caa6ff';
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      gs.ropes.forEach((rope) => {
+        if (rope.cut) return;
+        ctx.save();
+        ctx.shadowColor = '#5af0ff';
+        ctx.shadowBlur = 10;
+        ctx.strokeStyle = 'rgba(120,240,255,0.9)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(rope.anchor.x, rope.anchor.y);
+        ctx.lineTo(gs.orb.x, gs.orb.y);
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,213,111,0.6)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8, 10]);
+      const pulse = 1 + Math.sin(Date.now() / 240) * 0.08;
+      ctx.beginPath();
+      ctx.arc(gs.target.x, gs.target.y, gs.target.r * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.shadowColor = '#ffd76f';
+      ctx.shadowBlur = 22;
+      ctx.fillStyle = 'rgba(255,213,111,0.16)';
+      ctx.beginPath();
+      ctx.arc(gs.target.x, gs.target.y, gs.target.r * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      gs.hazards.forEach((hz) => {
+        ctx.save();
+        ctx.translate(hz.cx, hz.cy);
+        ctx.rotate(hz.angle);
+        ctx.shadowColor = '#ff3b6e';
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = '#ff3b6e';
+        ctx.beginPath();
+        const spikes = 8;
+        for (let i = 0; i < spikes; i++) {
+          const ang = (i / spikes) * Math.PI * 2;
+          const rad = i % 2 === 0 ? hz.r : hz.r * 0.55;
+          const px = Math.cos(ang) * rad, py = Math.sin(ang) * rad;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      });
+
+      gs.stars.forEach((s) => {
+        if (s.collected) return;
+        ctx.save();
+        const tw = 1 + Math.sin(Date.now() / 180 + s.x) * 0.25;
+        ctx.translate(s.x, s.y);
+        ctx.scale(tw, tw);
+        ctx.shadowColor = '#fff2a8';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = '#fff2a8';
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+          const ang2 = ang + Math.PI / 5;
+          ctx.lineTo(Math.cos(ang) * s.r, Math.sin(ang) * s.r);
+          ctx.lineTo(Math.cos(ang2) * s.r * 0.42, Math.sin(ang2) * s.r * 0.42);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      });
+
+      gs.trail.forEach((t, i) => {
+        const a = (i / gs.trail.length) * 0.4;
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = '#ff7ad9';
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, ORB_RADIUS * (0.3 + (i / gs.trail.length) * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      ctx.save();
+      ctx.shadowColor = '#ff7ad9';
+      ctx.shadowBlur = 22;
+      const grad = ctx.createRadialGradient(gs.orb.x - 4, gs.orb.y - 4, 2, gs.orb.x, gs.orb.y, ORB_RADIUS);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.4, '#ff9fe6');
+      grad.addColorStop(1, '#b300ff');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(gs.orb.x, gs.orb.y, ORB_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      gs.particles.forEach((p) => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      ctx.restore();
+    }
+
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [phase, audio, triggerFail, triggerLand]);
+
+  const handlePointer = useCallback((clientX, clientY) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    attemptCut(clientX - rect.left, clientY - rect.top);
+  }, [attemptCut]);
+
+  const onCanvasMouseDown = (e) => handlePointer(e.clientX, e.clientY);
+  const onCanvasTouchStart = (e) => {
+    if (e.touches && e.touches[0]) {
+      handlePointer(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  };
+
+  const onBodyClick = () => {
+    if (phase === 'start' || phase === 'gameover') startGame();
+  };
+
+  const livesArr = [0, 1, 2];
+
+  return (
+    <div ref={wrapRef} onClick={onBodyClick} style={{ width: '100%', height: '100%', position: 'relative' }} className="game-root">
+      <div className="bg" />
+      <div className="blob" style={{ width: 260, height: 260, background: '#ff5ad1', top: '8%', left: '6%' }} />
+      <div className="blob" style={{ width: 320, height: 320, background: '#5af0ff', bottom: '4%', right: '8%', animationDelay: '3s' }} />
+      <div className="blob" style={{ width: 200, height: 200, background: '#ffd76f', top: '40%', right: '20%', animationDelay: '6s' }} />
+
+      <canvas
+        ref={canvasRef}
+        onMouseDown={(e) => { e.stopPropagation(); onCanvasMouseDown(e); }}
+        onTouchStart={(e) => { e.stopPropagation(); onCanvasTouchStart(e); }}
+      />
+
+      {phase === 'playing' && (
+        <React.Fragment>
+          <div className="hud">
+            <div className="hud-box">
+              <div className="label">SCORE</div>
+              <div className="score-val">{score}</div>
+            </div>
+            <div className="hud-box">
+              <div className="label" style={{ textAlign: 'right' }}>COMBO x{multiplier}</div>
+              <div className="combo-val">{combo} streak</div>
+              <div className="lives">
+                {livesArr.map((i) => (
+                  <div key={i} className={`heart${i < lives ? '' : ' lost'}`} />
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="level-tag">LEVEL {level}</div>
+          {flashMsg && (
+            <div style={{
+              position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%,-50%)',
+              color: '#6ffcff', fontSize: 36, fontWeight: 800, textShadow: '0 0 18px rgba(111,252,255,0.9)',
+              pointerEvents: 'none', zIndex: 6,
+            }}>{flashMsg}</div>
+          )}
+        </React.Fragment>
+      )}
+
+      {phase === 'start' && (
+        <div className="overlay">
+          <h1 className="title">CUT LOOSE</h1>
+          <div className="tagline">Snip the ropes. Swing to the target. Don't miss!</div>
+          <div className="howto">
+            Your neon orb hangs from glowing ropes. Click / tap a rope to cut it (or press 1, 2, 3) and let gravity swing the orb into the pulsing target zone. Grab stars along the way, dodge the spinning hazards, and chain landings for a bigger combo multiplier!
+          </div>
+          <button className="btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>PLAY</button>
+          <div className="hs">BEST SCORE: {highScore}</div>
+        </div>
+      )}
+
+      {phase === 'gameover' && (
+        <div className="overlay">
+          <h1 className="gameover-title">SNAPPED!</h1>
+          <div className="final-score">Final Score: {score}</div>
+          <div className="hs">BEST SCORE: {highScore}</div>
+          {isNewBest && <div className="newbest">NEW BEST SCORE!</div>}
+          <button className="btn" style={{ marginTop: 18 }} onClick={(e) => { e.stopPropagation(); startGame(); }}>PLAY AGAIN</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.render(<CutLoose />, document.getElementById('root'));
+</script>
+</body>
+</html>

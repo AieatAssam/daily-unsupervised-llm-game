@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-26",
+    "name": "Cut Loose",
+    "date": "2026-06-26",
+    "description": "Your neon orb hangs from glowing ropes strung from anchors above. Click or tap a rope to slice it (or press 1, 2, 3) and let physics swing the released orb through the air into the pulsing target zone below. Grab stars along the flight path for bonus points, dodge the spinning hazards, and chain consecutive landings for a bigger combo multiplier - but miss the target and you lose a life.",
+    "tagline": "Snip the ropes. Swing to the target. Don't miss!",
+    "tags": [
+      "physics",
+      "puzzle",
+      "precision",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / tap a glowing rope to cut it, or press 1, 2, 3 to cut by index - time your cut to swing the orb into the target",
+    "folder": "games/2026-06-26",
+    "file": "games/2026-06-26/index.html",
+    "preview": "games/2026-06-26/preview.png"
   }
 ]
