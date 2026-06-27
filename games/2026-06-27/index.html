@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Volt Serpent</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: #05030a; }
+  #root { width: 100%; height: 100%; }
+  body, button { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+
+  .bg {
+    position: fixed; inset: 0;
+    background: linear-gradient(120deg, #1a0033, #001a33, #330033, #1a3300, #001a2e);
+    background-size: 400% 400%;
+    animation: bgShift 18s ease infinite;
+    z-index: 0;
+  }
+  @keyframes bgShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .app {
+    position: relative; z-index: 1;
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #eafcff;
+    padding: 10px;
+  }
+
+  .hud {
+    display: flex; gap: 18px; justify-content: center; align-items: center;
+    margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .hud-item {
+    font-size: 14px; letter-spacing: 1px; text-transform: uppercase;
+    color: #8ff7ff; text-shadow: 0 0 8px rgba(0,255,255,0.7);
+  }
+  .hud-item b { font-size: 18px; color: #fff; display: block; text-shadow: 0 0 12px #0ff, 0 0 4px #fff; }
+  .combo-tag {
+    color: #ffd23f; text-shadow: 0 0 10px #ffae00;
+  }
+
+  .stage-wrap {
+    position: relative;
+    width: min(92vw, 420px);
+    aspect-ratio: 1 / 1;
+    border-radius: 14px;
+    box-shadow: 0 0 0 2px rgba(0,255,255,0.35), 0 0 26px rgba(0,255,255,0.35), inset 0 0 40px rgba(120,0,255,0.15);
+    transition: box-shadow 0.15s ease;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 30%, #0c0420 0%, #060212 70%, #03010a 100%);
+  }
+  .stage-wrap.warn {
+    box-shadow: 0 0 0 2px rgba(255,60,60,0.85), 0 0 30px rgba(255,40,40,0.65), inset 0 0 50px rgba(255,0,0,0.25);
+  }
+  canvas { width: 100%; height: 100%; display: block; }
+
+  .overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(4,2,12,0.78);
+    backdrop-filter: blur(2px);
+    text-align: center;
+    padding: 16px;
+    gap: 10px;
+  }
+  .title {
+    font-size: clamp(28px, 7vw, 44px);
+    font-weight: 800;
+    letter-spacing: 3px;
+    color: #fff;
+    text-shadow: 0 0 8px #0ff, 0 0 20px #0ff, 0 0 40px #f0f, 0 0 2px #fff;
+    animation: pulseGlow 1.8s ease-in-out infinite;
+    margin: 0;
+  }
+  @keyframes pulseGlow {
+    0%, 100% { text-shadow: 0 0 8px #0ff, 0 0 20px #0ff, 0 0 40px #f0f, 0 0 2px #fff; }
+    50% { text-shadow: 0 0 14px #f0f, 0 0 30px #0ff, 0 0 55px #0ff, 0 0 4px #fff; }
+  }
+  .subtitle { color: #9ad9ff; font-size: 13px; max-width: 320px; line-height: 1.5; letter-spacing: 0.5px; }
+  .big-score { font-size: 32px; color: #fff; text-shadow: 0 0 14px #0ff; margin: 2px 0; }
+  .best-score { color: #ffd23f; text-shadow: 0 0 10px #ffae00; font-size: 15px; }
+  .new-best { color: #ff5fd2; text-shadow: 0 0 12px #ff5fd2; font-weight: 700; font-size: 15px; animation: flicker 0.6s ease-in-out infinite alternate; }
+  @keyframes flicker { from { opacity: 0.55; } to { opacity: 1; } }
+
+  .btn {
+    border: none; cursor: pointer;
+    padding: 12px 30px;
+    font-size: 16px; font-weight: 700; letter-spacing: 2px;
+    border-radius: 30px; color: #04111a;
+    background: linear-gradient(135deg, #00fff7, #00aaff);
+    box-shadow: 0 0 16px rgba(0,255,255,0.8), 0 0 4px rgba(255,255,255,0.6);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  .btn:active { transform: scale(0.93); box-shadow: 0 0 8px rgba(0,255,255,0.6); }
+
+  .dpad {
+    display: grid;
+    grid-template-columns: 52px 52px 52px;
+    grid-template-rows: 52px 52px 52px;
+    gap: 6px;
+    margin-top: 14px;
+    user-select: none;
+  }
+  .dbtn {
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,255,255,0.08);
+    border: 1px solid rgba(0,255,255,0.55);
+    border-radius: 10px;
+    color: #aef9ff;
+    font-size: 20px;
+    box-shadow: 0 0 10px rgba(0,255,255,0.25);
+    cursor: pointer;
+    touch-action: none;
+  }
+  .dbtn:active { background: rgba(0,255,255,0.35); }
+  .d-up { grid-column: 2; grid-row: 1; }
+  .d-left { grid-column: 1; grid-row: 2; }
+  .d-right { grid-column: 3; grid-row: 2; }
+  .d-down { grid-column: 2; grid-row: 3; }
+
+  .footer-hint { margin-top: 10px; font-size: 11px; color: rgba(170,230,255,0.6); letter-spacing: 0.5px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const COLS = 18;
+const ROWS = 18;
+const CELL = 20;
+const CANVAS_SIZE = COLS * CELL;
+const INITIAL_STEP_MS = 150;
+const MIN_STEP_MS = 65;
+const STEP_DECAY = 3;
+const COMBO_WINDOW_MS = 3000;
+const MAX_COMBO = 5;
+const GOLD_LIFETIME_MS = 4500;
+const STORAGE_KEY = 'voltSerpentHighscore';
+
+const DIRS = {
+  UP: { x: 0, y: -1 },
+  DOWN: { x: 0, y: 1 },
+  LEFT: { x: -1, y: 0 },
+  RIGHT: { x: 1, y: 0 },
+};
+const OPPOSITE = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
+
+function randCell(occupied) {
+  let cell;
+  do {
+    cell = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+  } while (occupied.some(s => s.x === cell.x && s.y === cell.y));
+  return cell;
+}
+
+function makeInitialSnake() {
+  const cy = Math.floor(ROWS / 2);
+  const cx = Math.floor(COLS / 2);
+  return [
+    { x: cx, y: cy },
+    { x: cx - 1, y: cy },
+    { x: cx - 2, y: cy },
+    { x: cx - 3, y: cy },
+  ];
+}
+
+const VoltSerpent = () => {
+  const [gameState, setGameState] = useState('start'); // start | playing | gameover
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(0);
+  const [combo, setCombo] = useState(1);
+  const [length, setLength] = useState(4);
+  const [edgeWarning, setEdgeWarning] = useState(false);
+  const [isNewBest, setIsNewBest] = useState(false);
+
+  const canvasRef = useRef(null);
+  const snakeRef = useRef(makeInitialSnake());
+  const directionRef = useRef('RIGHT');
+  const nextDirectionRef = useRef('RIGHT');
+  const foodRef = useRef({ x: 12, y: 9, isGolden: false, expiresAt: 0 });
+  const particlesRef = useRef([]);
+  const stepIntervalRef = useRef(INITIAL_STEP_MS);
+  const comboRef = useRef(1);
+  const lastEatRef = useRef(0);
+  const eatenCountRef = useRef(0);
+  const aliveRef = useRef(true);
+  const shakeRef = useRef({ time: 0, mag: 0 });
+  const audioCtxRef = useRef(null);
+  const touchStartRef = useRef(null);
+
+  // Load / persist high score
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    const val = saved ? parseInt(saved, 10) || 0 : 0;
+    setHighScore(val);
+    localStorage.setItem(STORAGE_KEY, String(val));
+  }, []);
+
+  const ensureAudio = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audioCtxRef.current = new Ctx();
+    }
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playTone = useCallback((freq, dur, type, startGain, glideTo) => {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'triangle';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, ctx.currentTime + dur);
+    gain.gain.setValueAtTime(startGain != null ? startGain : 0.22, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur + 0.02);
+  }, [ensureAudio]);
+
+  const playEatSound = useCallback((comboMult) => {
+    playTone(420 + comboMult * 70, 0.14, 'triangle', 0.22);
+  }, [playTone]);
+
+  const playGoldSound = useCallback(() => {
+    playTone(640, 0.1, 'square', 0.18);
+    setTimeout(() => playTone(880, 0.1, 'square', 0.18), 70);
+    setTimeout(() => playTone(1180, 0.14, 'square', 0.18), 140);
+  }, [playTone]);
+
+  const playCrashSound = useCallback(() => {
+    playTone(220, 0.45, 'sawtooth', 0.28, 40);
+  }, [playTone]);
+
+  const playStartSound = useCallback(() => {
+    playTone(300, 0.12, 'sine', 0.18, 600);
+  }, [playTone]);
+
+  const spawnParticles = useCallback((px, py, color, count) => {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 2.6;
+      particlesRef.current.push({
+        x: px, y: py,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: 0.018 + Math.random() * 0.02,
+        size: 2 + Math.random() * 2.5,
+        color,
+      });
+    }
+  }, []);
+
+  const spawnFood = useCallback((golden) => {
+    const cell = randCell(snakeRef.current);
+    foodRef.current = {
+      x: cell.x, y: cell.y,
+      isGolden: !!golden,
+      expiresAt: golden ? Date.now() + GOLD_LIFETIME_MS : 0,
+    };
+  }, []);
+
+  const resetGame = useCallback(() => {
+    snakeRef.current = makeInitialSnake();
+    directionRef.current = 'RIGHT';
+    nextDirectionRef.current = 'RIGHT';
+    stepIntervalRef.current = INITIAL_STEP_MS;
+    comboRef.current = 1;
+    lastEatRef.current = 0;
+    eatenCountRef.current = 0;
+    particlesRef.current = [];
+    aliveRef.current = true;
+    shakeRef.current = { time: 0, mag: 0 };
+    spawnFood(false);
+    setScore(0);
+    setCombo(1);
+    setLength(4);
+    setIsNewBest(false);
+    setEdgeWarning(false);
+  }, [spawnFood]);
+
+  const startGame = useCallback(() => {
+    ensureAudio();
+    resetGame();
+    setGameState('playing');
+    playStartSound();
+  }, [ensureAudio, resetGame, playStartSound]);
+
+  const queueDirection = useCallback((dir) => {
+    if (gameState === 'start') {
+      startGame();
+      nextDirectionRef.current = dir;
+      return;
+    }
+    if (gameState !== 'playing') return;
+    if (OPPOSITE[dir] === directionRef.current && snakeRef.current.length > 1) return;
+    nextDirectionRef.current = dir;
+  }, [gameState, startGame]);
+
+  const endGame = useCallback((finalScore) => {
+    aliveRef.current = false;
+    playCrashSound();
+    const headCell = snakeRef.current[0];
+    spawnParticles(
+      (headCell.x + 0.5) * CELL,
+      (headCell.y + 0.5) * CELL,
+      '0,255,255',
+      30
+    );
+    shakeRef.current = { time: 300, mag: 9 };
+    setGameState('gameover');
+    setHighScore(prev => {
+      if (finalScore > prev) {
+        localStorage.setItem(STORAGE_KEY, String(finalScore));
+        setIsNewBest(true);
+        return finalScore;
+      }
+      return prev;
+    });
+  }, [playCrashSound, spawnParticles]);
+
+  const tick = useCallback(() => {
+    if (!aliveRef.current) return;
+    directionRef.current = nextDirectionRef.current;
+    const dir = DIRS[directionRef.current];
+    const snake = snakeRef.current;
+    const head = snake[0];
+    const newHead = { x: head.x + dir.x, y: head.y + dir.y };
+
+    if (newHead.x < 0 || newHead.x >= COLS || newHead.y < 0 || newHead.y >= ROWS) {
+      endGame(score);
+      return;
+    }
+
+    const food = foodRef.current;
+    const growing = newHead.x === food.x && newHead.y === food.y;
+    const bodyToCheck = growing ? snake : snake.slice(0, -1);
+    if (bodyToCheck.some(seg => seg.x === newHead.x && seg.y === newHead.y)) {
+      endGame(score);
+      return;
+    }
+
+    const newSnake = [newHead, ...snake];
+    if (!growing) {
+      newSnake.pop();
+    } else {
+      const now = Date.now();
+      if (now - lastEatRef.current < COMBO_WINDOW_MS) {
+        comboRef.current = Math.min(MAX_COMBO, comboRef.current + 1);
+      } else {
+        comboRef.current = 1;
+      }
+      lastEatRef.current = now;
+      eatenCountRef.current += 1;
+
+      const basePoints = food.isGolden ? 500 : 100;
+      const gained = basePoints * comboRef.current;
+
+      spawnParticles(
+        (food.x + 0.5) * CELL,
+        (food.y + 0.5) * CELL,
+        food.isGolden ? '255,210,60' : '0,255,255',
+        food.isGolden ? 26 : 14
+      );
+
+      if (food.isGolden) playGoldSound();
+      else playEatSound(comboRef.current);
+
+      stepIntervalRef.current = Math.max(MIN_STEP_MS, INITIAL_STEP_MS - eatenCountRef.current * STEP_DECAY);
+
+      const nextGolden = !food.isGolden && eatenCountRef.current % 4 === 0;
+      spawnFood(nextGolden);
+
+      setScore(prev => prev + gained);
+      setCombo(comboRef.current);
+      setLength(newSnake.length);
+    }
+
+    // expire golden food
+    if (foodRef.current.isGolden && Date.now() > foodRef.current.expiresAt) {
+      foodRef.current = { ...foodRef.current, isGolden: false };
+    }
+
+    snakeRef.current = newSnake;
+
+    const warn = newHead.x === 0 || newHead.x === COLS - 1 || newHead.y === 0 || newHead.y === ROWS - 1;
+    setEdgeWarning(warn);
+  }, [score, endGame, spawnFood, spawnParticles, playEatSound, playGoldSound]);
+
+  const updateParticles = useCallback(() => {
+    particlesRef.current = particlesRef.current.filter(p => p.life > 0);
+    particlesRef.current.forEach(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+      p.life -= p.decay;
+    });
+  }, []);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    ctx.save();
+    if (shakeRef.current.time > 0) {
+      const m = shakeRef.current.mag;
+      ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
+      shakeRef.current.time -= 16;
+    }
+
+    // grid lines
+    ctx.strokeStyle = 'rgba(0,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= COLS; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * CELL, 0);
+      ctx.lineTo(i * CELL, CANVAS_SIZE);
+      ctx.stroke();
+    }
+    for (let j = 0; j <= ROWS; j++) {
+      ctx.beginPath();
+      ctx.moveTo(0, j * CELL);
+      ctx.lineTo(CANVAS_SIZE, j * CELL);
+      ctx.stroke();
+    }
+
+    // food
+    const food = foodRef.current;
+    const t = Date.now() / 200;
+    const pulse = 1 + Math.sin(t) * 0.12;
+    const fcx = (food.x + 0.5) * CELL;
+    const fcy = (food.y + 0.5) * CELL;
+    ctx.save();
+    ctx.shadowBlur = food.isGolden ? 22 : 14;
+    ctx.shadowColor = food.isGolden ? '#ffd23f' : '#00fff7';
+    ctx.fillStyle = food.isGolden ? '#ffd23f' : '#00fff7';
+    ctx.beginPath();
+    ctx.arc(fcx, fcy, (CELL / 2 - 2) * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // snake
+    const snake = snakeRef.current;
+    snake.forEach((seg, i) => {
+      const ratio = i / Math.max(1, snake.length - 1);
+      const hue = 180 + ratio * 130;
+      ctx.save();
+      ctx.shadowBlur = i === 0 ? 18 : 10;
+      ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+      ctx.fillStyle = i === 0 ? '#ffffff' : `hsl(${hue}, 100%, ${60 - ratio * 15}%)`;
+      const pad = i === 0 ? 1 : 2;
+      const r = 5;
+      const x = seg.x * CELL + pad;
+      const y = seg.y * CELL + pad;
+      const w = CELL - pad * 2;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, w, w, r);
+      } else {
+        ctx.rect(x, y, w, w);
+      }
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // particles
+    particlesRef.current.forEach(p => {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = `rgba(${p.color},${Math.max(0, p.life)})`;
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = `rgba(${p.color},1)`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    ctx.restore();
+  }, []);
+
+  // main loop
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+    aliveRef.current = true;
+    let rafId;
+    let lastTime = performance.now();
+    let accumulator = 0;
+
+    const loop = (time) => {
+      if (!aliveRef.current) return;
+      const dt = Math.min(100, time - lastTime);
+      lastTime = time;
+      accumulator += dt;
+      updateParticles();
+
+      while (accumulator >= stepIntervalRef.current && aliveRef.current) {
+        accumulator -= stepIntervalRef.current;
+        tick();
+      }
+
+      draw();
+      if (aliveRef.current) {
+        rafId = requestAnimationFrame(loop);
+      } else {
+        draw();
+      }
+    };
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, [gameState, tick, draw, updateParticles]);
+
+  // draw once on start/gameover screens behind overlay
+  useEffect(() => {
+    draw();
+  }, [gameState, draw]);
+
+  // keyboard controls
+  useEffect(() => {
+    const handler = (e) => {
+      const key = e.key.toLowerCase();
+      const map = {
+        arrowup: 'UP', w: 'UP',
+        arrowdown: 'DOWN', s: 'DOWN',
+        arrowleft: 'LEFT', a: 'LEFT',
+        arrowright: 'RIGHT', d: 'RIGHT',
+      };
+      if (map[key]) {
+        e.preventDefault();
+        queueDirection(map[key]);
+      } else if (key === ' ' || key === 'enter') {
+        e.preventDefault();
+        if (gameState !== 'playing') startGame();
+      }
+    };
+    window.addEventListener('keydown', handler, { passive: false });
+    return () => window.removeEventListener('keydown', handler);
+  }, [queueDirection, gameState, startGame]);
+
+  const handleStageClick = () => {
+    if (gameState === 'start') startGame();
+  };
+
+  const handleTouchStart = (e) => {
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+  };
+  const handleTouchEnd = (e) => {
+    if (gameState === 'start') { startGame(); return; }
+    const start = touchStartRef.current;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < 18 && Math.abs(dy) < 18) return;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      queueDirection(dx > 0 ? 'RIGHT' : 'LEFT');
+    } else {
+      queueDirection(dy > 0 ? 'DOWN' : 'UP');
+    }
+    touchStartRef.current = null;
+  };
+
+  return (
+    <div className="app" onClick={() => { if (gameState === 'start') startGame(); }}>
+      <div className="hud">
+        <div className="hud-item">Score<b>{score}</b></div>
+        <div className="hud-item">Best<b>{highScore}</b></div>
+        <div className="hud-item combo-tag">Combo<b>x{combo}</b></div>
+        <div className="hud-item">Length<b>{length}</b></div>
+      </div>
+
+      <div
+        className={`stage-wrap ${edgeWarning && gameState === 'playing' ? 'warn' : ''}`}
+        onClick={handleStageClick}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        <canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} className="game-canvas" />
+
+        {gameState === 'start' && (
+          <div className="overlay" onClick={(e) => { e.stopPropagation(); startGame(); }}>
+            <h1 className="title">VOLT SERPENT</h1>
+            <div className="subtitle">
+              Arrows / WASD / swipe to steer. Eat glowing orbs to grow.
+              Gold orbs are huge bonus &mdash; but fade fast!
+              Don't hit the walls or your own tail.
+            </div>
+            <div className="best-score">Best: {highScore}</div>
+            <button className="btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>START</button>
+          </div>
+        )}
+
+        {gameState === 'gameover' && (
+          <div className="overlay" onClick={(e) => e.stopPropagation()}>
+            <h1 className="title" style={{ fontSize: 'clamp(22px, 6vw, 34px)' }}>GAME OVER</h1>
+            <div className="big-score">{score}</div>
+            {isNewBest ? (
+              <div className="new-best">NEW HIGH SCORE!</div>
+            ) : (
+              <div className="best-score">Best: {highScore}</div>
+            )}
+            <button className="btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+
+      <div
+        className="dpad"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="dbtn d-up" onPointerDown={() => queueDirection('UP')}>&#9650;</div>
+        <div className="dbtn d-left" onPointerDown={() => queueDirection('LEFT')}>&#9664;</div>
+        <div className="dbtn d-right" onPointerDown={() => queueDirection('RIGHT')}>&#9654;</div>
+        <div className="dbtn d-down" onPointerDown={() => queueDirection('DOWN')}>&#9660;</div>
+      </div>
+
+      <div className="footer-hint">Arrow keys / WASD / swipe / D-pad to steer &middot; Space to start</div>
+    </div>
+  );
+};
+
+ReactDOM.render(<VoltSerpent />, document.getElementById('root'));
+</script>
+</body>
+</html>

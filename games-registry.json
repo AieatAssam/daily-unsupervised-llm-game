@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-27",
+    "name": "Volt Serpent",
+    "date": "2026-06-27",
+    "description": "Steer a glowing neon serpent around an electric grid, devouring orbs to grow longer and rack up score. Chain eats quickly to build a combo multiplier, and watch for rare golden orbs that expire fast but pay out huge bonus points. Every bite speeds up the chase - graze a wall or your own tail and the run ends in a shower of sparks.",
+    "tagline": "Eat, grow, don't bite yourself.",
+    "tags": [
+      "arcade",
+      "classic",
+      "reflex",
+      "endless",
+      "combo"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys, WASD, swipe, or the on-screen D-pad to steer the serpent around the grid",
+    "folder": "games/2026-06-27",
+    "file": "games/2026-06-27/index.html",
+    "preview": "games/2026-06-27/preview.png"
   }
 ]
