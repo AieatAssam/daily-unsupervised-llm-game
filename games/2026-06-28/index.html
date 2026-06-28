@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Drone Protocol</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; width: 100%; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #1a0030, #001a3a, #00261a, #2a0030, #001a3a);
+    background-size: 400% 400%;
+    animation: bgShift 18s ease infinite;
+    color: #fff;
+    touch-action: none;
+    user-select: none;
+  }
+  @keyframes bgShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  #root { width: 100vw; height: 100vh; display: flex; }
+  .app {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding: 8px;
+    gap: 6px;
+  }
+  .hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 10px;
+    flex-wrap: wrap;
+    gap: 6px;
+    z-index: 5;
+  }
+  .hud-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 52px;
+  }
+  .hud-label {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: #8fd9ff;
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+  .hud-value {
+    font-size: 19px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 8px #00eaff, 0 0 16px #00eaff;
+  }
+  .hud-value.gold { text-shadow: 0 0 8px #ffd700, 0 0 16px #ffd700; color: #ffe9a8; }
+  .lives { font-size: 16px; letter-spacing: 2px; }
+  .life-full { color: #00eaff; text-shadow: 0 0 8px #00eaff; }
+  .life-empty { color: #333; }
+  .stage-wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .stage {
+    position: relative;
+    border-radius: 14px;
+    box-shadow: 0 0 30px rgba(0,234,255,0.25), inset 0 0 60px rgba(0,0,0,0.6);
+    border: 1px solid rgba(0,234,255,0.2);
+    overflow: hidden;
+    background: rgba(5,5,18,0.5);
+  }
+  .stage.shake { animation: shakeAnim 0.4s ease; }
+  @keyframes shakeAnim {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-8px, 4px); }
+    40% { transform: translate(7px, -5px); }
+    60% { transform: translate(-6px, -3px); }
+    80% { transform: translate(5px, 5px); }
+  }
+  .grid {
+    position: absolute;
+    inset: 0;
+    display: grid;
+  }
+  .cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(0,234,255,0.08);
+    font-size: 60%;
+  }
+  .cell.start { background: radial-gradient(circle, rgba(0,234,255,0.22), transparent 70%); }
+  .cell.start::after {
+    content: '';
+    position: absolute;
+    width: 38%;
+    height: 38%;
+    border: 2px solid #00eaff;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #00eaff;
+  }
+  .cell.goal {
+    background: radial-gradient(circle, rgba(255,215,0,0.28), transparent 70%);
+    color: #ffd700;
+    text-shadow: 0 0 10px #ffd700;
+    animation: goalPulse 1.3s ease-in-out infinite;
+  }
+  @keyframes goalPulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.6); }
+  }
+  .cell.hazard {
+    background: radial-gradient(circle, rgba(255,40,40,0.3), transparent 70%);
+    color: #ff5050;
+    text-shadow: 0 0 10px #ff3030;
+    animation: hazardPulse 0.9s ease-in-out infinite;
+  }
+  @keyframes hazardPulse {
+    0%, 100% { filter: brightness(0.85); }
+    50% { filter: brightness(1.4); }
+  }
+  .cell.trail { background: rgba(0,234,255,0.12); }
+  .drone {
+    position: absolute;
+    top: 0; left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s cubic-bezier(.4,1.4,.6,1);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .drone-glyph {
+    font-size: clamp(14px, 5vw, 28px);
+    color: #00eaff;
+    text-shadow: 0 0 10px #00eaff, 0 0 20px #00eaff;
+    transition: transform 0.18s ease;
+  }
+  .fx-canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 4;
+  }
+  .announce {
+    position: absolute;
+    top: 8%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: clamp(16px, 4.4vw, 30px);
+    font-weight: 900;
+    letter-spacing: 3px;
+    z-index: 8;
+    pointer-events: none;
+    animation: announceAnim 1.3s ease forwards;
+    white-space: nowrap;
+  }
+  @keyframes announceAnim {
+    0% { opacity: 0; transform: translateX(-50%) translateY(-16px) scale(0.7); }
+    20% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.08); }
+    35% { transform: translateX(-50%) translateY(0) scale(1); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.95); }
+  }
+  .program-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    background: rgba(0,20,30,0.4);
+    border-radius: 12px;
+    border: 1px solid rgba(0,234,255,0.15);
+  }
+  .program-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #8fd9ff;
+    flex-shrink: 0;
+  }
+  .chip-row {
+    flex: 1;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 4px 0;
+    min-height: 30px;
+    align-items: center;
+  }
+  .chip-empty {
+    font-size: 11px;
+    color: #557;
+    font-style: italic;
+    white-space: nowrap;
+  }
+  .chip {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: 1px solid #00eaff;
+    background: rgba(0,234,255,0.1);
+    color: #00eaff;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    text-shadow: 0 0 6px #00eaff;
+  }
+  .chip.chip-active {
+    background: #ffd700;
+    border-color: #ffd700;
+    color: #1a1a1a;
+    box-shadow: 0 0 14px #ffd700;
+  }
+  .clear-btn {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: 1px solid #ff5050;
+    background: rgba(255,40,40,0.1);
+    color: #ff5050;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .clear-btn:disabled, .chip:disabled { opacity: 0.3; cursor: default; }
+  .dpad-row {
+    display: flex;
+    justify-content: center;
+    padding: 2px 0;
+  }
+  .dpad {
+    display: grid;
+    grid-template-columns: 58px 64px 58px;
+    grid-template-rows: 50px 50px 50px;
+    grid-template-areas:
+      ".    up    ."
+      "left run right"
+      ".    down  .";
+    gap: 6px;
+  }
+  .dpad-btn {
+    border-radius: 12px;
+    border: 2px solid #00eaff;
+    background: rgba(0,234,255,0.08);
+    color: #00eaff;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    text-shadow: 0 0 8px #00eaff;
+    box-shadow: 0 0 14px rgba(0,234,255,0.3), inset 0 0 14px rgba(0,234,255,0.08);
+    transition: transform 0.08s ease;
+  }
+  .dpad-btn:active { transform: scale(0.92); }
+  .dpad-btn:disabled { opacity: 0.25; cursor: default; }
+  .dpad-btn.up { grid-area: up; }
+  .dpad-btn.left { grid-area: left; }
+  .dpad-btn.right { grid-area: right; }
+  .dpad-btn.down { grid-area: down; }
+  .dpad-btn.run {
+    grid-area: run;
+    border-color: #ffd700;
+    background: rgba(255,215,0,0.12);
+    color: #ffd700;
+    text-shadow: 0 0 8px #ffd700;
+    box-shadow: 0 0 14px rgba(255,215,0,0.35), inset 0 0 14px rgba(255,215,0,0.1);
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: radial-gradient(circle at 50% 40%, rgba(10,25,40,0.88), rgba(5,5,15,0.96));
+    z-index: 10;
+    padding: 18px;
+    animation: fadeIn 0.4s ease;
+    overflow-y: auto;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .title {
+    font-size: clamp(26px, 7vw, 56px);
+    font-weight: 900;
+    letter-spacing: 4px;
+    margin: 0;
+    background: linear-gradient(90deg, #00eaff, #ffd700, #00ff9c, #00eaff);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hueSlide 4s linear infinite;
+    text-shadow: 0 0 30px rgba(0,234,255,0.4);
+  }
+  @keyframes hueSlide {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+  .subtitle {
+    font-size: clamp(11px, 2.4vw, 15px);
+    color: #aef;
+    margin: 8px 0 18px;
+    letter-spacing: 0.4px;
+    max-width: 480px;
+    line-height: 1.7;
+  }
+  .key-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-weight: bold;
+    margin: 0 2px;
+    background: rgba(0,234,255,0.18);
+    color: #00eaff;
+  }
+  .gold-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-weight: bold;
+    margin: 0 2px;
+    background: rgba(255,215,0,0.18);
+    color: #ffd700;
+  }
+  .haz-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-weight: bold;
+    margin: 0 2px;
+    background: rgba(255,60,60,0.18);
+    color: #ff5050;
+  }
+  .btn {
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 3px;
+    padding: 14px 42px;
+    border-radius: 50px;
+    border: 2px solid #00eaff;
+    background: rgba(0,234,255,0.08);
+    color: #00eaff;
+    cursor: pointer;
+    text-shadow: 0 0 10px #00eaff;
+    box-shadow: 0 0 20px rgba(0,234,255,0.4), inset 0 0 20px rgba(0,234,255,0.1);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); background: rgba(0,234,255,0.18); }
+  .btn:active { transform: scale(0.97); }
+  .final-score {
+    font-size: clamp(36px, 10vw, 70px);
+    font-weight: 900;
+    color: #ffd700;
+    text-shadow: 0 0 20px #ffd700, 0 0 40px #00eaff;
+    margin: 4px 0;
+  }
+  .stat-row {
+    display: flex;
+    gap: 26px;
+    margin: 12px 0 22px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .stat-label { font-size: 10px; letter-spacing: 2px; color: #8fd9ff; text-transform: uppercase; }
+  .stat-value { font-size: 22px; font-weight: bold; color: #fff; }
+  .new-high {
+    color: #ffd700;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-shadow: 0 0 12px #ffd700;
+    animation: pulse 0.8s ease infinite;
+    margin-bottom: 6px;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.7; }
+  }
+  .controls-hint {
+    text-align: center;
+    font-size: 10px;
+    color: #6cf;
+    opacity: 0.75;
+    padding: 2px 0 0;
+    letter-spacing: 0.6px;
+  }
+  @media (max-width: 600px) {
+    .hud-block { min-width: 42px; }
+    .hud-value { font-size: 14px; }
+    .lives { font-size: 13px; }
+    .dpad { grid-template-columns: 48px 56px 48px; grid-template-rows: 44px 44px 44px; }
+    .dpad-btn { font-size: 16px; }
+    .dpad-btn.run { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ---------- constants ---------- */
+const START_LIVES = 3;
+const MAX_MULTIPLIER = 5;
+const BASE_SCORE = 120;
+const PERFECT_BONUS = 80;
+const STEP_DELAY = 230;
+const SUCCESS_DELAY = 1100;
+const CRASH_DELAY = 900;
+const MAX_QUEUE = 30;
+const HIGH_SCORE_KEY = 'droneProtocolHighScore';
+
+const DIR_VECTORS = { U: [0, -1], D: [0, 1], L: [-1, 0], R: [1, 0] };
+const DIR_ARROWS = { U: '↑', D: '↓', L: '←', R: '→' };
+const DIR_ROTATION = { U: 0, R: 90, D: 180, L: 270 };
+
+const randInt = (n) => Math.floor(Math.random() * n);
+const keyOf = (x, y) => x + ',' + y;
+
+/* ---------- level generation ---------- */
+function bfsShortest(size, start, goal, hazards) {
+  const visited = new Set([keyOf(start.x, start.y)]);
+  let queue = [{ x: start.x, y: start.y, d: 0 }];
+  let qi = 0;
+  const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  while (qi < queue.length) {
+    const cur = queue[qi++];
+    if (cur.x === goal.x && cur.y === goal.y) return cur.d;
+    for (const [dx, dy] of dirs) {
+      const nx = cur.x + dx, ny = cur.y + dy;
+      if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+      const k = keyOf(nx, ny);
+      if (visited.has(k) || hazards.has(k)) continue;
+      visited.add(k);
+      queue.push({ x: nx, y: ny, d: cur.d + 1 });
+    }
+  }
+  return null;
+}
+
+function generateLevel(level) {
+  const size = Math.min(8, 5 + Math.floor((level - 1) / 3));
+  const hazardTarget = Math.min(Math.floor(size * size * 0.32), 2 + Math.floor(level * 0.8));
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const start = { x: randInt(size), y: randInt(size) };
+    let goal = { x: randInt(size), y: randInt(size) };
+    let tries = 0;
+    while (Math.abs(goal.x - start.x) + Math.abs(goal.y - start.y) < Math.max(3, size - 1) && tries < 30) {
+      goal = { x: randInt(size), y: randInt(size) };
+      tries++;
+    }
+    const hazards = new Set();
+    let guard = 0;
+    while (hazards.size < hazardTarget && guard < 300) {
+      guard++;
+      const hx = randInt(size), hy = randInt(size);
+      if ((hx === start.x && hy === start.y) || (hx === goal.x && hy === goal.y)) continue;
+      hazards.add(keyOf(hx, hy));
+    }
+    const minPath = bfsShortest(size, start, goal, hazards);
+    if (minPath !== null) {
+      return { size, start, goal, hazards, minPath };
+    }
+  }
+  const start = { x: 0, y: 0 };
+  const goal = { x: size - 1, y: size - 1 };
+  const hazards = new Set();
+  const minPath = bfsShortest(size, start, goal, hazards);
+  return { size, start, goal, hazards, minPath };
+}
+
+/* ---------- audio ---------- */
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol, ramp) {
+  try {
+    const ctx = ensureAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    if (ramp) osc.frequency.exponentialRampToValueAtTime(ramp, ctx.currentTime + dur);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+  } catch (e) { /* audio unavailable */ }
+}
+function noiseBurst(dur, vol, filterFreq) {
+  try {
+    const ctx = ensureAudio();
+    const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(filterFreq, ctx.currentTime);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+  } catch (e) { /* audio unavailable */ }
+}
+function sndAdd(n) { tone(320 + Math.min(n, 10) * 14, 0.05, 'square', 0.07, 480 + Math.min(n, 10) * 20); }
+function sndRemove() { tone(260, 0.06, 'square', 0.06, 160); }
+function sndError() { noiseBurst(0.12, 0.12, 500); }
+function sndStep() { tone(560, 0.045, 'square', 0.05, 700); }
+function sndCrash() { noiseBurst(0.35, 0.28, 900); tone(130, 0.32, 'sawtooth', 0.2, 45); }
+function sndSuccess(perfect) {
+  tone(523, 0.09, 'square', 0.13, 1046);
+  setTimeout(() => tone(659, 0.1, 'square', 0.13, 1318), 90);
+  setTimeout(() => tone(784, 0.12, 'square', 0.14, 1568), 180);
+  if (perfect) setTimeout(() => tone(1046, 0.18, 'sine', 0.16, 2092), 280);
+}
+function sndComboUp(mult) { tone(440 + mult * 60, 0.1, 'square', 0.12, 880 + mult * 80); }
+function sndStart() { tone(330, 0.1, 'sine', 0.15, 660); setTimeout(() => tone(440, 0.12, 'sine', 0.15, 880), 100); }
+function sndGameOver() {
+  tone(440, 0.2, 'sawtooth', 0.2, 220);
+  setTimeout(() => tone(330, 0.2, 'sawtooth', 0.2, 165), 180);
+  setTimeout(() => tone(220, 0.3, 'sawtooth', 0.2, 110), 360);
+}
+
+/* ---------- main app ---------- */
+function App() {
+  const stageWrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const particlesRef = useRef([]);
+  const rafRef = useRef(null);
+  const runRef = useRef(null);
+  const runTimerRef = useRef(null);
+  const announceIdRef = useRef(0);
+
+  const [screen, setScreen] = useState('start');
+  const [level, setLevel] = useState(1);
+  const [board, setBoard] = useState(null);
+  const [dronePos, setDronePos] = useState({ x: 0, y: 0 });
+  const [facing, setFacing] = useState('R');
+  const [queueCmds, setQueueCmds] = useState([]);
+  const [executing, setExecuting] = useState(false);
+  const [execIndex, setExecIndex] = useState(-1);
+  const [trail, setTrail] = useState(() => new Set());
+  const [lives, setLives] = useState(START_LIVES);
+  const [score, setScore] = useState(0);
+  const [comboStreak, setComboStreak] = useState(0);
+  const [highScore, setHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
+  const [finalScore, setFinalScore] = useState(0);
+  const [isNewBest, setIsNewBest] = useState(false);
+  const [announce, setAnnounce] = useState(null);
+  const [shake, setShake] = useState(false);
+  const [stageSize, setStageSize] = useState(280);
+
+  const multiplier = Math.min(MAX_MULTIPLIER, Math.max(1, comboStreak));
+
+  useEffect(() => {
+    if (localStorage.getItem(HIGH_SCORE_KEY) === null) {
+      localStorage.setItem(HIGH_SCORE_KEY, '0');
+    }
+  }, []);
+
+  /* stage sizing */
+  useEffect(() => {
+    const wrap = stageWrapRef.current;
+    if (!wrap) return;
+    function recompute() {
+      const rect = wrap.getBoundingClientRect();
+      const size = Math.max(160, Math.min(560, Math.floor(Math.min(rect.width, rect.height)) - 4));
+      setStageSize(size);
+    }
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(wrap);
+    window.addEventListener('orientationchange', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('orientationchange', recompute); };
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = stageSize;
+    canvas.height = stageSize;
+  }, [stageSize]);
+
+  /* particle animation loop */
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    let active = true;
+    let last = performance.now();
+    function loop(now) {
+      if (!active) return;
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const arr = particlesRef.current;
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const p = arr[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 220 * dt;
+        p.life -= p.decay * dt;
+        if (p.life <= 0) arr.splice(i, 1);
+      }
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (const p of arr) {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.life);
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 10;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(0.5, p.size * Math.max(0.2, p.life)), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    }
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { active = false; cancelAnimationFrame(rafRef.current); };
+  }, [screen]);
+
+  function spawnTickFx(cx, cy, color) {
+    for (let i = 0; i < 6; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = 20 + Math.random() * 40;
+      particlesRef.current.push({
+        x: cx, y: cy, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 10,
+        life: 1, decay: 2.2 + Math.random(), color: color || '#00eaff', size: 2 + Math.random() * 2,
+      });
+    }
+  }
+  function spawnBurstFx(cx, cy, colors, count) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 160;
+      particlesRef.current.push({
+        x: cx, y: cy, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+        life: 1, decay: 0.9 + Math.random() * 0.7,
+        color: colors[Math.floor(Math.random() * colors.length)], size: 2 + Math.random() * 4,
+      });
+    }
+  }
+
+  const triggerAnnounce = useCallback((text, color) => {
+    announceIdRef.current++;
+    setAnnounce({ text, color, id: announceIdRef.current });
+  }, []);
+
+  function cellCenter(x, y, size) {
+    const c = stageSize / size;
+    return [c * (x + 0.5), c * (y + 0.5)];
+  }
+
+  /* ---------- run execution ---------- */
+  function scheduleStep() {
+    runTimerRef.current = setTimeout(stepRun, STEP_DELAY);
+  }
+
+  function stepRun() {
+    const r = runRef.current;
+    if (!r) return;
+    const b = r.board;
+    if (r.idx >= r.queue.length) {
+      finishRun(false);
+      triggerAnnounce('PROTOCOL INCOMPLETE', '#ff5050');
+      return;
+    }
+    const dir = r.queue[r.idx];
+    setFacing(dir);
+    const [dx, dy] = DIR_VECTORS[dir];
+    const nx = r.pos.x + dx, ny = r.pos.y + dy;
+    const [px, py] = cellCenter(Math.max(0, Math.min(b.size - 1, nx)), Math.max(0, Math.min(b.size - 1, ny)), b.size);
+
+    if (nx < 0 || ny < 0 || nx >= b.size || ny >= b.size) {
+      sndCrash();
+      spawnBurstFx(px, py, ['#ff3030', '#ff9020', '#ff6060'], 36);
+      finishRun(false);
+      triggerAnnounce('OUT OF BOUNDS', '#ff5050');
+      return;
+    }
+    const hkey = keyOf(nx, ny);
+    if (b.hazards.has(hkey)) {
+      sndCrash();
+      spawnBurstFx(px, py, ['#ff3030', '#ff9020', '#ff6060'], 36);
+      finishRun(false);
+      triggerAnnounce('SYSTEM CRASH', '#ff5050');
+      return;
+    }
+    r.pos = { x: nx, y: ny };
+    r.idx += 1;
+    setDronePos({ x: nx, y: ny });
+    setExecIndex(r.idx);
+    setTrail((prev) => { const next = new Set(prev); next.add(hkey); return next; });
+    sndStep();
+    spawnTickFx(px, py, '#00eaff');
+
+    if (nx === b.goal.x && ny === b.goal.y) {
+      const perfect = r.idx === b.minPath;
+      spawnBurstFx(px, py, perfect ? ['#ffd700', '#fff3b0', '#00eaff'] : ['#00eaff', '#8fe9ff'], perfect ? 60 : 44);
+      sndSuccess(perfect);
+      finishRun(true, r.idx, perfect);
+      return;
+    }
+    scheduleStep();
+  }
+
+  function finishRun(success, usedSteps, perfect) {
+    runTimerRef.current = null;
+    setExecIndex(-1);
+    if (success) {
+      setComboStreak((prev) => {
+        const next = prev + 1;
+        const mult = Math.min(MAX_MULTIPLIER, next);
+        const gained = Math.round(BASE_SCORE * level * mult + (perfect ? PERFECT_BONUS * mult : 0));
+        setScore((s) => s + gained);
+        if (next > 1) setTimeout(() => sndComboUp(mult), 200);
+        return next;
+      });
+      triggerAnnounce(perfect ? 'PERFECT PATH!' : 'TARGET REACHED', perfect ? '#ffd700' : '#00eaff');
+      setTimeout(() => advanceLevel(), SUCCESS_DELAY);
+    } else {
+      setComboStreak(0);
+      setShake(true);
+      setTimeout(() => setShake(false), 420);
+      setLives((prevLives) => {
+        const nl = prevLives - 1;
+        if (nl <= 0) {
+          setTimeout(() => triggerGameOver(), CRASH_DELAY);
+        } else {
+          setTimeout(() => resetForRetry(), CRASH_DELAY);
+        }
+        return nl;
+      });
+    }
+  }
+
+  function advanceLevel() {
+    setLevel((prevLevel) => {
+      const nl = prevLevel + 1;
+      const newBoard = generateLevel(nl);
+      setBoard(newBoard);
+      setDronePos({ ...newBoard.start });
+      setFacing('R');
+      setQueueCmds([]);
+      setTrail(new Set());
+      setExecuting(false);
+      triggerAnnounce('LEVEL ' + nl, '#00ff9c');
+      return nl;
+    });
+  }
+
+  function resetForRetry() {
+    setBoard((b) => {
+      if (b) setDronePos({ ...b.start });
+      return b;
+    });
+    setFacing('R');
+    setQueueCmds([]);
+    setExecuting(false);
+  }
+
+  function triggerGameOver() {
+    setScore((currentScore) => {
+      setFinalScore(currentScore);
+      const prevBest = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+      if (currentScore > prevBest) {
+        localStorage.setItem(HIGH_SCORE_KEY, String(currentScore));
+        setHighScore(currentScore);
+        setIsNewBest(true);
+      } else {
+        setIsNewBest(false);
+      }
+      return currentScore;
+    });
+    sndGameOver();
+    setScreen('gameover');
+  }
+
+  function startRun() {
+    if (!board) return;
+    setExecuting(true);
+    setTrail(new Set([keyOf(board.start.x, board.start.y)]));
+    setExecIndex(0);
+    runRef.current = { board, queue: queueCmds.slice(), pos: { ...board.start }, idx: 0 };
+    scheduleStep();
+  }
+
+  /* ---------- input handlers ---------- */
+  function pushCmd(dir) {
+    if (executing || screen !== 'playing') return;
+    if (queueCmds.length >= MAX_QUEUE) { sndError(); return; }
+    setQueueCmds((prev) => [...prev, dir]);
+    sndAdd(queueCmds.length);
+  }
+
+  function removeChip(idx) {
+    if (executing) return;
+    setQueueCmds((prev) => prev.filter((_, i) => i !== idx));
+    sndRemove();
+  }
+
+  function clearQueue() {
+    if (executing || queueCmds.length === 0) return;
+    setQueueCmds([]);
+    sndRemove();
+  }
+
+  function handleRun() {
+    if (executing || screen !== 'playing') return;
+    if (queueCmds.length === 0) {
+      sndError();
+      triggerAnnounce('NO COMMANDS', '#ff5050');
+      return;
+    }
+    ensureAudio();
+    startRun();
+  }
+
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    function onKey(e) {
+      if (executing) return;
+      const code = e.code;
+      if (code === 'ArrowUp' || code === 'KeyW') { e.preventDefault(); pushCmd('U'); }
+      else if (code === 'ArrowDown' || code === 'KeyS') { e.preventDefault(); pushCmd('D'); }
+      else if (code === 'ArrowLeft' || code === 'KeyA') { e.preventDefault(); pushCmd('L'); }
+      else if (code === 'ArrowRight' || code === 'KeyD') { e.preventDefault(); pushCmd('R'); }
+      else if (code === 'Enter' || code === 'Space') { e.preventDefault(); handleRun(); }
+      else if (code === 'Backspace') { e.preventDefault(); setQueueCmds((prev) => prev.slice(0, -1)); }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [screen, executing, queueCmds, board]);
+
+  function startGame() {
+    ensureAudio();
+    const firstBoard = generateLevel(1);
+    setLevel(1);
+    setBoard(firstBoard);
+    setDronePos({ ...firstBoard.start });
+    setFacing('R');
+    setQueueCmds([]);
+    setTrail(new Set());
+    setExecIndex(-1);
+    setExecuting(false);
+    setLives(START_LIVES);
+    setScore(0);
+    setComboStreak(0);
+    setFinalScore(0);
+    setIsNewBest(false);
+    setAnnounce(null);
+    setScreen('playing');
+    sndStart();
+  }
+
+  useEffect(() => () => { if (runTimerRef.current) clearTimeout(runTimerRef.current); }, []);
+
+  const cellPx = board ? stageSize / board.size : stageSize;
+
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hud-block">
+          <div className="hud-label">Score</div>
+          <div className="hud-value">{score}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Best</div>
+          <div className="hud-value gold">{Math.max(highScore, score)}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Lives</div>
+          <div className="lives">
+            {Array.from({ length: START_LIVES }).map((_, i) => (
+              <span key={i} className={i < lives ? 'life-full' : 'life-empty'}>&#9670;</span>
+            ))}
+          </div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Level</div>
+          <div className="hud-value">{level}</div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Combo</div>
+          <div className="hud-value" style={{ color: multiplier > 1 ? '#ffd700' : '#fff', textShadow: multiplier > 1 ? '0 0 8px #ffd700, 0 0 16px #ffd700' : '0 0 8px #00eaff, 0 0 16px #00eaff' }}>
+            &times;{multiplier}
+          </div>
+        </div>
+        <div className="hud-block">
+          <div className="hud-label">Optimal / Used</div>
+          <div className="hud-value" style={{ fontSize: 15, color: board && queueCmds.length === board.minPath ? '#ffd700' : '#fff' }}>
+            {board ? board.minPath : 0} / {queueCmds.length}
+          </div>
+        </div>
+      </div>
+
+      <div className="stage-wrap" ref={stageWrapRef}>
+        <div className={'stage' + (shake ? ' shake' : '')} style={{ width: stageSize, height: stageSize }}>
+          {board && (
+            <div className="grid" style={{ gridTemplateColumns: `repeat(${board.size}, 1fr)`, gridTemplateRows: `repeat(${board.size}, 1fr)` }}>
+              {Array.from({ length: board.size * board.size }).map((_, i) => {
+                const x = i % board.size, y = Math.floor(i / board.size);
+                const k = keyOf(x, y);
+                const isHazard = board.hazards.has(k);
+                const isStart = x === board.start.x && y === board.start.y;
+                const isGoal = x === board.goal.x && y === board.goal.y;
+                const isTrail = trail.has(k);
+                let cls = 'cell';
+                if (isHazard) cls += ' hazard';
+                if (isStart) cls += ' start';
+                if (isGoal) cls += ' goal';
+                if (isTrail && !isStart) cls += ' trail';
+                return <div key={k} className={cls}>{isHazard ? '⚠' : isGoal ? '◆' : ''}</div>;
+              })}
+            </div>
+          )}
+          {board && (
+            <div
+              className="drone"
+              style={{
+                width: cellPx,
+                height: cellPx,
+                transform: `translate(${dronePos.x * cellPx}px, ${dronePos.y * cellPx}px)`,
+              }}
+            >
+              <div className="drone-glyph" style={{ transform: `rotate(${DIR_ROTATION[facing]}deg)` }}>&#9650;</div>
+            </div>
+          )}
+          <canvas ref={canvasRef} className="fx-canvas"></canvas>
+          {announce && (
+            <div key={announce.id} className="announce" style={{ color: announce.color, textShadow: `0 0 16px ${announce.color}` }}>
+              {announce.text}
+            </div>
+          )}
+        </div>
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <h1 className="title">DRONE PROTOCOL</h1>
+            <p className="subtitle">
+              Queue up <span className="key-tag">UP / DOWN / LEFT / RIGHT</span> commands to program your drone's route,
+              then hit <span className="gold-tag">RUN</span> to execute it step by step.<br/>
+              Reach the <span className="gold-tag">&#9670; goal</span> exactly &mdash; avoid <span className="haz-tag">&#9888; hazards</span> and the grid edge, or you'll lose a life.<br/>
+              Match the OPTIMAL step count for a PERFECT PATH bonus, and chain clears for bigger combo multipliers!
+            </p>
+            <button className="btn" onClick={startGame}>START</button>
+            <div className="controls-hint">Arrows / WASD to queue &middot; Enter / Space to RUN &middot; Backspace to undo &middot; or use the buttons below</div>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <h1 className="title">SIGNAL LOST</h1>
+            {isNewBest && <div className="new-high">NEW BEST!</div>}
+            <div className="final-score">{finalScore}</div>
+            <div className="stat-row">
+              <div className="stat"><div className="stat-label">Best</div><div className="stat-value">{highScore}</div></div>
+              <div className="stat"><div className="stat-label">Level Reached</div><div className="stat-value">{level}</div></div>
+            </div>
+            <button className="btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      <div className="program-row">
+        <span className="program-label">PROGRAM</span>
+        <div className="chip-row">
+          {queueCmds.length === 0 && <span className="chip-empty">tap arrows below to build a route&hellip;</span>}
+          {queueCmds.map((c, i) => (
+            <button
+              key={i}
+              className={'chip' + (i === execIndex && executing ? ' chip-active' : '')}
+              onClick={() => removeChip(i)}
+              disabled={executing || screen !== 'playing'}
+            >
+              {DIR_ARROWS[c]}
+            </button>
+          ))}
+        </div>
+        <button className="clear-btn" onClick={clearQueue} disabled={executing || queueCmds.length === 0 || screen !== 'playing'}>&#10005;</button>
+      </div>
+
+      <div className="dpad-row">
+        <div className="dpad">
+          <button className="dpad-btn up" onClick={() => pushCmd('U')} disabled={executing || screen !== 'playing'}>&#8593;</button>
+          <button className="dpad-btn left" onClick={() => pushCmd('L')} disabled={executing || screen !== 'playing'}>&#8592;</button>
+          <button className="dpad-btn run" onClick={handleRun} disabled={executing || screen !== 'playing'}>RUN</button>
+          <button className="dpad-btn right" onClick={() => pushCmd('R')} disabled={executing || screen !== 'playing'}>&#8594;</button>
+          <button className="dpad-btn down" onClick={() => pushCmd('D')} disabled={executing || screen !== 'playing'}>&#8595;</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
