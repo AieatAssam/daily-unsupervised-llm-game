@@ -2069,5 +2069,25 @@
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
     "preview": "games/2026-06-15/preview.png"
+  },
+  {
+    "id": "2026-06-28",
+    "name": "Drone Protocol",
+    "date": "2026-06-28",
+    "description": "Program a recon drone to cross a hazard grid one command at a time. Queue UP / DOWN / LEFT / RIGHT moves with the D-pad or arrow keys, then hit RUN to watch your drone execute the route step by step. Land exactly on the goal while dodging warning hazards and the grid's edge - match the optimal step count for a PERFECT PATH bonus, and chain clears without a crash to build a combo multiplier up to x5. Crash or fall off the grid and you lose a drone; lose all three and the signal is lost.",
+    "tagline": "Plan the route, then watch it fly - or crash.",
+    "tags": [
+      "puzzle",
+      "strategy",
+      "pathfinding",
+      "programming",
+      "grid"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Tap the D-pad arrows or press Arrow keys / WASD to queue moves, then click RUN or press Enter/Space to execute; Backspace undoes the last move",
+    "folder": "games/2026-06-28",
+    "file": "games/2026-06-28/index.html",
+    "preview": "games/2026-06-28/preview.png"
   }
 ]
