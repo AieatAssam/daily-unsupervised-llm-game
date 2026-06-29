@@ -2089,5 +2089,25 @@
     "folder": "games/2026-06-28",
     "file": "games/2026-06-28/index.html",
     "preview": "games/2026-06-28/preview.png"
+  },
+  {
+    "id": "2026-06-29",
+    "name": "Crest Diver",
+    "date": "2026-06-29",
+    "description": "Hold to dive your glowing orb down procedurally rolling neon hills, building speed on the downslopes and launching off every crest. Thread golden rings in mid-air for combo multipliers, scoop up cyan energy orbs, and dodge red spike hazards as the terrain grows wilder the farther you go.",
+    "tagline": "Dive the slope. Launch the crest. Chain the rings.",
+    "tags": [
+      "arcade",
+      "reflex",
+      "action",
+      "physics",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Hold mouse / touch / Space to dive down slopes — release to glide and launch off crests through the gold rings",
+    "folder": "games/2026-06-29",
+    "file": "games/2026-06-29/index.html",
+    "preview": "games/2026-06-29/preview.png"
   }
 ]

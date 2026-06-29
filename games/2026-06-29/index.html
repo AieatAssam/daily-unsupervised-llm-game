@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Crest Diver</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #050314; touch-action: none; }
+  #root { width: 100vw; height: 100vh; position: relative; }
+  body, button { font-family: 'Segoe UI', 'Trebuchet MS', Arial, sans-serif; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .crest-btn {
+    pointer-events: auto;
+    cursor: pointer;
+    border: none;
+    border-radius: 999px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ---------- tunable physics constants ---------- */
+const GRAVITY = 1500;
+const DIVE_GRAVITY_MULT = 2.6;
+const DOWNHILL_ACCEL = 4.4;
+const DIVE_DOWNHILL_ACCEL = 9.5;
+const UPHILL_DECEL = 5.2;
+const FRICTION = 38;
+const AIR_FRICTION = 14;
+const SLOPE_EPS = 0.012;
+const LAUNCH_MIN_SPEED = 360;
+const LAUNCH_SLOPE_MIN = 0.34;
+const LAUNCH_FACTOR = 1.45;
+const LANDING_BONUS_FACTOR = 0.42;
+const MAX_LANDING_BONUS = 260;
+const CRASH_IMPACT_THRESHOLD = 640;
+const LANDING_FLAT_PENALTY = 0.88;
+const MIN_SPEED = 130;
+const MAX_SPEED = 980;
+const BASE_SPEED = 230;
+const SCORE_PER_DISTANCE = 0.045;
+const GROUND_FRAC = 0.62;
+const PLAYER_SCREEN_FRAC = 0.27;
+const PLAYER_RADIUS = 13;
+const RING_RADIUS = 56;
+const ORB_RADIUS = 80;
+const SPIKE_BAND = 26;
+const INVULN_TIME = 0.9;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function elevationAt(x, seed, difficulty) {
+  let e = seed.a1 * Math.sin(x * seed.f1 + seed.p1) +
+          seed.a2 * Math.sin(x * seed.f2 + seed.p2) +
+          seed.a3 * Math.sin(x * seed.f3 + seed.p3);
+  if (difficulty > 0) {
+    e += difficulty * 22 * Math.sin(x * 0.021 + seed.p4);
+  }
+  return e;
+}
+
+function makeSeed() {
+  return {
+    a1: 95, f1: 0.0016, p1: Math.random() * Math.PI * 2,
+    a2: 42, f2: 0.0044, p2: Math.random() * Math.PI * 2,
+    a3: 16, f3: 0.011, p3: Math.random() * Math.PI * 2,
+    p4: Math.random() * Math.PI * 2,
+  };
+}
+
+function freshWorld(width, height) {
+  return {
+    seed: makeSeed(),
+    distance: 0,
+    speed: BASE_SPEED,
+    playerY: height * GROUND_FRAC,
+    vy: 0,
+    airborne: false,
+    diving: false,
+    combo: 0,
+    score: 0,
+    lives: 3,
+    invuln: 0,
+    shake: 0,
+    hue: Math.random() * 360,
+    nextSpawnX: 600,
+    rings: [],
+    orbs: [],
+    spikes: [],
+    particles: [],
+    trail: [],
+    flashes: [],
+    width, height,
+  };
+}
+
+function spawnAhead(w) {
+  const difficulty = clamp(w.distance / 42000, 0, 1);
+  while (w.nextSpawnX < w.distance + w.width * 2.2) {
+    const roll = Math.random();
+    const x = w.nextSpawnX;
+    if (roll < 0.4) {
+      const elev = elevationAt(x, w.seed, difficulty);
+      w.rings.push({ x, offset: 70 + Math.random() * 50, elev, resolved: false });
+    } else if (roll < 0.75) {
+      const elev = elevationAt(x, w.seed, difficulty);
+      w.orbs.push({ x, offset: 30 + Math.random() * 30, elev, resolved: false, spin: Math.random() * Math.PI * 2 });
+    } else if (difficulty > 0.08) {
+      w.spikes.push({ x, resolved: false });
+    }
+    const gapBase = lerp(360, 190, difficulty);
+    w.nextSpawnX += gapBase + Math.random() * gapBase * 0.8;
+  }
+}
+
+function spawnBurst(w, x, y, color, count, power) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = (0.4 + Math.random() * 0.9) * power;
+    w.particles.push({
+      x, y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp - power * 0.25,
+      life: 0.5 + Math.random() * 0.5,
+      maxLife: 0.5 + Math.random() * 0.5,
+      size: 2 + Math.random() * 3,
+      color,
+    });
+  }
+}
+
+function speedColor(speed) {
+  const t = clamp((speed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 0, 1);
+  const hue = lerp(190, 8, t);
+  return `hsl(${hue}, 95%, ${lerp(58, 62, t)}%)`;
+}
+
+/* ---------- audio ---------- */
+function useSynth() {
+  const ctxRef = useRef(null);
+  const get = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+  const tone = useCallback((freq, dur, type, gain, glide) => {
+    try {
+      const ctx = get();
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (glide) osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq + glide), ctx.currentTime + dur);
+      g.gain.setValueAtTime(gain || 0.16, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + dur);
+    } catch (e) {}
+  }, []);
+  return {
+    unlock: () => get(),
+    dive: () => tone(180, 0.18, 'sawtooth', 0.07, -90),
+    ring: (combo) => tone(520 + combo * 40, 0.22, 'triangle', 0.18, 260),
+    orb: () => tone(720, 0.1, 'sine', 0.14, 120),
+    crash: () => tone(110, 0.35, 'square', 0.22, -70),
+    launch: () => tone(300, 0.16, 'sine', 0.12, 220),
+    gameover: () => tone(220, 0.5, 'sawtooth', 0.18, -150),
+  };
+}
+
+/* ---------- main component ---------- */
+function CrestDiver() {
+  const canvasRef = useRef(null);
+  const worldRef = useRef(null);
+  const rafRef = useRef(null);
+  const lastTimeRef = useRef(null);
+  const starsRef = useRef([]);
+  const sizeRef = useRef({ w: window.innerWidth, h: window.innerHeight });
+
+  const [gameState, setGameState] = useState('start');
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [highScore, setHighScore] = useState(0);
+  const lastUiRef = useRef({ score: -1, lives: -1, combo: -1 });
+
+  const synth = useSynth();
+
+  useEffect(() => {
+    const stored = parseInt(localStorage.getItem('crestDiverHighScore') || '0', 10) || 0;
+    setHighScore(stored);
+    localStorage.setItem('crestDiverHighScore', String(stored));
+  }, []);
+
+  const buildStars = useCallback((w, h) => {
+    const stars = [];
+    for (let i = 0; i < 90; i++) {
+      stars.push({ x: Math.random() * w, y: Math.random() * h * 0.6, r: Math.random() * 1.8 + 0.4, phase: Math.random() * Math.PI * 2 });
+    }
+    starsRef.current = stars;
+  }, []);
+
+  useEffect(() => {
+    const resize = () => {
+      const w = window.innerWidth, h = window.innerHeight;
+      sizeRef.current = { w, h };
+      const c = canvasRef.current;
+      if (c) { c.width = w; c.height = h; }
+      buildStars(w, h);
+      if (worldRef.current) { worldRef.current.width = w; worldRef.current.height = h; }
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [buildStars]);
+
+  const startGame = useCallback(() => {
+    synth.unlock();
+    const { w, h } = sizeRef.current;
+    worldRef.current = freshWorld(w, h);
+    lastUiRef.current = { score: -1, lives: -1, combo: -1 };
+    setScore(0); setLives(3); setCombo(0);
+    setGameState('playing');
+  }, [synth]);
+
+  const setDiving = useCallback((v) => {
+    if (worldRef.current) worldRef.current.diving = v;
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code === 'Space' || e.key === ' ' || e.code === 'ArrowUp') {
+        e.preventDefault();
+        if (gameState !== 'playing') startGame();
+        else setDiving(true);
+      }
+    };
+    const onKeyUp = (e) => {
+      if (e.code === 'Space' || e.key === ' ' || e.code === 'ArrowUp') setDiving(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [gameState, startGame, setDiving]);
+
+  const handleDown = useCallback(() => {
+    if (gameState !== 'playing') startGame();
+    else setDiving(true);
+  }, [gameState, startGame, setDiving]);
+
+  const handleUp = useCallback(() => setDiving(false), [setDiving]);
+
+  useEffect(() => {
+    const step = (t) => {
+      rafRef.current = requestAnimationFrame(step);
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const { w, h } = sizeRef.current;
+
+      if (lastTimeRef.current == null) lastTimeRef.current = t;
+      let dt = (t - lastTimeRef.current) / 1000;
+      lastTimeRef.current = t;
+      dt = clamp(dt, 0, 0.05);
+
+      const w_ = worldRef.current;
+      const playerScreenX = w * PLAYER_SCREEN_FRAC;
+      const groundBaseY = h * GROUND_FRAC;
+
+      if (w_ && gameState === 'playing') {
+        updateWorld(w_, dt, groundBaseY, playerScreenX, synth);
+        spawnAhead(w_);
+
+        const sc = Math.floor(w_.score);
+        if (sc !== lastUiRef.current.score) { lastUiRef.current.score = sc; setScore(sc); }
+        if (w_.lives !== lastUiRef.current.lives) { lastUiRef.current.lives = w_.lives; setLives(w_.lives); }
+        if (w_.combo !== lastUiRef.current.combo) { lastUiRef.current.combo = w_.combo; setCombo(w_.combo); }
+
+        if (w_.lives <= 0) {
+          synth.gameover();
+          setGameState('gameover');
+          setHighScore((hs) => {
+            const newHs = Math.max(hs, sc);
+            localStorage.setItem('crestDiverHighScore', String(newHs));
+            return newHs;
+          });
+        }
+      }
+
+      drawScene(ctx, w, h, w_, gameState, groundBaseY, playerScreenX, starsRef.current, t);
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [gameState, synth]);
+
+  return (
+    <div
+      style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}
+      onMouseDown={handleDown}
+      onMouseUp={handleUp}
+      onMouseLeave={handleUp}
+      onTouchStart={(e) => { e.preventDefault(); handleDown(); }}
+      onTouchEnd={(e) => { e.preventDefault(); handleUp(); }}
+    >
+      <canvas ref={canvasRef} />
+
+      {gameState === 'playing' && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, padding: '14px 18px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          pointerEvents: 'none', color: '#fff', textShadow: '0 0 10px rgba(0,255,255,0.6)',
+        }}>
+          <div>
+            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: 1 }}>{score}</div>
+            <div style={{ fontSize: 13, opacity: 0.85, color: '#ffd24a', textShadow: '0 0 8px rgba(255,210,74,0.8)' }}>
+              {combo > 1 ? `COMBO x${combo}` : 'CREST DIVER'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[0, 1, 2].map((i) => (
+              <div key={i} style={{
+                width: 16, height: 16, borderRadius: '50%',
+                background: i < lives ? 'radial-gradient(circle,#ff5fb0,#ff1f7a)' : 'rgba(255,255,255,0.15)',
+                boxShadow: i < lives ? '0 0 10px #ff3f9b' : 'none',
+              }} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {gameState === 'start' && (
+        <Overlay>
+          <h1 style={titleStyle}>CREST DIVER</h1>
+          <p style={subStyle}>Hold to dive down slopes. Launch off crests. Thread the gold rings.</p>
+          <button className="crest-btn" style={btnStyle} onClick={startGame}>Tap / Space to Dive</button>
+          <p style={{ ...hintStyle, marginTop: 22 }}>High Score: {highScore}</p>
+        </Overlay>
+      )}
+
+      {gameState === 'gameover' && (
+        <Overlay>
+          <h1 style={{ ...titleStyle, color: '#ff5fa0', textShadow: '0 0 24px rgba(255,60,140,0.85)' }}>SIGNAL LOST</h1>
+          <p style={subStyle}>Score: {score}{score >= highScore && score > 0 ? '  —  NEW HIGH SCORE!' : ''}</p>
+          <p style={hintStyle}>Best: {highScore}</p>
+          <button className="crest-btn" style={btnStyle} onClick={startGame}>Try Again</button>
+        </Overlay>
+      )}
+    </div>
+  );
+}
+
+function Overlay({ children }) {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+      background: 'radial-gradient(circle at 50% 40%, rgba(40,10,70,0.55), rgba(3,2,14,0.88))',
+      padding: 24,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+const titleStyle = {
+  fontSize: 'clamp(34px, 8vw, 64px)', margin: 0, color: '#5ef0ff',
+  textShadow: '0 0 18px rgba(94,240,255,0.9), 0 0 40px rgba(255,80,200,0.5)',
+  letterSpacing: 3,
+};
+const subStyle = { color: '#dcefff', fontSize: 16, maxWidth: 440, margin: '14px 0', opacity: 0.9 };
+const hintStyle = { color: '#9bb6d8', fontSize: 13, margin: 0 };
+const btnStyle = {
+  marginTop: 8, padding: '16px 34px', fontSize: 16, color: '#04111c',
+  background: 'linear-gradient(135deg,#5ef0ff,#ff5fb0)',
+  boxShadow: '0 0 26px rgba(94,240,255,0.65)',
+};
+
+/* ---------- physics update ---------- */
+function updateWorld(w, dt, groundBaseY, playerScreenX, synth) {
+  w.hue = (w.hue + dt * 6) % 360;
+  if (w.invuln > 0) w.invuln -= dt;
+  if (w.shake > 0) w.shake = Math.max(0, w.shake - dt * 2.4);
+
+  const difficulty = clamp(w.distance / 42000, 0, 1);
+  const elevNow = elevationAt(w.distance, w.seed, difficulty);
+  const elevAhead = elevationAt(w.distance + 3, w.seed, difficulty);
+  const slope = (elevAhead - elevNow) / 3;
+  const groundY = groundBaseY - elevNow;
+
+  if (!w.airborne) {
+    if (slope < -SLOPE_EPS) {
+      const accel = (w.diving ? DIVE_DOWNHILL_ACCEL : DOWNHILL_ACCEL) * (-slope) * 60;
+      w.speed += accel * dt;
+    } else if (slope > SLOPE_EPS) {
+      w.speed -= UPHILL_DECEL * slope * 60 * dt;
+      if (w.speed > LAUNCH_MIN_SPEED && slope > LAUNCH_SLOPE_MIN) {
+        w.vy = -w.speed * LAUNCH_FACTOR * Math.min(slope, 1.1) * 0.45;
+        w.airborne = true;
+        synth.launch();
+      }
+    } else {
+      w.speed -= FRICTION * dt;
+    }
+    w.speed = clamp(w.speed, MIN_SPEED, MAX_SPEED);
+    if (!w.airborne) w.playerY = groundY;
+  } else {
+    const g = w.diving ? GRAVITY * DIVE_GRAVITY_MULT : GRAVITY;
+    w.vy += g * dt;
+    w.playerY += w.vy * dt;
+    w.speed -= AIR_FRICTION * dt;
+    w.speed = clamp(w.speed, MIN_SPEED, MAX_SPEED);
+    if (w.diving) {
+      w.trail.push({ x: playerScreenX, y: w.playerY, life: 0.3 });
+    }
+    if (w.playerY >= groundY) {
+      const impactV = w.vy;
+      w.playerY = groundY;
+      w.airborne = false;
+      w.vy = 0;
+      if (slope < -SLOPE_EPS) {
+        const bonus = Math.min(impactV * LANDING_BONUS_FACTOR, MAX_LANDING_BONUS);
+        w.speed = clamp(w.speed + bonus, MIN_SPEED, MAX_SPEED);
+        spawnBurst(w, playerScreenX, groundY, '#5ef0ff', 10, 160);
+      } else if (impactV > CRASH_IMPACT_THRESHOLD && w.invuln <= 0) {
+        crash(w, playerScreenX, groundY, synth);
+      } else {
+        w.speed *= LANDING_FLAT_PENALTY;
+      }
+    }
+  }
+
+  w.distance += w.speed * dt;
+  w.score += w.speed * dt * SCORE_PER_DISTANCE;
+
+  if (w.diving && !w.airborne && Math.random() < 0.6) {
+    spawnBurst(w, playerScreenX + (Math.random() - 0.5) * 10, w.playerY + PLAYER_RADIUS, '#ffd24a', 1, 50);
+  }
+
+  checkCollisions(w, playerScreenX, groundBaseY, synth);
+
+  w.particles = w.particles.filter((p) => p.life > 0);
+  w.particles.forEach((p) => {
+    p.life -= dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 600 * dt;
+  });
+  w.trail = w.trail.filter((tr) => tr.life > 0);
+  w.trail.forEach((tr) => { tr.life -= dt; });
+}
+
+function crash(w, x, y, synth) {
+  w.lives -= 1;
+  w.combo = 0;
+  w.invuln = INVULN_TIME;
+  w.speed = Math.max(MIN_SPEED, w.speed * 0.42);
+  w.shake = 1;
+  spawnBurst(w, x, y, '#ff3f6b', 22, 240);
+  synth.crash();
+}
+
+function checkCollisions(w, playerScreenX, groundBaseY, synth) {
+  const difficulty = clamp(w.distance / 42000, 0, 1);
+
+  w.rings.forEach((r) => {
+    if (r.resolved) return;
+    if (w.distance >= r.x) {
+      r.resolved = true;
+      const ringScreenY = groundBaseY - elevationAt(r.x, w.seed, difficulty) - r.offset;
+      const dy = Math.abs(w.playerY - ringScreenY);
+      if (dy < RING_RADIUS * 0.62) {
+        w.combo += 1;
+        w.score += 35 * w.combo;
+        spawnBurst(w, playerScreenX, ringScreenY, '#ffd24a', 16, 200);
+        synth.ring(w.combo);
+      } else {
+        w.combo = 0;
+      }
+    }
+  });
+
+  w.orbs.forEach((o) => {
+    if (o.resolved) return;
+    if (w.distance >= o.x) {
+      o.resolved = true;
+      const orbScreenY = groundBaseY - elevationAt(o.x, w.seed, difficulty) - o.offset;
+      const dy = Math.abs(w.playerY - orbScreenY);
+      if (dy < ORB_RADIUS * 0.55) {
+        w.score += 12;
+        spawnBurst(w, playerScreenX, orbScreenY, '#7dffb0', 8, 120);
+        synth.orb();
+      }
+    }
+  });
+
+  w.spikes.forEach((s) => {
+    if (s.resolved) return;
+    if (w.distance >= s.x - SPIKE_BAND && w.distance <= s.x + SPIKE_BAND) {
+      if (!w.airborne && w.invuln <= 0) {
+        s.resolved = true;
+        crash(w, playerScreenX, w.playerY, synth);
+      } else if (w.distance > s.x + SPIKE_BAND * 0.5) {
+        s.resolved = true;
+      }
+    } else if (w.distance > s.x + SPIKE_BAND) {
+      s.resolved = true;
+    }
+  });
+
+  w.rings = w.rings.filter((r) => r.x > w.distance - 400);
+  w.orbs = w.orbs.filter((o) => o.x > w.distance - 400);
+  w.spikes = w.spikes.filter((s) => s.x > w.distance - 400);
+}
+
+/* ---------- rendering ---------- */
+function drawScene(ctx, w, h, world, gameState, groundBaseY, playerScreenX, stars, t) {
+  const hue = world ? world.hue : 230;
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, `hsl(${(hue + 250) % 360}, 70%, 8%)`);
+  grad.addColorStop(0.55, `hsl(${(hue + 290) % 360}, 70%, 14%)`);
+  grad.addColorStop(1, `hsl(${(hue + 320) % 360}, 80%, 18%)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.save();
+  stars.forEach((s) => {
+    const tw = 0.5 + 0.5 * Math.sin(t * 0.002 + s.phase);
+    ctx.globalAlpha = 0.3 + tw * 0.6;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+
+  if (!world) return;
+
+  let shakeX = 0, shakeY = 0;
+  if (world.shake > 0) {
+    shakeX = (Math.random() - 0.5) * 10 * world.shake;
+    shakeY = (Math.random() - 0.5) * 10 * world.shake;
+  }
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  const difficulty = clamp(world.distance / 42000, 0, 1);
+
+  drawTerrainLayer(ctx, w, h, world, groundBaseY, playerScreenX, difficulty, 0.5, 0.45, `hsla(${(hue+200)%360},70%,28%,0.45)`);
+  drawTerrainLayer(ctx, w, h, world, groundBaseY, playerScreenX, difficulty, 1, 1, null);
+
+  world.spikes.forEach((s) => {
+    const sx = playerScreenX + (s.x - world.distance);
+    if (sx < -40 || sx > w + 40) return;
+    const elev = elevationAt(s.x, world.seed, difficulty);
+    const sy = groundBaseY - elev;
+    ctx.fillStyle = '#ff3355';
+    ctx.shadowColor = '#ff3355';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.moveTo(sx - 12, sy);
+    ctx.lineTo(sx, sy - 26);
+    ctx.lineTo(sx + 12, sy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+
+  world.orbs.forEach((o) => {
+    if (o.resolved) return;
+    const ox = playerScreenX + (o.x - world.distance);
+    if (ox < -40 || ox > w + 40) return;
+    const elev = elevationAt(o.x, world.seed, difficulty);
+    const oy = groundBaseY - elev - o.offset;
+    o.spin += 0.05;
+    const pulse = 1 + Math.sin(t * 0.006 + o.spin) * 0.15;
+    ctx.fillStyle = '#7dffb0';
+    ctx.shadowColor = '#7dffb0';
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(ox, oy, 9 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+
+  world.rings.forEach((r) => {
+    if (r.resolved && r.x < world.distance) return;
+    const rx = playerScreenX + (r.x - world.distance);
+    if (rx < -80 || rx > w + 80) return;
+    const elev = elevationAt(r.x, world.seed, difficulty);
+    const ry = groundBaseY - elev - r.offset;
+    const pulse = 1 + Math.sin(t * 0.005) * 0.06;
+    ctx.strokeStyle = '#ffd24a';
+    ctx.lineWidth = 8;
+    ctx.shadowColor = '#ffd24a';
+    ctx.shadowBlur = 24;
+    ctx.beginPath();
+    ctx.ellipse(rx, ry, RING_RADIUS * 0.32 * pulse, RING_RADIUS * pulse, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  });
+
+  world.trail.forEach((tr) => {
+    ctx.globalAlpha = clamp(tr.life / 0.3, 0, 1) * 0.5;
+    ctx.fillStyle = '#5ef0ff';
+    ctx.beginPath();
+    ctx.arc(tr.x, tr.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  world.particles.forEach((p) => {
+    ctx.globalAlpha = clamp(p.life / p.maxLife, 0, 1);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  if (gameState === 'playing' || gameState === 'gameover') {
+    const flicker = world.invuln > 0 ? (Math.sin(t * 0.04) > 0 ? 0.4 : 1) : 1;
+    ctx.globalAlpha = flicker;
+    const col = speedColor(world.speed);
+    ctx.fillStyle = col;
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 26;
+    ctx.beginPath();
+    ctx.arc(playerScreenX, world.playerY, PLAYER_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function drawTerrainLayer(ctx, w, h, world, groundBaseY, playerScreenX, difficulty, parallax, ampScale, overrideColor) {
+  const step = 6;
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  for (let sx = 0; sx <= w; sx += step) {
+    const worldX = world.distance * parallax + (sx - playerScreenX);
+    const elev = elevationAt(worldX, world.seed, difficulty) * ampScale;
+    const y = groundBaseY - elev * (parallax === 1 ? 1 : 0.7) - (parallax === 1 ? 0 : 60);
+    ctx.lineTo(sx, y);
+  }
+  ctx.lineTo(w, h);
+  ctx.closePath();
+
+  if (overrideColor) {
+    ctx.fillStyle = overrideColor;
+    ctx.fill();
+    return;
+  }
+
+  const grad = ctx.createLinearGradient(0, groundBaseY - 160, 0, h);
+  const hue = (world.hue + 180) % 360;
+  grad.addColorStop(0, `hsla(${hue}, 80%, 22%, 0.95)`);
+  grad.addColorStop(1, `hsla(${hue}, 70%, 8%, 0.98)`);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  for (let sx = 0; sx <= w; sx += step) {
+    const worldX = world.distance + (sx - playerScreenX);
+    const elev = elevationAt(worldX, world.seed, difficulty);
+    const y = groundBaseY - elev;
+    if (sx === 0) ctx.moveTo(sx, y); else ctx.lineTo(sx, y);
+  }
+  ctx.strokeStyle = `hsl(${(world.hue + 180) % 360}, 95%, 62%)`;
+  ctx.lineWidth = 3;
+  ctx.shadowColor = ctx.strokeStyle;
+  ctx.shadowBlur = 16;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+ReactDOM.render(<CrestDiver />, document.getElementById('root'));
+</script>
+</body>
+</html>
