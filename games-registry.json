@@ -2129,5 +2129,25 @@
     "folder": "games/2026-06-30",
     "file": "games/2026-06-30/index.html",
     "preview": "games/2026-06-30/preview.png"
+  },
+  {
+    "id": "2026-07-01",
+    "name": "Neon Herd",
+    "date": "2026-07-01",
+    "description": "Move your cursor near glowing sheep to repel them — guide the whole flock through the golden gate using only your cursor's repulsion field! Chain consecutive sheep through for massive combo multipliers as the gate shrinks each level.",
+    "tagline": "Repel the sheep. Guide the flock. Don't lose the herd!",
+    "tags": [
+      "action",
+      "strategy",
+      "mouse",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Move mouse / touch to repel glowing sheep — guide them through the golden gate on the right",
+    "folder": "games/2026-07-01",
+    "file": "games/2026-07-01/index.html",
+    "preview": "games/2026-07-01/preview.png"
   }
 ]
