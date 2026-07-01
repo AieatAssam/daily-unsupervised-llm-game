@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Herd</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #07001a; overflow: hidden; cursor: none; user-select: none; -webkit-user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useRef, useCallback } = React;
+
+    // Ensure localStorage key exists for test detection
+    if (!localStorage.getItem('neonHerd_highScore')) {
+      localStorage.setItem('neonHerd_highScore', '0');
+    }
+
+    const CW = window.innerWidth;
+    const CH = window.innerHeight;
+    const SR = 15;      // sheep radius
+    const REPEL = 78;   // cursor repulsion radius
+
+    // ── Audio ─────────────────────────────────────────────────────
+    let audioCtx = null;
+    const getAudio = () => {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    };
+    const tone = (f, d = 0.18, vol = 0.3, type = 'sine', delay = 0) => {
+      try {
+        const ac = getAudio();
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.frequency.value = f; o.type = type;
+        const t = ac.currentTime + delay;
+        g.gain.setValueAtTime(vol, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+        o.start(t); o.stop(t + d);
+      } catch (_) {}
+    };
+    const sndScore  = () => { tone(523,.12,.4); tone(659,.12,.35,'sine',.08); tone(784,.2,.3,'sine',.16); };
+    const sndMiss   = () => { tone(180,.3,.5,'sawtooth'); };
+    const sndLevel  = () => { tone(440,.1,.4); tone(554,.1,.35,'sine',.1); tone(659,.1,.3,'sine',.2); tone(880,.25,.45,'sine',.3); };
+
+    // ── Helpers ───────────────────────────────────────────────────
+    const mkParticles = (x, y, color, speed = 3, n = 12) =>
+      Array.from({length: n}, (_, i) => {
+        const a = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+        const s = speed * (0.5 + Math.random());
+        return { x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, color, size: 2 + Math.random()*4 };
+      });
+
+    const mkSheep = id => ({
+      id, scored: false, lost: false,
+      x: 55 + Math.random() * CW * 0.30,
+      y: CH * 0.12 + Math.random() * CH * 0.76,
+      vx: (Math.random() - 0.5) * 2.2,
+      vy: (Math.random() - 0.5) * 2.2,
+      hue: [165, 190, 215, 130, 270][Math.floor(Math.random() * 5)],
+      trail: [],
+    });
+
+    const mkPopup = (x, y, text, color) => ({ x, y, vy: -1.3, life: 1, text, color });
+
+    const initState = () => ({
+      phase: 'start', score: 0,
+      highScore: parseInt(localStorage.getItem('neonHerd_highScore') || '0'),
+      combo: 0, lives: 3, level: 1, sheepHerded: 0, sheepTarget: 5,
+      sheep: [], particles: [], popups: [],
+      nextId: 0, frame: 0, timeLeft: 60, spawnCd: 0, spawnMax: 150,
+      gateH: 140, gateY: CH / 2 - 70,
+      raf: null, timerAcc: 0,
+      mouse: { x: CW / 2, y: CH / 2 },
+    });
+
+    // ── Component ─────────────────────────────────────────────────
+    const NeonHerd = () => {
+      const canvasRef = useRef(null);
+      const G = useRef(initState());
+      const resetFn = useRef(null);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        let lastTs = 0;
+
+        const endGame = () => {
+          const g = G.current;
+          if (g.phase !== 'playing') return;
+          g.phase = 'gameover';
+          if (g.score > g.highScore) {
+            g.highScore = g.score;
+            localStorage.setItem('neonHerd_highScore', String(g.score));
+          }
+        };
+
+        resetFn.current = () => {
+          const g = G.current;
+          Object.assign(g, {
+            phase: 'playing', score: 0, combo: 0, lives: 3, level: 1,
+            sheepHerded: 0, sheepTarget: 5, sheep: [], particles: [], popups: [],
+            nextId: 0, frame: 0, timeLeft: 60, spawnCd: 0, spawnMax: 150,
+            gateH: 140, gateY: CH/2 - 70, timerAcc: 0,
+          });
+          for (let i = 0; i < 4; i++) g.sheep.push(mkSheep(g.nextId++));
+        };
+
+        const draw = (ts) => {
+          G.current.raf = requestAnimationFrame(draw);
+          const g = G.current;
+          const dt = Math.min(ts - lastTs, 50);
+          lastTs = ts;
+          g.frame++;
+
+          // Background
+          ctx.fillStyle = 'rgba(7,0,26,0.83)';
+          ctx.fillRect(0, 0, CW, CH);
+
+          // Grid lines
+          ctx.strokeStyle = 'rgba(80,0,160,0.11)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < CW; x += 60) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,CH); ctx.stroke(); }
+          for (let y = 0; y < CH; y += 60) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(CW,y); ctx.stroke(); }
+
+          // ── PLAYING ───────────────────────────────────────────
+          if (g.phase === 'playing') {
+            // Timer
+            g.timerAcc += dt;
+            while (g.timerAcc >= 1000) { g.timerAcc -= 1000; g.timeLeft--; }
+            if (g.timeLeft <= 0) endGame();
+
+            // Spawn
+            g.spawnCd++;
+            const maxAlive = Math.min(3 + g.level, 10);
+            const alive = g.sheep.filter(s => !s.scored && !s.lost).length;
+            if (g.spawnCd >= g.spawnMax && alive < maxAlive) {
+              g.sheep.push(mkSheep(g.nextId++));
+              g.spawnCd = 0;
+            }
+
+            const gTop = g.gateY;
+            const gBot = g.gateY + g.gateH;
+            const mx = g.mouse.x, my = g.mouse.y;
+
+            // Update sheep
+            g.sheep.forEach(sh => {
+              if (sh.scored || sh.lost) return;
+              // Repel from cursor
+              const dx = sh.x - mx, dy = sh.y - my;
+              const d = Math.sqrt(dx*dx + dy*dy);
+              if (d < REPEL && d > 1) {
+                const f = ((REPEL - d) / REPEL) * 0.88;
+                sh.vx += (dx/d) * f;
+                sh.vy += (dy/d) * f;
+              }
+              // Natural rightward drift
+              sh.vx += 0.022;
+              // Damping
+              sh.vx *= 0.964; sh.vy *= 0.964;
+              // Speed cap
+              const sp = Math.sqrt(sh.vx*sh.vx + sh.vy*sh.vy);
+              const maxSp = 3.5 + g.level * 0.15;
+              if (sp > maxSp) { sh.vx *= maxSp/sp; sh.vy *= maxSp/sp; }
+              // Move
+              sh.x += sh.vx; sh.y += sh.vy;
+              // Trail
+              sh.trail.push({x: sh.x, y: sh.y});
+              if (sh.trail.length > 10) sh.trail.shift();
+              // Bounce walls
+              if (sh.y < SR) { sh.y = SR; sh.vy = Math.abs(sh.vy) * 0.7; }
+              if (sh.y > CH - SR) { sh.y = CH - SR; sh.vy = -Math.abs(sh.vy) * 0.7; }
+              if (sh.x < SR) { sh.x = SR; sh.vx = Math.abs(sh.vx) * 0.7; }
+              // Right wall / gate check
+              if (sh.x > CW - 28) {
+                if (sh.y >= gTop && sh.y <= gBot) {
+                  sh.scored = true;
+                  g.combo++; g.sheepHerded++;
+                  const pts = 100 * g.combo * g.level;
+                  g.score += pts;
+                  localStorage.setItem('neonHerd_highScore', String(Math.max(g.score, g.highScore)));
+                  g.particles.push(...mkParticles(sh.x, sh.y, `hsl(${sh.hue},100%,70%)`, 4.5, 22));
+                  g.popups.push(mkPopup(sh.x - 55, sh.y - 12, `+${pts}`, `hsl(${sh.hue},100%,75%)`));
+                  sndScore();
+                  if (g.sheepHerded >= g.sheepTarget) {
+                    g.level++;
+                    g.sheepTarget += Math.ceil(g.level * 1.8);
+                    g.spawnMax  = Math.max(60, 150 - g.level * 12);
+                    g.gateH     = Math.max(80, 140 - g.level * 7);
+                    g.gateY     = CH/2 - g.gateH/2;
+                    g.particles.push(...mkParticles(CW/2, CH/2, '#ffffff', 6, 35));
+                    g.popups.push(mkPopup(CW/2, CH/2 - 25, `LEVEL ${g.level}!`, '#ffd700'));
+                    sndLevel();
+                  }
+                } else {
+                  sh.lost = true;
+                  g.combo = 0; g.lives--;
+                  g.particles.push(...mkParticles(sh.x, sh.y, '#ff3355', 4, 18));
+                  g.popups.push(mkPopup(sh.x - 35, sh.y - 5, 'MISS!', '#ff3355'));
+                  sndMiss();
+                  if (g.lives <= 0) endGame();
+                }
+              }
+            });
+
+            // Right wall with gate
+            const wp = 0.65 + 0.35*Math.sin(g.frame*0.04);
+            ctx.fillStyle = `rgba(35,0,100,${wp})`;
+            ctx.shadowColor = '#5522cc'; ctx.shadowBlur = 18;
+            if (gTop > 0)  ctx.fillRect(CW - 25, 0,    25, gTop);
+            if (gBot < CH) ctx.fillRect(CW - 25, gBot, 25, CH - gBot);
+            ctx.shadowBlur = 0;
+
+            // Gate glow
+            const gg = ctx.createLinearGradient(CW - 105, 0, CW, 0);
+            gg.addColorStop(0, 'rgba(255,200,0,0)');
+            gg.addColorStop(1, `rgba(255,200,0,${0.1 + 0.07*Math.sin(g.frame*0.09)})`);
+            ctx.fillStyle = gg;
+            ctx.fillRect(CW - 105, gTop, 105, g.gateH);
+
+            // Gate edge lines
+            ctx.lineWidth = 3; ctx.strokeStyle = '#ffd700';
+            ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 24;
+            ctx.beginPath(); ctx.moveTo(CW-25, gTop); ctx.lineTo(CW, gTop); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(CW-25, gBot); ctx.lineTo(CW, gBot); ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Gate arrow
+            const ax = CW - 55, ay = (gTop + gBot) / 2;
+            const ap = 0.35 + 0.45*Math.sin(g.frame*0.12);
+            ctx.fillStyle = `rgba(255,215,0,${ap})`;
+            ctx.beginPath();
+            ctx.moveTo(ax+14, ay);
+            ctx.lineTo(ax-5,  ay-12);
+            ctx.lineTo(ax-5,  ay+12);
+            ctx.closePath();
+            ctx.fill();
+
+            // Left wall accent
+            ctx.fillStyle = 'rgba(28,0,80,0.55)';
+            ctx.fillRect(0, 0, 4, CH);
+
+            // Sheep trails
+            g.sheep.forEach(sh => {
+              if (sh.scored || sh.lost || sh.trail.length < 2) return;
+              ctx.beginPath();
+              sh.trail.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x,pt.y) : ctx.lineTo(pt.x,pt.y));
+              ctx.strokeStyle = `hsla(${sh.hue},100%,65%,0.18)`;
+              ctx.lineWidth = 4; ctx.stroke();
+            });
+
+            // Sheep
+            g.sheep.forEach(sh => {
+              if (sh.scored || sh.lost) return;
+              const pulse = 0.87 + 0.13*Math.sin(g.frame*0.13 + sh.id*1.4);
+              const r = SR * pulse;
+              // Warning ring near wall (not in gate)
+              const nearWall = sh.x > CW - 85;
+              const inGateZone = sh.y >= gTop && sh.y <= gBot;
+              if (nearWall && !inGateZone) {
+                ctx.strokeStyle = `rgba(255,50,50,${0.3+0.35*Math.sin(g.frame*0.28)})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(sh.x, sh.y, r*2.8, 0, Math.PI*2); ctx.stroke();
+              }
+              // Glow body
+              ctx.shadowColor = `hsl(${sh.hue},100%,55%)`; ctx.shadowBlur = 26;
+              const gr = ctx.createRadialGradient(sh.x,sh.y,0, sh.x,sh.y,r*1.35);
+              gr.addColorStop(0,   `hsl(${sh.hue},100%,95%)`);
+              gr.addColorStop(0.4, `hsl(${sh.hue},100%,65%)`);
+              gr.addColorStop(1,   `hsla(${sh.hue},100%,40%,0)`);
+              ctx.fillStyle = gr;
+              ctx.beginPath(); ctx.arc(sh.x, sh.y, r*1.35, 0, Math.PI*2); ctx.fill();
+              ctx.shadowBlur = 0;
+              // Speed ring
+              const sp = Math.sqrt(sh.vx*sh.vx + sh.vy*sh.vy);
+              if (sp > 1.5) {
+                ctx.strokeStyle = `hsla(${sh.hue},100%,80%,${Math.min(sp/4.5, 0.5)})`;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.arc(sh.x, sh.y, r*2.3, 0, Math.PI*2); ctx.stroke();
+              }
+            });
+
+            // Cursor repulsion field
+            const cg = ctx.createRadialGradient(mx,my,0, mx,my,REPEL);
+            cg.addColorStop(0,    'rgba(255,40,110,0.22)');
+            cg.addColorStop(0.55, 'rgba(255,40,110,0.07)');
+            cg.addColorStop(1,    'rgba(255,40,110,0)');
+            ctx.fillStyle = cg;
+            ctx.beginPath(); ctx.arc(mx, my, REPEL, 0, Math.PI*2); ctx.fill();
+            // Cursor ring
+            const cr = 0.28 + 0.2*Math.sin(g.frame*0.18);
+            ctx.strokeStyle = `rgba(255,50,110,${cr})`; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(mx, my, REPEL, 0, Math.PI*2); ctx.stroke();
+            // Cursor core
+            ctx.shadowColor='#ff2266'; ctx.shadowBlur=20;
+            ctx.fillStyle='#ff3377';
+            ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur=0;
+            // Crosshair lines
+            ctx.strokeStyle='rgba(255,80,120,0.55)'; ctx.lineWidth=1;
+            ctx.beginPath();
+            ctx.moveTo(mx-14,my); ctx.lineTo(mx-6,my);
+            ctx.moveTo(mx+6,my);  ctx.lineTo(mx+14,my);
+            ctx.moveTo(mx,my-14); ctx.lineTo(mx,my-6);
+            ctx.moveTo(mx,my+6);  ctx.lineTo(mx,my+14);
+            ctx.stroke();
+
+            // HUD
+            ctx.shadowBlur=0;
+            ctx.textAlign='left'; ctx.fillStyle='#ffffff'; ctx.font='bold 20px monospace';
+            ctx.fillText(`SCORE: ${g.score}`, 18, 30);
+            ctx.fillStyle='#5a5a7a'; ctx.font='14px monospace';
+            ctx.fillText(`BEST: ${g.highScore}`, 18, 50);
+
+            ctx.textAlign='center';
+            ctx.fillStyle='#bb77ff'; ctx.font='bold 19px monospace';
+            ctx.fillText(`LEVEL ${g.level}`, CW/2, 30);
+            ctx.fillStyle='#00ffaa'; ctx.font='14px monospace';
+            ctx.fillText(`HERDED ${g.sheepHerded}/${g.sheepTarget}`, CW/2, 50);
+
+            ctx.textAlign='right';
+            const tc = g.timeLeft <= 10
+              ? `rgba(255,60,60,${0.7+0.3*Math.sin(g.frame*0.3)})`
+              : '#ffffff';
+            ctx.fillStyle=tc; ctx.font='bold 20px monospace';
+            ctx.fillText(`${g.timeLeft}s`, CW-18, 30);
+            for (let i=0;i<3;i++) {
+              ctx.fillStyle = i < g.lives ? '#ff3366' : '#2a0a1a';
+              ctx.font='21px monospace';
+              ctx.fillText('♥', CW-18-i*27, 52);
+            }
+
+            // Combo display
+            if (g.combo >= 2) {
+              ctx.textAlign='center';
+              const chue = (g.frame * 5) % 360;
+              ctx.fillStyle=`hsl(${chue},100%,70%)`;
+              ctx.shadowColor=`hsl(${chue},100%,60%)`; ctx.shadowBlur=14;
+              ctx.font=`bold ${Math.min(14+g.combo*2,30)}px monospace`;
+              ctx.fillText(`x${g.combo} COMBO!`, CW/2, CH-22);
+              ctx.shadowBlur=0;
+            }
+          }
+
+          // Particles
+          g.particles = g.particles.filter(p => p.life > 0.02);
+          g.particles.forEach(p => {
+            p.x += p.vx; p.y += p.vy;
+            p.vx *= 0.94; p.vy *= 0.94; p.vy += 0.04;
+            p.life -= 0.025;
+            ctx.globalAlpha = p.life;
+            ctx.shadowColor=p.color; ctx.shadowBlur=10;
+            ctx.fillStyle=p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI*2); ctx.fill();
+          });
+          ctx.globalAlpha=1; ctx.shadowBlur=0;
+
+          // Popups
+          g.popups = g.popups.filter(p => p.life > 0);
+          g.popups.forEach(p => {
+            p.y += p.vy; p.life -= 0.022;
+            ctx.globalAlpha = p.life;
+            ctx.textAlign='center'; ctx.font='bold 17px monospace';
+            ctx.fillStyle=p.color; ctx.shadowColor=p.color; ctx.shadowBlur=8;
+            ctx.fillText(p.text, p.x, p.y);
+          });
+          ctx.globalAlpha=1; ctx.shadowBlur=0;
+
+          // ── START SCREEN ──────────────────────────────────────
+          if (g.phase === 'start') {
+            ctx.fillStyle='rgba(0,0,0,0.42)'; ctx.fillRect(0,0,CW,CH);
+            ctx.textAlign='center';
+            ctx.shadowColor='#00ffaa'; ctx.shadowBlur=48;
+            ctx.fillStyle='#00ffaa';
+            ctx.font=`bold ${Math.min(CW*0.1, 70)}px monospace`;
+            ctx.fillText('NEON HERD', CW/2, CH/2 - 115);
+            ctx.shadowBlur=0;
+
+            ctx.fillStyle='#cc99ff'; ctx.font='18px monospace';
+            ctx.fillText('Move your cursor to REPEL the glowing sheep', CW/2, CH/2 - 58);
+            ctx.fillText('Guide them through the golden gate  →', CW/2, CH/2 - 28);
+            ctx.fillStyle='#8899aa'; ctx.font='15px monospace';
+            ctx.fillText('Sheep that hit the wall cost a life!', CW/2, CH/2 + 8);
+
+            const pb = 0.7 + 0.3*Math.sin(g.frame*0.07);
+            ctx.fillStyle=`rgba(255,215,0,${pb})`; ctx.font='bold 23px monospace';
+            ctx.fillText('Click / Tap to Start', CW/2, CH/2 + 68);
+
+            if (g.highScore > 0) {
+              ctx.fillStyle='#445566'; ctx.font='16px monospace';
+              ctx.fillText(`Best Score: ${g.highScore}`, CW/2, CH/2+110);
+            }
+          }
+
+          // ── GAME OVER SCREEN ──────────────────────────────────
+          if (g.phase === 'gameover') {
+            ctx.fillStyle='rgba(0,0,0,0.62)'; ctx.fillRect(0,0,CW,CH);
+            ctx.textAlign='center';
+            const headline = g.lives <= 0 ? 'SCATTERED!' : "TIME'S UP!";
+            ctx.shadowColor='#ff2255'; ctx.shadowBlur=35;
+            ctx.fillStyle='#ff2255';
+            ctx.font=`bold ${Math.min(CW*0.09,60)}px monospace`;
+            ctx.fillText(headline, CW/2, CH/2-115);
+            ctx.shadowBlur=0;
+
+            ctx.fillStyle='#ffffff'; ctx.font='bold 28px monospace';
+            ctx.fillText(`Score: ${g.score}`, CW/2, CH/2-58);
+            ctx.fillStyle='#aaaacc'; ctx.font='19px monospace';
+            ctx.fillText(`Sheep Herded: ${g.sheepHerded}  ·  Level: ${g.level}`, CW/2, CH/2-20);
+
+            if (g.score > 0 && g.score >= g.highScore) {
+              ctx.shadowColor='#ffd700'; ctx.shadowBlur=22;
+              ctx.fillStyle='#ffd700'; ctx.font='bold 22px monospace';
+              ctx.fillText('✦ NEW HIGH SCORE ✦', CW/2, CH/2+22);
+              ctx.shadowBlur=0;
+            }
+
+            const pb2 = 0.7+0.3*Math.sin(g.frame*0.07);
+            ctx.fillStyle=`rgba(0,255,160,${pb2})`; ctx.font='bold 22px monospace';
+            ctx.fillText('Click / Tap to Play Again', CW/2, CH/2+80);
+          }
+        };
+
+        G.current.raf = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(G.current.raf);
+      }, []);
+
+      const handleMove = useCallback((e) => {
+        const c = canvasRef.current;
+        if (!c) return;
+        const r = c.getBoundingClientRect();
+        const src = e.touches ? e.touches[0] : e;
+        G.current.mouse = { x: src.clientX - r.left, y: src.clientY - r.top };
+        if (e.touches) e.preventDefault();
+      }, []);
+
+      const handleClick = useCallback(() => {
+        try { getAudio().resume(); } catch (_) {}
+        const g = G.current;
+        if (g.phase !== 'playing' && resetFn.current) resetFn.current();
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          width={CW}
+          height={CH}
+          style={{ display: 'block' }}
+          onMouseMove={handleMove}
+          onTouchMove={handleMove}
+          onClick={handleClick}
+          onTouchStart={handleClick}
+        />
+      );
+    };
+
+    ReactDOM.render(<NeonHerd />, document.getElementById('root'));
+  </script>
+</body>
+</html>
