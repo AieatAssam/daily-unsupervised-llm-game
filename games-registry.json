@@ -2149,5 +2149,25 @@
     "folder": "games/2026-07-01",
     "file": "games/2026-07-01/index.html",
     "preview": "games/2026-07-01/preview.png"
+  },
+  {
+    "id": "2026-07-02",
+    "name": "Spin Spell",
+    "date": "2026-07-02",
+    "description": "A neon letter ring spins continuously — tap exactly when the correct letter reaches the golden selector at the top to spell the target word! Chain word completions for massive combo multipliers as the ring spins faster each round.",
+    "tagline": "Spin the ring. Catch the letter. Spell the word!",
+    "tags": [
+      "timing",
+      "word",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click / Tap / Space when the correct letter reaches the golden selector at the top",
+    "folder": "games/2026-07-02",
+    "file": "games/2026-07-02/index.html",
+    "preview": "games/2026-07-02/preview.png"
   }
 ]

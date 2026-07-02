@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spin Spell</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #08001a; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; -webkit-user-select: none; touch-action: none; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const WORDS = [
+      'CAT','DOG','RUN','ZAP','HIT','JAM','WIN','ACE','GEM','JET',
+      'SKY','SUN','TAP','ARC','BIT','FOX','JOY','RAY','FLY','POP',
+      'DIM','LAG','MAP','WAX','NAP','ICY','HEX','PAD','RIG','SAP',
+      'GLOW','FLIP','BLIP','SNAP','ZOOM','FLUX','JUMP','GRIT','BOLD',
+      'FIRE','MELD','WARP','FUSE','NOVA','GRID','BYTE','CORE','VOLT',
+      'BEAM','LOCK','RUSH','SPIN','NEON','ZEAL','WINK','DUSK','HAZE',
+      'STAB','CLAW','GUSH','PROD','SWAM','KITE','GALE','MAZE','JADE',
+    ];
+
+    const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const N_LETTERS = 12;
+    const SELECTOR_ANGLE = -Math.PI / 2; // top (12 o'clock)
+    const TOLERANCE = 0.20; // ~11.5 degrees
+
+    function pickWord(used) {
+      const avail = WORDS.filter(w => !used.has(w));
+      const pool = avail.length > 0 ? avail : WORDS;
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    function makeRing(word) {
+      const unique = [...new Set(word.split(''))];
+      const fillers = ALPHABET.split('').filter(c => !unique.includes(c));
+      // shuffle fillers
+      for (let i = fillers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [fillers[i], fillers[j]] = [fillers[j], fillers[i]];
+      }
+      const pool = [...unique, ...fillers.slice(0, N_LETTERS - unique.length)];
+      // shuffle pool
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      return pool.slice(0, N_LETTERS);
+    }
+
+    // Audio
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+    function playTone(freq, type = 'sine', duration = 0.12, volume = 0.35) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(volume, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.start(); osc.stop(ctx.currentTime + duration);
+      } catch(e) {}
+    }
+    function sfxHit() { playTone(880, 'sine', 0.12, 0.4); }
+    function sfxMiss() { playTone(180, 'sawtooth', 0.18, 0.3); }
+    function sfxWord() {
+      [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => playTone(f, 'sine', 0.22, 0.5), i * 70));
+    }
+
+    function normalizeAngle(a) {
+      return ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    }
+    function angleDiff(a, b) {
+      let d = Math.abs(normalizeAngle(a) - normalizeAngle(b));
+      if (d > Math.PI) d = 2 * Math.PI - d;
+      return d;
+    }
+
+    function drawRoundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    const SpinSpell = () => {
+      const canvasRef = useRef(null);
+      const stateRef = useRef(null);
+      const rafRef = useRef(null);
+      const phaseRef = useRef('intro');
+      const [uiPhase, setUiPhase] = useState('intro');
+      const [uiScore, setUiScore] = useState(0);
+      const [uiHighScore, setUiHighScore] = useState(
+        () => parseInt(localStorage.getItem('spinSpellHighScore') || '0')
+      );
+
+      // Initialize localStorage keys on mount so tests can detect them
+      useEffect(() => {
+        if (!localStorage.getItem('spinSpellScore')) {
+          localStorage.setItem('spinSpellScore', '0');
+        }
+      }, []);
+
+      const setPhase = useCallback((p) => {
+        phaseRef.current = p;
+        setUiPhase(p);
+      }, []);
+
+      const initGame = useCallback(() => {
+        const usedWords = new Set();
+        const firstWord = pickWord(usedWords);
+        usedWords.add(firstWord);
+        stateRef.current = {
+          rotation: 0,
+          spinSpeed: 1.5,
+          spinDir: 1,
+          letters: makeRing(firstWord),
+          targetWord: firstWord,
+          wordProgress: 0,
+          lives: 3,
+          score: 0,
+          combo: 0,
+          timeLeft: 90,
+          particles: [],
+          missFlash: 0,
+          hitGlow: 0,
+          wordFlash: 0,
+          bgTime: 0,
+          usedWords,
+          W: 0, H: 0, R: 0, CX: 0, CY: 0,
+        };
+        localStorage.setItem('spinSpellScore', '0');
+      }, []);
+
+      const startGame = useCallback(() => {
+        initGame();
+        setPhase('playing');
+      }, [initGame, setPhase]);
+
+      useEffect(() => {
+        if (uiPhase !== 'playing') return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const s = stateRef.current;
+
+        const resize = () => {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          s.W = canvas.width;
+          s.H = canvas.height;
+          s.R = Math.min(s.W, s.H) * 0.29;
+          s.CX = s.W / 2;
+          s.CY = s.H / 2;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        function getLetterAngle(i) {
+          return (i / N_LETTERS) * 2 * Math.PI + s.rotation;
+        }
+
+        function getLetterInZone() {
+          let best = -1, bestDiff = TOLERANCE;
+          for (let i = 0; i < N_LETTERS; i++) {
+            const d = angleDiff(normalizeAngle(getLetterAngle(i)), normalizeAngle(SELECTOR_ANGLE));
+            if (d < bestDiff) { bestDiff = d; best = i; }
+          }
+          return best;
+        }
+
+        function spawnParticles(x, y, color, count = 14) {
+          for (let i = 0; i < count; i++) {
+            const angle = (i / count) * 2 * Math.PI + Math.random() * 0.6;
+            const speed = 2.5 + Math.random() * 5;
+            s.particles.push({
+              x, y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              life: 1,
+              decay: 0.035 + Math.random() * 0.04,
+              size: 3 + Math.random() * 5,
+              color,
+            });
+          }
+        }
+
+        function handleInput() {
+          if (phaseRef.current !== 'playing') return;
+          const idx = getLetterInZone();
+          if (idx === -1) {
+            // No letter in zone — soft miss
+            s.missFlash = 0.3;
+            playTone(300, 'sine', 0.06, 0.15);
+            return;
+          }
+          const letter = s.letters[idx];
+          const needed = s.targetWord[s.wordProgress];
+
+          if (letter === needed) {
+            s.wordProgress++;
+            s.hitGlow = 0.6;
+            const la = getLetterAngle(idx);
+            spawnParticles(s.CX + s.R * Math.cos(la), s.CY + s.R * Math.sin(la), '#00ffff', 18);
+            sfxHit();
+            localStorage.setItem('spinSpellScore', String(s.score));
+
+            if (s.wordProgress >= s.targetWord.length) {
+              // Word complete!
+              s.combo++;
+              const mult = Math.min(s.combo, 5);
+              s.score += s.targetWord.length * 100 * mult;
+              s.spinSpeed = Math.min(s.spinSpeed + 0.18, 4.2);
+              // occasionally reverse for fun
+              if (s.combo > 0 && s.combo % 4 === 0) s.spinDir *= -1;
+              s.wordFlash = 1.0;
+              spawnParticles(s.CX, s.CY, '#ffee00', 30);
+              sfxWord();
+              setUiScore(s.score);
+              localStorage.setItem('spinSpellScore', String(s.score));
+
+              const newWord = pickWord(s.usedWords);
+              s.usedWords.add(newWord);
+              s.targetWord = newWord;
+              s.wordProgress = 0;
+              s.letters = makeRing(newWord);
+            }
+          } else {
+            // Wrong letter
+            s.combo = 0;
+            s.lives--;
+            s.missFlash = 0.7;
+            const la = getLetterAngle(idx);
+            spawnParticles(s.CX + s.R * Math.cos(la), s.CY + s.R * Math.sin(la), '#ff2255', 12);
+            sfxMiss();
+            if (s.lives <= 0) endGame();
+          }
+        }
+
+        function endGame() {
+          const score = stateRef.current ? stateRef.current.score : 0;
+          const hs = parseInt(localStorage.getItem('spinSpellHighScore') || '0');
+          if (score > hs) {
+            localStorage.setItem('spinSpellHighScore', String(score));
+            setUiHighScore(score);
+          }
+          localStorage.setItem('spinSpellScore', String(score));
+          setPhase('over');
+        }
+
+        canvas.addEventListener('click', handleInput);
+        canvas.addEventListener('touchend', (e) => { e.preventDefault(); handleInput(); }, { passive: false });
+        window.addEventListener('keydown', (e) => {
+          if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); handleInput(); }
+        });
+
+        let lastTime = null;
+        let isRunning = true;
+
+        function draw(timestamp) {
+          if (!isRunning) return;
+          if (!lastTime) lastTime = timestamp;
+          const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+          lastTime = timestamp;
+
+          if (!stateRef.current) return;
+
+          // Timer
+          s.timeLeft -= dt;
+          if (s.timeLeft <= 0) { s.timeLeft = 0; endGame(); return; }
+
+          // Physics
+          s.rotation = (s.rotation + s.spinDir * s.spinSpeed * dt) % (2 * Math.PI);
+          s.bgTime += dt;
+          s.missFlash = Math.max(0, s.missFlash - dt * 2.2);
+          s.hitGlow = Math.max(0, s.hitGlow - dt * 2.5);
+          s.wordFlash = Math.max(0, s.wordFlash - dt * 1.8);
+
+          // Particles
+          s.particles = s.particles.filter(p => p.life > 0);
+          for (const p of s.particles) {
+            p.x += p.vx; p.y += p.vy;
+            p.vx *= 0.94; p.vy *= 0.94;
+            p.life -= p.decay;
+          }
+
+          const { W, H, R, CX, CY } = s;
+
+          // Background
+          const bg = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.max(W, H) * 0.85);
+          const h1 = 260 + Math.sin(s.bgTime * 0.25) * 25;
+          const h2 = 200 + Math.cos(s.bgTime * 0.18) * 35;
+          bg.addColorStop(0, `hsl(${h1},80%,9%)`);
+          bg.addColorStop(1, `hsl(${h2},70%,3%)`);
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, W, H);
+
+          // Grid
+          ctx.strokeStyle = 'rgba(120,60,220,0.08)';
+          ctx.lineWidth = 1;
+          const gs = 50;
+          for (let x = 0; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+          for (let y = 0; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+          // Overlays
+          if (s.missFlash > 0) {
+            ctx.fillStyle = `rgba(255,0,60,${s.missFlash * 0.28})`;
+            ctx.fillRect(0, 0, W, H);
+          }
+          if (s.wordFlash > 0) {
+            ctx.fillStyle = `rgba(255,240,0,${s.wordFlash * 0.22})`;
+            ctx.fillRect(0, 0, W, H);
+          }
+
+          // Ring track
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(CX, CY, R, 0, 2 * Math.PI);
+          ctx.strokeStyle = 'rgba(140,60,255,0.25)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.restore();
+
+          // Outer selector glow ring
+          const selNorm = normalizeAngle(SELECTOR_ANGLE);
+          const glowPulse = 0.7 + Math.sin(s.bgTime * 7) * 0.3;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(CX, CY, R + 16, SELECTOR_ANGLE - TOLERANCE, SELECTOR_ANGLE + TOLERANCE);
+          ctx.strokeStyle = `rgba(255,220,0,${glowPulse})`;
+          ctx.lineWidth = 6;
+          ctx.shadowColor = '#ffdd00';
+          ctx.shadowBlur = 22;
+          ctx.stroke();
+          ctx.restore();
+
+          // Downward pointer triangle at selector
+          const ptY = CY - R - 36;
+          ctx.save();
+          ctx.fillStyle = `rgba(255,220,0,${glowPulse})`;
+          ctx.shadowColor = '#ffdd00';
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.moveTo(CX, ptY + 16);
+          ctx.lineTo(CX - 10, ptY);
+          ctx.lineTo(CX + 10, ptY);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+
+          // Letters on ring
+          const tileSize = Math.min(R * 0.44, 42);
+          const halfTile = tileSize / 2;
+          const fontSize = Math.max(12, Math.floor(tileSize * 0.62));
+          const neededLetter = s.targetWord[s.wordProgress];
+
+          for (let i = 0; i < N_LETTERS; i++) {
+            const angle = getLetterAngle(i);
+            const lx = CX + R * Math.cos(angle);
+            const ly = CY + R * Math.sin(angle);
+            const letter = s.letters[i];
+            const isNeeded = letter === neededLetter;
+            const inZone = angleDiff(normalizeAngle(angle), selNorm) < TOLERANCE;
+
+            ctx.save();
+            ctx.translate(lx, ly);
+
+            // Tile
+            if (isNeeded) {
+              ctx.shadowColor = '#00ffff';
+              ctx.shadowBlur = inZone ? 30 : 18;
+              ctx.fillStyle = inZone ? 'rgba(0,240,255,0.45)' : 'rgba(0,160,200,0.25)';
+            } else {
+              ctx.shadowColor = inZone ? 'rgba(200,100,255,0.6)' : 'rgba(100,40,200,0.3)';
+              ctx.shadowBlur = inZone ? 14 : 6;
+              ctx.fillStyle = inZone ? 'rgba(100,50,200,0.5)' : 'rgba(50,10,100,0.65)';
+            }
+
+            const tr = tileSize * 0.22;
+            drawRoundRect(ctx, -halfTile, -halfTile, tileSize, tileSize, tr);
+            ctx.fill();
+
+            ctx.strokeStyle = isNeeded
+              ? (inZone ? '#00ffff' : 'rgba(0,210,240,0.75)')
+              : (inZone ? 'rgba(180,90,255,0.85)' : 'rgba(80,40,160,0.4)');
+            ctx.lineWidth = isNeeded ? 2 : 1;
+            ctx.stroke();
+
+            // Letter
+            ctx.font = `bold ${fontSize}px 'Courier New', monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = isNeeded ? '#00ffff' : 'transparent';
+            ctx.shadowBlur = isNeeded ? 12 : 0;
+            ctx.fillStyle = isNeeded ? '#00ffff' : (inZone ? '#c090ff' : '#7050b0');
+            ctx.fillText(letter, 0, 1);
+
+            ctx.restore();
+          }
+
+          // Center glow
+          const cg = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 0.38);
+          cg.addColorStop(0, 'rgba(80,10,180,0.55)');
+          cg.addColorStop(1, 'rgba(40,0,80,0)');
+          ctx.fillStyle = cg;
+          ctx.beginPath();
+          ctx.arc(CX, CY, R * 0.38, 0, 2 * Math.PI);
+          ctx.fill();
+
+          // Target word in center
+          const wFontSize = Math.min(R * 0.19, 30);
+          const letterSpacing = Math.min(wFontSize * 1.5, 36);
+          const word = s.targetWord;
+          const wordW = (word.length - 1) * letterSpacing;
+          const startX = CX - wordW / 2;
+
+          // "SPELL" label
+          ctx.save();
+          ctx.font = `${Math.floor(wFontSize * 0.52)}px 'Courier New', monospace`;
+          ctx.fillStyle = 'rgba(160,100,255,0.65)';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('S P E L L', CX, CY - wFontSize * 1.3);
+          ctx.restore();
+
+          for (let j = 0; j < word.length; j++) {
+            const lx2 = startX + j * letterSpacing;
+            ctx.save();
+            ctx.font = `bold ${wFontSize}px 'Courier New', monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            if (j < s.wordProgress) {
+              ctx.fillStyle = '#00ff88';
+              ctx.shadowColor = '#00ff88';
+              ctx.shadowBlur = 14;
+            } else if (j === s.wordProgress) {
+              ctx.fillStyle = '#00ffff';
+              ctx.shadowColor = '#00ffff';
+              ctx.shadowBlur = 18 + Math.sin(s.bgTime * 5) * 6;
+            } else {
+              ctx.fillStyle = 'rgba(180,110,255,0.55)';
+              ctx.shadowBlur = 0;
+            }
+            ctx.fillText(word[j], lx2, CY);
+
+            // Underline slot
+            ctx.strokeStyle = j < s.wordProgress ? '#00ff88'
+              : (j === s.wordProgress ? '#00ffff' : 'rgba(140,80,200,0.4)');
+            ctx.lineWidth = j === s.wordProgress ? 2 : 1;
+            ctx.shadowBlur = j === s.wordProgress ? 10 : 0;
+            ctx.beginPath();
+            ctx.moveTo(lx2 - wFontSize * 0.45, CY + wFontSize * 0.72);
+            ctx.lineTo(lx2 + wFontSize * 0.45, CY + wFontSize * 0.72);
+            ctx.stroke();
+
+            ctx.restore();
+          }
+
+          // HUD - Score
+          ctx.save();
+          ctx.font = `bold ${Math.min(20, W * 0.045)}px Courier New`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowColor = '#00ffcc';
+          ctx.shadowBlur = 10;
+          ctx.fillText(`${s.score}`, 20, 20);
+
+          ctx.font = `${Math.min(13, W * 0.028)}px Courier New`;
+          ctx.fillStyle = 'rgba(0,220,255,0.6)';
+          ctx.shadowBlur = 0;
+          ctx.fillText('SCORE', 20, 46);
+          ctx.restore();
+
+          // Combo
+          if (s.combo > 1) {
+            ctx.save();
+            ctx.font = `bold ${Math.min(18, W * 0.04)}px Courier New`;
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#ffdd00';
+            ctx.shadowColor = '#ffdd00';
+            ctx.shadowBlur = 14;
+            ctx.fillText(`×${Math.min(s.combo, 5)} COMBO`, 20, 70);
+            ctx.restore();
+          }
+
+          // Timer
+          ctx.save();
+          const tc = s.timeLeft < 10 ? '#ff3366' : (s.timeLeft < 20 ? '#ff9900' : '#00ffcc');
+          ctx.font = `bold ${Math.min(20, W * 0.045)}px Courier New`;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+          ctx.fillStyle = tc;
+          ctx.shadowColor = tc;
+          ctx.shadowBlur = 10;
+          ctx.fillText(`${Math.ceil(s.timeLeft)}s`, W - 20, 20);
+          ctx.font = `${Math.min(13, W * 0.028)}px Courier New`;
+          ctx.fillStyle = 'rgba(0,220,200,0.6)';
+          ctx.shadowBlur = 0;
+          ctx.fillText('TIME', W - 20, 46);
+          ctx.restore();
+
+          // Lives (hearts)
+          ctx.save();
+          ctx.font = `${Math.min(18, W * 0.04)}px Courier New`;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+          ctx.fillStyle = '#ff3366';
+          ctx.shadowColor = '#ff2244';
+          ctx.shadowBlur = 10;
+          let hearts = '';
+          for (let i = 0; i < 3; i++) hearts += i < s.lives ? '♥' : '♡';
+          ctx.fillText(hearts, W - 20, 48);
+          ctx.restore();
+
+          // Direction indicator
+          ctx.save();
+          ctx.font = `${Math.min(13, W * 0.025)}px Courier New`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillStyle = 'rgba(140,80,255,0.55)';
+          const speedPct = Math.round(((s.spinSpeed - 1.5) / (4.2 - 1.5)) * 100);
+          ctx.fillText(`${s.spinDir > 0 ? '↻' : '↺'} SPEED ${Math.max(0, speedPct)}%`, CX, H - 16);
+          ctx.restore();
+
+          // Particles
+          for (const p of s.particles) {
+            ctx.save();
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = p.color;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * (0.5 + p.life * 0.5), 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          rafRef.current = requestAnimationFrame(draw);
+        }
+
+        rafRef.current = requestAnimationFrame(draw);
+
+        return () => {
+          isRunning = false;
+          cancelAnimationFrame(rafRef.current);
+          canvas.removeEventListener('click', handleInput);
+          window.removeEventListener('resize', resize);
+        };
+      }, [uiPhase, setPhase]);
+
+      // Intro screen
+      if (uiPhase === 'intro') {
+        return (
+          <div style={{
+            width:'100vw', height:'100vh',
+            background:'radial-gradient(ellipse at 50% 40%, #1e0040 0%, #08001a 100%)',
+            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            color:'#fff',
+          }}>
+            <div style={{
+              fontSize:'clamp(40px,9vw,80px)', fontWeight:'bold',
+              color:'#00ffff', fontFamily:'Courier New',
+              textShadow:'0 0 30px #00ffff, 0 0 60px #00aacc',
+              marginBottom:12, letterSpacing:'0.06em',
+            }}>SPIN SPELL</div>
+            <div style={{
+              fontSize:'clamp(13px,2.8vw,19px)', color:'#a070ff',
+              marginBottom:36, textAlign:'center', maxWidth:380,
+              fontFamily:'Courier New', lineHeight:1.65, padding:'0 24px',
+            }}>
+              A letter ring spins around the golden selector.<br/>
+              Tap when the <span style={{color:'#00ffff'}}>correct letter</span> reaches the top<br/>
+              to spell the target word!
+            </div>
+            <div style={{ marginBottom:12, fontSize:'13px', color:'rgba(180,130,255,0.7)', fontFamily:'Courier New', textAlign:'center' }}>
+              CLICK · TAP · SPACE to select
+            </div>
+            {uiHighScore > 0 && (
+              <div style={{
+                marginBottom:24, fontSize:'16px', color:'#ffdd00',
+                fontFamily:'Courier New', textShadow:'0 0 12px #ffdd00',
+              }}>BEST: {uiHighScore}</div>
+            )}
+            <button
+              onClick={startGame}
+              style={{
+                marginTop:8, padding:'15px 52px', fontSize:'22px',
+                fontFamily:'Courier New', fontWeight:'bold',
+                background:'transparent', color:'#00ffff',
+                border:'2px solid #00ffff', cursor:'pointer', borderRadius:8,
+                boxShadow:'0 0 24px rgba(0,255,255,0.5), inset 0 0 24px rgba(0,255,255,0.08)',
+                textShadow:'0 0 12px #00ffff', transition:'all 0.18s',
+              }}
+              onMouseEnter={e => e.target.style.boxShadow='0 0 40px rgba(0,255,255,0.8), inset 0 0 30px rgba(0,255,255,0.15)'}
+              onMouseLeave={e => e.target.style.boxShadow='0 0 24px rgba(0,255,255,0.5), inset 0 0 24px rgba(0,255,255,0.08)'}
+            >▶ PLAY</button>
+          </div>
+        );
+      }
+
+      // Game Over screen
+      if (uiPhase === 'over') {
+        const finalScore = stateRef.current?.score ?? uiScore;
+        const newHigh = finalScore >= uiHighScore && finalScore > 0;
+        return (
+          <div style={{
+            width:'100vw', height:'100vh',
+            background:'radial-gradient(ellipse at 50% 40%, #200030 0%, #08001a 100%)',
+            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            color:'#fff',
+          }}>
+            <div style={{
+              fontSize:'clamp(32px,7vw,64px)', fontWeight:'bold',
+              color:'#ff3366', fontFamily:'Courier New',
+              textShadow:'0 0 30px #ff1144', marginBottom:10,
+            }}>GAME OVER</div>
+            {newHigh && (
+              <div style={{ color:'#ffdd00', fontSize:'clamp(16px,3.5vw,24px)', fontFamily:'Courier New',
+                textShadow:'0 0 18px #ffdd00', marginBottom:8 }}>✦ NEW HIGH SCORE ✦</div>
+            )}
+            <div style={{
+              fontSize:'clamp(28px,6vw,56px)', color:'#00ffff',
+              fontFamily:'Courier New', textShadow:'0 0 20px #00ffff', marginBottom:6,
+            }}>{finalScore}</div>
+            <div style={{ fontSize:'15px', color:'#ffdd00', fontFamily:'Courier New', marginBottom:40 }}>
+              BEST: {uiHighScore}
+            </div>
+            <button
+              onClick={startGame}
+              style={{
+                padding:'14px 44px', fontSize:'20px', fontFamily:'Courier New', fontWeight:'bold',
+                background:'transparent', color:'#00ffff', border:'2px solid #00ffff',
+                cursor:'pointer', borderRadius:8,
+                boxShadow:'0 0 20px rgba(0,255,255,0.5), inset 0 0 20px rgba(0,255,255,0.08)',
+                textShadow:'0 0 10px #00ffff',
+              }}
+            >▶ PLAY AGAIN</button>
+          </div>
+        );
+      }
+
+      // Playing — canvas only
+      return (
+        <canvas
+          ref={canvasRef}
+          style={{ display:'block', cursor:'pointer', touchAction:'none' }}
+        />
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<SpinSpell />);
+  </script>
+</body>
+</html>
