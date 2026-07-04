@@ -2149,5 +2149,25 @@
     "folder": "games/2026-07-01",
     "file": "games/2026-07-01/index.html",
     "preview": "games/2026-07-01/preview.png"
+  },
+  {
+    "id": "2026-07-04",
+    "name": "Bumper Burst",
+    "date": "2026-07-04",
+    "description": "Click anywhere to place temporary neon bumper pads that deflect a bouncing ball — redirect it into glowing color-coded target zones to score! Chain consecutive hits for massive combo multipliers as more balls spawn and targets fill the arena.",
+    "tagline": "Place bumpers. Redirect the ball. Chain the targets!",
+    "tags": [
+      "action",
+      "reflex",
+      "strategy",
+      "arcade",
+      "physics"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click / Tap anywhere to place a temporary bumper pad — redirect the bouncing ball into glowing targets",
+    "folder": "games/2026-07-04",
+    "file": "games/2026-07-04/index.html",
+    "preview": "games/2026-07-04/preview.png"
   }
 ]

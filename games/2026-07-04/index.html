@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bumper Burst</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; position: relative; }
+    canvas { display: block; position: absolute; top: 0; left: 0; }
+    @keyframes pulse-warn { from { opacity:1 } to { opacity:0.3 } }
+    @keyframes float-up { from { transform: translateY(0); opacity:1 } to { transform: translateY(-60px); opacity:0 } }
+    @keyframes glow-pop { 0%{transform:scale(1)} 50%{transform:scale(1.2)} 100%{transform:scale(1)} }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Audio ──────────────────────────────────────────────────────────────────
+let _actx = null;
+const getCtx = () => {
+  if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+  return _actx;
+};
+const beep = (freq, type='sine', dur=0.12, vol=0.25, slideTo=null) => {
+  try {
+    const ctx = getCtx();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, ctx.currentTime + dur);
+    g.gain.value = vol;
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + dur);
+  } catch(e) {}
+};
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const BALL_R = 9;
+const BUMPER_R = 22;
+const TARGET_R = 26;
+const MAX_BUMPERS = 5;
+const BUMPER_LIFE = 3800;
+const TARGET_LIFE = 7000;
+const GAME_SECS = 60;
+const BASE_SPEED = 4.5;
+const MAX_SPEED = 7.5;
+
+// ── Particles ──────────────────────────────────────────────────────────────
+function spawnParticles(arr, x, y, hue, count=14, speed=4) {
+  for (let i = 0; i < count; i++) {
+    const a = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+    const s = speed * (0.5 + Math.random());
+    arr.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+      life: 1, decay: 0.025 + Math.random()*0.03,
+      r: 2 + Math.random()*4, hue });
+  }
+}
+
+// ── Floating score labels ──────────────────────────────────────────────────
+let labelId = 0;
+
+// ── App ────────────────────────────────────────────────────────────────────
+const App = () => {
+  const canvasRef = useRef(null);
+  const gs = useRef(null);
+  const rafRef = useRef(null);
+  const labelsRef = useRef([]);
+  const [ui, setUi] = useState({
+    screen: 'start',
+    score: 0, combo: 1, timeLeft: GAME_SECS,
+    highScore: +localStorage.getItem('bumperBurstHi') || 0,
+    newHigh: false,
+  });
+  const uiRef = useRef(ui);
+  uiRef.current = ui;
+
+  // resize canvas
+  useEffect(() => {
+    const resize = () => {
+      const c = canvasRef.current;
+      if (!c) return;
+      c.width = window.innerWidth;
+      c.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  // ── init / start ─────────────────────────────────────────────────────────
+  const startGame = useCallback(() => {
+    const c = canvasRef.current;
+    const W = c.width, H = c.height;
+    const ang = -Math.PI/3 + Math.random() * (Math.PI * 2/3);
+    gs.current = {
+      screen: 'playing',
+      score: 0, combo: 1, comboTimer: 0,
+      msLeft: GAME_SECS * 1000,
+      balls: [{
+        id:0, x:W/2, y:H/2,
+        vx: Math.cos(ang)*BASE_SPEED, vy: Math.sin(ang)*BASE_SPEED,
+        trail:[], hue:185, bumperCooldown:0
+      }],
+      bumpers: [], targets: [], particles: [],
+      nextId: 1,
+      targetSpawnMs: 1200,
+      ballSpawnMs: 22000,
+      done: false,
+      highScore: +localStorage.getItem('bumperBurstHi') || 0,
+    };
+    labelsRef.current = [];
+    setUi(u => ({...u, screen:'playing', score:0, combo:1,
+      timeLeft:GAME_SECS, newHigh:false,
+      highScore: +localStorage.getItem('bumperBurstHi') || 0 }));
+  }, []);
+
+  // ── input ────────────────────────────────────────────────────────────────
+  const handleInput = useCallback((cx, cy) => {
+    const g = gs.current;
+    if (!g || g.screen !== 'playing' || g.done) return;
+    try { getCtx().resume(); } catch(e) {}
+    if (g.bumpers.length >= MAX_BUMPERS) g.bumpers.shift();
+    g.bumpers.push({ id: g.nextId++, x:cx, y:cy, age:0, flash:1.0 });
+    beep(280, 'sine', 0.06, 0.18);
+  }, []);
+
+  const onCanvasClick = useCallback((e) => {
+    if (uiRef.current.screen !== 'playing') return;
+    const c = canvasRef.current;
+    const r = c.getBoundingClientRect();
+    handleInput(e.clientX - r.left, e.clientY - r.top);
+  }, [handleInput]);
+
+  const onCanvasTouch = useCallback((e) => {
+    e.preventDefault();
+    if (uiRef.current.screen !== 'playing') return;
+    const c = canvasRef.current;
+    const r = c.getBoundingClientRect();
+    const t = e.changedTouches[0];
+    handleInput(t.clientX - r.left, t.clientY - r.top);
+  }, [handleInput]);
+
+  // ── game loop ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    let last = null;
+
+    const loop = (ts) => {
+      rafRef.current = requestAnimationFrame(loop);
+      if (!last) { last = ts; return; }
+      const dt = Math.min(ts - last, 50);
+      last = ts;
+
+      const c = canvasRef.current;
+      if (!c) return;
+      const W = c.width, H = c.height;
+      const ctx = c.getContext('2d');
+      const g = gs.current;
+
+      // ── UPDATE ──────────────────────────────────────────────────────────
+      if (g && g.screen === 'playing' && !g.done) {
+        g.msLeft -= dt;
+        if (g.msLeft <= 0) {
+          g.msLeft = 0; g.done = true; g.screen = 'gameover';
+          const newHigh = g.score > g.highScore;
+          if (newHigh) { g.highScore = g.score; localStorage.setItem('bumperBurstHi', g.score); }
+          setUi(u => ({...u, screen:'gameover', score:g.score, highScore:g.highScore, newHigh }));
+          beep(160, 'sawtooth', 1.0, 0.4, 60);
+          return;
+        }
+
+        // combo decay
+        g.comboTimer += dt;
+        if (g.comboTimer > 4500 && g.combo > 1) {
+          g.combo = Math.max(1, g.combo - 1);
+          g.comboTimer = 0;
+          setUi(u => ({...u, combo: g.combo }));
+        }
+
+        // spawn target
+        g.targetSpawnMs -= dt;
+        if (g.targetSpawnMs <= 0) {
+          const elapsed = GAME_SECS*1000 - g.msLeft;
+          let tries = 0, tx, ty, ok;
+          do {
+            tx = TARGET_R*2.5 + Math.random()*(W - TARGET_R*5);
+            ty = TARGET_R*2.5 + Math.random()*(H - TARGET_R*5);
+            ok = g.targets.every(t => Math.hypot(t.x-tx,t.y-ty) > TARGET_R*2.5) &&
+                 g.bumpers.every(b => Math.hypot(b.x-tx,b.y-ty) > TARGET_R + BUMPER_R + 10);
+            tries++;
+          } while (!ok && tries < 30);
+          const vals = [10,20,30,50], hues = [0,120,200,50];
+          const vi = Math.floor(Math.random()*vals.length);
+          g.targets.push({ id:g.nextId++, x:tx, y:ty, age:0, value:vals[vi], hue:hues[vi] });
+          g.targetSpawnMs = Math.max(700, 2200 - elapsed/55);
+        }
+
+        // spawn extra balls
+        g.ballSpawnMs -= dt;
+        if (g.ballSpawnMs <= 0 && g.balls.length < 3) {
+          const ang2 = Math.random()*Math.PI*2;
+          g.balls.push({
+            id:g.nextId++,
+            x: W/2 + (Math.random()-0.5)*120,
+            y: H/2 + (Math.random()-0.5)*120,
+            vx: Math.cos(ang2)*BASE_SPEED, vy: Math.sin(ang2)*BASE_SPEED,
+            trail:[], hue: 300 + (g.balls.length-1)*80, bumperCooldown:0
+          });
+          g.ballSpawnMs = 18000;
+          beep(600,'sine',0.3,0.4,1000);
+          spawnParticles(g.particles, W/2, H/2, 270, 20, 6);
+        }
+
+        // update bumpers
+        for (const b of g.bumpers) {
+          b.age += dt;
+          if (b.flash > 0) b.flash = Math.max(0, b.flash - dt/250);
+        }
+        g.bumpers = g.bumpers.filter(b => b.age < BUMPER_LIFE);
+
+        // update targets — expire
+        const before = g.targets.length;
+        g.targets = g.targets.filter(t => {
+          t.age += dt;
+          if (t.age >= TARGET_LIFE) {
+            spawnParticles(g.particles, t.x, t.y, 0, 8, 3);
+            beep(120, 'sawtooth', 0.15, 0.3);
+            if (g.combo > 1) { g.combo = Math.max(1, g.combo-1); setUi(u=>({...u,combo:g.combo})); }
+            return false;
+          }
+          return true;
+        });
+
+        // update particles
+        g.particles = g.particles.filter(p => {
+          p.x += p.vx; p.y += p.vy;
+          p.vx *= 0.94; p.vy *= 0.94;
+          p.life -= p.decay;
+          return p.life > 0;
+        });
+
+        // update labels
+        labelsRef.current = labelsRef.current.filter(l => {
+          l.age += dt;
+          return l.age < 900;
+        });
+
+        // update balls
+        for (const ball of g.balls) {
+          ball.bumperCooldown = Math.max(0, (ball.bumperCooldown||0) - dt);
+          ball.trail.push({x:ball.x, y:ball.y});
+          if (ball.trail.length > 22) ball.trail.shift();
+
+          ball.x += ball.vx;
+          ball.y += ball.vy;
+
+          // wall bounce
+          if (ball.x - BALL_R < 0) { ball.x = BALL_R; ball.vx = Math.abs(ball.vx); beep(220,'sine',0.04,0.1); }
+          if (ball.x + BALL_R > W) { ball.x = W-BALL_R; ball.vx = -Math.abs(ball.vx); beep(220,'sine',0.04,0.1); }
+          if (ball.y - BALL_R < 0) { ball.y = BALL_R; ball.vy = Math.abs(ball.vy); beep(220,'sine',0.04,0.1); }
+          if (ball.y + BALL_R > H) { ball.y = H-BALL_R; ball.vy = -Math.abs(ball.vy); beep(220,'sine',0.04,0.1); }
+
+          // cap speed
+          const spd = Math.hypot(ball.vx, ball.vy);
+          if (spd > MAX_SPEED) { ball.vx *= MAX_SPEED/spd; ball.vy *= MAX_SPEED/spd; }
+          if (spd < BASE_SPEED * 0.8) { ball.vx *= BASE_SPEED/spd; ball.vy *= BASE_SPEED/spd; }
+
+          // bumper collision
+          if (ball.bumperCooldown <= 0) {
+            for (const bmp of g.bumpers) {
+              const dx = ball.x - bmp.x, dy = ball.y - bmp.y;
+              const d = Math.hypot(dx,dy);
+              if (d < BALL_R + BUMPER_R && d > 0) {
+                const nx = dx/d, ny = dy/d;
+                const dot = ball.vx*nx + ball.vy*ny;
+                if (dot < 0) {
+                  ball.vx -= 2*dot*nx + (Math.random()-0.5)*0.4;
+                  ball.vy -= 2*dot*ny + (Math.random()-0.5)*0.4;
+                  // restore speed
+                  const ns = Math.hypot(ball.vx,ball.vy);
+                  if (ns < BASE_SPEED*0.9) { ball.vx *= BASE_SPEED/ns; ball.vy *= BASE_SPEED/ns; }
+                  ball.x = bmp.x + nx*(BALL_R+BUMPER_R+2);
+                  ball.y = bmp.y + ny*(BALL_R+BUMPER_R+2);
+                  ball.bumperCooldown = 80;
+                  bmp.flash = 1.0;
+                  beep(350,'square',0.07,0.22,180);
+                  spawnParticles(g.particles, ball.x, ball.y, ball.hue, 6, 3);
+                }
+                break;
+              }
+            }
+          }
+
+          // target collision
+          for (let ti = g.targets.length-1; ti >= 0; ti--) {
+            const tgt = g.targets[ti];
+            if (Math.hypot(ball.x-tgt.x, ball.y-tgt.y) < BALL_R + TARGET_R) {
+              const pts = tgt.value * g.combo;
+              g.score += pts;
+              g.combo = Math.min(8, g.combo + 1);
+              g.comboTimer = 0;
+              spawnParticles(g.particles, tgt.x, tgt.y, tgt.hue, 20, 5);
+              labelsRef.current.push({ id: labelId++, x:tgt.x, y:tgt.y-TARGET_R, text:`+${pts}`, age:0, hue:tgt.hue });
+              beep(550,'sine',0.25,0.45,1100);
+              if (g.combo >= 4) beep(900,'square',0.1,0.25,1600);
+              g.targets.splice(ti, 1);
+              setUi(u => ({...u, score:g.score, combo:g.combo}));
+            }
+          }
+        }
+
+        setUi(u => ({...u, timeLeft: Math.ceil(g.msLeft/1000) }));
+      }
+
+      // ── DRAW ────────────────────────────────────────────────────────────
+      ctx.fillStyle = '#04040f';
+      ctx.fillRect(0, 0, W, H);
+
+      // subtle grid
+      ctx.strokeStyle = 'rgba(0,180,255,0.04)';
+      ctx.lineWidth = 1;
+      const gs2 = 55;
+      for (let x=0; x<=W; x+=gs2) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+      for (let y=0; y<=H; y+=gs2) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+      if (g && (g.screen==='playing'||g.screen==='gameover')) {
+        // particles
+        ctx.save();
+        g.particles.forEach(p => {
+          ctx.globalAlpha = p.life * 0.9;
+          ctx.fillStyle = `hsl(${p.hue},100%,65%)`;
+          ctx.shadowBlur = 12; ctx.shadowColor = `hsl(${p.hue},100%,65%)`;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+        });
+        ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+        ctx.restore();
+
+        // targets
+        g.targets.forEach(t => {
+          const lifeRatio = t.age / TARGET_LIFE;
+          const urgency = lifeRatio > 0.6;
+          const pulseFreq = urgency ? 0.012 : 0.005;
+          const pulse = 1 + Math.sin(t.age * pulseFreq) * 0.1;
+          const alpha = 1 - lifeRatio * 0.3;
+          const col = `hsl(${t.hue},100%,60%)`;
+
+          // expiry ring
+          ctx.save();
+          ctx.globalAlpha = alpha * 0.6;
+          ctx.strokeStyle = `hsl(${t.hue},100%,50%)`;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4,4]);
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, TARGET_R + 8, -Math.PI/2, -Math.PI/2 + Math.PI*2*(1-lifeRatio));
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+
+          // glow fill
+          ctx.save();
+          ctx.globalAlpha = 0.12 * alpha;
+          ctx.fillStyle = col;
+          ctx.shadowBlur = 20; ctx.shadowColor = col;
+          ctx.beginPath(); ctx.arc(t.x, t.y, TARGET_R*pulse, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+
+          // ring
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 2.5;
+          ctx.shadowBlur = 18; ctx.shadowColor = col;
+          ctx.beginPath(); ctx.arc(t.x, t.y, TARGET_R*pulse, 0, Math.PI*2); ctx.stroke();
+          ctx.restore();
+
+          // value
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = col;
+          ctx.shadowBlur = 12; ctx.shadowColor = col;
+          ctx.font = `bold 15px 'Courier New'`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(`+${t.value}`, t.x, t.y);
+          ctx.restore();
+        });
+
+        // bumpers
+        g.bumpers.forEach(b => {
+          const lifeRatio = b.age / BUMPER_LIFE;
+          const alpha = (1 - lifeRatio * 0.75) * (0.4 + b.flash * 0.6);
+          const hue = 290 + b.flash * 40;
+          const r = BUMPER_R * (1 - lifeRatio * 0.15);
+          const col = `hsl(${hue},100%,65%)`;
+
+          ctx.save();
+          // outer glow fill
+          ctx.globalAlpha = 0.15 * alpha;
+          ctx.fillStyle = col;
+          ctx.shadowBlur = 20 + b.flash*20; ctx.shadowColor = col;
+          ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, Math.PI*2); ctx.fill();
+
+          // ring
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 2 + b.flash*2;
+          ctx.shadowBlur = 15 + b.flash*25; ctx.shadowColor = col;
+          ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, Math.PI*2); ctx.stroke();
+
+          // lifespan arc
+          ctx.globalAlpha = alpha * 0.5;
+          ctx.strokeStyle = `hsl(${hue+40},100%,80%)`;
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, r-5, -Math.PI/2, -Math.PI/2 + Math.PI*2*(1-lifeRatio));
+          ctx.stroke();
+          ctx.restore();
+        });
+
+        // balls
+        g.balls.forEach(ball => {
+          // trail
+          ctx.save();
+          ball.trail.forEach((pt, i) => {
+            const t = i / ball.trail.length;
+            ctx.globalAlpha = t * t * 0.6;
+            ctx.fillStyle = `hsl(${ball.hue},100%,70%)`;
+            ctx.shadowBlur = 8; ctx.shadowColor = `hsl(${ball.hue},100%,70%)`;
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, BALL_R * t * 0.8, 0, Math.PI*2); ctx.fill();
+          });
+          ctx.restore();
+
+          // ball glow
+          ctx.save();
+          ctx.shadowBlur = 28; ctx.shadowColor = `hsl(${ball.hue},100%,70%)`;
+          ctx.fillStyle = `hsl(${ball.hue},100%,75%)`;
+          ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
+          // core
+          ctx.shadowBlur = 10; ctx.fillStyle = '#fff';
+          ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R*0.38, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+        });
+
+        // floating score labels (canvas)
+        ctx.save();
+        labelsRef.current.forEach(l => {
+          const t = l.age / 900;
+          ctx.globalAlpha = 1 - t;
+          const col = `hsl(${l.hue},100%,70%)`;
+          ctx.fillStyle = col;
+          ctx.shadowBlur = 12; ctx.shadowColor = col;
+          ctx.font = `bold 20px 'Courier New'`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(l.text, l.x, l.y - t * 55);
+        });
+        ctx.restore();
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, []);
+
+  const tl = ui.timeLeft;
+  const isWarn = tl <= 10;
+
+  return (
+    <div style={{width:'100vw',height:'100vh',position:'relative'}}>
+      <canvas ref={canvasRef}
+        onClick={onCanvasClick}
+        onTouchStart={onCanvasTouch}
+        style={{cursor: ui.screen==='playing' ? 'crosshair' : 'default'}}
+      />
+
+      {/* HUD */}
+      {ui.screen==='playing' && (
+        <div style={{position:'absolute',top:0,left:0,right:0,display:'flex',justifyContent:'space-between',
+          padding:'14px 20px',pointerEvents:'none',alignItems:'flex-start'}}>
+          <div style={{color:'#0ff',fontFamily:'Courier New',lineHeight:1.2}}>
+            <div style={{fontSize:12,opacity:0.7,letterSpacing:2}}>SCORE</div>
+            <div style={{fontSize:26,fontWeight:'bold',textShadow:'0 0 12px #0ff'}}>{ui.score.toLocaleString()}</div>
+          </div>
+          <div style={{
+            color: isWarn ? '#f44' : '#ff0',
+            fontFamily:'Courier New', textAlign:'center', lineHeight:1.2,
+            animation: isWarn ? 'pulse-warn 0.4s infinite alternate' : 'none',
+            textShadow: `0 0 14px ${isWarn?'#f44':'#ff0'}`,
+          }}>
+            <div style={{fontSize:12,opacity:0.7,letterSpacing:2}}>TIME</div>
+            <div style={{fontSize:28,fontWeight:'bold'}}>{tl}s</div>
+          </div>
+          <div style={{color:'#f0f',fontFamily:'Courier New',textAlign:'right',lineHeight:1.2}}>
+            <div style={{fontSize:12,opacity:0.7,letterSpacing:2}}>COMBO</div>
+            <div style={{fontSize:26,fontWeight:'bold',textShadow:'0 0 12px #f0f'}}>×{ui.combo}</div>
+          </div>
+        </div>
+      )}
+
+      {/* instructions bar */}
+      {ui.screen==='playing' && (
+        <div style={{position:'absolute',bottom:14,left:0,right:0,textAlign:'center',pointerEvents:'none',
+          color:'rgba(0,220,255,0.45)',fontFamily:'Courier New',fontSize:12,letterSpacing:1}}>
+          CLICK TO PLACE BUMPERS · MAX {MAX_BUMPERS} ACTIVE · REDIRECT THE BALL INTO TARGETS
+        </div>
+      )}
+
+      {/* Start Screen */}
+      {ui.screen==='start' && (
+        <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',
+          alignItems:'center',justifyContent:'center',background:'rgba(2,2,18,0.88)'}}>
+          <div style={{color:'#0ff',fontSize:52,fontWeight:'bold',fontFamily:'Courier New',
+            textShadow:'0 0 40px #0ff, 0 0 80px #0ff',marginBottom:10,letterSpacing:4}}>
+            BUMPER BURST
+          </div>
+          <div style={{color:'#f0f',fontSize:17,fontFamily:'Courier New',
+            textShadow:'0 0 15px #f0f',marginBottom:12,letterSpacing:1}}>
+            Redirect the ball — hit every glowing target!
+          </div>
+          <div style={{color:'rgba(180,240,255,0.7)',fontSize:13,fontFamily:'Courier New',
+            maxWidth:440,textAlign:'center',lineHeight:1.8,marginBottom:28}}>
+            Click anywhere to place a temporary BUMPER pad that deflects the ball<br/>
+            Hit glowing TARGET zones to score · Chain consecutive hits for COMBO ×8<br/>
+            Targets expire = combo drops · Extra balls spawn over time · 60 seconds
+          </div>
+          {ui.highScore > 0 && (
+            <div style={{color:'#ff0',fontSize:16,fontFamily:'Courier New',
+              textShadow:'0 0 12px #ff0',marginBottom:18}}>
+              BEST SCORE: {ui.highScore.toLocaleString()}
+            </div>
+          )}
+          <button onClick={startGame} style={{
+            background:'transparent',border:'2px solid #0ff',color:'#0ff',
+            fontSize:22,padding:'13px 50px',cursor:'pointer',fontFamily:'Courier New',
+            textShadow:'0 0 15px #0ff',boxShadow:'0 0 25px rgba(0,255,255,0.4), inset 0 0 15px rgba(0,255,255,0.08)',
+            borderRadius:4,letterSpacing:3,transition:'all 0.2s',
+          }}
+          onMouseEnter={e=>{e.target.style.boxShadow='0 0 40px rgba(0,255,255,0.7), inset 0 0 20px rgba(0,255,255,0.15)';}}
+          onMouseLeave={e=>{e.target.style.boxShadow='0 0 25px rgba(0,255,255,0.4), inset 0 0 15px rgba(0,255,255,0.08)';}}
+          >
+            PLAY
+          </button>
+          <div style={{color:'rgba(255,255,255,0.3)',fontSize:11,fontFamily:'Courier New',marginTop:20}}>
+            CLICK / TAP to place bumpers during gameplay
+          </div>
+        </div>
+      )}
+
+      {/* Game Over */}
+      {ui.screen==='gameover' && (
+        <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',
+          alignItems:'center',justifyContent:'center',background:'rgba(2,2,18,0.88)'}}>
+          <div style={{color:'#f0f',fontSize:44,fontWeight:'bold',fontFamily:'Courier New',
+            textShadow:'0 0 35px #f0f',marginBottom:14,letterSpacing:3}}>
+            TIME'S UP!
+          </div>
+          <div style={{color:'#0ff',fontSize:34,fontFamily:'Courier New',
+            textShadow:'0 0 20px #0ff',marginBottom:6}}>
+            {ui.score.toLocaleString()} pts
+          </div>
+          {ui.newHigh && (
+            <div style={{color:'#ff0',fontSize:22,fontFamily:'Courier New',
+              textShadow:'0 0 20px #ff0',marginBottom:10,animation:'glow-pop 0.5s ease'}}>
+              ★ NEW HIGH SCORE! ★
+            </div>
+          )}
+          {!ui.newHigh && ui.highScore > 0 && (
+            <div style={{color:'rgba(255,220,0,0.65)',fontSize:15,fontFamily:'Courier New',marginBottom:10}}>
+              BEST: {ui.highScore.toLocaleString()}
+            </div>
+          )}
+          <button onClick={startGame} style={{
+            marginTop:20,background:'transparent',border:'2px solid #f0f',color:'#f0f',
+            fontSize:20,padding:'12px 44px',cursor:'pointer',fontFamily:'Courier New',
+            textShadow:'0 0 15px #f0f',boxShadow:'0 0 25px rgba(255,0,255,0.4)',
+            borderRadius:4,letterSpacing:3,
+          }}>
+            PLAY AGAIN
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
