@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fracture Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #020208; overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: none; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'fractureRush_highScore';
+if (!localStorage.getItem(HS_KEY)) localStorage.setItem(HS_KEY, '0');
+
+const W = window.innerWidth, H = window.innerHeight;
+const CX = W / 2, CY = H / 2;
+const BASE_R = Math.min(W, H) * 0.27;
+const HEAL_TOL = 26;
+
+// ── Geometry utils ────────────────────────────────────────────────────
+const ptSegDist = (px, py, ax, ay, bx, by) => {
+  const dx = bx-ax, dy = by-ay, lenSq = dx*dx+dy*dy;
+  if (!lenSq) return Math.hypot(px-ax, py-ay);
+  const t = Math.max(0, Math.min(1, ((px-ax)*dx+(py-ay)*dy)/lenSq));
+  return Math.hypot(px-(ax+t*dx), py-(ay+t*dy));
+};
+
+const hexVerts = (r, angle) => Array.from({length:6}, (_,i) => {
+  const a = (i/6)*Math.PI*2 + angle;
+  return { x: CX+Math.cos(a)*r, y: CY+Math.sin(a)*r };
+});
+
+const makeCrackPath = (x1, y1, x2, y2) => {
+  const pts = [{x:x1,y:y1}];
+  const n = 6 + Math.floor(Math.random()*4);
+  for (let i=1; i<n; i++) {
+    const t = i/n;
+    const mx = x1+(x2-x1)*t, my = y1+(y2-y1)*t;
+    const perX = -(y2-y1), perY = x2-x1;
+    const pLen = Math.hypot(perX,perY)||1;
+    const j = (Math.random()-0.5)*24;
+    pts.push({x:mx+perX/pLen*j, y:my+perY/pLen*j});
+  }
+  pts.push({x:x2,y:y2});
+  return pts;
+};
+
+// ── Level config ───────────────────────────────────────────────────────
+const getLvlCfg = lvl => ({
+  maxCracks:  Math.min(2 + Math.floor(lvl * 0.7), 7),
+  spawnInt:   Math.max(1.5 - lvl * 0.09, 0.32),
+  speed:      0.18 + lvl * 0.04,
+});
+
+// ── Audio ──────────────────────────────────────────────────────────────
+let AC = null;
+const getAC = () => { if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)(); return AC; };
+const tone = (f, d=.15, v=.3, type='sine', delay=0) => {
+  try {
+    const ctx=getAC(), o=ctx.createOscillator(), g=ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value=f; o.type=type;
+    const t=ctx.currentTime+delay;
+    g.gain.setValueAtTime(v,t);
+    g.gain.exponentialRampToValueAtTime(0.001,t+d);
+    o.start(t); o.stop(t+d);
+  } catch(_){}
+};
+const sndHeal  = () => { tone(523,.07,.4,'square'); tone(784,.14,.3,'sine',.06); };
+const sndCombo = n => { [523,784,1047].forEach((f,i)=>tone(f*(1+n*.1),.12,.35,'sine',i*.06)); };
+const sndBreak = () => { tone(150,.55,.5,'sawtooth'); tone(100,.65,.4,'sawtooth',.04); };
+const sndStart = () => [330,440,523,659,784].forEach((f,i)=>tone(f,.18,.3,'sine',i*.07));
+
+// ── Main App ───────────────────────────────────────────────────────────
+const App = () => {
+  const canvasRef  = useRef(null);
+  const gameRef    = useRef(null);
+  const rafRef     = useRef(null);
+  const lastTsRef  = useRef(null);
+
+  const [ui, setUi] = useState({
+    phase: 'start', score: 0,
+    highScore: parseInt(localStorage.getItem(HS_KEY)||'0'),
+    lives: 5, level: 1, combo: 0,
+  });
+
+  // ── Create fresh game state ──────────────────────────────────────────
+  const mkGame = () => ({
+    phase: 'playing', score: 0,
+    highScore: parseInt(localStorage.getItem(HS_KEY)||'0'),
+    lives: 5, level: 1, combo: 0,
+    comboTimer: 0, cracks: [], particles: [], popups: [],
+    spawnTimer: -0.8, shapeAngle: 0, crackId: 0,
+    invincible: 0, flashRed: 0, flashCyan: 0,
+  });
+
+  // ── Spawn a crack ────────────────────────────────────────────────────
+  const spawnCrack = useCallback(() => {
+    const g = gameRef.current;
+    const verts = hexVerts(BASE_R, g.shapeAngle);
+    // pick two opposite-ish edges
+    const i1 = Math.floor(Math.random()*6);
+    const i2 = (i1 + 2 + Math.floor(Math.random()*3)) % 6;
+    const t1 = Math.random(), t2 = Math.random();
+    const j1=(i1+1)%6, j2=(i2+1)%6;
+    const p1 = { x: verts[i1].x*(1-t1)+verts[j1].x*t1, y: verts[i1].y*(1-t1)+verts[j1].y*t1 };
+    const p2 = { x: verts[i2].x*(1-t2)+verts[j2].x*t2, y: verts[i2].y*(1-t2)+verts[j2].y*t2 };
+    const cfg = getLvlCfg(g.level);
+    const hue = 10 + Math.random()*30;
+    g.cracks.push({
+      id:    g.crackId++,
+      path:  makeCrackPath(p1.x, p1.y, p2.x, p2.y),
+      progress: 0,
+      speed: cfg.speed * (0.75 + Math.random()*0.5),
+      color: `hsl(${hue},100%,60%)`,
+      glow:  `hsl(${hue},100%,78%)`,
+    });
+  }, []);
+
+  // ── Spawn particle burst ─────────────────────────────────────────────
+  const spawnParticles = useCallback((x, y, color, n=14) => {
+    const g = gameRef.current;
+    if (!g) return;
+    for (let i=0; i<n; i++) {
+      const a = (i/n)*Math.PI*2+Math.random()*0.4;
+      const sp = 70+Math.random()*120;
+      g.particles.push({ x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, color, sz:2+Math.random()*4 });
+    }
+  }, []);
+
+  // ── Try to heal a crack at (px,py) ───────────────────────────────────
+  const healAt = useCallback((px, py) => {
+    const g = gameRef.current;
+    if (!g || g.phase !== 'playing') return;
+
+    let bestIdx = -1, bestDist = Infinity;
+    g.cracks.forEach((c, idx) => {
+      const nSeg = c.path.length - 1;
+      const visSeg = c.progress * nSeg;
+      const fs = Math.floor(visSeg);
+      const fr = visSeg - fs;
+      for (let si=0; si<=fs && si<nSeg; si++) {
+        const p0=c.path[si], p1=c.path[si+1];
+        const endX = si<fs ? p1.x : p0.x+(p1.x-p0.x)*fr;
+        const endY = si<fs ? p1.y : p0.y+(p1.y-p0.y)*fr;
+        const d = ptSegDist(px,py, p0.x,p0.y, endX,endY);
+        if (d < bestDist) { bestDist = d; if (d < HEAL_TOL) bestIdx = idx; }
+      }
+    });
+    if (bestIdx < 0) return;
+
+    const c = g.cracks[bestIdx];
+    g.cracks.splice(bestIdx, 1);
+
+    // Combo
+    g.comboTimer = 0;
+    g.combo = Math.min(g.combo + 1, 8);
+    const mult = g.combo;
+
+    // Score — faster heals worth more
+    const earlyBonus = Math.round((1 - c.progress) * 150);
+    const pts = (100 + earlyBonus) * mult;
+    g.score += pts;
+    if (g.score > g.highScore) { g.highScore = g.score; localStorage.setItem(HS_KEY, g.score.toString()); }
+    g.level = Math.min(Math.floor(g.score/1500)+1, 10);
+    g.flashCyan = 0.18;
+
+    // Tip position
+    const nSeg = c.path.length-1;
+    const visSeg = c.progress*nSeg;
+    const fs = Math.floor(visSeg), fr = visSeg-fs;
+    const tipPt = fs<nSeg
+      ? { x:c.path[fs].x+(c.path[fs+1].x-c.path[fs].x)*fr, y:c.path[fs].y+(c.path[fs+1].y-c.path[fs].y)*fr }
+      : c.path[c.path.length-1];
+
+    spawnParticles(tipPt.x, tipPt.y, c.color, 18);
+    sndHeal();
+    if (mult >= 2) sndCombo(mult);
+
+    g.popups.push({
+      x: tipPt.x, y: tipPt.y-18,
+      text: mult>=2 ? `×${mult}  +${pts}` : `+${pts}`,
+      life: 1, color: mult>=4?'#FF00FF': mult>=3?'#FFD700': mult>=2?'#00FFFF':'#FFFFFF',
+      big: mult>=2,
+    });
+
+    setUi(u=>({...u, score:g.score, highScore:g.highScore, level:g.level, combo:g.combo}));
+  }, [spawnParticles]);
+
+  // ── Pointer handler (click / touch) ──────────────────────────────────
+  const handlePointer = useCallback((e) => {
+    e.preventDefault();
+    const g = gameRef.current;
+    if (!g || g.phase==='start' || g.phase==='gameover') {
+      gameRef.current = mkGame();
+      sndStart();
+      setUi({ phase:'playing', score:0, highScore:parseInt(localStorage.getItem(HS_KEY)||'0'), lives:5, level:1, combo:0 });
+      return;
+    }
+    const rect = canvasRef.current.getBoundingClientRect();
+    const touches = e.changedTouches ? Array.from(e.changedTouches) : [e];
+    touches.forEach(pt => healAt(pt.clientX - rect.left, pt.clientY - rect.top));
+  }, [healAt]);
+
+  // ── Draw shape ────────────────────────────────────────────────────────
+  const drawShape = (ctx, g) => {
+    const health = Math.max(0, g.lives) / 5;
+    const hue = Math.round(175 + (1-health)*(-155)); // cyan→red
+    const r = BASE_R;
+    const verts = hexVerts(r, g.shapeAngle);
+
+    // Glow halos
+    for (let gi=5; gi>=0; gi--) {
+      const haloVerts = hexVerts(r + gi*7, g.shapeAngle);
+      ctx.beginPath();
+      haloVerts.forEach((v,i) => i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));
+      ctx.closePath();
+      ctx.strokeStyle = `hsla(${hue},100%,70%,${0.028+gi*0.005})`;
+      ctx.lineWidth = 3+gi;
+      ctx.stroke();
+    }
+
+    // Interior fill
+    ctx.beginPath();
+    verts.forEach((v,i) => i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));
+    ctx.closePath();
+    const ig = ctx.createRadialGradient(CX,CY,0,CX,CY,r);
+    ig.addColorStop(0, `hsla(${hue},60%,20%,0.28)`);
+    ig.addColorStop(1, `hsla(${hue},100%,8%,0.06)`);
+    ctx.fillStyle = ig;
+    ctx.fill();
+
+    // Main border
+    ctx.beginPath();
+    verts.forEach((v,i) => i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));
+    ctx.closePath();
+    ctx.strokeStyle = `hsl(${hue},100%,74%)`;
+    ctx.lineWidth = 2.8;
+    ctx.shadowColor = `hsl(${hue},100%,70%)`;
+    ctx.shadowBlur = 20;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  };
+
+  // ── Draw cracks ───────────────────────────────────────────────────────
+  const drawCracks = (ctx, g, time) => {
+    ctx.lineJoin = 'round';
+    ctx.lineCap  = 'round';
+    g.cracks.forEach(c => {
+      const nSeg = c.path.length-1;
+      const visSeg = c.progress * nSeg;
+      const fs = Math.floor(visSeg), fr = visSeg-fs;
+      const danger = c.progress > 0.68;
+      const pulse  = danger ? 0.5 + 0.5*Math.sin(time*18) : 1;
+
+      const buildPath = () => {
+        ctx.beginPath();
+        ctx.moveTo(c.path[0].x, c.path[0].y);
+        for (let i=1; i<=fs && i<=nSeg; i++) ctx.lineTo(c.path[i].x,c.path[i].y);
+        if (fs<nSeg && fr>0) {
+          const p0=c.path[fs], p1=c.path[fs+1];
+          ctx.lineTo(p0.x+(p1.x-p0.x)*fr, p0.y+(p1.y-p0.y)*fr);
+        }
+      };
+
+      // Wide glow
+      ctx.globalAlpha = 0.55*pulse;
+      buildPath();
+      ctx.strokeStyle = danger ? '#FF3300' : c.glow;
+      ctx.lineWidth = 8;
+      ctx.shadowColor = danger ? '#FF0000' : c.glow;
+      ctx.shadowBlur  = danger ? 24 : 14;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Core
+      ctx.globalAlpha = 0.92*pulse;
+      buildPath();
+      ctx.strokeStyle = danger ? '#FF6600' : c.color;
+      ctx.lineWidth   = 2.8;
+      ctx.stroke();
+
+      // White hotline
+      ctx.globalAlpha = 0.45*pulse;
+      buildPath();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth   = 0.9;
+      ctx.stroke();
+
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur  = 0;
+    });
+  };
+
+  // ── Main draw frame ───────────────────────────────────────────────────
+  const drawFrame = useCallback((time) => {
+    const canvas = canvasRef.current;
+    const g = gameRef.current;
+    if (!canvas || !g) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,W,H);
+
+    // Background
+    const bg = ctx.createRadialGradient(CX,CY,0,CX,CY,Math.max(W,H)*.8);
+    bg.addColorStop(0,'#0b0325');
+    bg.addColorStop(.55,'#050915');
+    bg.addColorStop(1,'#020208');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,W,H);
+
+    // Red/cyan flash
+    if (g.flashRed > 0)  { ctx.fillStyle=`rgba(255,30,30,${(g.flashRed*.38).toFixed(3)})`; ctx.fillRect(0,0,W,H); }
+    if (g.flashCyan > 0) { ctx.fillStyle=`rgba(0,255,210,${(g.flashCyan*.22).toFixed(3)})`; ctx.fillRect(0,0,W,H); }
+
+    drawShape(ctx, g);
+
+    if (g.phase === 'playing') {
+      drawCracks(ctx, g, time);
+
+      // Particles
+      g.particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle   = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur  = 9;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.sz*p.life, 0, Math.PI*2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+      });
+
+      // Score popups
+      g.popups.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle   = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur  = 13;
+        ctx.font = `bold ${p.big?19:14}px 'Courier New',monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(p.text, p.x, p.y);
+        ctx.shadowBlur  = 0;
+        ctx.globalAlpha = 1;
+      });
+    }
+  }, []);
+
+  // ── RAF tick ──────────────────────────────────────────────────────────
+  const tick = useCallback((ts) => {
+    const dt = lastTsRef.current ? Math.min((ts-lastTsRef.current)/1000, 0.05) : 0.016;
+    lastTsRef.current = ts;
+
+    const g = gameRef.current;
+    if (g) {
+      g.shapeAngle += dt * 0.07;
+
+      if (g.phase === 'playing') {
+        g.flashRed  = Math.max(0, g.flashRed  - dt*3.5);
+        g.flashCyan = Math.max(0, g.flashCyan - dt*4.5);
+        g.invincible = Math.max(0, g.invincible - dt);
+        g.spawnTimer += dt;
+        g.comboTimer += dt;
+
+        // Combo expiry
+        if (g.comboTimer > 1.6 && g.combo > 0) {
+          g.combo = 0;
+          setUi(u => ({...u, combo:0}));
+        }
+
+        const cfg = getLvlCfg(g.level);
+
+        // Spawn
+        if (g.spawnTimer >= cfg.spawnInt && g.cracks.length < cfg.maxCracks) {
+          g.spawnTimer = 0;
+          spawnCrack();
+        }
+
+        // Advance cracks
+        g.cracks.forEach(c => { c.progress += c.speed * dt; });
+
+        // Expire
+        const expired = g.cracks.filter(c => c.progress >= 1);
+        g.cracks = g.cracks.filter(c => c.progress < 1);
+        expired.forEach(() => {
+          if (g.invincible <= 0) {
+            g.lives--;
+            g.combo = 0;
+            g.flashRed = 1;
+            g.invincible = 0.55;
+            spawnParticles(CX, CY, '#FF3333', 22);
+            sndBreak();
+            setUi(u => ({...u, lives:g.lives, combo:0}));
+          }
+        });
+
+        if (g.lives <= 0) {
+          g.phase = 'gameover';
+          setUi(u => ({...u, phase:'gameover', score:g.score, highScore:g.highScore, lives:0, combo:0}));
+        }
+
+        // Particles
+        g.particles = g.particles.filter(p => {
+          p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 75*dt; p.life -= dt*2.2; return p.life > 0;
+        });
+
+        // Popups
+        g.popups = g.popups.filter(p => { p.y -= 32*dt; p.life -= dt*1.6; return p.life > 0; });
+      }
+    }
+
+    drawFrame(ts/1000);
+    rafRef.current = requestAnimationFrame(tick);
+  }, [drawFrame, spawnCrack, spawnParticles]);
+
+  // ── Mount ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    canvas.width = W; canvas.height = H;
+    gameRef.current = {
+      phase:'start', shapeAngle:0, lives:5, level:1, score:0,
+      highScore:parseInt(localStorage.getItem(HS_KEY)||'0'),
+      cracks:[], particles:[], popups:[], flashRed:0, flashCyan:0,
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [tick]);
+
+  // ── Render ────────────────────────────────────────────────────────────
+  const { phase, score, highScore, lives, level, combo } = ui;
+  const fs = n => Math.max(Math.round(Math.min(W,H)*n), 10);
+
+  return (
+    <div style={{position:'relative',width:W,height:H,background:'#020208'}}>
+      <canvas
+        ref={canvasRef}
+        onClick={handlePointer}
+        onTouchStart={handlePointer}
+        style={{display:'block',cursor:'crosshair',touchAction:'none'}}
+      />
+
+      {/* HUD */}
+      {phase==='playing' && (
+        <div style={{
+          position:'absolute',top:0,left:0,right:0,
+          display:'flex',justifyContent:'space-between',alignItems:'flex-start',
+          padding:`${fs(.018)}px ${fs(.025)}px`,pointerEvents:'none',
+        }}>
+          {/* Score */}
+          <div>
+            <div style={{color:'#00FFEE',fontSize:fs(.011),fontFamily:'Courier New',letterSpacing:3,opacity:.6}}>SCORE</div>
+            <div style={{color:'#00FFEE',fontSize:fs(.035),fontFamily:'Courier New',fontWeight:'bold',textShadow:'0 0 12px #00FFEE',lineHeight:1.1}}>
+              {score.toLocaleString()}
+            </div>
+            <div style={{color:'#445',fontSize:fs(.01),fontFamily:'Courier New'}}>BEST {highScore.toLocaleString()}</div>
+          </div>
+
+          {/* Lives + Level */}
+          <div style={{textAlign:'center'}}>
+            <div style={{color:'#FF6655',fontSize:fs(.011),fontFamily:'Courier New',letterSpacing:3,opacity:.6}}>INTEGRITY</div>
+            <div style={{display:'flex',gap:fs(.007),justifyContent:'center',margin:`${fs(.007)}px 0`}}>
+              {[...Array(5)].map((_,i) => (
+                <div key={i} style={{
+                  width:fs(.016),height:fs(.016),borderRadius:3,
+                  background: i<lives ? '#FF4444' : '#1a0808',
+                  boxShadow: i<lives ? '0 0 8px #FF4444' : 'none',
+                  transition:'all .2s',
+                }}/>
+              ))}
+            </div>
+            <div style={{color:'#FF6655',fontSize:fs(.011),fontFamily:'Courier New',letterSpacing:2}}>LV {level}</div>
+          </div>
+
+          {/* Combo */}
+          <div style={{textAlign:'right'}}>
+            <div style={{color:'#FFD700',fontSize:fs(.011),fontFamily:'Courier New',letterSpacing:3,opacity:.6}}>COMBO</div>
+            <div style={{
+              color: combo>=4?'#FF00FF': combo>=3?'#FFD700':'#FFBB44',
+              fontSize: combo>=3 ? fs(.045) : fs(.033),
+              fontFamily:'Courier New',fontWeight:'bold',lineHeight:1,
+              textShadow:`0 0 ${Math.min(combo*7,32)}px currentColor`,
+              transition:'font-size .1s',
+            }}>×{combo||1}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Start / Game Over overlay */}
+      {(phase==='start'||phase==='gameover') && (
+        <div
+          style={{
+            position:'absolute',inset:0,display:'flex',flexDirection:'column',
+            alignItems:'center',justifyContent:'center',
+            background:'rgba(2,2,8,0.83)',cursor:'pointer',
+          }}
+          onClick={handlePointer}
+          onTouchStart={handlePointer}
+        >
+          <div style={{
+            color:'#00FFFF',fontSize:fs(.072),fontFamily:'Courier New',fontWeight:'bold',
+            textShadow:'0 0 28px #00FFFF,0 0 56px #00AAFF',
+            letterSpacing:4,marginBottom:fs(.012),textAlign:'center',
+          }}>FRACTURE RUSH</div>
+
+          {phase==='gameover' && <>
+            <div style={{color:'#FF4444',fontSize:fs(.022),fontFamily:'Courier New',marginBottom:fs(.016),textShadow:'0 0 10px #FF4444'}}>
+              — STRUCTURE COLLAPSED —
+            </div>
+            <div style={{color:'#FFD700',fontSize:fs(.026),fontFamily:'Courier New',marginBottom:fs(.006)}}>
+              SCORE: {score.toLocaleString()}
+            </div>
+            <div style={{color:'#00FFEE',fontSize:fs(.017),fontFamily:'Courier New',marginBottom:fs(.032)}}>
+              BEST: {highScore.toLocaleString()}
+            </div>
+          </>}
+
+          {phase==='start' && (
+            <div style={{color:'#8888AA',fontSize:fs(.018),fontFamily:'Courier New',marginBottom:fs(.034),textAlign:'center',lineHeight:1.85,maxWidth:Math.min(W*.85,420)}}>
+              Glowing cracks tear across the shape.<br/>
+              <span style={{color:'#00FFEE'}}>Click / tap on the crack lines to seal them</span><br/>
+              before they spread too far!<br/>
+              Chain fast heals for COMBO multipliers.
+            </div>
+          )}
+
+          <div style={{
+            color:'#FFFFFF',fontSize:fs(.016),fontFamily:'Courier New',letterSpacing:3,
+            padding:`${fs(.014)}px ${fs(.034)}px`,
+            border:'1px solid #00FFFF',
+            boxShadow:'0 0 20px #00FFFF,inset 0 0 20px rgba(0,255,255,0.06)',
+          }}>
+            {phase==='start' ? '[ TAP TO START ]' : '[ TAP TO RETRY ]'}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+ReactDOM.render(<App/>, document.getElementById('root'));
+  </script>
+</body>
+</html>
