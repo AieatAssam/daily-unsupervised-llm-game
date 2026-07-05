@@ -61,7 +61,7 @@ export default defineConfig({
   webServer: {
     command: 'npx http-server -p 8080 -c-1',
     port: 8080,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true,
     timeout: 120000,
   },
 });
