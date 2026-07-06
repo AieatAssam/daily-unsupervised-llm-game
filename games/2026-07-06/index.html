@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vial Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0015;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+
+    @keyframes bgPulse {
+      0%   { background: radial-gradient(ellipse at 30% 40%, #1a0040 0%, #0a0015 60%); }
+      33%  { background: radial-gradient(ellipse at 70% 60%, #001a3a 0%, #0a0015 60%); }
+      66%  { background: radial-gradient(ellipse at 50% 20%, #1a0030 0%, #0a0015 60%); }
+      100% { background: radial-gradient(ellipse at 30% 40%, #1a0040 0%, #0a0015 60%); }
+    }
+    .game-bg {
+      position: fixed; inset: 0;
+      animation: bgPulse 8s ease-in-out infinite;
+    }
+
+    @keyframes floatParticle {
+      0%   { transform: translateY(0) scale(1); opacity: 0.7; }
+      100% { transform: translateY(-120px) scale(0); opacity: 0; }
+    }
+    .particle {
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: floatParticle linear forwards;
+    }
+
+    @keyframes pourAnim {
+      0%   { opacity: 1; transform: scaleY(1) translateY(0); }
+      100% { opacity: 0; transform: scaleY(0.2) translateY(30px); }
+    }
+
+    @keyframes glowPulse {
+      0%, 100% { filter: drop-shadow(0 0 6px currentColor); }
+      50%       { filter: drop-shadow(0 0 18px currentColor); }
+    }
+    @keyframes winBurst {
+      0%   { transform: scale(0) rotate(-10deg); opacity: 1; }
+      60%  { transform: scale(1.15) rotate(3deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20%     { transform: translateX(-6px); }
+      40%     { transform: translateX(6px); }
+      60%     { transform: translateX(-4px); }
+      80%     { transform: translateX(4px); }
+    }
+    @keyframes comboFloat {
+      0%   { transform: translateY(0) scale(1); opacity: 1; }
+      100% { transform: translateY(-60px) scale(1.4); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ─── Color palette ───────────────────────────────────────────────────────
+    const COLORS = {
+      cyan:    { fill: '#00eeff', glow: '#00ccff', dark: '#003344' },
+      magenta: { fill: '#ff00cc', glow: '#cc00aa', dark: '#330022' },
+      orange:  { fill: '#ff6600', glow: '#ff4400', dark: '#331100' },
+      lime:    { fill: '#66ff00', glow: '#44dd00', dark: '#112200' },
+      purple:  { fill: '#aa44ff', glow: '#8800ff', dark: '#220044' },
+      pink:    { fill: '#ff44aa', glow: '#ff0088', dark: '#330022' },
+      gold:    { fill: '#ffcc00', glow: '#ffaa00', dark: '#332200' },
+    };
+    const COLOR_KEYS = Object.keys(COLORS);
+
+    const VIAL_CAPACITY = 4;
+
+    // ─── Audio ────────────────────────────────────────────────────────────────
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+    function playTone(freq, type = 'sine', dur = 0.12, vol = 0.25) {
+      try {
+        const ctx = getAudio();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+    function playPour()     { playTone(440, 'sine', 0.15, 0.2); setTimeout(() => playTone(520, 'sine', 0.1, 0.15), 80); }
+    function playError()    { playTone(180, 'sawtooth', 0.2, 0.3); }
+    function playSelect()   { playTone(660, 'sine', 0.08, 0.2); }
+    function playWin()      {
+      [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => playTone(f, 'sine', 0.25, 0.35), i * 90));
+    }
+    function playCombo(n)   { playTone(400 + n * 80, 'triangle', 0.2, 0.4); }
+
+    // ─── Puzzle generation ───────────────────────────────────────────────────
+    function generatePuzzle(numColors, extraEmpty) {
+      // Fill vials: numColors full vials + extraEmpty empty vials
+      // Then scramble them
+      const numVials = numColors + extraEmpty;
+      const filled = [];
+      for (let c = 0; c < numColors; c++) {
+        for (let u = 0; u < VIAL_CAPACITY; u++) filled.push(COLOR_KEYS[c]);
+      }
+      // Shuffle
+      for (let i = filled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [filled[i], filled[j]] = [filled[j], filled[i]];
+      }
+      const vials = [];
+      for (let v = 0; v < numVials; v++) {
+        if (v < numColors) {
+          vials.push(filled.slice(v * VIAL_CAPACITY, (v + 1) * VIAL_CAPACITY));
+        } else {
+          vials.push([]);
+        }
+      }
+      return vials;
+    }
+
+    function isVialSorted(vial) {
+      if (vial.length === 0) return true;
+      if (vial.length !== VIAL_CAPACITY) return false;
+      return vial.every(c => c === vial[0]);
+    }
+
+    function isSolved(vials) {
+      return vials.every(v => isVialSorted(v));
+    }
+
+    function canPour(src, dst) {
+      if (src.length === 0) return false;
+      if (dst.length >= VIAL_CAPACITY) return false;
+      if (dst.length === 0) return true;
+      return dst[dst.length - 1] === src[src.length - 1];
+    }
+
+    function pour(vials, from, to) {
+      const newVials = vials.map(v => [...v]);
+      const color = newVials[from][newVials[from].length - 1];
+      // Pour all matching top-color units
+      while (
+        newVials[from].length > 0 &&
+        newVials[from][newVials[from].length - 1] === color &&
+        newVials[to].length < VIAL_CAPACITY
+      ) {
+        newVials[to].push(newVials[from].pop());
+      }
+      return newVials;
+    }
+
+    // ─── Level configs ────────────────────────────────────────────────────────
+    function levelConfig(level) {
+      if (level <= 2)  return { numColors: 3, extraEmpty: 2, timeBonus: 60 };
+      if (level <= 4)  return { numColors: 4, extraEmpty: 2, timeBonus: 55 };
+      if (level <= 6)  return { numColors: 5, extraEmpty: 2, timeBonus: 50 };
+      if (level <= 8)  return { numColors: 5, extraEmpty: 1, timeBonus: 45 };
+                       return { numColors: 6, extraEmpty: 1, timeBonus: 40 };
+    }
+
+    // ─── Particle system ─────────────────────────────────────────────────────
+    let particleId = 0;
+    function spawnParticles(x, y, color, count = 14) {
+      const arr = [];
+      for (let i = 0; i < count; i++) {
+        arr.push({
+          id: ++particleId,
+          x: x + (Math.random() - 0.5) * 60,
+          y: y + (Math.random() - 0.5) * 30,
+          color: COLORS[color]?.fill || '#fff',
+          size: 4 + Math.random() * 7,
+          dur: 0.5 + Math.random() * 0.7,
+        });
+      }
+      return arr;
+    }
+
+    // ─── Main Game Component ──────────────────────────────────────────────────
+    const Game = () => {
+      const [screen, setScreen]       = useState('start'); // start | play | gameover
+      const [level, setLevel]         = useState(1);
+      const [score, setScore]         = useState(0);
+      const [highScore, setHighScore] = useState(() => {
+        const val = parseInt(localStorage.getItem('vialRushHigh') || '0');
+        localStorage.setItem('vialRushHigh', String(val));
+        return val;
+      });
+      const [combo, setCombo]         = useState(0);
+      const [vials, setVials]         = useState([]);
+      const [selected, setSelected]   = useState(null); // index of selected vial
+      const [timeLeft, setTimeLeft]   = useState(60);
+      const [particles, setParticles] = useState([]);
+      const [shakeVial, setShakeVial] = useState(null);
+      const [comboFloats, setComboFloats] = useState([]);
+      const [poured, setPoured]       = useState(false); // trigger animation
+
+      const timerRef = useRef(null);
+      const comboRef = useRef(combo);
+      comboRef.current = combo;
+
+      // ── Initialise level ──
+      const startLevel = useCallback((lvl, currentScore, currentCombo) => {
+        const { numColors, extraEmpty, timeBonus } = levelConfig(lvl);
+        const puzzle = generatePuzzle(numColors, extraEmpty);
+        setVials(puzzle);
+        setSelected(null);
+        setTimeLeft(timeBonus);
+        setLevel(lvl);
+        setScore(currentScore);
+        setCombo(currentCombo);
+      }, []);
+
+      const startGame = () => {
+        setScore(0);
+        setCombo(0);
+        setScreen('play');
+        startLevel(1, 0, 0);
+      };
+
+      // ── Timer ──
+      useEffect(() => {
+        if (screen !== 'play') return;
+        timerRef.current = setInterval(() => {
+          setTimeLeft(t => {
+            if (t <= 1) {
+              clearInterval(timerRef.current);
+              setScreen('gameover');
+              return 0;
+            }
+            return t - 1;
+          });
+        }, 1000);
+        return () => clearInterval(timerRef.current);
+      }, [screen, level]);
+
+      // ── Check win ──
+      useEffect(() => {
+        if (screen !== 'play' || vials.length === 0) return;
+        if (isSolved(vials)) {
+          clearInterval(timerRef.current);
+          playWin();
+          const newCombo = comboRef.current + 1;
+          const { numColors } = levelConfig(level);
+          const timeBonus = timeLeft * 10;
+          const comboBonus = newCombo >= 3 ? newCombo * 200 : 0;
+          const basePoints = numColors * 300;
+          const gained = basePoints + timeBonus + comboBonus;
+          const newScore = score + gained;
+          setScore(newScore);
+          setCombo(newCombo);
+          playCombo(newCombo);
+
+          // Float combo text
+          if (newCombo >= 2) {
+            const id = ++particleId;
+            setComboFloats(cf => [...cf, { id, text: `x${newCombo} COMBO! +${gained}`, key: id }]);
+            setTimeout(() => setComboFloats(cf => cf.filter(f => f.id !== id)), 1200);
+          }
+
+          // Spawn win particles across screen
+          const ps = [];
+          COLOR_KEYS.slice(0, numColors).forEach((c, i) => {
+            ps.push(...spawnParticles(150 + i * 80, 200, c, 12));
+          });
+          setParticles(p => [...p, ...ps]);
+          setTimeout(() => setParticles([]), 1500);
+
+          if (newScore > highScore) {
+            setHighScore(newScore);
+            localStorage.setItem('vialRushHigh', String(newScore));
+          }
+
+          setTimeout(() => startLevel(level + 1, newScore, newCombo), 1600);
+        }
+      }, [vials]);
+
+      // ── Click handler ──
+      const handleVialClick = (idx) => {
+        if (screen !== 'play') return;
+        playSelect();
+        if (selected === null) {
+          if (vials[idx].length === 0) return;
+          setSelected(idx);
+        } else if (selected === idx) {
+          setSelected(null);
+        } else {
+          if (canPour(vials[selected], vials[idx])) {
+            const newVials = pour(vials, selected, vials[idx].length === 0 ? idx : idx);
+            // spawn particles at destination vial
+            const color = vials[selected][vials[selected].length - 1];
+            const ps = spawnParticles(60 + idx * 70, 320, color, 6);
+            setParticles(p => [...p, ...ps]);
+            setTimeout(() => setParticles(p => p.filter(x => !ps.find(q => q.id === x.id))), 900);
+            playPour();
+            setVials(newVials);
+            setSelected(null);
+          } else {
+            playError();
+            setShakeVial(selected);
+            setTimeout(() => setShakeVial(null), 350);
+            setSelected(null);
+          }
+        }
+      };
+
+      const removeParticle = (id) => setParticles(p => p.filter(x => x.id !== id));
+
+      // ── Sizing ──
+      const W = Math.min(window.innerWidth, 600);
+      const H = window.innerHeight;
+      const vialW = 52;
+      const vialH = 160;
+      const vialGap = 14;
+
+      const vialCount = vials.length;
+      const rowSize   = Math.ceil(vialCount / 2);
+      const row1      = vials.slice(0, rowSize);
+      const row2      = vials.slice(rowSize);
+
+      const renderVial = (vial, globalIdx) => {
+        const isSelected = selected === globalIdx;
+        const isShake    = shakeVial === globalIdx;
+        const isSortedV  = isVialSorted(vial);
+        const topColor   = vial.length > 0 ? vial[vial.length - 1] : null;
+
+        const glowColor = isSelected
+          ? '#fff'
+          : (topColor ? COLORS[topColor]?.glow : '#334466');
+
+        return (
+          <div
+            key={globalIdx}
+            onClick={() => handleVialClick(globalIdx)}
+            style={{
+              width: vialW,
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              animation: isShake ? 'shake 0.35s ease' : undefined,
+              transform: isSelected ? 'translateY(-18px) scale(1.08)' : 'none',
+              transition: 'transform 0.15s ease',
+              margin: `0 ${vialGap / 2}px`,
+            }}
+          >
+            {/* Vial glass */}
+            <div style={{
+              width: vialW,
+              height: vialH,
+              borderRadius: '0 0 22px 22px',
+              border: `2.5px solid ${isSelected ? '#ffffff' : (isSortedV && vial.length > 0 ? COLORS[vial[0]]?.glow : '#2a3a5a')}`,
+              boxShadow: isSelected
+                ? `0 0 18px 4px #fff, inset 0 0 10px rgba(255,255,255,0.1)`
+                : (isSortedV && vial.length > 0
+                    ? `0 0 14px 3px ${COLORS[vial[0]]?.glow}, inset 0 0 6px ${COLORS[vial[0]]?.dark}`
+                    : `inset 0 0 10px rgba(0,30,60,0.8)`),
+              background: 'rgba(5,10,25,0.7)',
+              position: 'relative',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-end',
+            }}>
+              {/* Liquid layers — bottom first in array, top last */}
+              {vial.map((colorKey, li) => {
+                const pct = 100 / VIAL_CAPACITY;
+                const c = COLORS[colorKey];
+                return (
+                  <div
+                    key={li}
+                    style={{
+                      width: '100%',
+                      height: `${pct}%`,
+                      background: `linear-gradient(180deg, ${c.fill}cc 0%, ${c.fill} 100%)`,
+                      boxShadow: `inset 0 1px 0 ${c.fill}88`,
+                      position: 'relative',
+                      transition: 'height 0.2s ease',
+                    }}
+                  >
+                    {/* Sheen */}
+                    <div style={{
+                      position: 'absolute',
+                      top: 0, left: 4, right: 4, height: 3,
+                      background: `${c.fill}99`,
+                      borderRadius: 2,
+                    }} />
+                  </div>
+                );
+              })}
+
+              {/* Glass shine overlay */}
+              <div style={{
+                position: 'absolute',
+                top: 0, left: 4, width: 10, bottom: 0,
+                background: 'linear-gradient(90deg, rgba(255,255,255,0.1) 0%, transparent 100%)',
+                borderRadius: '0 0 0 18px',
+                pointerEvents: 'none',
+              }} />
+            </div>
+
+            {/* Vial cap/rim */}
+            <div style={{
+              width: vialW + 10,
+              height: 8,
+              background: isSelected ? '#ffffff' : (isSortedV && vial.length > 0 ? COLORS[vial[0]]?.fill : '#1a2a4a'),
+              borderRadius: '4px 4px 0 0',
+              marginBottom: -8,
+              order: -1,
+              boxShadow: isSelected ? '0 0 12px #fff' : undefined,
+              transition: 'background 0.3s',
+            }} />
+          </div>
+        );
+      };
+
+      // ─────────────────────────────────────────────────────────────────────
+      if (screen === 'start') {
+        return (
+          <>
+            <div className="game-bg" />
+            <div style={{
+              position: 'relative', zIndex: 1,
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: 24, padding: 24, textAlign: 'center',
+            }}>
+              {/* Title */}
+              <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: 4,
+                background: 'linear-gradient(135deg, #00eeff, #ff00cc, #ffcc00)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                filter: 'drop-shadow(0 0 20px #00eeff88)',
+                fontFamily: 'Courier New, monospace',
+              }}>VIAL RUSH</div>
+
+              <div style={{ color: '#88aacc', fontSize: 16, maxWidth: 320, lineHeight: 1.6 }}>
+                Pour neon liquids between vials to sort each one to a single color.<br/>
+                Select a vial, then tap another to pour.<br/>
+                Race the clock — faster solves earn more points!
+              </div>
+
+              {/* Demo vials */}
+              <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
+                {[['cyan','magenta','cyan','lime'],['magenta','lime'],[],['cyan','lime','magenta'],['lime']].map((v,i) => (
+                  <div key={i} style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
+                    <div style={{
+                      width: 36, height: 110,
+                      borderRadius: '0 0 14px 14px',
+                      border: '2px solid #2a3a5a',
+                      background: 'rgba(5,10,25,0.7)',
+                      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+                      overflow: 'hidden',
+                    }}>
+                      {v.map((c,li) => (
+                        <div key={li} style={{
+                          flex: 1,
+                          background: COLORS[c]?.fill,
+                          opacity: 0.85,
+                        }} />
+                      ))}
+                    </div>
+                    <div style={{ width: 42, height: 6, background:'#1a2a4a', borderRadius:'3px 3px 0 0', marginBottom:-6, order:-1 }} />
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ color: '#55667788', fontSize: 13 }}>
+                High Score: <span style={{ color: '#ffcc00' }}>{highScore.toLocaleString()}</span>
+              </div>
+
+              <button
+                onClick={startGame}
+                style={{
+                  padding: '16px 52px', fontSize: 22, fontWeight: 900,
+                  background: 'linear-gradient(135deg, #00eeff22, #ff00cc22)',
+                  border: '2px solid #00eeff',
+                  color: '#00eeff', borderRadius: 12, cursor: 'pointer',
+                  boxShadow: '0 0 24px #00eeff66',
+                  fontFamily: 'Courier New, monospace',
+                  letterSpacing: 3,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => e.target.style.boxShadow = '0 0 40px #00eeffaa'}
+                onMouseLeave={e => e.target.style.boxShadow = '0 0 24px #00eeff66'}
+              >
+                PLAY
+              </button>
+            </div>
+          </>
+        );
+      }
+
+      if (screen === 'gameover') {
+        const isNew = score >= highScore && score > 0;
+        return (
+          <>
+            <div className="game-bg" />
+            <div style={{
+              position: 'relative', zIndex: 1,
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: 20, padding: 24, textAlign: 'center',
+              animation: 'winBurst 0.5s ease',
+            }}>
+              <div style={{ fontSize: 44, fontWeight: 900,
+                color: '#ff4444', filter: 'drop-shadow(0 0 16px #ff4444)',
+                letterSpacing: 4,
+              }}>TIME'S UP!</div>
+
+              <div style={{ fontSize: 28, color: '#ffcc00', fontWeight: 700 }}>
+                Level {level}
+              </div>
+
+              <div style={{ fontSize: 48, fontWeight: 900,
+                background: 'linear-gradient(135deg, #00eeff, #ff00cc)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              }}>{score.toLocaleString()}</div>
+
+              {isNew && <div style={{ fontSize: 22, color: '#ffcc00',
+                filter: 'drop-shadow(0 0 10px #ffcc00)', letterSpacing: 2 }}>
+                ✦ NEW HIGH SCORE ✦
+              </div>}
+
+              <div style={{ color: '#88aacc', fontSize: 14 }}>
+                Best: <span style={{ color: '#ffcc00' }}>{highScore.toLocaleString()}</span>
+              </div>
+
+              <button
+                onClick={startGame}
+                style={{
+                  padding: '14px 44px', fontSize: 20, fontWeight: 900,
+                  background: 'linear-gradient(135deg, #00eeff22, #ff00cc22)',
+                  border: '2px solid #00eeff', color: '#00eeff',
+                  borderRadius: 12, cursor: 'pointer',
+                  boxShadow: '0 0 20px #00eeff66',
+                  fontFamily: 'Courier New, monospace', letterSpacing: 3,
+                }}
+              >RETRY</button>
+            </div>
+          </>
+        );
+      }
+
+      // ── Play screen ──
+      const timerPct = (() => {
+        const { timeBonus } = levelConfig(level);
+        return timeLeft / timeBonus;
+      })();
+      const timerColor = timerPct > 0.5 ? '#00eeff' : timerPct > 0.25 ? '#ffcc00' : '#ff4444';
+
+      return (
+        <>
+          <div className="game-bg" />
+
+          {/* Particles */}
+          {particles.map(p => (
+            <div
+              key={p.id}
+              className="particle"
+              style={{
+                left: p.x, top: p.y,
+                width: p.size, height: p.size,
+                background: p.color,
+                boxShadow: `0 0 ${p.size * 2}px ${p.color}`,
+                animationDuration: `${p.dur}s`,
+              }}
+              onAnimationEnd={() => removeParticle(p.id)}
+            />
+          ))}
+
+          {/* Combo floats */}
+          {comboFloats.map(f => (
+            <div key={f.id} style={{
+              position: 'fixed', top: '30%', left: '50%',
+              transform: 'translateX(-50%)',
+              fontSize: 28, fontWeight: 900, color: '#ffcc00',
+              filter: 'drop-shadow(0 0 14px #ffcc00)',
+              animation: 'comboFloat 1.2s ease forwards',
+              pointerEvents: 'none', zIndex: 100,
+              whiteSpace: 'nowrap',
+            }}>{f.text}</div>
+          ))}
+
+          {/* HUD */}
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0,
+            padding: '10px 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 10,
+          }}>
+            {/* Score */}
+            <div>
+              <div style={{ fontSize: 11, color: '#556688', letterSpacing: 2 }}>SCORE</div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: '#fff',
+                filter: 'drop-shadow(0 0 8px #00eeff)' }}>{score.toLocaleString()}</div>
+            </div>
+
+            {/* Timer */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 11, color: '#556688', letterSpacing: 2 }}>TIME</div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: timerColor,
+                filter: `drop-shadow(0 0 10px ${timerColor})`,
+                animation: timeLeft <= 10 ? 'glowPulse 0.5s ease infinite' : undefined,
+              }}>{timeLeft}</div>
+              {/* Bar */}
+              <div style={{
+                width: 100, height: 4, background: '#1a2a3a', borderRadius: 2, marginTop: 2,
+              }}>
+                <div style={{
+                  width: `${timerPct * 100}%`, height: '100%',
+                  background: timerColor, borderRadius: 2,
+                  transition: 'width 1s linear',
+                  boxShadow: `0 0 8px ${timerColor}`,
+                }} />
+              </div>
+            </div>
+
+            {/* Level + combo */}
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: '#556688', letterSpacing: 2 }}>LVL</div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: '#aa44ff',
+                filter: 'drop-shadow(0 0 8px #aa44ff)' }}>{level}</div>
+              {combo >= 2 && (
+                <div style={{ fontSize: 12, color: '#ffcc00',
+                  filter: 'drop-shadow(0 0 6px #ffcc00)' }}>x{combo} COMBO</div>
+              )}
+            </div>
+          </div>
+
+          {/* Vials */}
+          <div style={{
+            position: 'relative', zIndex: 1,
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            paddingTop: 80, gap: 28,
+          }}>
+            {/* Row 1 */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center' }}>
+              {row1.map((vial, i) => renderVial(vial, i))}
+            </div>
+            {/* Row 2 */}
+            {row2.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center' }}>
+                {row2.map((vial, i) => renderVial(vial, rowSize + i))}
+              </div>
+            )}
+
+            {/* Hint */}
+            <div style={{
+              color: '#445566', fontSize: 13, textAlign: 'center', marginTop: 4,
+            }}>
+              {selected !== null
+                ? `Tap another vial to pour → or tap same to deselect`
+                : `Tap a vial to select it`}
+            </div>
+          </div>
+        </>
+      );
+    };
+
+    ReactDOM.render(<Game />, document.getElementById('root'));
+  </script>
+</body>
+</html>

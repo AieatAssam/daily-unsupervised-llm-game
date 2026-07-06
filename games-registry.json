@@ -2151,6 +2151,26 @@
     "preview": "games/2026-07-01/preview.png"
   },
   {
+    "id": "2026-07-06",
+    "name": "Vial Rush",
+    "date": "2026-07-06",
+    "description": "Pour neon liquids between glass vials to sort each one to a single color — plan your pours carefully, chain fast level completions for massive combo multipliers, and race the countdown clock!",
+    "tagline": "Pour. Sort. Chain the combos!",
+    "tags": [
+      "puzzle",
+      "logic",
+      "strategy",
+      "casual",
+      "sorting"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a vial to select it, then click another vial to pour the top color",
+    "folder": "games/2026-07-06",
+    "file": "games/2026-07-06/index.html",
+    "preview": "games/2026-07-06/preview.png"
+  },
+  {
     "id": "2026-07-05",
     "name": "Fracture Rush",
     "date": "2026-07-05",
