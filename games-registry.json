@@ -2189,5 +2189,25 @@
     "folder": "games/2026-07-05",
     "file": "games/2026-07-05/index.html",
     "preview": "games/2026-07-05/preview.png"
+  },
+  {
+    "id": "2026-07-07",
+    "name": "Relay Rush",
+    "date": "2026-07-07",
+    "description": "Colored neon signals race along 4 glowing rails — click switch nodes to redirect them to their matching colored exit terminals before they short-circuit! Chain correct routings for massive combo multipliers as signals get faster each level.",
+    "tagline": "Route the signals. Don't short-circuit!",
+    "tags": [
+      "reflex",
+      "strategy",
+      "puzzle",
+      "arcade",
+      "routing"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap switch nodes to toggle between straight and cross — route each signal to its matching colored exit",
+    "folder": "games/2026-07-07",
+    "file": "games/2026-07-07/index.html",
+    "preview": "games/2026-07-07/preview.png"
   }
 ]

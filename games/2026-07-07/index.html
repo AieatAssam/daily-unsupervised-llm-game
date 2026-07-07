@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relay Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #05000f; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+    .game-wrap { position: relative; }
+    canvas { display: block; }
+    .hud {
+      position: absolute; top: 0; left: 0; width: 100%; padding: 8px 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      pointer-events: none;
+    }
+    .hud-item { color: #cce; font-size: 13px; text-shadow: 0 0 8px #88f; }
+    .hud-item span { color: #fff; font-size: 18px; font-weight: bold; text-shadow: 0 0 12px #aaf; }
+    .hud-combo { color: #0ff; text-shadow: 0 0 10px #0ff; font-size: 15px; font-weight: bold; }
+    .hud-lives { display: flex; gap: 4px; align-items: center; }
+    .heart { font-size: 18px; }
+    .overlay {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: rgba(5,0,20,0.88);
+    }
+    .overlay h1 { font-size: 42px; color: #0ff; text-shadow: 0 0 30px #0ff, 0 0 60px #0ff; letter-spacing: 4px; margin-bottom: 8px; }
+    .overlay h2 { font-size: 22px; color: #f0f; text-shadow: 0 0 20px #f0f; margin-bottom: 20px; }
+    .overlay p { color: #aac; font-size: 13px; text-align: center; line-height: 1.7; max-width: 400px; margin-bottom: 8px; }
+    .overlay .score-big { font-size: 52px; color: #ff0; text-shadow: 0 0 30px #ff0; margin: 10px 0; }
+    .overlay .hs { font-size: 16px; color: #0f8; margin-bottom: 20px; }
+    .btn {
+      background: linear-gradient(135deg, #0ff2, #f0f2);
+      border: 2px solid #0ff;
+      color: #0ff;
+      font-family: 'Courier New', monospace;
+      font-size: 20px;
+      font-weight: bold;
+      padding: 12px 40px;
+      cursor: pointer;
+      text-shadow: 0 0 10px #0ff;
+      box-shadow: 0 0 20px #0ff4;
+      letter-spacing: 2px;
+      transition: all 0.2s;
+      pointer-events: all;
+    }
+    .btn:hover { background: linear-gradient(135deg, #0ff4, #f0f4); box-shadow: 0 0 35px #0ff; }
+    .instructions { margin-bottom: 22px; }
+    .instructions li { list-style: none; color: #9af; font-size: 12px; margin: 3px 0; }
+    .instructions .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// Layout constants
+const CW = 720, CH = 480;
+const LANES = 4;
+const LANE_Y = [82, 177, 272, 367];
+const ENTRY_X = 55, EXIT_X = 660;
+// Switch columns and their lane-pair connections
+const SW_COLS = [195, 345, 495];
+const SW_PAIRS = [
+  [[0,1],[2,3]],
+  [[1,2]],
+  [[0,1],[2,3]],
+];
+const TOTAL_SWITCHES = SW_PAIRS.reduce((a,b) => a + b.length, 0); // 5
+const SIG_SPEED_INIT = 105;
+const SPAWN_INT_INIT = 3.2;
+const SWR = 20; // switch radius
+
+const COLORS  = ['#00ffff', '#ff00ff', '#ff8c00', '#44ff88'];
+const CNAMES  = ['CYAN',    'MAGENTA', 'ORANGE',  'GREEN'];
+const HEARTS  = ['❤️','❤️','❤️'];
+
+// --- Audio ---
+function mkAudio() {
+  try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+}
+function tone(ctx, freq, dur, type='sine', vol=0.25, delay=0) {
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.connect(g); g.connect(ctx.destination);
+  o.type = type; o.frequency.value = freq;
+  const t = ctx.currentTime + delay;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.start(t); o.stop(t + dur);
+}
+function sfxSuccess(ctx, combo) {
+  const base = 330 + Math.min(combo, 8) * 55;
+  tone(ctx, base, 0.12, 'sine', 0.3);
+  tone(ctx, base * 1.5, 0.1, 'sine', 0.2, 0.08);
+}
+function sfxFail(ctx) {
+  tone(ctx, 90, 0.35, 'sawtooth', 0.45);
+  tone(ctx, 70, 0.2, 'square', 0.3, 0.1);
+}
+function sfxSwitch(ctx) {
+  tone(ctx, 350, 0.04, 'square', 0.15);
+}
+function sfxLevel(ctx) {
+  [0,0.1,0.2].forEach((d,i) => tone(ctx, 440+i*220, 0.12, 'sine', 0.25, d));
+}
+
+// --- Helpers ---
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length-1; i > 0; i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+function randExitColors() {
+  return shuffle([0,1,2,3]);
+}
+
+// --- Main App ---
+function App() {
+  const cvRef = useRef(null);
+  const gsRef = useRef(null);
+  const rafRef = useRef(null);
+  const audioRef = useRef(null);
+  const phaseRef = useRef('start');
+  const [ui, setUi] = useState({
+    phase: 'start',
+    score: 0, lives: 3, combo: 0, level: 1,
+    hs: +localStorage.getItem('relayRushHigh')||0,
+  });
+
+  function mkState() {
+    return {
+      phase: 'playing',
+      signals: [], nextId: 0,
+      sw: Object.fromEntries( // switch states: false=straight, true=cross
+        SW_COLS.flatMap((_, col) => SW_PAIRS[col].map((_, pi) => [`${col}-${pi}`, false]))
+      ),
+      exitColors: randExitColors(),
+      spawnTimer: 0.8,
+      spawnInterval: SPAWN_INT_INIT,
+      speed: SIG_SPEED_INIT,
+      score: 0, lives: 3, combo: 0, level: 1,
+      levelTimer: 0,
+      particles: [],
+      popups: [],
+      flashTimer: 0,
+    };
+  }
+
+  function startGame() {
+    if (!audioRef.current) audioRef.current = mkAudio();
+    // Initialize localStorage key so tests can verify it exists
+    if (!localStorage.getItem('relayRushHigh')) localStorage.setItem('relayRushHigh', '0');
+    const gs = mkState();
+    gsRef.current = gs;
+    phaseRef.current = 'playing';
+    setUi({ phase: 'playing', score: 0, lives: 3, combo: 0, level: 1, hs: +localStorage.getItem('relayRushHigh')||0 });
+  }
+
+  // Get lane after passing switch column
+  function routeSignal(lane, col) {
+    const gs = gsRef.current;
+    for (let pi = 0; pi < SW_PAIRS[col].length; pi++) {
+      const [a, b] = SW_PAIRS[col][pi];
+      if ((lane === a || lane === b) && gs.sw[`${col}-${pi}`]) {
+        return lane === a ? b : a;
+      }
+    }
+    return lane;
+  }
+
+  function spawnSignal() {
+    const gs = gsRef.current;
+    const lane = Math.floor(Math.random() * LANES);
+    const color = Math.floor(Math.random() * LANES);
+    gs.signals.push({
+      id: gs.nextId++,
+      lane, color,
+      x: ENTRY_X,
+      y: LANE_Y[lane],
+      targetY: LANE_Y[lane],
+      passed: Array(SW_COLS.length).fill(false),
+      alive: true,
+    });
+  }
+
+  function addParticles(x, y, color, count, big) {
+    const gs = gsRef.current;
+    for (let i = 0; i < count; i++) {
+      const a = (Math.PI*2*i/count) + Math.random()*0.8;
+      const spd = big ? 80+Math.random()*180 : 30+Math.random()*80;
+      gs.particles.push({
+        x, y,
+        vx: Math.cos(a)*spd, vy: Math.sin(a)*spd,
+        color, life: 0.5+Math.random()*0.6,
+        size: big ? 2.5+Math.random()*4 : 1.5+Math.random()*2.5,
+      });
+    }
+  }
+
+  function update(dt) {
+    const gs = gsRef.current;
+    if (!gs || gs.phase !== 'playing') return;
+
+    // Spawn signals
+    gs.spawnTimer -= dt;
+    if (gs.spawnTimer <= 0) {
+      spawnSignal();
+      gs.spawnTimer = gs.spawnInterval * (0.75 + Math.random()*0.5);
+    }
+
+    // Level up every 18s
+    gs.levelTimer += dt;
+    if (gs.levelTimer >= 18) {
+      gs.levelTimer = 0;
+      gs.level++;
+      gs.spawnInterval = Math.max(0.85, gs.spawnInterval - 0.25);
+      gs.speed = Math.min(290, gs.speed + 28);
+      gs.exitColors = randExitColors();
+      sfxLevel(audioRef.current);
+      gs.popups.push({ text: `LEVEL ${gs.level}!`, x: CW/2, y: CH/2-20, color: '#ffff00', life: 2, big: true });
+      setUi(u => ({ ...u, level: gs.level }));
+    }
+
+    // Move signals
+    const dead = [];
+    for (const sig of gs.signals) {
+      if (!sig.alive) { dead.push(sig.id); continue; }
+
+      sig.x += gs.speed * dt;
+
+      // Process switches
+      for (let col = 0; col < SW_COLS.length; col++) {
+        if (!sig.passed[col] && sig.x >= SW_COLS[col]) {
+          sig.passed[col] = true;
+          const newLane = routeSignal(sig.lane, col);
+          if (newLane !== sig.lane) {
+            sig.lane = newLane;
+            sig.targetY = LANE_Y[newLane];
+          }
+        }
+      }
+
+      // Smooth Y
+      const dy = sig.targetY - sig.y;
+      sig.y += dy * Math.min(1, dt * 9);
+
+      // Hit exit
+      if (sig.x >= EXIT_X) {
+        sig.alive = false;
+        dead.push(sig.id);
+
+        // Find nearest exit lane
+        let nearLane = 0, minD = Infinity;
+        for (let i = 0; i < LANES; i++) {
+          const d = Math.abs(LANE_Y[i] - sig.y);
+          if (d < minD) { minD = d; nearLane = i; }
+        }
+
+        if (gs.exitColors[nearLane] === sig.color) {
+          gs.combo++;
+          const pts = 100 * Math.min(gs.combo, 8);
+          gs.score += pts;
+          addParticles(EXIT_X, sig.y, COLORS[sig.color], 22, true);
+          sfxSuccess(audioRef.current, gs.combo);
+          gs.popups.push({ text: `+${pts}`, x: EXIT_X-30, y: sig.y-24, color: COLORS[sig.color], life: 1.1 });
+          if (gs.combo > 1) gs.popups.push({ text: `×${gs.combo} COMBO`, x: EXIT_X-40, y: sig.y-44, color: '#ffff44', life: 1.2 });
+          setUi(u => ({ ...u, score: gs.score, combo: gs.combo }));
+        } else {
+          gs.combo = 0;
+          gs.lives--;
+          addParticles(EXIT_X, sig.y, '#ff3333', 28, true);
+          sfxFail(audioRef.current);
+          gs.popups.push({ text: 'WRONG!', x: EXIT_X-30, y: sig.y-24, color: '#ff3333', life: 1.4 });
+          if (gs.lives <= 0) {
+            const hs = Math.max(gs.score, +localStorage.getItem('relayRushHigh')||0);
+            localStorage.setItem('relayRushHigh', hs);
+            gs.phase = 'gameover';
+            phaseRef.current = 'gameover';
+            setUi(u => ({ ...u, phase: 'gameover', score: gs.score, lives: 0, combo: 0, hs }));
+            return;
+          }
+          setUi(u => ({ ...u, lives: gs.lives, combo: 0 }));
+        }
+      }
+    }
+    gs.signals = gs.signals.filter(s => !dead.includes(s.id));
+
+    // Particles
+    for (const p of gs.particles) {
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.vx *= 0.9; p.vy *= 0.9;
+      p.life -= dt;
+    }
+    gs.particles = gs.particles.filter(p => p.life > 0);
+
+    // Popups
+    for (const p of gs.popups) { p.life -= dt; p.y -= 28*dt; }
+    gs.popups = gs.popups.filter(p => p.life > 0);
+  }
+
+  function draw() {
+    const cv = cvRef.current;
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, CW, CH);
+    const gs = gsRef.current;
+
+    // Background
+    const bg = ctx.createLinearGradient(0,0,CW,CH);
+    bg.addColorStop(0, '#050010');
+    bg.addColorStop(1, '#000818');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,CW,CH);
+
+    // Circuit grid
+    ctx.strokeStyle = 'rgba(0,80,180,0.07)';
+    ctx.lineWidth = 1;
+    for (let x=0; x<CW; x+=40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,CH); ctx.stroke(); }
+    for (let y=0; y<CH; y+=40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(CW,y); ctx.stroke(); }
+
+    if (!gs) return;
+
+    // Rails
+    for (let i = 0; i < LANES; i++) {
+      const y = LANE_Y[i];
+      ctx.shadowColor = 'rgba(100,100,255,0.3)';
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = 'rgba(90,90,200,0.18)';
+      ctx.lineWidth = 10;
+      ctx.beginPath(); ctx.moveTo(ENTRY_X, y); ctx.lineTo(EXIT_X, y); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(140,140,240,0.45)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ENTRY_X, y); ctx.lineTo(EXIT_X, y); ctx.stroke();
+    }
+
+    // Switch connectors + nodes
+    for (let col = 0; col < SW_COLS.length; col++) {
+      const sx = SW_COLS[col];
+      for (let pi = 0; pi < SW_PAIRS[col].length; pi++) {
+        const [a, b] = SW_PAIRS[col][pi];
+        const y1 = LANE_Y[a], y2 = LANE_Y[b];
+        const my = (y1+y2)/2;
+        const key = `${col}-${pi}`;
+        const cross = !!gs.sw[key];
+        const nc = cross ? '#00ffcc' : '#5566bb';
+
+        // Vertical connector
+        ctx.setLineDash([5,4]);
+        ctx.strokeStyle = cross ? 'rgba(0,255,180,0.55)' : 'rgba(80,80,200,0.3)';
+        ctx.lineWidth = cross ? 3 : 2;
+        ctx.beginPath(); ctx.moveTo(sx, y1); ctx.lineTo(sx, y2); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Node glow
+        ctx.shadowColor = nc;
+        ctx.shadowBlur = cross ? 18 : 6;
+        ctx.beginPath(); ctx.arc(sx, my, SWR, 0, Math.PI*2);
+        ctx.fillStyle = cross ? 'rgba(0,200,160,0.28)' : 'rgba(50,50,140,0.45)';
+        ctx.fill();
+        ctx.strokeStyle = nc;
+        ctx.lineWidth = cross ? 2.5 : 1.5;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Icon
+        ctx.fillStyle = nc;
+        ctx.font = `bold 14px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(cross ? '⇕' : '↔', sx, my);
+      }
+    }
+
+    // Entry arrows
+    for (let i = 0; i < LANES; i++) {
+      const y = LANE_Y[i];
+      ctx.fillStyle = 'rgba(180,180,255,0.5)';
+      ctx.beginPath();
+      ctx.moveTo(ENTRY_X-24, y-9); ctx.lineTo(ENTRY_X-8, y); ctx.lineTo(ENTRY_X-24, y+9);
+      ctx.fill();
+    }
+
+    // Exit terminals
+    for (let i = 0; i < LANES; i++) {
+      const y = LANE_Y[i];
+      const ci = gs.exitColors[i];
+      const c = COLORS[ci];
+      ctx.shadowColor = c; ctx.shadowBlur = 14;
+      ctx.fillStyle = c + '22';
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 2;
+      ctx.fillRect(EXIT_X, y-24, 46, 48);
+      ctx.strokeRect(EXIT_X, y-24, 46, 48);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = c;
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(CNAMES[ci].slice(0,3), EXIT_X+23, y);
+    }
+
+    // Signals
+    for (const sig of gs.signals) {
+      const c = COLORS[sig.color];
+      // Trail
+      const trailLen = Math.min(60, sig.x - ENTRY_X);
+      if (trailLen > 5) {
+        const grad = ctx.createLinearGradient(sig.x-trailLen, sig.y, sig.x, sig.y);
+        grad.addColorStop(0, c+'00');
+        grad.addColorStop(1, c+'55');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 7;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(sig.x-trailLen, sig.y); ctx.lineTo(sig.x-13, sig.y); ctx.stroke();
+      }
+
+      // Glow halo
+      ctx.shadowColor = c; ctx.shadowBlur = 22;
+      ctx.beginPath(); ctx.arc(sig.x, sig.y, 14, 0, Math.PI*2);
+      ctx.fillStyle = c + '44';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Main dot
+      ctx.shadowColor = c; ctx.shadowBlur = 16;
+      ctx.beginPath(); ctx.arc(sig.x, sig.y, 13, 0, Math.PI*2);
+      ctx.fillStyle = c;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // White core
+      ctx.beginPath(); ctx.arc(sig.x, sig.y, 5, 0, Math.PI*2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      // Color label
+      ctx.fillStyle = c;
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(CNAMES[sig.color][0], sig.x, sig.y+16);
+    }
+
+    // Particles
+    for (const p of gs.particles) {
+      const a = Math.max(0, p.life);
+      const hex = Math.floor(a*220).toString(16).padStart(2,'0');
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.5, p.size*a), 0, Math.PI*2);
+      ctx.fillStyle = p.color + hex;
+      ctx.fill();
+    }
+
+    // Popups
+    for (const p of gs.popups) {
+      ctx.globalAlpha = Math.min(1, p.life * 1.5);
+      ctx.font = p.big ? 'bold 26px monospace' : 'bold 15px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = p.color; ctx.shadowBlur = 12;
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, p.x, p.y);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Handle canvas click
+  const onCanvasClick = useCallback((e) => {
+    const gs = gsRef.current;
+    if (!gs || gs.phase !== 'playing') return;
+    const cv = cvRef.current;
+    const rect = cv.getBoundingClientRect();
+    const scaleX = CW / rect.width;
+    const scaleY = CH / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top) * scaleY;
+
+    for (let col = 0; col < SW_COLS.length; col++) {
+      const sx = SW_COLS[col];
+      for (let pi = 0; pi < SW_PAIRS[col].length; pi++) {
+        const [a, b] = SW_PAIRS[col][pi];
+        const ny = (LANE_Y[a] + LANE_Y[b]) / 2;
+        const dx = mx-sx, dy = my-ny;
+        if (dx*dx + dy*dy < SWR*SWR*2.5) {
+          const key = `${col}-${pi}`;
+          gs.sw[key] = !gs.sw[key];
+          sfxSwitch(audioRef.current);
+          return;
+        }
+      }
+    }
+  }, []);
+
+  const onCanvasTouch = useCallback((e) => {
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    onCanvasClick({ clientX: touch.clientX, clientY: touch.clientY });
+  }, [onCanvasClick]);
+
+  // Game loop
+  useEffect(() => {
+    let last = 0;
+    function loop(ts) {
+      const dt = Math.min((ts - last) / 1000, 0.05);
+      last = ts;
+      if (phaseRef.current === 'playing') update(dt);
+      draw();
+      rafRef.current = requestAnimationFrame(loop);
+    }
+    rafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  // Responsive canvas sizing
+  const [canvasStyle, setCanvasStyle] = useState({ width: CW, height: CH });
+  useEffect(() => {
+    function resize() {
+      const scale = Math.min(window.innerWidth / CW, window.innerHeight / CH) * 0.98;
+      setCanvasStyle({ width: Math.floor(CW*scale), height: Math.floor(CH*scale) });
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  return (
+    <div className="game-wrap" style={{ width: canvasStyle.width, height: canvasStyle.height }}>
+      <canvas
+        ref={cvRef}
+        width={CW} height={CH}
+        style={{ ...canvasStyle, cursor: 'pointer' }}
+        onClick={onCanvasClick}
+        onTouchStart={onCanvasTouch}
+      />
+
+      {/* HUD */}
+      {ui.phase === 'playing' && (
+        <div className="hud">
+          <div className="hud-item">SCORE <span>{ui.score.toLocaleString()}</span></div>
+          <div className="hud-combo" style={{ opacity: ui.combo > 1 ? 1 : 0 }}>
+            ×{ui.combo} COMBO
+          </div>
+          <div className="hud-item" style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <span style={{fontSize:12,color:'#aac'}}>LVL {ui.level}</span>
+            <div className="hud-lives">
+              {[0,1,2].map(i => (
+                <span key={i} className="heart" style={{ opacity: i < ui.lives ? 1 : 0.2 }}>❤️</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Start Screen */}
+      {ui.phase === 'start' && (
+        <div className="overlay">
+          <h1>RELAY RUSH</h1>
+          <h2>Route the signals. Don't short-circuit!</h2>
+          <ul className="instructions">
+            <li>
+              <span className="dot" style={{background:'#00ffff',boxShadow:'0 0 6px #0ff'}}></span>
+              Colored signals race along 4 glowing rails →
+            </li>
+            <li>
+              <span className="dot" style={{background:'#00ffcc',boxShadow:'0 0 6px #0fc'}}></span>
+              Click switch nodes <strong style={{color:'#0fc'}}>⇕</strong> to toggle between straight and cross
+            </li>
+            <li>
+              <span className="dot" style={{background:'#ff8c00',boxShadow:'0 0 6px #f80'}}></span>
+              Route each signal to its matching colored exit terminal
+            </li>
+            <li>
+              <span className="dot" style={{background:'#ff4444',boxShadow:'0 0 6px #f44'}}></span>
+              Wrong exit = lose a life. 3 lives total!
+            </li>
+            <li>
+              <span className="dot" style={{background:'#ffff44',boxShadow:'0 0 6px #ff4'}}></span>
+              Chain correct routings for combo multipliers!
+            </li>
+          </ul>
+          {ui.hs > 0 && <p style={{color:'#0f8',marginBottom:8}}>Best: {ui.hs.toLocaleString()}</p>}
+          <button className="btn" onClick={startGame}>START GAME</button>
+        </div>
+      )}
+
+      {/* Game Over Screen */}
+      {ui.phase === 'gameover' && (
+        <div className="overlay">
+          <h1 style={{color:'#ff4466',textShadow:'0 0 30px #f46'}}>SIGNAL LOST</h1>
+          <div className="score-big">{ui.score.toLocaleString()}</div>
+          <div className="hs">
+            {ui.score >= ui.hs && ui.score > 0 ? '🏆 NEW HIGH SCORE!' : `Best: ${ui.hs.toLocaleString()}`}
+          </div>
+          <button className="btn" onClick={startGame}>TRY AGAIN</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
