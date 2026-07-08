@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tangle Rush</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #060012; overflow: hidden; touch-action: none; user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ── Graph builder (wheel + optional fan triangulation, guaranteed planar) ── */
+function buildGraph(ringN, addFan) {
+  const edgeSet = new Set();
+  const edges = [];
+  const addE = (a, b) => {
+    const k = `${Math.min(a,b)}-${Math.max(a,b)}`;
+    if (!edgeSet.has(k)) { edgeSet.add(k); edges.push({a, b}); }
+  };
+  for (let i = 1; i <= ringN; i++) addE(0, i);              // center spokes
+  for (let i = 1; i <= ringN; i++) addE(i, i===ringN?1:i+1); // ring cycle
+  if (addFan) {
+    for (let j = 3; j < ringN; j++) addE(1, j);             // fan from node 1
+  }
+  return { nodeCount: ringN + 1, edges };
+}
+
+const LEVELS = [
+  buildGraph(4, false),  // L1:  5n  8e
+  buildGraph(5, false),  // L2:  6n 10e
+  buildGraph(5, true),   // L3:  6n 12e
+  buildGraph(6, false),  // L4:  7n 12e
+  buildGraph(6, true),   // L5:  7n 15e
+  buildGraph(7, false),  // L6:  8n 14e
+  buildGraph(7, true),   // L7:  8n 18e
+  buildGraph(8, false),  // L8:  9n 16e
+  buildGraph(8, true),   // L9:  9n 21e
+  buildGraph(9, true),   // L10:10n 24e
+];
+
+/* ── Intersection detection ── */
+function cross2d(o, a, b) {
+  return (a.x-o.x)*(b.y-o.y) - (a.y-o.y)*(b.x-o.x);
+}
+function segIntersect(p1, p2, p3, p4) {
+  const d1=cross2d(p3,p4,p1), d2=cross2d(p3,p4,p2);
+  const d3=cross2d(p1,p2,p3), d4=cross2d(p1,p2,p4);
+  return ((d1>0&&d2<0)||(d1<0&&d2>0)) && ((d3>0&&d4<0)||(d3<0&&d4>0));
+}
+function getCrossings(edges, nodes) {
+  let count = 0;
+  const crossing = new Set();
+  for (let i = 0; i < edges.length; i++) {
+    for (let j = i+1; j < edges.length; j++) {
+      const e1=edges[i], e2=edges[j];
+      if (e1.a===e2.a||e1.a===e2.b||e1.b===e2.a||e1.b===e2.b) continue;
+      if (segIntersect(nodes[e1.a],nodes[e1.b],nodes[e2.a],nodes[e2.b])) {
+        count++; crossing.add(i); crossing.add(j);
+      }
+    }
+  }
+  return { count, crossing };
+}
+
+/* ── Audio ── */
+let _actx = null;
+function getCtx() {
+  if (!_actx) try { _actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){}
+  return _actx;
+}
+function tone(freq, type='sine', dur=0.12, vol=0.22) {
+  const ctx=getCtx(); if(!ctx) return;
+  try {
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type=type; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+dur);
+    o.start(); o.stop(ctx.currentTime+dur);
+  } catch(e){}
+}
+function chord(freqs, dur=0.4, vol=0.15) { freqs.forEach(f=>tone(f,'sine',dur,vol)); }
+
+/* ── Particles ── */
+function burst(x, y, color, n=14) {
+  const ps=[];
+  for (let i=0;i<n;i++) {
+    const a=(Math.PI*2*i/n)+(Math.random()-0.5)*0.6, spd=3+Math.random()*5;
+    ps.push({x,y,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,life:1,
+             decay:0.016+Math.random()*0.014,r:2+Math.random()*4,color});
+  }
+  return ps;
+}
+
+/* ── Main App ── */
+function App() {
+  const canvasRef = useRef(null);
+  const g = useRef({
+    phase:'start', nodes:[], edges:[], crossing:new Set(), crossCount:0,
+    drag:null, dragOX:0, dragOY:0, particles:[],
+    time:90, score:0, combo:0, level:1,
+    highScore:Number(localStorage.getItem('tangleRushHi')||0),
+    flash:null, flashT:0, levelDone:false, nextT:0, uiT:0,
+  });
+  const [ui, setUI] = useState({
+    phase:'start', score:0, combo:0, level:1, time:90, crossCount:0,
+    highScore:Number(localStorage.getItem('tangleRushHi')||0),
+  });
+
+  const initLevel = useCallback((lvl) => {
+    const s = g.current;
+    const canvas = canvasRef.current; if(!canvas) return;
+    const W=canvas.width, H=canvas.height, pad=72;
+    const cfg = LEVELS[Math.min(lvl-1, LEVELS.length-1)];
+    let nodes, attempts=0, crossCount=0;
+    const minCross = Math.max(2, Math.floor(cfg.edges.length * 0.3));
+    do {
+      nodes = Array.from({length:cfg.nodeCount},(_,id)=>({
+        id, x:pad+Math.random()*(W-2*pad), y:pad+Math.random()*(H-2*pad)
+      }));
+      crossCount = getCrossings(cfg.edges, nodes).count;
+      attempts++;
+    } while (crossCount < minCross && attempts < 120);
+    const { count, crossing } = getCrossings(cfg.edges, nodes);
+    s.nodes=nodes; s.edges=[...cfg.edges];
+    s.crossing=crossing; s.crossCount=count;
+    s.drag=null; s.particles=[]; s.levelDone=false; s.flash=null;
+  }, []);
+
+  const startGame = useCallback(() => {
+    const s = g.current;
+    s.phase='playing'; s.score=0; s.combo=0; s.level=1; s.time=90;
+    s.highScore=Number(localStorage.getItem('tangleRushHi')||0);
+    localStorage.setItem('tangleRushHi', String(s.highScore));
+    initLevel(1);
+    setUI(u=>({...u,phase:'playing',score:0,combo:0,level:1,time:90,crossCount:0}));
+  }, [initLevel]);
+
+  /* ── Render loop ── */
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let rafId, lastT = performance.now();
+
+    const resize = () => { canvas.width=window.innerWidth; canvas.height=window.innerHeight; };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const draw = (t) => {
+      const dt = Math.min((t-lastT)/1000, 0.05);
+      lastT = t;
+      const s = g.current;
+      const W=canvas.width, H=canvas.height;
+
+      /* background */
+      ctx.fillStyle='#060012'; ctx.fillRect(0,0,W,H);
+      ctx.strokeStyle='rgba(80,30,180,0.06)'; ctx.lineWidth=1;
+      for(let x=0;x<W;x+=44){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+      for(let y=0;y<H;y+=44){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+
+      if (s.phase==='playing') {
+        /* timer */
+        if (!s.levelDone) {
+          s.time -= dt;
+          if (s.time<=0) {
+            s.time=0; s.phase='gameover';
+            if(s.score>s.highScore){s.highScore=s.score;localStorage.setItem('tangleRushHi',s.score);}
+            tone(130,'sawtooth',0.6,0.3); tone(110,'sawtooth',0.8,0.2);
+            setUI(u=>({...u,phase:'gameover',score:s.score,highScore:s.highScore}));
+          }
+        } else {
+          s.nextT -= dt;
+          if (s.nextT<=0) {
+            s.level++;
+            s.time=Math.min(s.time+22, Math.max(28, 90-(s.level-1)*4));
+            initLevel(s.level);
+            s.levelDone=false;
+            setUI(u=>({...u,level:s.level}));
+          }
+        }
+
+        /* flash */
+        if (s.flash) { s.flashT-=dt; if(s.flashT<=0) s.flash=null; }
+
+        /* draw edges */
+        for(let i=0;i<s.edges.length;i++){
+          const e=s.edges[i], n1=s.nodes[e.a], n2=s.nodes[e.b];
+          const cross=s.crossing.has(i);
+          ctx.beginPath(); ctx.moveTo(n1.x,n1.y); ctx.lineTo(n2.x,n2.y);
+          ctx.lineWidth = cross ? 2.5 : 2;
+          ctx.strokeStyle = cross ? '#ff2255' : '#00ddbb';
+          ctx.shadowColor = cross ? '#ff2255' : '#00ddbb';
+          ctx.shadowBlur = cross ? 10 : 7;
+          ctx.stroke();
+        }
+        ctx.shadowBlur=0;
+
+        /* draw nodes */
+        for(let i=0;i<s.nodes.length;i++){
+          const n=s.nodes[i], dragging=s.drag===i;
+          const r=dragging?16:12;
+          ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
+          const col=dragging?'#ffffff':'#cc77ff';
+          ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=dragging?28:16;
+          ctx.fill();
+          ctx.beginPath(); ctx.arc(n.x,n.y,r*0.38,0,Math.PI*2);
+          ctx.fillStyle='#060012'; ctx.shadowBlur=0; ctx.fill();
+        }
+        ctx.shadowBlur=0;
+
+        /* particles */
+        s.particles=s.particles.filter(p=>p.life>0);
+        for(const p of s.particles){
+          p.x+=p.vx; p.y+=p.vy; p.vx*=0.94; p.vy*=0.94; p.life-=p.decay;
+          ctx.beginPath(); ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);
+          ctx.globalAlpha=p.life; ctx.fillStyle=p.color; ctx.fill();
+        }
+        ctx.globalAlpha=1;
+
+        /* crossing label */
+        const cc=s.crossCount;
+        const ccCol = cc===0?'#00ffcc': cc<=3?'#ffaa00':'#ff3366';
+        ctx.font='bold 15px monospace'; ctx.textAlign='center';
+        ctx.fillStyle=ccCol; ctx.shadowColor=ccCol; ctx.shadowBlur=cc===0?18:0;
+        ctx.fillText(cc===0?'✓ UNTANGLED!': `${cc} crossing${cc!==1?'s':''}`, W/2, H-16);
+        ctx.shadowBlur=0;
+
+        /* flash message */
+        if (s.flash) {
+          const alpha=Math.min(s.flashT*2.5,1);
+          ctx.globalAlpha=alpha;
+          ctx.font='bold 40px monospace'; ctx.textAlign='center';
+          ctx.fillStyle=s.flash.col; ctx.shadowColor=s.flash.col; ctx.shadowBlur=22;
+          ctx.fillText(s.flash.text, W/2, H/2-24);
+          if(s.flash.sub){
+            ctx.font='bold 20px monospace'; ctx.fillStyle='#ffffff';
+            ctx.shadowBlur=0; ctx.fillText(s.flash.sub, W/2, H/2+18);
+          }
+          ctx.shadowBlur=0; ctx.globalAlpha=1;
+        }
+
+        /* throttled UI sync */
+        s.uiT-=dt;
+        if(s.uiT<=0){
+          s.uiT=0.08;
+          setUI(u=>({...u,score:s.score,combo:s.combo,level:s.level,
+                        time:Math.max(0,Math.ceil(s.time)),crossCount:s.crossCount}));
+        }
+      }
+      rafId=requestAnimationFrame(draw);
+    };
+
+    rafId=requestAnimationFrame(draw);
+    return ()=>{ cancelAnimationFrame(rafId); window.removeEventListener('resize',resize); };
+  }, [initLevel]);
+
+  /* ── Input helpers ── */
+  const getXY = (e) => {
+    const r=canvasRef.current.getBoundingClientRect();
+    const src=e.touches?e.touches[0]:e;
+    return {x:src.clientX-r.left, y:src.clientY-r.top};
+  };
+
+  const handleDown = useCallback((e) => {
+    const s=g.current;
+    if(s.phase!=='playing'||s.levelDone) return;
+    const {x,y}=getXY(e);
+    let best=null, bestD=34;
+    s.nodes.forEach((n,i)=>{ const d=Math.hypot(n.x-x,n.y-y); if(d<bestD){best=i;bestD=d;} });
+    if(best!==null){ s.drag=best; tone(660,'sine',0.06,0.12); }
+  }, []);
+
+  const handleMove = useCallback((e) => {
+    const s=g.current;
+    if(s.phase!=='playing'||s.drag===null) return;
+    const canvas=canvasRef.current;
+    const {x,y}=getXY(e);
+    const pad=22;
+    s.nodes[s.drag].x=Math.max(pad,Math.min(canvas.width-pad,x));
+    s.nodes[s.drag].y=Math.max(pad,Math.min(canvas.height-pad,y));
+    const {count,crossing}=getCrossings(s.edges,s.nodes);
+    s.crossCount=count; s.crossing=crossing;
+  }, []);
+
+  const handleUp = useCallback(() => {
+    const s=g.current;
+    if(s.phase!=='playing'||s.drag===null) return;
+    s.drag=null;
+    if(s.crossCount===0&&!s.levelDone) {
+      s.levelDone=true; s.nextT=1.9; s.combo++;
+      const pts=600*s.level + Math.floor(s.time*25) + s.combo*300;
+      s.score+=pts;
+      s.flash={text:'UNTANGLED!', sub:`+${pts}  ×${s.combo} combo`, col:'#00ffcc'};
+      s.flashT=1.9;
+      for(const n of s.nodes){
+        s.particles.push(...burst(n.x,n.y,'#00ffcc',10));
+        s.particles.push(...burst(n.x,n.y,'#cc77ff',6));
+      }
+      chord([523,659,784,1046], 0.5);
+    }
+  }, []);
+
+  /* passive:false needed so we can preventDefault on touchmove */
+  useEffect(() => {
+    const canvas=canvasRef.current;
+    const tm=(e)=>{ e.preventDefault(); handleMove(e); };
+    canvas.addEventListener('touchmove',tm,{passive:false});
+    return ()=>canvas.removeEventListener('touchmove',tm);
+  }, [handleMove]);
+
+  /* ── Shared styles ── */
+  const overlay = {
+    position:'absolute',inset:0,display:'flex',flexDirection:'column',
+    alignItems:'center',justifyContent:'center',
+    background:'rgba(6,0,18,0.93)',fontFamily:'monospace',
+  };
+  const btn = {
+    background:'linear-gradient(135deg,#cc77ff,#00ddbb)',border:'none',
+    borderRadius:10,padding:'14px 46px',fontSize:18,fontWeight:'bold',
+    color:'#060012',cursor:'pointer',letterSpacing:2,marginTop:26,fontFamily:'monospace',
+  };
+  const title = {
+    fontSize:54,fontWeight:'bold',letterSpacing:4,marginBottom:10,
+    background:'linear-gradient(90deg,#cc77ff,#00ddbb)',
+    WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',
+  };
+
+  return (
+    <div style={{width:'100vw',height:'100vh',position:'relative',userSelect:'none'}}>
+      <canvas
+        ref={canvasRef}
+        style={{display:'block',cursor:'crosshair',touchAction:'none'}}
+        onMouseDown={handleDown}
+        onMouseMove={handleMove}
+        onMouseUp={handleUp}
+        onTouchStart={e=>{e.preventDefault();handleDown(e);}}
+        onTouchEnd={e=>{e.preventDefault();handleUp(e);}}
+      />
+
+      {/* HUD */}
+      {ui.phase==='playing' && (
+        <div style={{position:'absolute',top:0,left:0,right:0,display:'flex',
+                     justifyContent:'space-around',padding:'12px 16px',
+                     pointerEvents:'none',fontFamily:'monospace'}}>
+          {[
+            {v:ui.score,  l:'SCORE', c:'#cc77ff'},
+            {v:`LVL ${ui.level}`, l:'LEVEL', c:'#ffdd00'},
+            {v:`${ui.time}s`, l:'TIME',  c:ui.time<=10?'#ff3366':'#44ccff'},
+            ...(ui.combo>1?[{v:`×${ui.combo}`,l:'COMBO',c:'#ff8800'}]:[]),
+          ].map(({v,l,c})=>(
+            <div key={l} style={{textAlign:'center',color:c}}>
+              <div style={{fontSize:26,fontWeight:'bold',textShadow:`0 0 12px ${c}`}}>{v}</div>
+              <div style={{fontSize:10,opacity:0.6,letterSpacing:2}}>{l}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Start screen */}
+      {ui.phase==='start' && (
+        <div style={overlay}>
+          <div style={title}>TANGLE RUSH</div>
+          <div style={{color:'#aaa',fontSize:15,marginBottom:28}}>
+            Drag nodes to untangle the glowing web
+          </div>
+          <div style={{display:'flex',gap:32,marginBottom:20}}>
+            <div style={{textAlign:'center',color:'#00ddbb'}}>
+              <div style={{fontSize:20,textShadow:'0 0 10px #00ddbb',lineHeight:1.6}}>—●—</div>
+              <div style={{fontSize:12}}>Cyan = clean edge</div>
+            </div>
+            <div style={{textAlign:'center',color:'#ff3366'}}>
+              <div style={{fontSize:20,textShadow:'0 0 10px #ff3366',lineHeight:1.6}}>✕</div>
+              <div style={{fontSize:12}}>Red = crossing</div>
+            </div>
+          </div>
+          <div style={{color:'#777',fontSize:13}}>Get ALL crossings to zero — race the clock!</div>
+          <button style={btn} onClick={startGame}>PLAY</button>
+          {ui.highScore>0&&<div style={{color:'#ffdd00',marginTop:14,fontSize:13}}>BEST: {ui.highScore}</div>}
+        </div>
+      )}
+
+      {/* Game Over screen */}
+      {ui.phase==='gameover' && (
+        <div style={overlay}>
+          <div style={{fontSize:46,fontWeight:'bold',color:'#ff3366',
+                       textShadow:'0 0 22px #ff3366',marginBottom:18}}>TIME'S UP!</div>
+          <div style={{color:'#cc77ff',fontSize:26,marginBottom:6}}>Score: {ui.score}</div>
+          <div style={{color:'#ffdd00',fontSize:16,marginBottom:4}}>Best: {ui.highScore}</div>
+          <div style={{color:'#777',fontSize:13}}>Reached level {ui.level}</div>
+          <button style={btn} onClick={startGame}>PLAY AGAIN</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
