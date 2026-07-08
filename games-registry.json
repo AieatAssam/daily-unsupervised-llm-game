@@ -2209,5 +2209,25 @@
     "folder": "games/2026-07-07",
     "file": "games/2026-07-07/index.html",
     "preview": "games/2026-07-07/preview.png"
+  },
+  {
+    "id": "2026-07-08",
+    "name": "Tangle Rush",
+    "date": "2026-07-08",
+    "description": "Drag glowing nodes to untangle a knotted neon web — get every edge crossing to zero before time runs out! Chain fast level completions for massive combo multipliers as the graph grows more complex each round.",
+    "tagline": "Drag the nodes. Untangle the web. Beat the clock!",
+    "tags": [
+      "puzzle",
+      "logic",
+      "drag",
+      "strategy",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click and drag glowing nodes to move them — untangle all edge crossings to complete each level",
+    "folder": "games/2026-07-08",
+    "file": "games/2026-07-08/index.html",
+    "preview": "games/2026-07-08/preview.png"
   }
 ]
