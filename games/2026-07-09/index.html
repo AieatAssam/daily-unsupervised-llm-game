@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chroma Bounce</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050510; overflow: hidden; font-family: 'Courier New', monospace; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Init localStorage key early for tests
+    if (!localStorage.getItem('chromaBounce_highScore')) {
+      localStorage.setItem('chromaBounce_highScore', '0');
+    }
+
+    const COLORS = [
+      { name: 'CYAN',    hex: '#00ffff', r: 0,   g: 255, b: 255 },
+      { name: 'MAGENTA', hex: '#ff00ff', r: 255, g: 0,   b: 255 },
+      { name: 'ORANGE',  hex: '#ff8800', r: 255, g: 136, b: 0   },
+      { name: 'GREEN',   hex: '#00ff88', r: 0,   g: 255, b: 136 },
+    ];
+    const BALL_R = 13;
+    const ZONE_R = 54;
+    const ZONE_LIFE = 9000;
+    const TRAIL_LEN = 22;
+
+    // Audio
+    let _actx = null;
+    function getActx() {
+      if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+      return _actx;
+    }
+    function tone(freq, dur, type = 'sine', vol = 0.2) {
+      try {
+        const a = getActx();
+        const o = a.createOscillator(), g = a.createGain();
+        o.connect(g); g.connect(a.destination);
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol, a.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur);
+        o.start(); o.stop(a.currentTime + dur);
+      } catch(e) {}
+    }
+    function playColorChange(idx) { tone(330 + idx * 80, 0.07, 'square', 0.1); }
+    function playFill(combo) {
+      [523, 659, 784, 1047].forEach((f, i) =>
+        setTimeout(() => tone(f * (combo > 4 ? 1.5 : 1), 0.14, 'sine', 0.18), i * 45)
+      );
+    }
+    function playMiss() { tone(180, 0.45, 'sawtooth', 0.2); }
+    function playGameOver() {
+      [400, 300, 230, 170].forEach((f, i) => setTimeout(() => tone(f, 0.3, 'sine', 0.22), i * 160));
+    }
+    function playNudge() { tone(220, 0.06, 'triangle', 0.08); }
+
+    // Particle
+    function makeParticles(x, y, color, count = 22) {
+      const ps = [];
+      for (let i = 0; i < count; i++) {
+        const ang = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+        const spd = 1.8 + Math.random() * 3.5;
+        ps.push({ x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, life: 1, color, size: 2 + Math.random() * 4 });
+      }
+      return ps;
+    }
+
+    const Game = () => {
+      const canvasRef = useRef(null);
+      const gsRef = useRef(null);
+      const rafRef = useRef(null);
+      const [ui, setUi] = useState({
+        phase: 'start', score: 0, lives: 3, combo: 0, level: 1, cIdx: 0,
+        hs: parseInt(localStorage.getItem('chromaBounce_highScore') || '0'),
+      });
+
+      function startGame() {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const W = canvas.width, H = canvas.height;
+        const ang = Math.random() * Math.PI * 2;
+        const spd = 3.2;
+        gsRef.current = {
+          phase: 'playing',
+          ball: { x: W / 2, y: H / 2, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, cIdx: 0, trail: [] },
+          zones: [], particles: [], msgs: [],
+          score: 0, lives: 3, combo: 0, level: 1, zonesCleared: 0,
+          lastSpawn: Date.now() - 2500, spawnInterval: 3200,
+          zoneId: 0,
+          hs: parseInt(localStorage.getItem('chromaBounce_highScore') || '0'),
+          screenFlash: 0,
+        };
+        setUi(u => ({ ...u, phase: 'playing', score: 0, lives: 3, combo: 0, level: 1, cIdx: 0 }));
+      }
+
+      function changeColor(idx) {
+        const gs = gsRef.current;
+        if (!gs || gs.phase !== 'playing') return;
+        gs.ball.cIdx = (idx !== undefined ? idx : (gs.ball.cIdx + 1) % 4);
+        playColorChange(gs.ball.cIdx);
+        setUi(u => ({ ...u, cIdx: gs.ball.cIdx }));
+      }
+
+      function nudgeBall(px, py) {
+        const gs = gsRef.current;
+        if (!gs || gs.phase !== 'playing') return;
+        const b = gs.ball;
+        const dx = px - b.x, dy = py - b.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const force = 5.5;
+        b.vx += (dx / dist) * force;
+        b.vy += (dy / dist) * force;
+        const spd = Math.hypot(b.vx, b.vy);
+        if (spd > 11) { b.vx *= 11 / spd; b.vy *= 11 / spd; }
+        playNudge();
+      }
+
+      function handleCanvasInteract(cx, cy) {
+        const gs = gsRef.current;
+        if (!gs || gs.phase !== 'playing') { startGame(); return; }
+        nudgeBall(cx, cy);
+      }
+
+      function handleClick(e) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        handleCanvasInteract(e.clientX - rect.left, e.clientY - rect.top);
+      }
+
+      function handleTouch(e) {
+        e.preventDefault();
+        const rect = canvasRef.current.getBoundingClientRect();
+        const t = e.touches[0];
+        handleCanvasInteract(t.clientX - rect.left, t.clientY - rect.top);
+      }
+
+      useEffect(() => {
+        const onKey = (e) => {
+          if (e.key === '1') changeColor(0);
+          else if (e.key === '2') changeColor(1);
+          else if (e.key === '3') changeColor(2);
+          else if (e.key === '4') changeColor(3);
+          else if (e.key === ' ') {
+            e.preventDefault();
+            const gs = gsRef.current;
+            if (gs && gs.phase === 'playing') changeColor();
+            else startGame();
+          }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, []);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        let prevTime = 0;
+
+        function loop(time) {
+          rafRef.current = requestAnimationFrame(loop);
+          const dt = Math.min((time - prevTime) / 16.67, 3);
+          prevTime = time;
+
+          const gs = gsRef.current;
+          const W = canvas.width, H = canvas.height;
+          const BTN_H = 88;
+          const gameH = H - BTN_H;
+          const now = Date.now();
+
+          if (!gs || gs.phase !== 'playing') {
+            ctx.fillStyle = '#050510';
+            ctx.fillRect(0, 0, W, H);
+            // Animated background grid
+            ctx.strokeStyle = 'rgba(60,60,180,0.07)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+            for (let y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+            return;
+          }
+
+          const b = gs.ball;
+
+          // -- Physics --
+          b.trail.push({ x: b.x, y: b.y, cIdx: b.cIdx });
+          if (b.trail.length > TRAIL_LEN) b.trail.shift();
+
+          b.x += b.vx * dt;
+          b.y += b.vy * dt;
+
+          if (b.x < BALL_R)       { b.x = BALL_R;        b.vx =  Math.abs(b.vx); }
+          if (b.x > W - BALL_R)   { b.x = W - BALL_R;    b.vx = -Math.abs(b.vx); }
+          if (b.y < BALL_R)       { b.y = BALL_R;         b.vy =  Math.abs(b.vy); }
+          if (b.y > gameH - BALL_R){ b.y = gameH - BALL_R; b.vy = -Math.abs(b.vy); }
+
+          // Ensure minimum speed
+          const spd = Math.hypot(b.vx, b.vy);
+          if (spd < 2) { b.vx *= 2 / spd; b.vy *= 2 / spd; }
+          if (spd > 12) { b.vx *= 12 / spd; b.vy *= 12 / spd; }
+
+          // -- Zone spawning --
+          const activeZones = gs.zones.filter(z => !z.gone);
+          const maxZ = Math.min(1 + Math.floor(gs.level / 2), 4);
+          if (activeZones.length < maxZ && now - gs.lastSpawn > gs.spawnInterval) {
+            let zx, zy, tries = 0;
+            do {
+              zx = ZONE_R + 10 + Math.random() * (W - (ZONE_R + 10) * 2);
+              zy = ZONE_R + 60 + Math.random() * (gameH - ZONE_R - 70);
+              tries++;
+            } while (tries < 25 && activeZones.some(z => Math.hypot(z.x - zx, z.y - zy) < ZONE_R * 2.4));
+            gs.zones.push({ id: gs.zoneId++, x: zx, y: zy, cIdx: Math.floor(Math.random() * 4), born: now, gone: false, filled: false });
+            gs.lastSpawn = now;
+          }
+
+          // -- Zone hits --
+          let uiChanged = false;
+          gs.zones.forEach(z => {
+            if (z.gone) return;
+            if (Math.hypot(b.x - z.x, b.y - z.y) < ZONE_R - 4 && b.cIdx === z.cIdx) {
+              z.gone = true; z.filled = true;
+              gs.combo++;
+              const bonus = Math.max(1, Math.floor(gs.combo / 2));
+              const pts = 100 * gs.level * bonus;
+              gs.score += pts;
+              gs.zonesCleared++;
+              gs.particles.push(...makeParticles(z.x, z.y, COLORS[z.cIdx].hex, 24));
+              gs.msgs.push({ x: z.x, y: z.y - 20, text: gs.combo > 2 ? `x${gs.combo} COMBO! +${pts}` : `+${pts}`, color: COLORS[z.cIdx].hex, born: now, size: gs.combo > 2 ? 26 : 20 });
+              playFill(gs.combo);
+              if (gs.zonesCleared % 5 === 0) {
+                gs.level++;
+                gs.spawnInterval = Math.max(1400, 3200 - gs.level * 220);
+                const a = Math.atan2(b.vy, b.vx);
+                const ns = Math.min(Math.hypot(b.vx, b.vy) * 1.08, 9);
+                b.vx = Math.cos(a) * ns; b.vy = Math.sin(a) * ns;
+              }
+              uiChanged = true;
+            }
+          });
+
+          // -- Zone timeouts --
+          let lostLife = false;
+          gs.zones.forEach(z => {
+            if (!z.gone && now - z.born > ZONE_LIFE) {
+              z.gone = true;
+              gs.combo = 0;
+              gs.lives--;
+              gs.screenFlash = 8;
+              gs.msgs.push({ x: z.x, y: z.y, text: 'MISS! -♥', color: '#ff3333', born: now, size: 22 });
+              playMiss();
+              lostLife = true;
+              uiChanged = true;
+            }
+          });
+
+          if (lostLife && gs.lives <= 0) {
+            gs.phase = 'gameover';
+            const hs = Math.max(gs.score, gs.hs);
+            localStorage.setItem('chromaBounce_highScore', String(hs));
+            setUi(u => ({ ...u, phase: 'gameover', score: gs.score, lives: 0, combo: 0, hs }));
+            playGameOver();
+            uiChanged = false;
+          } else if (uiChanged) {
+            setUi(u => ({ ...u, score: gs.score, lives: gs.lives, combo: gs.combo, level: gs.level, cIdx: b.cIdx }));
+          }
+
+          gs.zones = gs.zones.filter(z => !z.gone);
+
+          // -- Particles --
+          gs.particles = gs.particles.filter(p => p.life > 0.04);
+          gs.particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; p.life -= 0.022 * dt; });
+
+          // -- Messages --
+          gs.msgs = gs.msgs.filter(m => now - m.born < 1400);
+
+          // === RENDER ===
+          // BG
+          if (gs.screenFlash > 0) {
+            gs.screenFlash--;
+            ctx.fillStyle = `rgba(255,50,50,${gs.screenFlash * 0.04})`;
+          } else {
+            ctx.fillStyle = '#050510';
+          }
+          ctx.fillRect(0, 0, W, H);
+
+          // Grid
+          ctx.strokeStyle = 'rgba(60,60,200,0.07)';
+          ctx.lineWidth = 1;
+          for (let gx = 0; gx < W; gx += 50) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, gameH); ctx.stroke(); }
+          for (let gy = 0; gy < gameH; gy += 50) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
+
+          // Zones
+          gs.zones.forEach(z => {
+            const age = now - z.born;
+            const pct = Math.min(age / ZONE_LIFE, 1);
+            const urgent = pct > 0.65;
+            const pulse = 0.6 + 0.4 * Math.sin(time * 0.005 * (urgent ? 4 : 1.2));
+            const c = COLORS[z.cIdx];
+
+            // Zone background fill
+            ctx.save();
+            ctx.globalAlpha = 0.1 + 0.07 * pulse;
+            ctx.fillStyle = c.hex;
+            ctx.beginPath(); ctx.arc(z.x, z.y, ZONE_R, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+
+            // Timer arc (background)
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+            ctx.lineWidth = 5;
+            ctx.beginPath(); ctx.arc(z.x, z.y, ZONE_R, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+
+            // Timer arc (progress)
+            ctx.save();
+            ctx.strokeStyle = urgent ? '#ff2020' : c.hex;
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
+            ctx.shadowColor = urgent ? '#ff0000' : c.hex;
+            ctx.shadowBlur = 14 * pulse;
+            ctx.beginPath();
+            ctx.arc(z.x, z.y, ZONE_R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - pct));
+            ctx.stroke();
+            ctx.restore();
+
+            // Inner ring
+            ctx.save();
+            ctx.strokeStyle = c.hex; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.3 + 0.15 * pulse;
+            ctx.beginPath(); ctx.arc(z.x, z.y, ZONE_R * 0.55, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+
+            // Center glow dot
+            ctx.save();
+            ctx.fillStyle = c.hex; ctx.shadowColor = c.hex; ctx.shadowBlur = 18 + 8 * pulse;
+            ctx.beginPath(); ctx.arc(z.x, z.y, 9, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+
+            // Seconds countdown
+            const secs = Math.ceil((ZONE_LIFE - age) / 1000);
+            ctx.save();
+            ctx.fillStyle = urgent ? '#ff4444' : 'rgba(255,255,255,0.55)';
+            ctx.font = 'bold 12px Courier New'; ctx.textAlign = 'center';
+            ctx.fillText(secs + 's', z.x, z.y + ZONE_R + 16);
+            ctx.restore();
+          });
+
+          // Ball trail
+          b.trail.forEach((pt, i) => {
+            const a = (i / b.trail.length) * 0.55;
+            const r = BALL_R * 0.45 * (i / b.trail.length);
+            const c = COLORS[pt.cIdx];
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.fillStyle = c.hex; ctx.shadowColor = c.hex; ctx.shadowBlur = 7;
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+          });
+
+          // Ball
+          const bc = COLORS[b.cIdx];
+          ctx.save();
+          ctx.shadowColor = bc.hex; ctx.shadowBlur = 28;
+          const gr = ctx.createRadialGradient(b.x - 4, b.y - 4, 1, b.x, b.y, BALL_R);
+          gr.addColorStop(0, '#ffffff');
+          gr.addColorStop(0.35, bc.hex);
+          gr.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = gr;
+          ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+          // Outer ring
+          ctx.save();
+          ctx.strokeStyle = bc.hex; ctx.lineWidth = 2; ctx.shadowColor = bc.hex; ctx.shadowBlur = 12; ctx.globalAlpha = 0.6;
+          ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R + 5, 0, Math.PI * 2); ctx.stroke();
+          ctx.restore();
+
+          // Particles
+          gs.particles.forEach(p => {
+            ctx.save();
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 9;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+          });
+
+          // Float messages
+          gs.msgs.forEach(m => {
+            const age2 = now - m.born;
+            const alpha = 1 - age2 / 1400;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.translate(m.x, m.y - age2 * 0.045);
+            ctx.fillStyle = m.color; ctx.shadowColor = m.color; ctx.shadowBlur = 10;
+            ctx.font = `bold ${m.size}px Courier New`; ctx.textAlign = 'center';
+            ctx.fillText(m.text, 0, 0);
+            ctx.restore();
+          });
+
+          // HUD
+          ctx.fillStyle = 'rgba(5,5,20,0.65)';
+          ctx.fillRect(0, 0, W, 50);
+          ctx.fillStyle = '#00ffff'; ctx.font = 'bold 15px Courier New'; ctx.textAlign = 'left';
+          ctx.fillText(`SCORE: ${gs.score}`, 14, 32);
+          ctx.fillStyle = '#ff8800';
+          ctx.fillText(`LVL ${gs.level}`, W / 2 - 24, 32);
+          ctx.fillStyle = '#ff4444'; ctx.textAlign = 'right';
+          ctx.fillText('♥'.repeat(Math.max(0, gs.lives)), W - 14, 32);
+          if (gs.combo > 1) {
+            ctx.save();
+            ctx.fillStyle = '#ffff00'; ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 8;
+            ctx.font = 'bold 18px Courier New'; ctx.textAlign = 'center';
+            ctx.fillText(`×${gs.combo} COMBO`, W / 2, 32);
+            ctx.restore();
+          }
+
+          // Button area
+          ctx.fillStyle = 'rgba(5,5,20,0.7)';
+          ctx.fillRect(0, gameH, W, BTN_H);
+          ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(0, gameH); ctx.lineTo(W, gameH); ctx.stroke();
+          ctx.fillStyle = 'rgba(255,255,255,0.25)';
+          ctx.font = '10px Courier New'; ctx.textAlign = 'center';
+          ctx.fillText('KEYS 1-2-3-4 · SPACE to cycle · Tap canvas to nudge ball', W / 2, gameH + 14);
+        }
+
+        rafRef.current = requestAnimationFrame(loop);
+        return () => {
+          cancelAnimationFrame(rafRef.current);
+          window.removeEventListener('resize', resize);
+        };
+      }, []);
+
+      const { phase, score, lives, combo, level, cIdx, hs } = ui;
+
+      const btnStyle = (i) => ({
+        width: 56, height: 56, borderRadius: '50%',
+        border: `3px solid ${cIdx === i ? '#ffffff' : 'rgba(255,255,255,0.2)'}`,
+        background: COLORS[i].hex,
+        boxShadow: cIdx === i ? `0 0 22px ${COLORS[i].hex}, 0 0 6px #fff inset` : `0 0 8px ${COLORS[i].hex}55`,
+        cursor: 'pointer',
+        transform: cIdx === i ? 'scale(1.2)' : 'scale(1)',
+        transition: 'all 0.15s ease',
+        outline: 'none',
+        flexShrink: 0,
+      });
+
+      return (
+        <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+          <canvas
+            ref={canvasRef}
+            onClick={handleClick}
+            onTouchStart={handleTouch}
+            style={{ display: 'block', touchAction: 'none', cursor: 'crosshair' }}
+          />
+
+          {/* Color buttons */}
+          {phase === 'playing' && (
+            <div style={{
+              position: 'absolute', bottom: 16, left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex', gap: 14, alignItems: 'center',
+            }}>
+              {COLORS.map((c, i) => (
+                <button
+                  key={i}
+                  style={btnStyle(i)}
+                  onClick={e => { e.stopPropagation(); changeColor(i); }}
+                  onTouchStart={e => { e.stopPropagation(); e.preventDefault(); changeColor(i); }}
+                  aria-label={c.name}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Start screen */}
+          {phase === 'start' && (
+            <div onClick={startGame} style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              background: 'linear-gradient(160deg, rgba(5,5,20,0.93) 0%, rgba(20,5,45,0.93) 100%)',
+              cursor: 'pointer',
+            }}>
+              <div style={{
+                fontSize: 'clamp(32px, 7vw, 54px)', fontWeight: 'bold', fontFamily: 'Courier New',
+                background: 'linear-gradient(90deg, #00ffff, #ff00ff, #ff8800, #00ff88)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                marginBottom: 14, letterSpacing: 3, textAlign: 'center',
+              }}>CHROMA BOUNCE</div>
+              <div style={{ color: 'rgba(255,255,255,0.75)', fontFamily: 'Courier New', fontSize: 15, marginBottom: 8, textAlign: 'center', padding: '0 20px' }}>
+                Match the ball's color to glowing zones before they expire!
+              </div>
+              <div style={{ color: 'rgba(255,255,255,0.4)', fontFamily: 'Courier New', fontSize: 12, marginBottom: 28, textAlign: 'center', lineHeight: 1.7 }}>
+                Click canvas to nudge ball · Keys 1-2-3-4 or buttons to change color
+                <br/>Chain zone fills for massive combos · Don't let zones run out!
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 30 }}>
+                {COLORS.map((c, i) => (
+                  <div key={i} style={{ width: 38, height: 38, borderRadius: '50%', background: c.hex, boxShadow: `0 0 18px ${c.hex}` }} />
+                ))}
+              </div>
+              <button
+                onClick={startGame}
+                style={{
+                  padding: '13px 44px', background: 'transparent',
+                  border: '2px solid #00ffff', color: '#00ffff',
+                  fontFamily: 'Courier New', fontSize: 18, cursor: 'pointer',
+                  boxShadow: '0 0 22px rgba(0,255,255,0.4)', letterSpacing: 3,
+                }}
+              >▶ PLAY</button>
+              {hs > 0 && (
+                <div style={{ color: '#ff8800', fontFamily: 'Courier New', marginTop: 14, fontSize: 14 }}>
+                  BEST: {hs}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Game over screen */}
+          {phase === 'gameover' && (
+            <div onClick={startGame} style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,0,0.78)',
+              cursor: 'pointer',
+            }}>
+              <div style={{ color: '#ff3333', fontFamily: 'Courier New', fontSize: 42, marginBottom: 16, fontWeight: 'bold', letterSpacing: 2 }}>
+                GAME OVER
+              </div>
+              <div style={{ color: '#00ffff', fontFamily: 'Courier New', fontSize: 26, marginBottom: 8 }}>
+                SCORE: {score}
+              </div>
+              <div style={{ color: '#ff8800', fontFamily: 'Courier New', fontSize: 18, marginBottom: 32 }}>
+                BEST: {hs}
+              </div>
+              <button
+                onClick={startGame}
+                style={{
+                  padding: '13px 44px', background: 'transparent',
+                  border: '2px solid #ff00ff', color: '#ff00ff',
+                  fontFamily: 'Courier New', fontSize: 18, cursor: 'pointer',
+                  boxShadow: '0 0 22px rgba(255,0,255,0.4)', letterSpacing: 3,
+                }}
+              >▶ PLAY AGAIN</button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<Game />, document.getElementById('root'));
+  </script>
+</body>
+</html>

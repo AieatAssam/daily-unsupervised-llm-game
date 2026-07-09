@@ -2229,5 +2229,25 @@
     "folder": "games/2026-07-08",
     "file": "games/2026-07-08/index.html",
     "preview": "games/2026-07-08/preview.png"
+  },
+  {
+    "id": "2026-07-09",
+    "name": "Chroma Bounce",
+    "date": "2026-07-09",
+    "description": "A neon ball bounces automatically around the screen — change its color to match glowing timed zones and nudge it into them before they expire! Chain zone fills for massive combo multipliers.",
+    "tagline": "Change the color. Nudge the ball. Hit the zone!",
+    "tags": [
+      "reflex",
+      "color",
+      "action",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click canvas to nudge ball · Keys 1-2-3-4 or color buttons to change ball color · Match color to zone and bounce into it",
+    "folder": "games/2026-07-09",
+    "file": "games/2026-07-09/index.html",
+    "preview": "games/2026-07-09/preview.png"
   }
 ]
