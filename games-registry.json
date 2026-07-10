@@ -2249,5 +2249,25 @@
     "folder": "games/2026-07-09",
     "file": "games/2026-07-09/index.html",
     "preview": "games/2026-07-09/preview.png"
+  },
+  {
+    "id": "2026-07-10",
+    "name": "Cell Surge",
+    "date": "2026-07-10",
+    "description": "Guide your glowing neon cell with your mouse — absorb smaller orbs to grow and rack up points, but dodge massive red predators that will shrink you! Chain rapid absorptions for combo multipliers up to 8×.",
+    "tagline": "Absorb. Grow. Dominate the neon arena!",
+    "tags": [
+      "action",
+      "reflex",
+      "strategy",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Move mouse / touch to guide your neon cell — absorb smaller orbs, dodge red predators",
+    "folder": "games/2026-07-10",
+    "file": "games/2026-07-10/index.html",
+    "preview": "games/2026-07-10/preview.png"
   }
 ]
