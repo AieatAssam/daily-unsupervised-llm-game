@@ -140,3 +140,14 @@ vite.config.ts.timestamp-*
 
 
 .DS_Store
+
+# CI / agent artifacts — never commit
+playwright-report/
+test-results/
+output.txt
+debug_storage.mjs
+skills-lock.json
+.agents/
+.claude/skills/
+/tmp-*
+*.trace.zip
