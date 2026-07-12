@@ -3,7 +3,7 @@
     "id": "2026-02-17",
     "name": "Word Blitz",
     "date": "2026-02-17",
-    "description": "Type falling neon words before they escape to the bottom \u2014 faster words, bigger combos, more chaos!",
+    "description": "Type falling neon words before they escape to the bottom — faster words, bigger combos, more chaos!",
     "tagline": "Blast words before they drop!",
     "tags": [
       "typing",
@@ -16,13 +16,14 @@
     "controls": "Keyboard: type the falling words to blast them",
     "folder": "games/2026-02-17",
     "file": "games/2026-02-17/index.html",
-    "preview": "games/2026-02-17/preview.png"
+    "preview": "games/2026-02-17/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-02-18",
     "name": "Neon Slicer",
     "date": "2026-02-18",
-    "description": "Swipe and slash through glowing geometric shapes flying across the screen \u2014 chain slices for insane combos, but dodge the red bombs!",
+    "description": "Swipe and slash through glowing geometric shapes flying across the screen — chain slices for insane combos, but dodge the red bombs!",
     "tagline": "Swipe to slice, dodge the bombs!",
     "tags": [
       "swipe",
@@ -35,13 +36,14 @@
     "controls": "Mouse drag / touch swipe to slice shapes",
     "folder": "games/2026-02-18",
     "file": "games/2026-02-18/index.html",
-    "preview": "games/2026-02-18/preview.png"
+    "preview": "games/2026-02-18/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-02-19",
     "name": "Vortex Shift",
     "date": "2026-02-19",
-    "description": "Guide a glowing orb that spirals around a central vortex \u2014 click to flip inward/outward and thread through rotating neon barrier arcs before they absorb you!",
+    "description": "Guide a glowing orb that spirals around a central vortex — click to flip inward/outward and thread through rotating neon barrier arcs before they absorb you!",
     "tagline": "Flip the spiral, dodge the rings!",
     "tags": [
       "reflex",
@@ -54,13 +56,14 @@
     "controls": "Click / Tap / Space to flip spiral direction",
     "folder": "games/2026-02-19",
     "file": "games/2026-02-19/index.html",
-    "preview": "games/2026-02-19/preview.png"
+    "preview": "games/2026-02-19/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-02-20",
     "name": "Chrono Pop",
     "date": "2026-02-20",
-    "description": "Neon circles expand outward from glowing dots \u2014 click them precisely when they hit the dashed target ring for perfect scores and chain combos!",
+    "description": "Neon circles expand outward from glowing dots — click them precisely when they hit the dashed target ring for perfect scores and chain combos!",
     "tagline": "Pop the ring at the perfect moment!",
     "tags": [
       "timing",
@@ -74,13 +77,14 @@
     "controls": "Click / Tap circles when they hit the target ring",
     "folder": "games/2026-02-20",
     "file": "games/2026-02-20/index.html",
-    "preview": "games/2026-02-20/preview.png"
+    "preview": "games/2026-02-20/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-02-21",
     "name": "Circuit Blaze",
     "date": "2026-02-21",
-    "description": "Drag glowing energy lines to connect matching-colored nodes before their countdown expires \u2014 chain combos for massive scores but lose a life every time a node burns out!",
+    "description": "Drag glowing energy lines to connect matching-colored nodes before their countdown expires — chain combos for massive scores but lose a life every time a node burns out!",
     "tagline": "Connect the nodes before they burn out!",
     "tags": [
       "puzzle",
@@ -93,13 +97,14 @@
     "controls": "Click and drag from one node to a matching-color node to connect",
     "folder": "games/2026-02-21",
     "file": "games/2026-02-21/index.html",
-    "preview": "games/2026-02-21/preview.png"
+    "preview": "games/2026-02-21/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-02-22",
     "name": "Plasma Break",
     "date": "2026-02-22",
-    "description": "Guide a neon paddle to bounce a plasma ball through waves of glowing bricks \u2014 chain combo hits for multiplied scores, catch WIDE and MULTIBALL power-ups, and clear every brick to advance!",
+    "description": "Guide a neon paddle to bounce a plasma ball through waves of glowing bricks — chain combo hits for multiplied scores, catch WIDE and MULTIBALL power-ups, and clear every brick to advance!",
     "tagline": "Smash bricks, chain combos, break free!",
     "tags": [
       "action",
@@ -112,13 +117,14 @@
     "controls": "Move mouse or touch to control the paddle",
     "folder": "games/2026-02-22",
     "file": "games/2026-02-22/index.html",
-    "preview": "games/2026-02-22/preview.png"
+    "preview": "games/2026-02-22/preview.png",
+    "rating": 4.3
   },
   {
     "id": "2026-02-23",
     "name": "Data Dash",
     "date": "2026-02-23",
-    "description": "Navigate a glowing data stream through a cyberpunk grid \u2014 collect color-coded data nodes to grow, chain same-color nodes for explosive combo multipliers, and survive as the stream accelerates!",
+    "description": "Navigate a glowing data stream through a cyberpunk grid — collect color-coded data nodes to grow, chain same-color nodes for explosive combo multipliers, and survive as the stream accelerates!",
     "tagline": "Grow the stream, chain the combos, don't disconnect!",
     "tags": [
       "arcade",
@@ -131,13 +137,14 @@
     "controls": "Arrow keys / WASD to steer, swipe on mobile",
     "folder": "games/2026-02-23",
     "file": "games/2026-02-23/index.html",
-    "preview": "games/2026-02-23/preview.png"
+    "preview": "games/2026-02-23/preview.png",
+    "rating": 4.3
   },
   {
     "id": "2026-02-24",
     "name": "Echo Pulse",
     "date": "2026-02-24",
-    "description": "A sonar detection game \u2014 expanding pulse waves sweep the dark screen revealing hidden neon targets for a brief moment. Click them before they fade back into darkness and chain hits for massive combos!",
+    "description": "A sonar detection game — expanding pulse waves sweep the dark screen revealing hidden neon targets for a brief moment. Click them before they fade back into darkness and chain hits for massive combos!",
     "tagline": "Listen to the pulse. Strike before the silence returns.",
     "tags": [
       "reflex",
@@ -150,13 +157,14 @@
     "controls": "Click / Tap to hit revealed targets",
     "folder": "games/2026-02-24",
     "file": "games/2026-02-24/index.html",
-    "preview": "games/2026-02-24/preview.png"
+    "preview": "games/2026-02-24/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-02-25",
     "name": "Void Descent",
     "date": "2026-02-25",
-    "description": "Steer a glowing orb through neon barriers that rise from the void below \u2014 dodge left and right to thread each gap, collect cyan crystals for bonus points, and survive as speed climbs to breakneck levels!",
+    "description": "Steer a glowing orb through neon barriers that rise from the void below — dodge left and right to thread each gap, collect cyan crystals for bonus points, and survive as speed climbs to breakneck levels!",
     "tagline": "Steer through the rising neon. Don't let the void consume you.",
     "tags": [
       "action",
@@ -167,16 +175,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "\u2190 \u2192 or A / D to steer | Tap left or right side on mobile",
+    "controls": "← → or A / D to steer | Tap left or right side on mobile",
     "folder": "games/2026-02-25",
     "file": "games/2026-02-25/index.html",
-    "preview": "games/2026-02-25/preview.png"
+    "preview": "games/2026-02-25/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-02-26",
     "name": "Neon Hopper",
     "date": "2026-02-26",
-    "description": "Hop a glowing diamond across 12 lanes of neon traffic in this frogger-style arcade game \u2014 time each move to thread the gaps, reach the goal for a level bonus, and survive as cars grow faster each round!",
+    "description": "Hop a glowing diamond across 12 lanes of neon traffic in this frogger-style arcade game — time each move to thread the gaps, reach the goal for a level bonus, and survive as cars grow faster each round!",
     "tagline": "Cross the neon lanes. Don't get flattened!",
     "tags": [
       "arcade",
@@ -190,13 +199,14 @@
     "controls": "Arrow keys / WASD to hop | Swipe or Tap on mobile",
     "folder": "games/2026-02-26",
     "file": "games/2026-02-26/index.html",
-    "preview": "games/2026-02-26/preview.png"
+    "preview": "games/2026-02-26/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-02-27",
     "name": "Chain Burst",
     "date": "2026-02-27",
-    "description": "Click one floating neon bubble to trigger an explosive chain reaction \u2014 the shockwave cascades outward, popping nearby bubbles which then detonate too. Pop enough in one click to advance each level!",
+    "description": "Click one floating neon bubble to trigger an explosive chain reaction — the shockwave cascades outward, popping nearby bubbles which then detonate too. Pop enough in one click to advance each level!",
     "tagline": "One click. One chain. Pure neon chaos.",
     "tags": [
       "strategy",
@@ -209,13 +219,14 @@
     "controls": "Click / Tap a bubble to start the chain reaction",
     "folder": "games/2026-02-27",
     "file": "games/2026-02-27/index.html",
-    "preview": "games/2026-02-27/preview.png"
+    "preview": "games/2026-02-27/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-02-28",
     "name": "Beat Drop",
     "date": "2026-02-28",
-    "description": "A 3-lane rhythm game \u2014 neon notes fall down cyan, magenta, and orange lanes in sync with a driving beat. Hit them at the perfect moment using A/S/D keys or tap left/center/right to rack up PERFECT combos!",
+    "description": "A 3-lane rhythm game — neon notes fall down cyan, magenta, and orange lanes in sync with a driving beat. Hit them at the perfect moment using A/S/D keys or tap left/center/right to rack up PERFECT combos!",
     "tagline": "Hit the notes. Feel the beat. Don't miss.",
     "tags": [
       "rhythm",
@@ -226,16 +237,17 @@
     ],
     "difficulty": "hard",
     "avgPlayTime": "3 minutes",
-    "controls": "A / \u2190 \u00b7 S / Space \u00b7 D / \u2192 to hit lanes | Tap left, center, right on mobile",
+    "controls": "A / ← · S / Space · D / → to hit lanes | Tap left, center, right on mobile",
     "folder": "games/2026-02-28",
     "file": "games/2026-02-28/index.html",
-    "preview": "games/2026-02-28/preview.png"
+    "preview": "games/2026-02-28/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-03-01",
     "name": "Neon Flood",
     "date": "2026-03-01",
-    "description": "A color flood-fill strategy game \u2014 pick neon colors to flood your territory outward from the corner, absorbing adjacent matching tiles. Capture 60% of the grid before your moves run out!",
+    "description": "A color flood-fill strategy game — pick neon colors to flood your territory outward from the corner, absorbing adjacent matching tiles. Capture 60% of the grid before your moves run out!",
     "tagline": "Pick a color. Flood the grid. Claim the neon.",
     "tags": [
       "strategy",
@@ -248,13 +260,14 @@
     "controls": "Click / Tap color buttons to flood your territory",
     "folder": "games/2026-03-01",
     "file": "games/2026-03-01/index.html",
-    "preview": "games/2026-03-01/preview.png"
+    "preview": "games/2026-03-01/preview.png",
+    "rating": 4.3
   },
   {
     "id": "2026-03-02",
     "name": "Gravity Draw",
     "date": "2026-03-02",
-    "description": "Draw glowing neon lines to deflect falling physics balls into pulsing targets \u2014 guide multiple balls simultaneously, chain target hits for massive combo multipliers, and race against fading lines!",
+    "description": "Draw glowing neon lines to deflect falling physics balls into pulsing targets — guide multiple balls simultaneously, chain target hits for massive combo multipliers, and race against fading lines!",
     "tagline": "Draw lines. Bend gravity. Chain the chaos.",
     "tags": [
       "physics",
@@ -265,16 +278,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click and drag to draw deflection lines \u2014 guide falling balls into targets",
+    "controls": "Click and drag to draw deflection lines — guide falling balls into targets",
     "folder": "games/2026-03-02",
     "file": "games/2026-03-02/index.html",
-    "preview": "games/2026-03-02/preview.png"
+    "preview": "games/2026-03-02/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-03",
     "name": "Radial Blast",
     "date": "2026-03-03",
-    "description": "Defend a glowing central core from every direction \u2014 aim a rotating neon turret with your mouse and blast incoming polygon enemies before they breach the core. Chain kills for massive combo multipliers!",
+    "description": "Defend a glowing central core from every direction — aim a rotating neon turret with your mouse and blast incoming polygon enemies before they breach the core. Chain kills for massive combo multipliers!",
     "tagline": "Aim. Shoot. Defend the core from all angles.",
     "tags": [
       "shooter",
@@ -285,16 +299,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse to aim turret \u00b7 Click to shoot \u00b7 Touch to aim and fire on mobile",
+    "controls": "Move mouse to aim turret · Click to shoot · Touch to aim and fire on mobile",
     "folder": "games/2026-03-03",
     "file": "games/2026-03-03/index.html",
-    "preview": "games/2026-03-03/preview.png"
+    "preview": "games/2026-03-03/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-03-04",
     "name": "Phase Stack",
     "date": "2026-03-04",
-    "description": "A neon platform slides back and forth \u2014 click or tap to drop it onto the stack below. Misaligned portions explode into particles as your tower grows. PERFECT drops keep full width while speed escalates!",
+    "description": "A neon platform slides back and forth — click or tap to drop it onto the stack below. Misaligned portions explode into particles as your tower grows. PERFECT drops keep full width while speed escalates!",
     "tagline": "Drop it. Stack it. Don't miss.",
     "tags": [
       "timing",
@@ -305,16 +320,17 @@
     ],
     "difficulty": "easy",
     "avgPlayTime": "3 minutes",
-    "controls": "Click \u00b7 Tap \u00b7 Space \u00b7 Enter to drop the sliding platform",
+    "controls": "Click · Tap · Space · Enter to drop the sliding platform",
     "folder": "games/2026-03-04",
     "file": "games/2026-03-04/index.html",
-    "preview": "games/2026-03-04/preview.png"
+    "preview": "games/2026-03-04/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-03-05",
     "name": "Apex Burst",
     "date": "2026-03-05",
-    "description": "Neon balls arc upward with gravity \u2014 click or tap them exactly at their glowing peak apex for PERFECT hits and massive combo multipliers. Miss the flash window and lose a life!",
+    "description": "Neon balls arc upward with gravity — click or tap them exactly at their glowing peak apex for PERFECT hits and massive combo multipliers. Miss the flash window and lose a life!",
     "tagline": "Click at the peak. Chain the PERFECT combos.",
     "tags": [
       "timing",
@@ -328,13 +344,14 @@
     "controls": "Click / Tap balls at their peak apex flash",
     "folder": "games/2026-03-05",
     "file": "games/2026-03-05/index.html",
-    "preview": "games/2026-03-05/preview.png"
+    "preview": "games/2026-03-05/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-03-06",
     "name": "Flux Dash",
     "date": "2026-03-06",
-    "description": "A neon orb rockets through a scrolling tunnel \u2014 tap to flip gravity up or down and thread through colorful neon walls. Collect glowing crystals, chain gap combos for massive multipliers, and survive as speed escalates!",
+    "description": "A neon orb rockets through a scrolling tunnel — tap to flip gravity up or down and thread through colorful neon walls. Collect glowing crystals, chain gap combos for massive multipliers, and survive as speed escalates!",
     "tagline": "Flip gravity. Thread the gaps. Never stop.",
     "tags": [
       "arcade",
@@ -348,13 +365,14 @@
     "controls": "Click / Tap / Space to flip gravity direction",
     "folder": "games/2026-03-06",
     "file": "games/2026-03-06/index.html",
-    "preview": "games/2026-03-06/preview.png"
+    "preview": "games/2026-03-06/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-03-07",
     "name": "Mind Flash",
     "date": "2026-03-07",
-    "description": "Nine neon tiles flash a growing sequence \u2014 watch closely, then tap them back in perfect order. Chain correct rounds for massive combo multipliers as sequences grow longer and flash faster!",
+    "description": "Nine neon tiles flash a growing sequence — watch closely, then tap them back in perfect order. Chain correct rounds for massive combo multipliers as sequences grow longer and flash faster!",
     "tagline": "Watch the pattern. Repeat it perfectly.",
     "tags": [
       "memory",
@@ -368,13 +386,14 @@
     "controls": "Click / Tap tiles to repeat the flashing sequence",
     "folder": "games/2026-03-07",
     "file": "games/2026-03-07/index.html",
-    "preview": "games/2026-03-07/preview.png"
+    "preview": "games/2026-03-07/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-08",
     "name": "Neon Maze",
     "date": "2026-03-08",
-    "description": "Navigate a glowing orb through a procedurally generated neon maze \u2014 collect all golden orbs before red hunters catch you! Chain quick pickups for combo multipliers as mazes grow denser each level.",
+    "description": "Navigate a glowing orb through a procedurally generated neon maze — collect all golden orbs before red hunters catch you! Chain quick pickups for combo multipliers as mazes grow denser each level.",
     "tagline": "Navigate the maze. Collect the orbs. Outrun the hunters.",
     "tags": [
       "maze",
@@ -388,13 +407,14 @@
     "controls": "Arrow keys / WASD to navigate | Swipe on mobile",
     "folder": "games/2026-03-08",
     "file": "games/2026-03-08/index.html",
-    "preview": "games/2026-03-08/preview.png"
+    "preview": "games/2026-03-08/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-09",
     "name": "Neon Pinball",
     "date": "2026-03-09",
-    "description": "A fully-physics-driven neon pinball table \u2014 launch the glowing ball, slam flippers to ricochet off colorful bumpers, and chain hits for massive combo multipliers. Orange slingshots boost your ball, and each bumper flashes brilliantly when struck!",
+    "description": "A fully-physics-driven neon pinball table — launch the glowing ball, slam flippers to ricochet off colorful bumpers, and chain hits for massive combo multipliers. Orange slingshots boost your ball, and each bumper flashes brilliantly when struck!",
     "tagline": "Launch. Flip. Smash. Chain the neon bumpers!",
     "tags": [
       "pinball",
@@ -405,16 +425,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "A / \u2190 : Left flipper \u00b7 D / \u2192 : Right flipper | Tap left/right on mobile",
+    "controls": "A / ← : Left flipper · D / → : Right flipper | Tap left/right on mobile",
     "folder": "games/2026-03-09",
     "file": "games/2026-03-09/index.html",
-    "preview": "games/2026-03-09/preview.png"
+    "preview": "games/2026-03-09/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-11",
     "name": "Void Strike",
     "date": "2026-03-11",
-    "description": "Pilot a glowing neon spaceship through waves of spinning asteroid shards \u2014 rotate, thrust, and blast them apart as they split into smaller fragments. Chain kills for massive combo multipliers and survive as asteroid waves multiply each level!",
+    "description": "Pilot a glowing neon spaceship through waves of spinning asteroid shards — rotate, thrust, and blast them apart as they split into smaller fragments. Chain kills for massive combo multipliers and survive as asteroid waves multiply each level!",
     "tagline": "Rotate. Thrust. Blast. Survive the asteroid storm.",
     "tags": [
       "shooter",
@@ -425,16 +446,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "\u2190 \u2192 Rotate \u00b7 \u2191 Thrust \u00b7 Space Shoot | Touch zones on mobile",
+    "controls": "← → Rotate · ↑ Thrust · Space Shoot | Touch zones on mobile",
     "folder": "games/2026-03-11",
     "file": "games/2026-03-11/index.html",
-    "preview": "games/2026-03-11/preview.png"
+    "preview": "games/2026-03-11/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-03-12",
     "name": "Chroma Hunt",
     "date": "2026-03-12",
-    "description": "All tiles share the same hue \u2014 except one slightly different shade. Find and tap the odd tile before the timer runs out! Grids grow from 2\u00d72 to 5\u00d75 while the color difference shrinks to near-invisible. Chain correct picks for massive combo multipliers!",
+    "description": "All tiles share the same hue — except one slightly different shade. Find and tap the odd tile before the timer runs out! Grids grow from 2×2 to 5×5 while the color difference shrinks to near-invisible. Chain correct picks for massive combo multipliers!",
     "tagline": "Spot the odd color. Beat the clock. Chain the combos.",
     "tags": [
       "perception",
@@ -448,13 +470,14 @@
     "controls": "Click / Tap the tile with the different color",
     "folder": "games/2026-03-12",
     "file": "games/2026-03-12/index.html",
-    "preview": "games/2026-03-12/preview.png"
+    "preview": "games/2026-03-12/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-03-10",
     "name": "Prism Drop",
     "date": "2026-03-10",
-    "description": "Neon geometric blocks cascade into the void \u2014 rotate and place them to complete glowing rows and watch them detonate in particle bursts. Chain multi-line clears for massive combo multipliers as the speed escalates each level!",
+    "description": "Neon geometric blocks cascade into the void — rotate and place them to complete glowing rows and watch them detonate in particle bursts. Chain multi-line clears for massive combo multipliers as the speed escalates each level!",
     "tagline": "Stack neon blocks. Clear the rows. Chain the combos.",
     "tags": [
       "puzzle",
@@ -465,16 +488,17 @@
     ],
     "difficulty": "easy",
     "avgPlayTime": "5 minutes",
-    "controls": "\u2190 \u2192 to move \u00b7 \u2191 to rotate \u00b7 \u2193 soft drop \u00b7 Space hard drop | Swipe on mobile",
+    "controls": "← → to move · ↑ to rotate · ↓ soft drop · Space hard drop | Swipe on mobile",
     "folder": "games/2026-03-10",
     "file": "games/2026-03-10/index.html",
-    "preview": "games/2026-03-10/preview.png"
+    "preview": "games/2026-03-10/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-03-13",
     "name": "Neon Flip",
     "date": "2026-03-13",
-    "description": "A neon Lights Out puzzle \u2014 click any tile to flip it and all its neighbors between cyan and magenta. Get every tile the same color before time runs out! Grids grow from 3\u00d73 to 6\u00d76 while combo multipliers reward consecutive solves!",
+    "description": "A neon Lights Out puzzle — click any tile to flip it and all its neighbors between cyan and magenta. Get every tile the same color before time runs out! Grids grow from 3×3 to 6×6 while combo multipliers reward consecutive solves!",
     "tagline": "Flip the tiles. Make them match. Beat the clock.",
     "tags": [
       "puzzle",
@@ -488,13 +512,14 @@
     "controls": "Click / Tap any tile to flip it and its neighbors",
     "folder": "games/2026-03-13",
     "file": "games/2026-03-13/index.html",
-    "preview": "games/2026-03-13/preview.png"
+    "preview": "games/2026-03-13/preview.png",
+    "rating": 4.9
   },
   {
     "id": "2026-03-14",
     "name": "Crystal Swap",
     "date": "2026-03-14",
-    "description": "Swap adjacent neon gems on a 7\u00d77 grid to create matches of 3 or more in a row or column \u2014 chain cascade combos for massive multipliers and race the 90-second clock to maximize your score!",
+    "description": "Swap adjacent neon gems on a 7×7 grid to create matches of 3 or more in a row or column — chain cascade combos for massive multipliers and race the 90-second clock to maximize your score!",
     "tagline": "Swap gems. Chain combos. Beat the clock.",
     "tags": [
       "puzzle",
@@ -508,13 +533,14 @@
     "controls": "Click a gem, then click an adjacent gem to swap",
     "folder": "games/2026-03-14",
     "file": "games/2026-03-14/index.html",
-    "preview": "games/2026-03-14/preview.png"
+    "preview": "games/2026-03-14/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-03-15",
     "name": "Beam Dodge",
     "date": "2026-03-15",
-    "description": "Guide a neon orb with your mouse through a storm of rotating laser beams \u2014 collect glowing crystals for points, chain pickups for combo multipliers, and survive as beams multiply and accelerate!",
+    "description": "Guide a neon orb with your mouse through a storm of rotating laser beams — collect glowing crystals for points, chain pickups for combo multipliers, and survive as beams multiply and accelerate!",
     "tagline": "Dodge the lasers. Collect the crystals. Don't get burned.",
     "tags": [
       "action",
@@ -525,16 +551,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse / touch to guide your orb \u2014 dodge beams, collect crystals",
+    "controls": "Move mouse / touch to guide your orb — dodge beams, collect crystals",
     "folder": "games/2026-03-15",
     "file": "games/2026-03-15/index.html",
-    "preview": "games/2026-03-15/preview.png"
+    "preview": "games/2026-03-15/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-17",
     "name": "Pocket Rush",
     "date": "2026-03-17",
-    "description": "Drag back from the white cue ball to aim and shoot \u2014 pocket all neon colored balls to advance levels! Chain consecutive pockets for massive combo multipliers and race the clock!",
+    "description": "Drag back from the white cue ball to aim and shoot — pocket all neon colored balls to advance levels! Chain consecutive pockets for massive combo multipliers and race the clock!",
     "tagline": "Aim. Shoot. Chain the pockets!",
     "tags": [
       "billiards",
@@ -545,16 +572,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click and drag to aim cue ball \u2014 release to shoot | Touch drag on mobile",
+    "controls": "Click and drag to aim cue ball — release to shoot | Touch drag on mobile",
     "folder": "games/2026-03-17",
     "file": "games/2026-03-17/index.html",
-    "preview": "games/2026-03-17/preview.png"
+    "preview": "games/2026-03-17/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-03-16",
     "name": "Merge Surge",
     "date": "2026-03-16",
-    "description": "Slide neon tiles on a 4\u00d74 grid to merge matching numbers \u2014 each merge adds precious seconds to your countdown timer. Chain consecutive merges for massive combo multipliers and race to post the highest score before time runs out!",
+    "description": "Slide neon tiles on a 4×4 grid to merge matching numbers — each merge adds precious seconds to your countdown timer. Chain consecutive merges for massive combo multipliers and race to post the highest score before time runs out!",
     "tagline": "Slide. Merge. Survive the countdown.",
     "tags": [
       "puzzle",
@@ -565,16 +593,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "\u2190 \u2192 \u2191 \u2193 or WASD to slide tiles | Swipe on mobile",
+    "controls": "← → ↑ ↓ or WASD to slide tiles | Swipe on mobile",
     "folder": "games/2026-03-16",
     "file": "games/2026-03-16/index.html",
-    "preview": "games/2026-03-16/preview.png"
+    "preview": "games/2026-03-16/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-18",
     "name": "Helix Drop",
     "date": "2026-03-18",
-    "description": "A ball falls through spinning neon disc rings \u2014 hold left/right to rotate the entire tower and align each gap with the ball's path before it crashes. Chain passes for massive combo multipliers as rings spin faster each level!",
+    "description": "A ball falls through spinning neon disc rings — hold left/right to rotate the entire tower and align each gap with the ball's path before it crashes. Chain passes for massive combo multipliers as rings spin faster each level!",
     "tagline": "Rotate the tower. Thread the gaps. Don't get blocked.",
     "tags": [
       "action",
@@ -585,16 +614,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "\u2190 \u2192 Arrow Keys or A/D to rotate tower | Swipe left/right on mobile",
+    "controls": "← → Arrow Keys or A/D to rotate tower | Swipe left/right on mobile",
     "folder": "games/2026-03-18",
     "file": "games/2026-03-18/index.html",
-    "preview": "games/2026-03-18/preview.png"
+    "preview": "games/2026-03-18/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-03-19",
     "name": "Grav Shift",
     "date": "2026-03-19",
-    "description": "Roll a glowing neon ball through a maze by shifting gravity in 4 directions \u2014 collect all cyan gems to open the golden portal exit, and dodge red spikes that cost you a life!",
+    "description": "Roll a glowing neon ball through a maze by shifting gravity in 4 directions — collect all cyan gems to open the golden portal exit, and dodge red spikes that cost you a life!",
     "tagline": "Shift gravity. Collect gems. Reach the portal.",
     "tags": [
       "puzzle",
@@ -605,16 +635,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "\u2190 \u2192 \u2191 \u2193 or WASD to shift gravity direction | Swipe on mobile",
+    "controls": "← → ↑ ↓ or WASD to shift gravity direction | Swipe on mobile",
     "folder": "games/2026-03-19",
     "file": "games/2026-03-19/index.html",
-    "preview": "games/2026-03-19/preview.png"
+    "preview": "games/2026-03-19/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-03-20",
     "name": "Nova Pulse",
     "date": "2026-03-20",
-    "description": "Hold to expand a glowing ring outward from the center and hit bouncing neon balls \u2014 chain multiple hits per expansion for massive combo multipliers, but release before the ring overflows or lose a life!",
+    "description": "Hold to expand a glowing ring outward from the center and hit bouncing neon balls — chain multiple hits per expansion for massive combo multipliers, but release before the ring overflows or lose a life!",
     "tagline": "Hold to expand. Hit the balls. Don't overflow.",
     "tags": [
       "action",
@@ -625,16 +656,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Hold Mouse / Touch / Space to expand ring \u2014 release to contract",
+    "controls": "Hold Mouse / Touch / Space to expand ring — release to contract",
     "folder": "games/2026-03-20",
     "file": "games/2026-03-20/index.html",
-    "preview": "games/2026-03-20/preview.png"
+    "preview": "games/2026-03-20/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-21",
     "name": "Brick Blitz",
     "date": "2026-03-21",
-    "description": "Drag to aim a volley of neon balls and blast numbered HP bricks \u2014 collect +1 orbs to grow your ball count, chain destruction combos for massive scores, and don't let bricks reach the red line!",
+    "description": "Drag to aim a volley of neon balls and blast numbered HP bricks — collect +1 orbs to grow your ball count, chain destruction combos for massive scores, and don't let bricks reach the red line!",
     "tagline": "Aim. Shoot. Smash every brick!",
     "tags": [
       "action",
@@ -645,16 +677,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Click and drag upward to aim \u2014 release to fire all balls | Touch drag on mobile",
+    "controls": "Click and drag upward to aim — release to fire all balls | Touch drag on mobile",
     "folder": "games/2026-03-21",
     "file": "games/2026-03-21/index.html",
-    "preview": "games/2026-03-21/preview.png"
+    "preview": "games/2026-03-21/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-22",
     "name": "Cipher Blitz",
     "date": "2026-03-22",
-    "description": "Crack the hidden neon color code in 8 guesses \u2014 gold dots mean right color and right spot, silver dots mean right color wrong spot. Race a 90-second timer across multiple rounds as codes grow longer and harder each level!",
+    "description": "Crack the hidden neon color code in 8 guesses — gold dots mean right color and right spot, silver dots mean right color wrong spot. Race a 90-second timer across multiple rounds as codes grow longer and harder each level!",
     "tagline": "Deduce the code. Beat the clock. Chain the solves.",
     "tags": [
       "puzzle",
@@ -665,16 +698,17 @@
     ],
     "difficulty": "hard",
     "avgPlayTime": "3 minutes",
-    "controls": "Click a color, then click a peg slot to place it \u2014 press Submit or Enter to check your guess",
+    "controls": "Click a color, then click a peg slot to place it — press Submit or Enter to check your guess",
     "folder": "games/2026-03-22",
     "file": "games/2026-03-22/index.html",
-    "preview": "games/2026-03-22/preview.png"
+    "preview": "games/2026-03-22/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-03-23",
     "name": "Sky Surge",
     "date": "2026-03-23",
-    "description": "Bounce a glowing neon ball upward through endless procedurally generated platforms \u2014 ride spring pads for super jumps, dodge crumbling platforms, collect gems for bonus points, and survive as platforms grow narrower and faster!",
+    "description": "Bounce a glowing neon ball upward through endless procedurally generated platforms — ride spring pads for super jumps, dodge crumbling platforms, collect gems for bonus points, and survive as platforms grow narrower and faster!",
     "tagline": "Bounce up. Don't fall. Reach the sky!",
     "tags": [
       "arcade",
@@ -685,16 +719,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "\u2190 \u2192 or A/D to move left/right | Touch left/right side on mobile",
+    "controls": "← → or A/D to move left/right | Touch left/right side on mobile",
     "folder": "games/2026-03-23",
     "file": "games/2026-03-23/index.html",
-    "preview": "games/2026-03-23/preview.png"
+    "preview": "games/2026-03-23/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-24",
     "name": "Chromatic Drop",
     "date": "2026-03-24",
-    "description": "Catch falling neon balls that match your basket's colour \u2014 rainbow orbs shift your basket hue, \u00d72 orbs double your points, and chain perfect catches for explosive combo multipliers as balls rain faster each level!",
+    "description": "Catch falling neon balls that match your basket's colour — rainbow orbs shift your basket hue, ×2 orbs double your points, and chain perfect catches for explosive combo multipliers as balls rain faster each level!",
     "tagline": "Match the colour. Chain the catches. Don't miss!",
     "tags": [
       "reflex",
@@ -705,16 +740,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse / touch to guide basket | \u2190 \u2192 or A/D keys",
+    "controls": "Move mouse / touch to guide basket | ← → or A/D keys",
     "folder": "games/2026-03-24",
     "file": "games/2026-03-24/index.html",
-    "preview": "games/2026-03-24/preview.png"
+    "preview": "games/2026-03-24/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-03-25",
     "name": "Neon Smash",
     "date": "2026-03-25",
-    "description": "Smash glowing neon targets that pop up from a 4\u00d73 grid \u2014 hit the cyan, green, and yellow ones for combo-multiplied points, but avoid the red bombs or lose a life! Speed escalates as your score climbs.",
+    "description": "Smash glowing neon targets that pop up from a 4×3 grid — hit the cyan, green, and yellow ones for combo-multiplied points, but avoid the red bombs or lose a life! Speed escalates as your score climbs.",
     "tagline": "Pop the targets. Dodge the bombs. Chain the combos!",
     "tags": [
       "reflex",
@@ -725,16 +761,17 @@
     ],
     "difficulty": "easy",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap glowing targets \u2014 avoid red bombs!",
+    "controls": "Click / Tap glowing targets — avoid red bombs!",
     "folder": "games/2026-03-25",
     "file": "games/2026-03-25/index.html",
-    "preview": "games/2026-03-25/preview.png"
+    "preview": "games/2026-03-25/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-03-27",
     "name": "Juggle Rush",
     "date": "2026-03-27",
-    "description": "Keep multiple neon balls in the air by clicking or tapping near them before they hit the danger zone \u2014 chain combo hits for massive multipliers as gravity increases and more balls spawn over time!",
+    "description": "Keep multiple neon balls in the air by clicking or tapping near them before they hit the danger zone — chain combo hits for massive multipliers as gravity increases and more balls spawn over time!",
     "tagline": "Click to bounce. Don't let them drop!",
     "tags": [
       "reflex",
@@ -745,16 +782,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap near a falling ball to bounce it up \u2014 keep all balls in the air!",
+    "controls": "Click / Tap near a falling ball to bounce it up — keep all balls in the air!",
     "folder": "games/2026-03-27",
     "file": "games/2026-03-27/index.html",
-    "preview": "games/2026-03-27/preview.png"
+    "preview": "games/2026-03-27/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-26",
     "name": "Bubble Blitz",
     "date": "2026-03-26",
-    "description": "Aim a neon cannon and shoot colored bubbles into a hex grid \u2014 match clusters of 3 or more to pop them in particle bursts, chain combos for massive multipliers, and clear the board before bubbles reach the danger line!",
+    "description": "Aim a neon cannon and shoot colored bubbles into a hex grid — match clusters of 3 or more to pop them in particle bursts, chain combos for massive multipliers, and clear the board before bubbles reach the danger line!",
     "tagline": "Aim. Shoot. Pop. Chain the neon!",
     "tags": [
       "puzzle",
@@ -765,16 +803,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Move mouse to aim cannon \u00b7 Click / tap to shoot \u00b7 Space to fire",
+    "controls": "Move mouse to aim cannon · Click / tap to shoot · Space to fire",
     "folder": "games/2026-03-26",
     "file": "games/2026-03-26/index.html",
-    "preview": "games/2026-03-26/preview.png"
+    "preview": "games/2026-03-26/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-03-28",
     "name": "Pendulum Rush",
     "date": "2026-03-28",
-    "description": "Swing a glowing neon ball on a rope between anchor points \u2014 click to attach and detach, chain orb collections for massive combo multipliers, and dodge spinning spike enemies before they take your last life!",
+    "description": "Swing a glowing neon ball on a rope between anchor points — click to attach and detach, chain orb collections for massive combo multipliers, and dodge spinning spike enemies before they take your last life!",
     "tagline": "Swing the rope. Collect the orbs. Don't get spiked.",
     "tags": [
       "physics",
@@ -785,16 +824,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap / Space to attach rope to nearest anchor \u2014 click again to release",
+    "controls": "Click / Tap / Space to attach rope to nearest anchor — click again to release",
     "folder": "games/2026-03-28",
     "file": "games/2026-03-28/index.html",
-    "preview": "games/2026-03-28/preview.png"
+    "preview": "games/2026-03-28/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-03-29",
     "name": "Ricochet Rush",
     "date": "2026-03-29",
-    "description": "Fire bouncing neon bullets off the walls to blast glowing targets \u2014 aim carefully, chain consecutive hits for massive combo multipliers, and rack up the highest score in 90 seconds!",
+    "description": "Fire bouncing neon bullets off the walls to blast glowing targets — aim carefully, chain consecutive hits for massive combo multipliers, and rack up the highest score in 90 seconds!",
     "tagline": "Bounce bullets. Hit targets. Chain the combos!",
     "tags": [
       "action",
@@ -805,16 +845,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse to aim \u00b7 Click / Tap above cannon to fire bouncing bullet",
+    "controls": "Move mouse to aim · Click / Tap above cannon to fire bouncing bullet",
     "folder": "games/2026-03-29",
     "file": "games/2026-03-29/index.html",
-    "preview": "games/2026-03-29/preview.png"
+    "preview": "games/2026-03-29/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-03-30",
     "name": "Chromagate",
     "date": "2026-03-30",
-    "description": "Rotate a neon color-wheel so the matching segment is at the top when a falling colored orb arrives \u2014 chain perfect matches for massive combo multipliers as the wheel gains more segments and orbs speed up each level!",
+    "description": "Rotate a neon color-wheel so the matching segment is at the top when a falling colored orb arrives — chain perfect matches for massive combo multipliers as the wheel gains more segments and orbs speed up each level!",
     "tagline": "Spin the wheel. Match the orb. Chain the combos!",
     "tags": [
       "reflex",
@@ -825,16 +866,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "\u2190 \u2192 or A/D to rotate wheel | Swipe left/right on mobile",
+    "controls": "← → or A/D to rotate wheel | Swipe left/right on mobile",
     "folder": "games/2026-03-30",
     "file": "games/2026-03-30/index.html",
-    "preview": "games/2026-03-30/preview.png"
+    "preview": "games/2026-03-30/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-03-31",
     "name": "Sequence Rush",
     "date": "2026-03-31",
-    "description": "Neon numbered orbs are scattered randomly across the screen \u2014 click them in ascending order (1, 2, 3\u2026) as fast as you can before the countdown expires! Chain perfect clicks for massive combo multipliers and race for the highest score across escalating rounds!",
+    "description": "Neon numbered orbs are scattered randomly across the screen — click them in ascending order (1, 2, 3…) as fast as you can before the countdown expires! Chain perfect clicks for massive combo multipliers and race for the highest score across escalating rounds!",
     "tagline": "Find the numbers. Click in order. Beat the clock!",
     "tags": [
       "reflex",
@@ -848,13 +890,14 @@
     "controls": "Click / Tap numbered orbs in ascending order",
     "folder": "games/2026-03-31",
     "file": "games/2026-03-31/index.html",
-    "preview": "games/2026-03-31/preview.png"
+    "preview": "games/2026-03-31/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-04-01",
     "name": "Spin Frenzy",
     "date": "2026-04-01",
-    "description": "Keep multiple neon spinning tops from stopping \u2014 click or tap each top to boost its spin before it winds down to zero! More tops on screen means more points per second, but they all slow down faster as difficulty ramps up.",
+    "description": "Keep multiple neon spinning tops from stopping — click or tap each top to boost its spin before it winds down to zero! More tops on screen means more points per second, but they all slow down faster as difficulty ramps up.",
     "tagline": "Keep them spinning. Don't let a single one stop!",
     "tags": [
       "reflex",
@@ -865,16 +908,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap a spinning top to boost its speed \u2014 keep all tops spinning!",
+    "controls": "Click / Tap a spinning top to boost its speed — keep all tops spinning!",
     "folder": "games/2026-04-01",
     "file": "games/2026-04-01/index.html",
-    "preview": "games/2026-04-01/preview.png"
+    "preview": "games/2026-04-01/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-04-03",
     "name": "Peg Drop",
     "date": "2026-04-03",
-    "description": "Drop 10 neon balls through a staggered peg field \u2014 aim carefully to hit the glowing JACKPOT bucket for 2000 pts, and chain consecutive center-zone drops for massive combo multipliers!",
+    "description": "Drop 10 neon balls through a staggered peg field — aim carefully to hit the glowing JACKPOT bucket for 2000 pts, and chain consecutive center-zone drops for massive combo multipliers!",
     "tagline": "Drop the ball. Hit the JACKPOT. Chain the combos!",
     "tags": [
       "physics",
@@ -885,16 +929,17 @@
     ],
     "difficulty": "easy",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse to aim \u00b7 Click / Tap at the top to drop a neon ball",
+    "controls": "Move mouse to aim · Click / Tap at the top to drop a neon ball",
     "folder": "games/2026-04-03",
     "file": "games/2026-04-03/index.html",
-    "preview": "games/2026-04-03/preview.png"
+    "preview": "games/2026-04-03/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-04-04",
     "name": "Orbit Frenzy",
     "date": "2026-04-04",
-    "description": "Orbit a glowing star on two concentric neon rings \u2014 click or tap to hop between the inner and outer orbit, dodge color-coded rotating laser spokes, and chain gem collections for massive combo multipliers!",
+    "description": "Orbit a glowing star on two concentric neon rings — click or tap to hop between the inner and outer orbit, dodge color-coded rotating laser spokes, and chain gem collections for massive combo multipliers!",
     "tagline": "Orbit the star. Dodge the spokes. Chain the gems!",
     "tags": [
       "arcade",
@@ -905,16 +950,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap / Space to switch between inner and outer orbit \u2014 dodge cyan, purple, and orange spokes (orange bright half = danger!)",
+    "controls": "Click / Tap / Space to switch between inner and outer orbit — dodge cyan, purple, and orange spokes (orange bright half = danger!)",
     "folder": "games/2026-04-04",
     "file": "games/2026-04-04/index.html",
-    "preview": "games/2026-04-04/preview.png"
+    "preview": "games/2026-04-04/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-04-06",
     "name": "Neon Conduit",
     "date": "2026-04-06",
-    "description": "Rotate neon pipe tiles to connect the glowing SOURCE node to the SINK \u2014 click any tile to spin it 90\u00b0, chain level completions for massive combo multipliers, and race the countdown clock!",
+    "description": "Rotate neon pipe tiles to connect the glowing SOURCE node to the SINK — click any tile to spin it 90°, chain level completions for massive combo multipliers, and race the countdown clock!",
     "tagline": "Rotate the pipes. Connect the flow. Beat the clock!",
     "tags": [
       "puzzle",
@@ -925,16 +971,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap any pipe tile to rotate it 90\u00b0 clockwise \u2014 connect S to X before time runs out",
+    "controls": "Click / Tap any pipe tile to rotate it 90° clockwise — connect S to X before time runs out",
     "folder": "games/2026-04-06",
     "file": "games/2026-04-06/index.html",
-    "preview": "games/2026-04-06/preview.png"
+    "preview": "games/2026-04-06/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-04-05",
     "name": "Neon Morph",
     "date": "2026-04-05",
-    "description": "Shape-shift your neon runner between WIDE and TALL forms to thread through horizontal and vertical gap obstacles \u2014 chain gap passes and gem pickups for massive combo multipliers as the speed escalates!",
+    "description": "Shape-shift your neon runner between WIDE and TALL forms to thread through horizontal and vertical gap obstacles — chain gap passes and gem pickups for massive combo multipliers as the speed escalates!",
     "tagline": "Morph your shape. Thread the gap. Never stop!",
     "tags": [
       "arcade",
@@ -948,13 +995,14 @@
     "controls": "Click / Tap / Space to morph between WIDE and TALL forms",
     "folder": "games/2026-04-05",
     "file": "games/2026-04-05/index.html",
-    "preview": "games/2026-04-05/preview.png"
+    "preview": "games/2026-04-05/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-04-07",
     "name": "Neon Swarm",
     "date": "2026-04-07",
-    "description": "Blast waves of glowing alien invaders in this neon Space Invaders-style shooter \u2014 move your ship left and right to dodge enemy fire, collect power-ups for rapid-fire, shields, and spread shots, and chain kills for massive combo multipliers!",
+    "description": "Blast waves of glowing alien invaders in this neon Space Invaders-style shooter — move your ship left and right to dodge enemy fire, collect power-ups for rapid-fire, shields, and spread shots, and chain kills for massive combo multipliers!",
     "tagline": "Blast the swarm. Dodge the bullets. Survive the onslaught!",
     "tags": [
       "shooter",
@@ -965,16 +1013,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Move mouse / touch to aim ship \u00b7 Hold click / Space to fire \u00b7 \u2190 \u2192 Arrow keys to dodge",
+    "controls": "Move mouse / touch to aim ship · Hold click / Space to fire · ← → Arrow keys to dodge",
     "folder": "games/2026-04-07",
     "file": "games/2026-04-07/index.html",
-    "preview": "games/2026-04-07/preview.png"
+    "preview": "games/2026-04-07/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-04-08",
     "name": "Swarm Rush",
     "date": "2026-04-08",
-    "description": "Guide a cloud of 30 neon particles toward glowing gems using your mouse \u2014 the swarm follows with spring physics and natural bloom spreading. Avoid pulsing red void circles that absorb your particles, chain gem collects for massive combo multipliers, and survive as more voids spawn each level!",
+    "description": "Guide a cloud of 30 neon particles toward glowing gems using your mouse — the swarm follows with spring physics and natural bloom spreading. Avoid pulsing red void circles that absorb your particles, chain gem collects for massive combo multipliers, and survive as more voids spawn each level!",
     "tagline": "Guide the swarm. Engulf the gems. Don't get absorbed!",
     "tags": [
       "swarm",
@@ -988,13 +1037,14 @@
     "controls": "Move mouse / drag to guide your neon particle swarm toward gems",
     "folder": "games/2026-04-08",
     "file": "games/2026-04-08/index.html",
-    "preview": "games/2026-04-08/preview.png"
+    "preview": "games/2026-04-08/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-04-10",
     "name": "Grid Siege",
     "date": "2026-04-10",
-    "description": "Claim territory by drawing trails through the neon grid \u2014 reconnect to safe ground to capture enclosed regions! Bouncing enemies destroy your active trail, so plan each cut carefully and claim 75% to advance each level.",
+    "description": "Claim territory by drawing trails through the neon grid — reconnect to safe ground to capture enclosed regions! Bouncing enemies destroy your active trail, so plan each cut carefully and claim 75% to advance each level.",
     "tagline": "Draw trails. Claim the grid. Don't get hit!",
     "tags": [
       "strategy",
@@ -1005,16 +1055,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Arrow Keys / WASD to move \u00b7 D-pad buttons on mobile",
+    "controls": "Arrow Keys / WASD to move · D-pad buttons on mobile",
     "folder": "games/2026-04-10",
     "file": "games/2026-04-10/index.html",
-    "preview": "games/2026-04-10/preview.png"
+    "preview": "games/2026-04-10/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-04-12",
     "name": "Sprint Surge",
     "date": "2026-04-12",
-    "description": "Alternate A/D keys (or tap left/right) as fast as possible to build running speed \u2014 then time Space or a center tap to leap over glowing neon hurdles! Speed decays if you stop stepping, so keep the rhythm going and chain hurdle clears for massive combo multipliers!",
+    "description": "Alternate A/D keys (or tap left/right) as fast as possible to build running speed — then time Space or a center tap to leap over glowing neon hurdles! Speed decays if you stop stepping, so keep the rhythm going and chain hurdle clears for massive combo multipliers!",
     "tagline": "Alternate your feet. Build the surge. Clear every hurdle!",
     "tags": [
       "reflex",
@@ -1025,16 +1076,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "A / \u2190 then D / \u2192 alternate to sprint \u00b7 Space / \u2191 to jump | Tap L \u00b7 Center \u00b7 R on mobile",
+    "controls": "A / ← then D / → alternate to sprint · Space / ↑ to jump | Tap L · Center · R on mobile",
     "folder": "games/2026-04-12",
     "file": "games/2026-04-12/index.html",
-    "preview": "games/2026-04-12/preview.png"
+    "preview": "games/2026-04-12/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-04-11",
     "name": "Voltage Jump",
     "date": "2026-04-11",
-    "description": "Leap between glowing hexagonal platforms that pulse with electric charge \u2014 click to jump and land when the platform is bright for PERFECT timing! Predict travel time to nail combos as platforms pulse faster each level.",
+    "description": "Leap between glowing hexagonal platforms that pulse with electric charge — click to jump and land when the platform is bright for PERFECT timing! Predict travel time to nail combos as platforms pulse faster each level.",
     "tagline": "Jump when it glows. Land in the light. Chain the voltage!",
     "tags": [
       "timing",
@@ -1045,16 +1097,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap a platform to jump to it \u2014 land when the charge ring is FULL for PERFECT score",
+    "controls": "Click / Tap a platform to jump to it — land when the charge ring is FULL for PERFECT score",
     "folder": "games/2026-04-11",
     "file": "games/2026-04-11/index.html",
-    "preview": "games/2026-04-11/preview.png"
+    "preview": "games/2026-04-11/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-04-13",
     "name": "Lasso Rush",
     "date": "2026-04-13",
-    "description": "Click and drag to throw a neon lasso circle around drifting glowing enemies \u2014 release to capture all inside! Smaller lassos earn huge efficiency bonuses, and catching 3+ at once triggers a COMBO explosion. Race the 90-second clock for the highest score!",
+    "description": "Click and drag to throw a neon lasso circle around drifting glowing enemies — release to capture all inside! Smaller lassos earn huge efficiency bonuses, and catching 3+ at once triggers a COMBO explosion. Race the 90-second clock for the highest score!",
     "tagline": "Cast the lasso. Rope the herd. Chain the combos!",
     "tags": [
       "action",
@@ -1065,16 +1118,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click and drag to cast a lasso circle \u2014 release to capture enemies inside",
+    "controls": "Click and drag to cast a lasso circle — release to capture enemies inside",
     "folder": "games/2026-04-13",
     "file": "games/2026-04-13/index.html",
-    "preview": "games/2026-04-13/preview.png"
+    "preview": "games/2026-04-13/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-04-14",
     "name": "Neon Archer",
     "date": "2026-04-14",
-    "description": "Hold to charge your neon bow and fire arrows at a glowing target \u2014 compensate for the wind blowing your shot sideways to nail the bullseye! Chain consecutive high-ring hits for massive combo multipliers across 12 arrows.",
+    "description": "Hold to charge your neon bow and fire arrows at a glowing target — compensate for the wind blowing your shot sideways to nail the bullseye! Chain consecutive high-ring hits for massive combo multipliers across 12 arrows.",
     "tagline": "Charge the bow. Read the wind. Hit the bullseye!",
     "tags": [
       "precision",
@@ -1085,16 +1139,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Hold mouse / touch to charge bow \u00b7 Release to fire \u00b7 Aim into the wind to compensate",
+    "controls": "Hold mouse / touch to charge bow · Release to fire · Aim into the wind to compensate",
     "folder": "games/2026-04-14",
     "file": "games/2026-04-14/index.html",
-    "preview": "games/2026-04-14/preview.png"
+    "preview": "games/2026-04-14/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-04-15",
     "name": "Neon Ripple",
     "date": "2026-04-15",
-    "description": "Tap anywhere to launch expanding shockwave rings that destroy glowing enemies they pass through \u2014 chain kills for massive combo multipliers, and watch out for white-ringed pulse enemies that burst into chain ripples when destroyed!",
+    "description": "Tap anywhere to launch expanding shockwave rings that destroy glowing enemies they pass through — chain kills for massive combo multipliers, and watch out for white-ringed pulse enemies that burst into chain ripples when destroyed!",
     "tagline": "Tap to ripple. Destroy the swarm. Chain the waves!",
     "tags": [
       "action",
@@ -1108,13 +1163,14 @@
     "controls": "Click / Tap anywhere to launch an expanding shockwave ring",
     "folder": "games/2026-04-15",
     "file": "games/2026-04-15/index.html",
-    "preview": "games/2026-04-15/preview.png"
+    "preview": "games/2026-04-15/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-04-16",
     "name": "Polarity Rush",
     "date": "2026-04-16",
-    "description": "Hold to activate your magnetic field and attract all orbs toward the center \u2014 cyan orbs score points but red orbs cost you a life! Release to repel everything safely. Time your attract bursts and chain cyan catches for massive combo multipliers!",
+    "description": "Hold to activate your magnetic field and attract all orbs toward the center — cyan orbs score points but red orbs cost you a life! Release to repel everything safely. Time your attract bursts and chain cyan catches for massive combo multipliers!",
     "tagline": "Hold to attract. Release to survive.",
     "tags": [
       "reflex",
@@ -1125,16 +1181,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Hold mouse / touch / Space to attract orbs \u00b7 Release to repel them",
+    "controls": "Hold mouse / touch / Space to attract orbs · Release to repel them",
     "folder": "games/2026-04-16",
     "file": "games/2026-04-16/index.html",
-    "preview": "games/2026-04-16/preview.png"
+    "preview": "games/2026-04-16/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-04-17",
     "name": "Volt Chain",
     "date": "2026-04-17",
-    "description": "Click glowing hexagonal posts to chain a live electric arc before its energy ring drains \u2014 the farther the next post, the higher the risk and reward! Color-coded posts multiply your score: gold gives 3\u00d7, purple 2\u00d7, and cyan keeps the chain alive. Don't let the energy die or you lose a life!",
+    "description": "Click glowing hexagonal posts to chain a live electric arc before its energy ring drains — the farther the next post, the higher the risk and reward! Color-coded posts multiply your score: gold gives 3×, purple 2×, and cyan keeps the chain alive. Don't let the energy die or you lose a life!",
     "tagline": "Chain the arc. Don't let the energy die!",
     "tags": [
       "action",
@@ -1148,13 +1205,14 @@
     "controls": "Click / Tap a glowing hexagonal post within range to chain the electric arc",
     "folder": "games/2026-04-17",
     "file": "games/2026-04-17/index.html",
-    "preview": "games/2026-04-17/preview.png"
+    "preview": "games/2026-04-17/preview.png",
+    "rating": 4.9
   },
   {
     "id": "2026-04-20",
     "name": "Tilt Rush",
     "date": "2026-04-20",
-    "description": "Move your mouse left and right to tilt a glowing neon balance beam \u2014 keep falling neon blocks from sliding off! More blocks balanced at once means bigger combo multipliers and higher scores.",
+    "description": "Move your mouse left and right to tilt a glowing neon balance beam — keep falling neon blocks from sliding off! More blocks balanced at once means bigger combo multipliers and higher scores.",
     "tagline": "Tilt the beam. Keep the balance. Don't let them fall!",
     "tags": [
       "balance",
@@ -1168,13 +1226,14 @@
     "controls": "Move mouse left/right to tilt the beam | Drag finger on mobile",
     "folder": "games/2026-04-20",
     "file": "games/2026-04-20/index.html",
-    "preview": "games/2026-04-20/preview.png"
+    "preview": "games/2026-04-20/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-04-21",
     "name": "Storm Dash",
     "date": "2026-04-21",
-    "description": "Tap anywhere to instantly teleport your neon orb away from incoming lightning bolts \u2014 warning lines flash before each strike so you must react fast! Collect glowing cyan gems for combo-multiplied points while dodging an ever-thickening storm.",
+    "description": "Tap anywhere to instantly teleport your neon orb away from incoming lightning bolts — warning lines flash before each strike so you must react fast! Collect glowing cyan gems for combo-multiplied points while dodging an ever-thickening storm.",
     "tagline": "Teleport to survive. Collect the gems. Outrun the storm!",
     "tags": [
       "reflex",
@@ -1185,16 +1244,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap anywhere to instantly teleport your orb \u2014 dodge lightning, collect cyan gems",
+    "controls": "Click / Tap anywhere to instantly teleport your orb — dodge lightning, collect cyan gems",
     "folder": "games/2026-04-21",
     "file": "games/2026-04-21/index.html",
-    "preview": "games/2026-04-21/preview.png"
+    "preview": "games/2026-04-21/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-04-19",
     "name": "Sync Burst",
     "date": "2026-04-19",
-    "description": "Multiple neon pulse zones fill the screen, each expanding and contracting at its own rhythm \u2014 click each zone exactly when its ring aligns with the dashed target ring for PERFECT timing! Ignore a zone too long and it drains a life; chain consecutive precise hits for massive combo multipliers as new zones appear and pressure builds!",
+    "description": "Multiple neon pulse zones fill the screen, each expanding and contracting at its own rhythm — click each zone exactly when its ring aligns with the dashed target ring for PERFECT timing! Ignore a zone too long and it drains a life; chain consecutive precise hits for massive combo multipliers as new zones appear and pressure builds!",
     "tagline": "Time the rings. Keep all zones alive. Chain the burst!",
     "tags": [
       "timing",
@@ -1208,13 +1268,14 @@
     "controls": "Click / Tap a zone when its pulse ring aligns with the dashed target ring",
     "folder": "games/2026-04-19",
     "file": "games/2026-04-19/index.html",
-    "preview": "games/2026-04-19/preview.png"
+    "preview": "games/2026-04-19/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-04-22",
     "name": "Neon Slide",
     "date": "2026-04-22",
-    "description": "Slide glowing neon tiles back into order 1\u20138 on a 3\u00d73 grid before the countdown expires \u2014 earn time bonuses for quick solves, chain consecutive completions for massive combo multipliers, and race through escalating levels as the puzzle shuffles deeper each round!",
+    "description": "Slide glowing neon tiles back into order 1–8 on a 3×3 grid before the countdown expires — earn time bonuses for quick solves, chain consecutive completions for massive combo multipliers, and race through escalating levels as the puzzle shuffles deeper each round!",
     "tagline": "Slide the chaos. Solve the grid. Beat the clock!",
     "tags": [
       "puzzle",
@@ -1228,13 +1289,14 @@
     "controls": "Click / Tap a tile adjacent to the empty gap to slide it into place",
     "folder": "games/2026-04-22",
     "file": "games/2026-04-22/index.html",
-    "preview": "games/2026-04-22/preview.png"
+    "preview": "games/2026-04-22/preview.png",
+    "rating": 4.9
   },
   {
     "id": "2026-04-23",
     "name": "Fuse Rush",
     "date": "2026-04-23",
-    "description": "Multiple neon bombs tick down simultaneously \u2014 click them in order of shortest fuse first to defuse! Wrong order or letting any bomb explode costs a life. Chain defusals for massive combo multipliers as more bombs spawn and fuses shorten each level!",
+    "description": "Multiple neon bombs tick down simultaneously — click them in order of shortest fuse first to defuse! Wrong order or letting any bomb explode costs a life. Chain defusals for massive combo multipliers as more bombs spawn and fuses shorten each level!",
     "tagline": "Click the shortest fuse first. Don't let them blow!",
     "tags": [
       "reflex",
@@ -1245,16 +1307,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap the bomb with the shortest time remaining first \u2014 defuse in urgency order!",
+    "controls": "Click / Tap the bomb with the shortest time remaining first — defuse in urgency order!",
     "folder": "games/2026-04-23",
     "file": "games/2026-04-23/index.html",
-    "preview": "games/2026-04-23/preview.png"
+    "preview": "games/2026-04-23/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-04-24",
     "name": "Hyper Dash",
     "date": "2026-04-24",
-    "description": "An auto-running neon sprinter dodges red spike clusters by jumping (with double-jump!) and slides under purple ceiling barriers \u2014 chain clean obstacle clears for massive combo multipliers and collect glowing diamonds as speed escalates to warp level!",
+    "description": "An auto-running neon sprinter dodges red spike clusters by jumping (with double-jump!) and slides under purple ceiling barriers — chain clean obstacle clears for massive combo multipliers and collect glowing diamonds as speed escalates to warp level!",
     "tagline": "Jump the spikes. Duck the barriers. Never stop running!",
     "tags": [
       "runner",
@@ -1265,16 +1328,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Space / Click to jump (double-jump available) \u00b7 \u2193 / S to duck | Tap to jump, swipe down to duck on mobile",
+    "controls": "Space / Click to jump (double-jump available) · ↓ / S to duck | Tap to jump, swipe down to duck on mobile",
     "folder": "games/2026-04-24",
     "file": "games/2026-04-24/index.html",
-    "preview": "games/2026-04-24/preview.png"
+    "preview": "games/2026-04-24/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-04-25",
     "name": "Neon Puck",
     "date": "2026-04-25",
-    "description": "Move your mouse to control a glowing cyan paddle in neon air hockey against an escalating AI \u2014 angle your shots to thread the goal, collect power-ups for wide paddles and speed boosts, and chain consecutive goals for massive combo multipliers across endless rounds!",
+    "description": "Move your mouse to control a glowing cyan paddle in neon air hockey against an escalating AI — angle your shots to thread the goal, collect power-ups for wide paddles and speed boosts, and chain consecutive goals for massive combo multipliers across endless rounds!",
     "tagline": "Slide the puck. Score the goal. Beat the AI!",
     "tags": [
       "action",
@@ -1285,16 +1349,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Move mouse or drag finger to steer your paddle \u00b7 W = Wide paddle \u00b7 F = Fast puck \u00b7 S = Slow AI (collect mid-table power-ups)",
+    "controls": "Move mouse or drag finger to steer your paddle · W = Wide paddle · F = Fast puck · S = Slow AI (collect mid-table power-ups)",
     "folder": "games/2026-04-25",
     "file": "games/2026-04-25/index.html",
-    "preview": "games/2026-04-25/preview.png"
+    "preview": "games/2026-04-25/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-04-26",
     "name": "Chroma Shift",
     "date": "2026-04-26",
-    "description": "A neon orb hurtles through colorful gates \u2014 switch your orb's color to match each incoming gate before it hits you! Chain correct color matches for massive combo multipliers as gates speed up and spawn faster each level!",
+    "description": "A neon orb hurtles through colorful gates — switch your orb's color to match each incoming gate before it hits you! Chain correct color matches for massive combo multipliers as gates speed up and spawn faster each level!",
     "tagline": "Shift your color. Match the gate. Chain the combos!",
     "tags": [
       "reflex",
@@ -1305,16 +1370,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Press 1 2 3 4 to switch orb color \u00b7 \u2191 / \u2193 arrows cycle colors | Tap color buttons on mobile",
+    "controls": "Press 1 2 3 4 to switch orb color · ↑ / ↓ arrows cycle colors | Tap color buttons on mobile",
     "folder": "games/2026-04-26",
     "file": "games/2026-04-26/index.html",
-    "preview": "games/2026-04-26/preview.png"
+    "preview": "games/2026-04-26/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-04-27",
     "name": "Junction Rush",
     "date": "2026-04-27",
-    "description": "Manage a neon 4-way traffic intersection \u2014 click to toggle signals between north-south and east-west green, let cars flow safely through, and prevent perpendicular cars from crashing! Chain consecutive safe passes for massive combo multipliers as traffic grows faster each level.",
+    "description": "Manage a neon 4-way traffic intersection — click to toggle signals between north-south and east-west green, let cars flow safely through, and prevent perpendicular cars from crashing! Chain consecutive safe passes for massive combo multipliers as traffic grows faster each level.",
     "tagline": "Toggle the signal. Clear the cars. Prevent the crash!",
     "tags": [
       "strategy",
@@ -1328,13 +1394,14 @@
     "controls": "Click / Tap / Space to toggle traffic signal between N-S and E-W green",
     "folder": "games/2026-04-27",
     "file": "games/2026-04-27/index.html",
-    "preview": "games/2026-04-27/preview.png"
+    "preview": "games/2026-04-27/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-04-28",
     "name": "Wall Breach",
     "date": "2026-04-28",
-    "description": "A neon wall scrolls toward you with a cut-out hole pattern \u2014 click tiles on your 4\u00d74 grid to toggle them ON and match the dashed cyan gaps before impact! Chain successful passes for massive combo multipliers as walls speed up each level.",
+    "description": "A neon wall scrolls toward you with a cut-out hole pattern — click tiles on your 4×4 grid to toggle them ON and match the dashed cyan gaps before impact! Chain successful passes for massive combo multipliers as walls speed up each level.",
     "tagline": "Match your shape. Break through the wall!",
     "tags": [
       "puzzle",
@@ -1345,16 +1412,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap tiles to toggle them ON \u2014 match the cyan dashed hole pattern in the incoming wall",
+    "controls": "Click / Tap tiles to toggle them ON — match the cyan dashed hole pattern in the incoming wall",
     "folder": "games/2026-04-28",
     "file": "games/2026-04-28/index.html",
-    "preview": "games/2026-04-28/preview.png"
+    "preview": "games/2026-04-28/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-04-29",
     "name": "Neon Boomerang",
     "date": "2026-04-29",
-    "description": "Click to aim and throw a glowing neon boomerang \u2014 it curves along a bezier arc to your target and sweeps back! Hit multiple targets in one throw for explosive combo multipliers, and chain consecutive successful throws for even bigger scores!",
+    "description": "Click to aim and throw a glowing neon boomerang — it curves along a bezier arc to your target and sweeps back! Hit multiple targets in one throw for explosive combo multipliers, and chain consecutive successful throws for even bigger scores!",
     "tagline": "Aim. Throw. Curve through the targets. Chain the combos!",
     "tags": [
       "action",
@@ -1365,16 +1433,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap anywhere to throw boomerang toward that point \u2014 preview arc shown on hover",
+    "controls": "Click / Tap anywhere to throw boomerang toward that point — preview arc shown on hover",
     "folder": "games/2026-04-29",
     "file": "games/2026-04-29/index.html",
-    "preview": "games/2026-04-29/preview.png"
+    "preview": "games/2026-04-29/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-05-01",
     "name": "Neon Pairs",
     "date": "2026-05-01",
-    "description": "Flip neon cards to find matching symbol pairs \u2014 chain consecutive matches for explosive combo multipliers and clear every pair before the countdown expires!",
+    "description": "Flip neon cards to find matching symbol pairs — chain consecutive matches for explosive combo multipliers and clear every pair before the countdown expires!",
     "tagline": "Flip. Match. Chain the combos!",
     "tags": [
       "memory",
@@ -1385,16 +1454,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap any face-down card to flip it \u2014 find its matching pair to score",
+    "controls": "Click / Tap any face-down card to flip it — find its matching pair to score",
     "folder": "games/2026-05-01",
     "file": "games/2026-05-01/index.html",
-    "preview": "games/2026-05-01/preview.png"
+    "preview": "games/2026-05-01/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-05-03",
     "name": "Chromawave",
     "date": "2026-05-03",
-    "description": "Colorful waves surge down four neon lanes \u2014 dash to the matching colored zone before each wave crashes! Chain consecutive correct catches for explosive combo multipliers as waves speed up and multiply.",
+    "description": "Colorful waves surge down four neon lanes — dash to the matching colored zone before each wave crashes! Chain consecutive correct catches for explosive combo multipliers as waves speed up and multiply.",
     "tagline": "Dash to your color. Catch the wave. Chain the combos!",
     "tags": [
       "reflex",
@@ -1405,16 +1475,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "\u2190 \u2192 or A D to move between zones \u00b7 1 2 3 4 for instant zone jump | Tap a zone on mobile",
+    "controls": "← → or A D to move between zones · 1 2 3 4 for instant zone jump | Tap a zone on mobile",
     "folder": "games/2026-05-03",
     "file": "games/2026-05-03/index.html",
-    "preview": "games/2026-05-03/preview.png"
+    "preview": "games/2026-05-03/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-05-04",
     "name": "Neon Drift",
     "date": "2026-05-04",
-    "description": "Steer a glowing neon car along a procedurally curving road \u2014 stay on the tarmac, collect diamond gems for combo multipliers, and survive as the road narrows and the speed climbs to warp level!",
+    "description": "Steer a glowing neon car along a procedurally curving road — stay on the tarmac, collect diamond gems for combo multipliers, and survive as the road narrows and the speed climbs to warp level!",
     "tagline": "Stay on the road. Collect gems. Survive the speed!",
     "tags": [
       "driving",
@@ -1425,16 +1496,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "\u2190 \u2192 or A / D to steer | Tap left / right side on mobile",
+    "controls": "← → or A / D to steer | Tap left / right side on mobile",
     "folder": "games/2026-05-04",
     "file": "games/2026-05-04/index.html",
-    "preview": "games/2026-05-04/preview.png"
+    "preview": "games/2026-05-04/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-05-05",
     "name": "Whip Rush",
     "date": "2026-05-05",
-    "description": "A neon ball orbits a glowing hub on a tether \u2014 click to instantly reverse its orbit direction and smash incoming enemies before they breach the center! Chain consecutive kills for massive combo multipliers as enemies grow faster and more numerous each level.",
+    "description": "A neon ball orbits a glowing hub on a tether — click to instantly reverse its orbit direction and smash incoming enemies before they breach the center! Chain consecutive kills for massive combo multipliers as enemies grow faster and more numerous each level.",
     "tagline": "Reverse the orbit. Smash the enemies. Chain the kills!",
     "tags": [
       "action",
@@ -1445,16 +1517,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap / Space to reverse orbit direction \u2014 smash enemies with the whipping ball",
+    "controls": "Click / Tap / Space to reverse orbit direction — smash enemies with the whipping ball",
     "folder": "games/2026-05-05",
     "file": "games/2026-05-05/index.html",
-    "preview": "games/2026-05-05/preview.png"
+    "preview": "games/2026-05-05/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-05-07",
     "name": "Surge Line",
     "date": "2026-05-07",
-    "description": "Move your mouse to aim a horizontal electric zap line across the full screen \u2014 click to fire a surge that destroys every enemy at that height! Wait for enemies to align for x2, x3, or x4 combo multipliers as waves grow faster each level.",
+    "description": "Move your mouse to aim a horizontal electric zap line across the full screen — click to fire a surge that destroys every enemy at that height! Wait for enemies to align for x2, x3, or x4 combo multipliers as waves grow faster each level.",
     "tagline": "Aim the surge. Zap the row. Chain the combos!",
     "tags": [
       "action",
@@ -1465,16 +1538,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse / drag to aim the horizontal zap line \u00b7 Click / Tap to fire the electric surge",
+    "controls": "Move mouse / drag to aim the horizontal zap line · Click / Tap to fire the electric surge",
     "folder": "games/2026-05-07",
     "file": "games/2026-05-07/index.html",
-    "preview": "games/2026-05-07/preview.png"
+    "preview": "games/2026-05-07/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-05-11",
     "name": "Ring Roll",
     "date": "2026-05-11",
-    "description": "A glowing ball rolls inside a rotating neon ring under gravity \u2014 click to reverse the ring's direction and guide the ball to collect every diamond gem while avoiding electrified red hazard zones on the wall!",
+    "description": "A glowing ball rolls inside a rotating neon ring under gravity — click to reverse the ring's direction and guide the ball to collect every diamond gem while avoiding electrified red hazard zones on the wall!",
     "tagline": "Reverse the ring. Roll the ball. Collect the gems!",
     "tags": [
       "physics",
@@ -1488,13 +1562,14 @@
     "controls": "Click / Tap / Space to reverse the ring rotation direction",
     "folder": "games/2026-05-11",
     "file": "games/2026-05-11/index.html",
-    "preview": "games/2026-05-11/preview.png"
+    "preview": "games/2026-05-11/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-05-13",
     "name": "Arc Surge",
     "date": "2026-05-13",
-    "description": "Fire gravity-affected ballistic shots at drifting neon targets \u2014 predict where each target will be when your parabolic arc arrives, chain consecutive hits for massive combo multipliers, and survive 90 seconds before time runs out!",
+    "description": "Fire gravity-affected ballistic shots at drifting neon targets — predict where each target will be when your parabolic arc arrives, chain consecutive hits for massive combo multipliers, and survive 90 seconds before time runs out!",
     "tagline": "Aim the arc. Lead the target. Chain the combos!",
     "tags": [
       "precision",
@@ -1505,16 +1580,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse to aim \u00b7 Hold to charge power (ring grows) \u00b7 Release to fire \u00b7 Longer hold = more range",
+    "controls": "Move mouse to aim · Hold to charge power (ring grows) · Release to fire · Longer hold = more range",
     "folder": "games/2026-05-13",
     "file": "games/2026-05-13/index.html",
-    "preview": "games/2026-05-13/preview.png"
+    "preview": "games/2026-05-13/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-05-15",
     "name": "Blade Ring",
     "date": "2026-05-15",
-    "description": "Throw neon blades into a spinning disc \u2014 time each throw so your blade doesn't hit one already embedded! Golden gem diamonds score +100 bonus points as the disc speeds up and reverses direction each round.",
+    "description": "Throw neon blades into a spinning disc — time each throw so your blade doesn't hit one already embedded! Golden gem diamonds score +100 bonus points as the disc speeds up and reverses direction each round.",
     "tagline": "Time the throw. Don't hit a blade. Chain the combos!",
     "tags": [
       "timing",
@@ -1528,13 +1604,14 @@
     "controls": "Click / Tap to throw a blade into the spinning disc",
     "folder": "games/2026-05-15",
     "file": "games/2026-05-15/index.html",
-    "preview": "games/2026-05-15/preview.png"
+    "preview": "games/2026-05-15/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-05-19",
     "name": "Trail Blaze",
     "date": "2026-05-19",
-    "description": "Steer your neon light cycle to outlast two AI opponents \u2014 leave glowing trails that eliminate anyone who crosses them! Chain AI kills for massive combo multipliers as the speed escalates each wave.",
+    "description": "Steer your neon light cycle to outlast two AI opponents — leave glowing trails that eliminate anyone who crosses them! Chain AI kills for massive combo multipliers as the speed escalates each wave.",
     "tagline": "Blaze the trail. Cut off the AI. Don't cross the neon!",
     "tags": [
       "action",
@@ -1545,16 +1622,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Arrow Keys / WASD to turn \u00b7 Tap above/below or left/right of your head on mobile",
+    "controls": "Arrow Keys / WASD to turn · Tap above/below or left/right of your head on mobile",
     "folder": "games/2026-05-19",
     "file": "games/2026-05-19/index.html",
-    "preview": "games/2026-05-19/preview.png"
+    "preview": "games/2026-05-19/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-05-17",
     "name": "Prism Sum",
     "date": "2026-05-17",
-    "description": "Click numbered neon prisms on a 5\u00d74 grid that add up to the glowing target \u2014 chain consecutive matches for explosive combo multipliers and race the 90-second countdown!",
+    "description": "Click numbered neon prisms on a 5×4 grid that add up to the glowing target — chain consecutive matches for explosive combo multipliers and race the 90-second countdown!",
     "tagline": "Pick the prisms. Hit the target. Chain the combos!",
     "tags": [
       "math",
@@ -1568,13 +1646,14 @@
     "controls": "Click / Tap numbered prisms whose values sum to the target number",
     "folder": "games/2026-05-17",
     "file": "games/2026-05-17/index.html",
-    "preview": "games/2026-05-17/preview.png"
+    "preview": "games/2026-05-17/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-05-20",
     "name": "Shell Rush",
     "date": "2026-05-20",
-    "description": "Watch the glowing neon card reveal, then track it through rapid shuffles \u2014 pick the right card to score! Cards, swaps, and speed all escalate as your combo multiplier climbs.",
+    "description": "Watch the glowing neon card reveal, then track it through rapid shuffles — pick the right card to score! Cards, swaps, and speed all escalate as your combo multiplier climbs.",
     "tagline": "Track the glow. Beat the shuffle. Chain the combos!",
     "tags": [
       "memory",
@@ -1588,13 +1667,14 @@
     "controls": "Click / Tap the card you tracked through the shuffle",
     "folder": "games/2026-05-20",
     "file": "games/2026-05-20/index.html",
-    "preview": "games/2026-05-20/preview.png"
+    "preview": "games/2026-05-20/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-05-21",
     "name": "String Strike",
     "date": "2026-05-21",
-    "description": "Enemies ride neon harp strings toward the glowing center node \u2014 click to unleash a vertical shockwave that ripples across ALL strings simultaneously, destroying every enemy the wave front touches! Chain multi-string kills for massive combo multipliers.",
+    "description": "Enemies ride neon harp strings toward the glowing center node — click to unleash a vertical shockwave that ripples across ALL strings simultaneously, destroying every enemy the wave front touches! Chain multi-string kills for massive combo multipliers.",
     "tagline": "Click to shockwave. Chain the kills. Protect the strings!",
     "tags": [
       "action",
@@ -1605,16 +1685,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap anywhere to send a shockwave across all strings \u2014 destroy enemies before they reach the center!",
+    "controls": "Click / Tap anywhere to send a shockwave across all strings — destroy enemies before they reach the center!",
     "folder": "games/2026-05-21",
     "file": "games/2026-05-21/index.html",
-    "preview": "games/2026-05-21/preview.png"
+    "preview": "games/2026-05-21/preview.png",
+    "rating": 4.9
   },
   {
     "id": "2026-05-22",
     "name": "Neon Dice Rush",
     "date": "2026-05-22",
-    "description": "Roll 5 neon dice and lock the keepers \u2014 reroll up to 3 times per turn to build scoring combos! Chain consecutive high-scoring turns for massive multipliers and race the 90-second clock!",
+    "description": "Roll 5 neon dice and lock the keepers — reroll up to 3 times per turn to build scoring combos! Chain consecutive high-scoring turns for massive multipliers and race the 90-second clock!",
     "tagline": "Roll. Lock. Score. Chain the combos!",
     "tags": [
       "dice",
@@ -1625,16 +1706,17 @@
     ],
     "difficulty": "easy",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap dice to lock them \u00b7 Click ROLL to reroll \u00b7 Click SCORE to bank your combo",
+    "controls": "Click / Tap dice to lock them · Click ROLL to reroll · Click SCORE to bank your combo",
     "folder": "games/2026-05-22",
     "file": "games/2026-05-22/index.html",
-    "preview": "games/2026-05-22/preview.png"
+    "preview": "games/2026-05-22/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-05-23",
     "name": "Snap Lock",
     "date": "2026-05-23",
-    "description": "Two neon scanlines sweep the field independently \u2014 click to fire when their crosshair intersection locks on a glowing target! PERFECT hits earn massive points; chain consecutive locks for explosive combo multipliers before targets expire!",
+    "description": "Two neon scanlines sweep the field independently — click to fire when their crosshair intersection locks on a glowing target! PERFECT hits earn massive points; chain consecutive locks for explosive combo multipliers before targets expire!",
     "tagline": "Lock the crosshair. Fire the shot. Chain the combos!",
     "tags": [
       "timing",
@@ -1648,13 +1730,14 @@
     "controls": "Click / Tap to fire when the scanning crosshair is over a target",
     "folder": "games/2026-05-23",
     "file": "games/2026-05-23/index.html",
-    "preview": "games/2026-05-23/preview.png"
+    "preview": "games/2026-05-23/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-05-24",
     "name": "Blast Zone",
     "date": "2026-05-24",
-    "description": "Navigate a neon arena and place timed bombs to blast glowing enemies \u2014 chain multi-kills for massive combo multipliers, collect power-ups to boost range and bomb count, and clear all enemies to advance!",
+    "description": "Navigate a neon arena and place timed bombs to blast glowing enemies — chain multi-kills for massive combo multipliers, collect power-ups to boost range and bomb count, and clear all enemies to advance!",
     "tagline": "Place bombs. Chain kills. Clear the zone!",
     "tags": [
       "action",
@@ -1665,16 +1748,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Arrow Keys / WASD to move \u00b7 Space / Z to place bomb \u00b7 Mobile D-pad buttons",
+    "controls": "Arrow Keys / WASD to move · Space / Z to place bomb · Mobile D-pad buttons",
     "folder": "games/2026-05-24",
     "file": "games/2026-05-24/index.html",
-    "preview": "games/2026-05-24/preview.png"
+    "preview": "games/2026-05-24/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-05-25",
     "name": "Card Rush",
     "date": "2026-05-25",
-    "description": "Neon playing cards slide past in 4 lanes \u2014 click to grab 5 cards and build the best poker hand! Chain hands for combo multipliers as cards speed up each round.",
+    "description": "Neon playing cards slide past in 4 lanes — click to grab 5 cards and build the best poker hand! Chain hands for combo multipliers as cards speed up each round.",
     "tagline": "Grab 5 cards. Build the best hand. Chain the combos!",
     "tags": [
       "cards",
@@ -1685,16 +1769,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap sliding cards to grab them \u2014 collect 5 for a poker hand \u00b7 DISCARD button resets held cards",
+    "controls": "Click / Tap sliding cards to grab them — collect 5 for a poker hand · DISCARD button resets held cards",
     "folder": "games/2026-05-25",
     "file": "games/2026-05-25/index.html",
-    "preview": "games/2026-05-25/preview.png"
+    "preview": "games/2026-05-25/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-05-27",
     "name": "Neon Word Hunt",
     "date": "2026-05-27",
-    "description": "Drag across a glowing 8\u00d78 letter grid to find hidden words \u2014 horizontal, vertical, or diagonal! Chain consecutive finds for explosive combo multipliers and race the 90-second clock!",
+    "description": "Drag across a glowing 8×8 letter grid to find hidden words — horizontal, vertical, or diagonal! Chain consecutive finds for explosive combo multipliers and race the 90-second clock!",
     "tagline": "Drag to spell. Find the words. Chain the combos!",
     "tags": [
       "word",
@@ -1705,16 +1790,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click and drag across adjacent letters to spell hidden words \u2014 any direction!",
+    "controls": "Click and drag across adjacent letters to spell hidden words — any direction!",
     "folder": "games/2026-05-27",
     "file": "games/2026-05-27/index.html",
-    "preview": "games/2026-05-27/preview.png"
+    "preview": "games/2026-05-27/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-05-28",
     "name": "Mirror Blaze",
     "date": "2026-05-28",
-    "description": "Redirect a glowing laser beam using / and \\ mirrors on a neon grid to hit all targets simultaneously \u2014 chain level completions for massive combo multipliers as puzzles grow more complex each round!",
+    "description": "Redirect a glowing laser beam using / and \\ mirrors on a neon grid to hit all targets simultaneously — chain level completions for massive combo multipliers as puzzles grow more complex each round!",
     "tagline": "Place mirrors. Redirect the laser. Hit all targets!",
     "tags": [
       "puzzle",
@@ -1725,16 +1811,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click an empty cell to place a / mirror \u00b7 Click again for \\ \u00b7 Click again to remove",
+    "controls": "Click an empty cell to place a / mirror · Click again for \\ · Click again to remove",
     "folder": "games/2026-05-28",
     "file": "games/2026-05-28/index.html",
-    "preview": "games/2026-05-28/preview.png"
+    "preview": "games/2026-05-28/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-05-29",
     "name": "Neon Infiltrator",
     "date": "2026-05-29",
-    "description": "Sneak a glowing cyan agent across a 10\u00d710 neon grid \u2014 dodge rotating yellow spotlight cones from orange guard sentinels and reach the golden vault before getting caught! Chain level completions for massive combo multipliers.",
+    "description": "Sneak a glowing cyan agent across a 10×10 neon grid — dodge rotating yellow spotlight cones from orange guard sentinels and reach the golden vault before getting caught! Chain level completions for massive combo multipliers.",
     "tagline": "Dodge the spotlights. Crack the vault. Don't get caught!",
     "tags": [
       "stealth",
@@ -1748,13 +1835,14 @@
     "controls": "Arrow Keys / WASD to move one cell at a time | Tap D-pad on mobile",
     "folder": "games/2026-05-29",
     "file": "games/2026-05-29/index.html",
-    "preview": "games/2026-05-29/preview.png"
+    "preview": "games/2026-05-29/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-05-30",
     "name": "Neon Strike",
     "date": "2026-05-30",
-    "description": "Move your glowing ball along the lane to aim, hold to charge power, then release to bowl \u2014 scatter neon pins with chain-reaction physics, chain consecutive strikes for massive combo multipliers, and survive 3 gutter balls before game over!",
+    "description": "Move your glowing ball along the lane to aim, hold to charge power, then release to bowl — scatter neon pins with chain-reaction physics, chain consecutive strikes for massive combo multipliers, and survive 3 gutter balls before game over!",
     "tagline": "Aim. Charge. Bowl. Chain the strikes!",
     "tags": [
       "physics",
@@ -1765,16 +1853,17 @@
     ],
     "difficulty": "easy",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse to aim \u00b7 Hold mouse button to charge power \u00b7 Release to bowl | Drag on mobile",
+    "controls": "Move mouse to aim · Hold mouse button to charge power · Release to bowl | Drag on mobile",
     "folder": "games/2026-05-30",
     "file": "games/2026-05-30/index.html",
-    "preview": "games/2026-05-30/preview.png"
+    "preview": "games/2026-05-30/preview.png",
+    "rating": 4.4
   },
   {
     "id": "2026-05-31",
     "name": "Neon Fortress",
     "date": "2026-05-31",
-    "description": "Build neon turrets on a grid to defend against 10 waves of glowing hexagon invaders \u2014 place Laser, Plasma, and Nova towers strategically to stop enemies before they reach the base!",
+    "description": "Build neon turrets on a grid to defend against 10 waves of glowing hexagon invaders — place Laser, Plasma, and Nova towers strategically to stop enemies before they reach the base!",
     "tagline": "Place towers. Hold the line. Survive 10 waves!",
     "tags": [
       "strategy",
@@ -1785,16 +1874,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "5 minutes",
-    "controls": "Click empty grid cells to place towers \u00b7 Select tower type in HUD \u00b7 Enemies auto-targeted by towers",
+    "controls": "Click empty grid cells to place towers · Select tower type in HUD · Enemies auto-targeted by towers",
     "folder": "games/2026-05-31",
     "file": "games/2026-05-31/index.html",
-    "preview": "games/2026-05-31/preview.png"
+    "preview": "games/2026-05-31/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-06-01",
     "name": "Skeet Surge",
     "date": "2026-06-01",
-    "description": "Neon clay discs launch from the edges in parabolic arcs \u2014 aim your crosshair and click to blast them before they escape! Chain consecutive hits for massive combo multipliers and precision bullseye bonuses.",
+    "description": "Neon clay discs launch from the edges in parabolic arcs — aim your crosshair and click to blast them before they escape! Chain consecutive hits for massive combo multipliers and precision bullseye bonuses.",
     "tagline": "Aim the crosshair. Blast the disc. Chain the combos!",
     "tags": [
       "shooting",
@@ -1805,16 +1895,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Move mouse to aim crosshair \u00b7 Click / Tap to shoot at flying neon discs",
+    "controls": "Move mouse to aim crosshair · Click / Tap to shoot at flying neon discs",
     "folder": "games/2026-06-01",
     "file": "games/2026-06-01/index.html",
-    "preview": "games/2026-06-01/preview.png"
+    "preview": "games/2026-06-01/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-06-02",
     "name": "Neon Bloom",
     "date": "2026-06-02",
-    "description": "Neon flowers spring to life on a 5\u00d75 grid, each pulsing through bud, bloom, and wither stages. Click flowers at peak bloom for maximum points and combo multipliers \u2014 but miss the window and they'll wither, costing you a life!",
+    "description": "Neon flowers spring to life on a 5×5 grid, each pulsing through bud, bloom, and wither stages. Click flowers at peak bloom for maximum points and combo multipliers — but miss the window and they'll wither, costing you a life!",
     "tagline": "Time your harvest. Catch the bloom. Chain the neon!",
     "tags": [
       "timing",
@@ -1825,16 +1916,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap blooming flowers at peak glow for max points \u00b7 Harvest combos for score multipliers",
+    "controls": "Click / Tap blooming flowers at peak glow for max points · Harvest combos for score multipliers",
     "folder": "games/2026-06-02",
     "file": "games/2026-06-02/index.html",
-    "preview": "games/2026-06-02/preview.png"
+    "preview": "games/2026-06-02/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-06-03",
     "name": "Sling Smash",
     "date": "2026-06-03",
-    "description": "Pull back a neon slingshot and blast glowing HP blocks \u2014 aim for chain-reaction combos, rack up points across 5 escalating levels, and smash every block before your shots run out!",
+    "description": "Pull back a neon slingshot and blast glowing HP blocks — aim for chain-reaction combos, rack up points across 5 escalating levels, and smash every block before your shots run out!",
     "tagline": "Pull back. Aim. Smash the neon blocks!",
     "tags": [
       "physics",
@@ -1845,16 +1937,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Click and drag left side to pull slingshot \u00b7 Release to fire \u00b7 Aim for chain combos!",
+    "controls": "Click and drag left side to pull slingshot · Release to fire · Aim for chain combos!",
     "folder": "games/2026-06-03",
     "file": "games/2026-06-03/index.html",
-    "preview": "games/2026-06-03/preview.png"
+    "preview": "games/2026-06-03/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-06-05",
     "name": "Hue Rush",
     "date": "2026-06-05",
-    "description": "A neon Stroop challenge \u2014 color words flash on screen in a mismatched ink color. Click the actual INK color as fast as you can, chain correct answers for massive combo multipliers, and survive 90 seconds before time runs out!",
+    "description": "A neon Stroop challenge — color words flash on screen in a mismatched ink color. Click the actual INK color as fast as you can, chain correct answers for massive combo multipliers, and survive 90 seconds before time runs out!",
     "tagline": "Read the color, not the word. Beat the confusion!",
     "tags": [
       "reflex",
@@ -1868,13 +1961,14 @@
     "controls": "Click / Tap the color button matching the INK color of the displayed word",
     "folder": "games/2026-06-05",
     "file": "games/2026-06-05/index.html",
-    "preview": "games/2026-06-05/preview.png"
+    "preview": "games/2026-06-05/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-06-06",
     "name": "Fusion Drop",
     "date": "2026-06-06",
-    "description": "Drop neon orbs into a container and merge matching pairs into larger ones \u2014 chain cascade merges for massive scores before the stack overflows!",
+    "description": "Drop neon orbs into a container and merge matching pairs into larger ones — chain cascade merges for massive scores before the stack overflows!",
     "tagline": "Drop. Merge. Chain the fusion!",
     "tags": [
       "physics",
@@ -1885,16 +1979,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Move mouse to aim \u00b7 Click / Tap to drop an orb \u00b7 Match same orbs to merge",
+    "controls": "Move mouse to aim · Click / Tap to drop an orb · Match same orbs to merge",
     "folder": "games/2026-06-06",
     "file": "games/2026-06-06/index.html",
-    "preview": "games/2026-06-06/preview.png"
+    "preview": "games/2026-06-06/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-06-07",
     "name": "Cargo Pulse",
     "date": "2026-06-07",
-    "description": "Navigate a glowing grid and push the neon cargo crate along the magenta conduit onto the pulsing pad \u2014 clear levels fast and efficiently to chain massive combo multipliers before time runs out!",
+    "description": "Navigate a glowing grid and push the neon cargo crate along the magenta conduit onto the pulsing pad — clear levels fast and efficiently to chain massive combo multipliers before time runs out!",
     "tagline": "Push the cargo. Hit the pulse. Chain the clears!",
     "tags": [
       "puzzle",
@@ -1908,13 +2003,14 @@
     "controls": "Arrow Keys / WASD / on-screen D-pad to walk and push the crate",
     "folder": "games/2026-06-07",
     "file": "games/2026-06-07/index.html",
-    "preview": "games/2026-06-07/preview.png"
+    "preview": "games/2026-06-07/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-06-08",
     "name": "Vector Slash",
     "date": "2026-06-08",
-    "description": "Glowing neon orbs spawn across the screen, each branded with a directional arrow \u2014 swipe through them in the exact direction shown to slash them apart! Chain correct-direction hits for massive combo multipliers, but a wrong-way swipe shatters your combo and a missed orb costs a life.",
+    "description": "Glowing neon orbs spawn across the screen, each branded with a directional arrow — swipe through them in the exact direction shown to slash them apart! Chain correct-direction hits for massive combo multipliers, but a wrong-way swipe shatters your combo and a missed orb costs a life.",
     "tagline": "Read the arrow. Swipe the vector. Slash with precision!",
     "tags": [
       "reflex",
@@ -1928,13 +2024,14 @@
     "controls": "Click and drag / swipe through an orb in the direction of its arrow to slash it",
     "folder": "games/2026-06-08",
     "file": "games/2026-06-08/index.html",
-    "preview": "games/2026-06-08/preview.png"
+    "preview": "games/2026-06-08/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-06-09",
     "name": "Claw Rush",
     "date": "2026-06-09",
-    "description": "A neon claw swings across columns of glowing hexagonal gems \u2014 time your drop to grab the target-colored gem and chain correct picks for massive combo multipliers! Empty columns cost a life.",
+    "description": "A neon claw swings across columns of glowing hexagonal gems — time your drop to grab the target-colored gem and chain correct picks for massive combo multipliers! Empty columns cost a life.",
     "tagline": "Swing the claw. Grab the target. Chain the combos!",
     "tags": [
       "timing",
@@ -1945,16 +2042,17 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click / Tap / Space to drop the claw \u2014 time it over the target-colored gem column",
+    "controls": "Click / Tap / Space to drop the claw — time it over the target-colored gem column",
     "folder": "games/2026-06-09",
     "file": "games/2026-06-09/index.html",
-    "preview": "games/2026-06-09/preview.png"
+    "preview": "games/2026-06-09/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-06-10",
     "name": "Resonance Rush",
     "date": "2026-06-10",
-    "description": "Tune your frequency wave to match the shifting target wave before your signal stability runs out \u2014 lock onto resonance for points, combos, and rising levels.",
+    "description": "Tune your frequency wave to match the shifting target wave before your signal stability runs out — lock onto resonance for points, combos, and rising levels.",
     "tagline": "Find the frequency. Feel the resonance. Don't lose the signal.",
     "tags": [
       "precision",
@@ -1968,7 +2066,8 @@
     "controls": "Move mouse / touch up and down (or Arrow Up/Down) to tune your wave's frequency to the target",
     "folder": "games/2026-06-10",
     "file": "games/2026-06-10/index.html",
-    "preview": "games/2026-06-10/preview.png"
+    "preview": "games/2026-06-10/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-06-11",
@@ -1985,10 +2084,11 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "\u2190 / A : drop on left pan \u00b7 \u2192 / D : drop on right pan | Tap left/right zones on mobile",
+    "controls": "← / A : drop on left pan · → / D : drop on right pan | Tap left/right zones on mobile",
     "folder": "games/2026-06-11",
     "file": "games/2026-06-11/index.html",
-    "preview": "games/2026-06-11/preview.png"
+    "preview": "games/2026-06-11/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-06-12",
@@ -2005,10 +2105,11 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Click/tap and drag the glowing dot along the neon path \u00b7 Release to stop tracing",
+    "controls": "Click/tap and drag the glowing dot along the neon path · Release to stop tracing",
     "folder": "games/2026-06-12",
     "file": "games/2026-06-12/index.html",
-    "preview": "games/2026-06-12/preview.png"
+    "preview": "games/2026-06-12/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-06-13",
@@ -2028,7 +2129,8 @@
     "controls": "Move mouse / touch, or WASD / Arrow keys to drift your orb, collect gems, and dodge hazards and echoes of your past self",
     "folder": "games/2026-06-13",
     "file": "games/2026-06-13/index.html",
-    "preview": "games/2026-06-13/preview.png"
+    "preview": "games/2026-06-13/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-06-14",
@@ -2048,7 +2150,8 @@
     "controls": "Click, tap, or press Space / ArrowUp / W the instant the diamond marker lights up over a gap to forge a new tile",
     "folder": "games/2026-06-14",
     "file": "games/2026-06-14/index.html",
-    "preview": "games/2026-06-14/preview.png"
+    "preview": "games/2026-06-14/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-06-15",
@@ -2068,7 +2171,8 @@
     "controls": "Click/tap the CHARGE and VENT buttons, or press Up/W/Space to charge and Down/S to vent, to balance Heat and Energy",
     "folder": "games/2026-06-15",
     "file": "games/2026-06-15/index.html",
-    "preview": "games/2026-06-15/preview.png"
+    "preview": "games/2026-06-15/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-06-28",
@@ -2088,7 +2192,8 @@
     "controls": "Tap the D-pad arrows or press Arrow keys / WASD to queue moves, then click RUN or press Enter/Space to execute; Backspace undoes the last move",
     "folder": "games/2026-06-28",
     "file": "games/2026-06-28/index.html",
-    "preview": "games/2026-06-28/preview.png"
+    "preview": "games/2026-06-28/preview.png",
+    "rating": 4.9
   },
   {
     "id": "2026-06-29",
@@ -2105,10 +2210,11 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "2 minutes",
-    "controls": "Hold mouse / touch / Space to dive down slopes \u2014 release to glide and launch off crests through the gold rings",
+    "controls": "Hold mouse / touch / Space to dive down slopes — release to glide and launch off crests through the gold rings",
     "folder": "games/2026-06-29",
     "file": "games/2026-06-29/index.html",
-    "preview": "games/2026-06-29/preview.png"
+    "preview": "games/2026-06-29/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-06-30",
@@ -2128,7 +2234,8 @@
     "controls": "Click / Tap / Space to instantly flip gravity direction",
     "folder": "games/2026-06-30",
     "file": "games/2026-06-30/index.html",
-    "preview": "games/2026-06-30/preview.png"
+    "preview": "games/2026-06-30/preview.png",
+    "rating": 4.8
   },
   {
     "id": "2026-07-01",
@@ -2148,7 +2255,8 @@
     "controls": "Move mouse / touch to repel glowing sheep — guide them through the golden gate on the right",
     "folder": "games/2026-07-01",
     "file": "games/2026-07-01/index.html",
-    "preview": "games/2026-07-01/preview.png"
+    "preview": "games/2026-07-01/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-07-06",
@@ -2168,7 +2276,8 @@
     "controls": "Click / Tap a vial to select it, then click another vial to pour the top color",
     "folder": "games/2026-07-06",
     "file": "games/2026-07-06/index.html",
-    "preview": "games/2026-07-06/preview.png"
+    "preview": "games/2026-07-06/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-07-05",
@@ -2188,7 +2297,8 @@
     "controls": "Click / Tap on glowing crack lines to seal them before they spread fully across the shape",
     "folder": "games/2026-07-05",
     "file": "games/2026-07-05/index.html",
-    "preview": "games/2026-07-05/preview.png"
+    "preview": "games/2026-07-05/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-07-07",
@@ -2208,7 +2318,8 @@
     "controls": "Click / Tap switch nodes to toggle between straight and cross — route each signal to its matching colored exit",
     "folder": "games/2026-07-07",
     "file": "games/2026-07-07/index.html",
-    "preview": "games/2026-07-07/preview.png"
+    "preview": "games/2026-07-07/preview.png",
+    "rating": 4.9
   },
   {
     "id": "2026-07-08",
@@ -2228,7 +2339,8 @@
     "controls": "Click and drag glowing nodes to move them — untangle all edge crossings to complete each level",
     "folder": "games/2026-07-08",
     "file": "games/2026-07-08/index.html",
-    "preview": "games/2026-07-08/preview.png"
+    "preview": "games/2026-07-08/preview.png",
+    "rating": 4.6
   },
   {
     "id": "2026-07-09",
@@ -2248,7 +2360,8 @@
     "controls": "Click canvas to nudge ball · Keys 1-2-3-4 or color buttons to change ball color · Match color to zone and bounce into it",
     "folder": "games/2026-07-09",
     "file": "games/2026-07-09/index.html",
-    "preview": "games/2026-07-09/preview.png"
+    "preview": "games/2026-07-09/preview.png",
+    "rating": 4.5
   },
   {
     "id": "2026-07-10",
@@ -2268,7 +2381,8 @@
     "controls": "Move mouse / touch to guide your neon cell — absorb smaller orbs, dodge red predators",
     "folder": "games/2026-07-10",
     "file": "games/2026-07-10/index.html",
-    "preview": "games/2026-07-10/preview.png"
+    "preview": "games/2026-07-10/preview.png",
+    "rating": 4.7
   },
   {
     "id": "2026-07-11",
@@ -2288,6 +2402,7 @@
     "controls": "Click and drag across a shape to cleave it — aim your line through the shape's center dot for PERFECT!",
     "folder": "games/2026-07-11",
     "file": "games/2026-07-11/index.html",
-    "preview": "games/2026-07-11/preview.png"
+    "preview": "games/2026-07-11/preview.png",
+    "rating": 4.5
   }
 ]
