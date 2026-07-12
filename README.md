@@ -1,4 +1,4 @@
-# 🎮 Daily Flashy Games
+# 🕹️ Neon Game Arcade
 
 **A new addictive, beautiful web game generated automatically every single day by Claude Code!**
 
@@ -39,7 +39,7 @@ daily-flashy-games/
 │   │   ├── game.test.js
 │   │   └── preview.png
 │   └── ...
-├── Claude.md                        # Instructions for Claude Code
+├── CLAUDE.md                        # Instructions for Claude Code
 ├── index.html                       # Main gallery UI
 ├── games-registry.json              # Game metadata
 ├── package.json                     # Test dependencies
@@ -59,7 +59,7 @@ cd daily-flashy-games
 ### 2. Add Files
 
 Copy all files from this template:
-- `Claude.md` (Claude Code instructions)
+- `CLAUDE.md` (Claude Code instructions)
 - `index.html` (Game gallery)
 - `games-registry.json` (Initial registry)
 - `.github/workflows/daily-game.yml` (Automation)
@@ -161,7 +161,7 @@ Each game is unique, flashy, and addictive!
 
 **Stage 1: Generate Game** 🎨
 Uses the official `anthropics/claude-code-action@v1`:
-1. Action reads `Claude.md` instructions via prompt parameter
+1. Action reads `CLAUDE.md` instructions via prompt parameter
 2. Checks `games-registry.json` for existing games
 3. Analyzes last 7 games to avoid duplicate mechanics
 4. Generates unique game concept
@@ -284,7 +284,7 @@ Every game must have:
 
 Claude Code should prevent this, but if it happens:
 1. Check if `games-registry.json` is being read correctly
-2. Verify the duplicate prevention logic in Claude.md
+2. Verify the duplicate prevention logic in CLAUDE.md
 3. Manually remove duplicate from registry
 4. Delete duplicate game files
 
@@ -308,7 +308,7 @@ npx playwright show-report
 ### Want to Customize?
 
 - **Game frequency**: Edit cron schedule in `.github/workflows/daily-game.yml`
-- **Game style**: Modify requirements in `Claude.md`
+- **Game style**: Modify requirements in `CLAUDE.md`
 - **Gallery UI**: Edit `index.html` styling/layout
 - **Game tags**: Update filter options in both files
 

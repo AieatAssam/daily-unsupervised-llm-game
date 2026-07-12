@@ -25,7 +25,7 @@ Copy these files from the template to your repository:
 daily-flashy-games/
 ├── .github/workflows/daily-game.yml   ← Rename from .github-workflows-daily-game.yml
 ├── .gitignore
-├── Claude.md
+├── CLAUDE.md
 ├── README.md
 ├── index.html
 ├── games-registry.json
@@ -189,7 +189,7 @@ npm run test:ui
 ### Customize
 
 - **Game frequency:** Edit `.github/workflows/daily-game.yml` cron schedule
-- **Game style:** Modify `Claude.md` requirements
+- **Game style:** Modify `CLAUDE.md` requirements
 - **Gallery theme:** Edit `index.html` colors/layout
 - **Test strictness:** Adjust `playwright.config.js`
 
@@ -199,7 +199,7 @@ Each day at 3 AM UTC:
 
 1. GitHub Actions triggers the workflow
 2. Official Claude Code Action (`anthropics/claude-code-action@v1`) starts
-3. Reads `Claude.md` instructions via the prompt parameter
+3. Reads `CLAUDE.md` instructions via the prompt parameter
 4. Checks existing games to avoid duplicates
 5. Invents a completely unique game concept
 6. Creates folder `games/YYYY-MM-DD/`
@@ -225,7 +225,7 @@ If stuck:
 When you see your first AI-generated game:
 - Share it! 
 - Star the repo ⭐
-- Customize Claude.md for your style
+- Customize CLAUDE.md for your style
 - Enjoy a new game every day!
 
 **Pro Tip:** Visit your gallery daily - each game is a surprise! 🎲
