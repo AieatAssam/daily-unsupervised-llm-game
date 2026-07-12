@@ -167,10 +167,11 @@
         g.spawnInterval = 4500;
         g.ballCount = 0;
         if (!g.audio) g.audio = initAudio();
-        // Spawn first 3 balls staggered
+        // Spawn first 3 balls staggered — give the player time to settle
+        // into juggling one ball before the next arrives
         spawnBall(canvas, g);
-        setTimeout(() => { if (g.phase === 'playing') spawnBall(canvas, g); }, 900);
-        setTimeout(() => { if (g.phase === 'playing') spawnBall(canvas, g); }, 1800);
+        setTimeout(() => { if (g.phase === 'playing') spawnBall(canvas, g); }, 2200);
+        setTimeout(() => { if (g.phase === 'playing') spawnBall(canvas, g); }, 4800);
       }
 
       function handleInput(cx, cy) {

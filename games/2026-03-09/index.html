@@ -723,7 +723,10 @@
 
         // ── Resize ──
         function resize() {
-          const scale = Math.min(window.innerWidth / GW, window.innerHeight / GH, 1.4);
+          // Reserve room below the canvas for the flipper button row so it
+          // never gets pushed off-screen on small viewports
+          const BUTTON_ROW = 64;
+          const scale = Math.min(window.innerWidth / GW, (window.innerHeight - BUTTON_ROW) / GH, 1.4);
           canvas.style.width  = `${GW * scale}px`;
           canvas.style.height = `${GH * scale}px`;
         }
