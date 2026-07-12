@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Prophet</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #08001a; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; -webkit-user-select: none; }
+    #root { width: 100vw; height: 100vh; }
+    canvas { display: block; }
+    button:hover { filter: brightness(1.25); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // Initialize localStorage on page load
+    if (!localStorage.getItem('neonProphetHigh')) {
+      localStorage.setItem('neonProphetHigh', '0');
+    }
+
+    const RING_DURATION = 2000;
+    const MAX_RINGS = 3;
+    const GAME_DURATION = 90;
+    const RING_RADIUS = 68;
+    const ORB_R = 13;
+    const COLORS = ['#00ffff','#ff00ff','#ffff00','#00ff88','#ff6600','#bb44ff'];
+
+    const mkAudio = () => {
+      try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+    };
+
+    const beep = (ctx, freq, dur, vol, type) => {
+      if (!ctx) return;
+      try {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = freq; o.type = type || 'sine';
+        g.gain.setValueAtTime(vol || 0.3, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.start(); o.stop(ctx.currentTime + dur + 0.01);
+      } catch(e) {}
+    };
+
+    const sfxPlace  = (a) => beep(a, 440, 0.12, 0.25, 'sine');
+    const sfxHit    = (a) => beep(a, 880, 0.22, 0.4, 'triangle');
+    const sfxCombo  = (a) => { beep(a, 660, 0.1, 0.3, 'triangle'); setTimeout(() => beep(a, 990, 0.28, 0.45, 'triangle'), 80); };
+    const sfxMiss   = (a) => beep(a, 140, 0.22, 0.2, 'square');
+    const sfxLevel  = (a) => { beep(a, 523, 0.1, 0.3, 'triangle'); setTimeout(() => beep(a, 659, 0.1, 0.3, 'triangle'), 110); setTimeout(() => beep(a, 784, 0.25, 0.4, 'triangle'), 220); };
+
+    function spawnOrb(id, w, h) {
+      const spd = 1.3 + Math.random() * 0.9;
+      const ang = Math.random() * Math.PI * 2;
+      return {
+        id,
+        color: COLORS[id % COLORS.length],
+        x: ORB_R + Math.random() * (w - ORB_R * 2),
+        y: ORB_R + Math.random() * (h - ORB_R * 2),
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        pulse: Math.random() * Math.PI * 2,
+      };
+    }
+
+    const NeonProphet = () => {
+      const canvasRef = useRef(null);
+      const audioRef  = useRef(null);
+      const animRef   = useRef(null);
+      const G         = useRef(null); // game state
+
+      const [screen, setScreen]         = useState('start');
+      const [finalScore, setFinalScore] = useState(0);
+      const [highScore, setHighScore]   = useState(
+        () => parseInt(localStorage.getItem('neonProphetHigh') || '0')
+      );
+
+      // init / resize canvas
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        resize();
+        window.addEventListener('resize', resize);
+        return () => window.removeEventListener('resize', resize);
+      }, []);
+
+      // start game
+      const startGame = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        if (!audioRef.current) audioRef.current = mkAudio();
+        const w = canvas.width, h = canvas.height;
+        G.current = {
+          phase: 'playing',
+          orbs: Array.from({length: 5}, (_, i) => spawnOrb(i, w, h)),
+          rings: [], particles: [], popups: [],
+          score: 0, combo: 0, timeLeft: GAME_DURATION,
+          level: 1, speedMult: 1,
+          nextRingId: 0, nextOrbId: 5,
+        };
+        setScreen('playing');
+      }, []);
+
+      // animation loop — restarts when screen changes
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const loop = (ts) => {
+          animRef.current = requestAnimationFrame(loop);
+          const g = G.current;
+          const w = canvas.width, h = canvas.height;
+
+          // background
+          ctx.fillStyle = '#08001a';
+          ctx.fillRect(0, 0, w, h);
+          // grid
+          ctx.strokeStyle = 'rgba(55,0,90,0.13)'; ctx.lineWidth = 1;
+          for (let x = 0; x <= w; x += 60) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+          for (let y = 0; y <= h; y += 60) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+
+          if (!g || g.phase !== 'playing') {
+            // decorative floating blobs on non-game screens
+            for (let i = 0; i < 5; i++) {
+              const bx = w*(0.1 + (i%3)*0.38) + Math.sin(ts/2100+i*1.3)*90;
+              const by = h*(0.15 + Math.floor(i/3)*0.6) + Math.cos(ts/2700+i*1.7)*70;
+              ctx.shadowColor = COLORS[i]; ctx.shadowBlur = 35;
+              ctx.fillStyle = COLORS[i]+'2a';
+              ctx.beginPath(); ctx.arc(bx, by, 55, 0, Math.PI*2); ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+            return;
+          }
+
+          const now = Date.now();
+
+          // update orbs
+          g.orbs.forEach(orb => {
+            orb.x += orb.vx * g.speedMult;
+            orb.y += orb.vy * g.speedMult;
+            orb.pulse += 0.055;
+            if (orb.x < ORB_R) { orb.x = ORB_R; orb.vx = Math.abs(orb.vx); }
+            if (orb.x > w-ORB_R) { orb.x = w-ORB_R; orb.vx = -Math.abs(orb.vx); }
+            if (orb.y < ORB_R) { orb.y = ORB_R; orb.vy = Math.abs(orb.vy); }
+            if (orb.y > h-ORB_R) { orb.y = h-ORB_R; orb.vy = -Math.abs(orb.vy); }
+          });
+
+          // process expired rings
+          const expired = g.rings.filter(r => now - r.startTime >= RING_DURATION);
+          g.rings = g.rings.filter(r => now - r.startTime < RING_DURATION);
+
+          expired.forEach(ring => {
+            const hits = g.orbs.filter(orb => {
+              const dx = orb.x - ring.x, dy = orb.y - ring.y;
+              return Math.sqrt(dx*dx+dy*dy) <= RING_RADIUS;
+            });
+            if (hits.length > 0) {
+              g.combo = Math.min(g.combo + 1, 10);
+              const pts = 100 * hits.length * Math.max(1, g.combo);
+              g.score += pts;
+              // burst particles
+              hits.forEach(orb => {
+                for (let i = 0; i < 16; i++) {
+                  const a = Math.random()*Math.PI*2, sp = 2+Math.random()*5;
+                  g.particles.push({x:orb.x, y:orb.y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, color:orb.color, size:2.5+Math.random()*3});
+                }
+              });
+              g.popups.push({x:ring.x, y:ring.y-20, text:`+${pts}`, color: hits.length>1?'#ffff00':'#00ffff', alpha:1, vy:-2.2});
+              if (g.combo >= 3) { g.popups.push({x:ring.x, y:ring.y+14, text:`x${g.combo} COMBO!`, color:'#ff00ff', alpha:1, vy:-1.6}); sfxCombo(audioRef.current); }
+              else sfxHit(audioRef.current);
+              // level up
+              const threshold = g.level * 600;
+              if (g.score >= threshold) {
+                g.level++;
+                g.speedMult = 1 + (g.level-1) * 0.17;
+                if (g.orbs.length < 12) g.orbs.push(spawnOrb(g.nextOrbId++, w, h));
+                sfxLevel(audioRef.current);
+                g.popups.push({x:w/2, y:h/2, text:`LEVEL ${g.level}!`, color:'#ffcc00', alpha:1.5, vy:-1.2, big:true});
+              }
+            } else {
+              g.combo = 0;
+              g.popups.push({x:ring.x, y:ring.y, text:'MISS', color:'#ff4444', alpha:1, vy:-1.8});
+              sfxMiss(audioRef.current);
+            }
+          });
+
+          // update particles
+          g.particles = g.particles.filter(p => {
+            p.x += p.vx; p.y += p.vy; p.vx *= 0.93; p.vy *= 0.93; p.life -= 0.022;
+            return p.life > 0;
+          });
+          g.popups = g.popups.filter(p => { p.y += p.vy; p.alpha -= 0.018; return p.alpha > 0; });
+
+          // draw rings
+          ctx.setLineDash([]);
+          g.rings.forEach(ring => {
+            const progress = (now - ring.startTime) / RING_DURATION;
+            const rem = 1 - progress;
+            // dashed outer ring
+            ctx.setLineDash([9,7]);
+            ctx.strokeStyle = `rgba(255,200,50,${rem*0.75})`;
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 20*rem;
+            ctx.beginPath(); ctx.arc(ring.x, ring.y, RING_RADIUS, 0, Math.PI*2); ctx.stroke();
+            ctx.setLineDash([]);
+            // countdown arc
+            ctx.strokeStyle = `rgba(255,240,80,${rem*0.9})`;
+            ctx.lineWidth = 4.5;
+            ctx.shadowBlur = 15*rem;
+            ctx.beginPath(); ctx.arc(ring.x, ring.y, RING_RADIUS*0.76, -Math.PI/2, -Math.PI/2 + rem*Math.PI*2); ctx.stroke();
+            // crosshair
+            ctx.strokeStyle = `rgba(255,230,60,${rem*0.45})`;
+            ctx.lineWidth = 1; ctx.shadowBlur = 8;
+            ctx.beginPath(); ctx.moveTo(ring.x-14,ring.y); ctx.lineTo(ring.x+14,ring.y); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(ring.x,ring.y-14); ctx.lineTo(ring.x,ring.y+14); ctx.stroke();
+            // countdown number
+            const secs = Math.ceil((RING_DURATION-(now-ring.startTime))/1000);
+            ctx.shadowBlur = 10*rem;
+            ctx.fillStyle = `rgba(255,230,60,${rem})`;
+            ctx.font = `bold ${Math.round(13*rem+7)}px 'Courier New'`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(secs, ring.x, ring.y);
+          });
+          ctx.setLineDash([]); ctx.shadowBlur = 0;
+
+          // draw particles
+          g.particles.forEach(p => {
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 10;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size*p.life, 0, Math.PI*2); ctx.fill();
+          });
+          ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+          // draw orbs
+          g.orbs.forEach(orb => {
+            const pulse = 0.75 + Math.sin(orb.pulse)*0.25;
+            ctx.shadowColor = orb.color; ctx.shadowBlur = 22*pulse;
+            // halo
+            const gr = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, ORB_R*2.2);
+            gr.addColorStop(0, orb.color+'bb'); gr.addColorStop(0.55, orb.color+'33'); gr.addColorStop(1,'transparent');
+            ctx.fillStyle = gr;
+            ctx.beginPath(); ctx.arc(orb.x, orb.y, ORB_R*2.2, 0, Math.PI*2); ctx.fill();
+            // core
+            ctx.fillStyle = orb.color; ctx.shadowBlur = 18;
+            ctx.beginPath(); ctx.arc(orb.x, orb.y, ORB_R*pulse, 0, Math.PI*2); ctx.fill();
+            // specular
+            ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.shadowBlur = 0;
+            ctx.beginPath(); ctx.arc(orb.x - ORB_R*0.32, orb.y - ORB_R*0.32, ORB_R*0.27, 0, Math.PI*2); ctx.fill();
+          });
+
+          // draw popups
+          g.popups.forEach(p => {
+            ctx.globalAlpha = Math.min(1, p.alpha);
+            ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 14;
+            ctx.font = p.big ? `bold 32px 'Courier New'` : `bold 20px 'Courier New'`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(p.text, p.x, p.y);
+          });
+          ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+          // HUD bar
+          const HH = 68;
+          ctx.fillStyle = 'rgba(6,0,20,0.88)';
+          ctx.fillRect(0, 0, w, HH);
+          ctx.strokeStyle = 'rgba(88,0,160,0.45)';
+          ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0,HH); ctx.lineTo(w,HH); ctx.stroke();
+
+          // SCORE
+          ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 12;
+          ctx.fillStyle = '#00ffff'; ctx.font = 'bold 10px Courier New';
+          ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+          ctx.fillText('SCORE', 18, 10);
+          ctx.font = 'bold 26px Courier New'; ctx.fillText(g.score.toLocaleString(), 18, 24);
+
+          // TIME
+          const isLow = g.timeLeft <= 10;
+          ctx.shadowColor = isLow ? '#ff4444' : '#ff44cc';
+          ctx.fillStyle   = isLow ? '#ff4444' : '#ff44cc';
+          ctx.textAlign = 'center';
+          ctx.font = 'bold 10px Courier New'; ctx.fillText('TIME', w/2, 10);
+          ctx.font = `bold ${isLow ? 32:26}px Courier New`; ctx.fillText(g.timeLeft, w/2, 22);
+
+          // COMBO
+          ctx.shadowColor = '#ffff00'; ctx.fillStyle = '#ffff00';
+          ctx.textAlign = 'right';
+          ctx.font = 'bold 10px Courier New'; ctx.fillText('COMBO', w-18, 10);
+          ctx.font = 'bold 26px Courier New'; ctx.fillText(`x${Math.max(1,g.combo)}`, w-18, 24);
+
+          // ring slots indicator
+          ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(255,255,255,0.3)';
+          ctx.font = '10px Courier New'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+          const filled = g.rings.length, empty = MAX_RINGS - filled;
+          const dot = '● '.repeat(empty) + '○ '.repeat(filled);
+          ctx.fillText(dot.trim() + `  LVL ${g.level}  ORBS ${g.orbs.length}`, w/2, 50);
+        };
+
+        animRef.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(animRef.current);
+      }, [screen]);
+
+      // timer countdown
+      useEffect(() => {
+        if (screen !== 'playing') return;
+        const iv = setInterval(() => {
+          const g = G.current;
+          if (!g || g.phase !== 'playing') return;
+          g.timeLeft--;
+          if (g.timeLeft <= 0) {
+            g.phase = 'over';
+            const sc = g.score;
+            const hi = parseInt(localStorage.getItem('neonProphetHigh')||'0');
+            if (sc > hi) {
+              localStorage.setItem('neonProphetHigh', String(sc));
+              setHighScore(sc);
+            }
+            setFinalScore(sc);
+            setScreen('gameover');
+          }
+        }, 1000);
+        return () => clearInterval(iv);
+      }, [screen]);
+
+      // click / touch handler
+      const placeRing = useCallback((cx, cy) => {
+        const g = G.current;
+        if (!g || g.phase !== 'playing') return;
+        if (g.rings.length >= MAX_RINGS) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        // ignore HUD area
+        if (cy < 72) return;
+        g.rings.push({ id: g.nextRingId++, x: cx, y: cy, startTime: Date.now() });
+        sfxPlace(audioRef.current);
+      }, []);
+
+      const onMouseClick = useCallback((e) => {
+        if (screen !== 'playing') return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        placeRing(e.clientX - rect.left, e.clientY - rect.top);
+      }, [screen, placeRing]);
+
+      const onTouchStart = useCallback((e) => {
+        if (screen !== 'playing') return;
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const t = e.touches[0];
+        placeRing(t.clientX - rect.left, t.clientY - rect.top);
+      }, [screen, placeRing]);
+
+      const btn = (color) => ({
+        background: `${color}1a`,
+        border: `2px solid ${color}`,
+        color, fontSize: 18, fontWeight: 'bold',
+        padding: '13px 44px', borderRadius: 8, cursor: 'pointer',
+        letterSpacing: 4, textShadow: `0 0 12px ${color}`,
+        boxShadow: `0 0 28px ${color}44`,
+        fontFamily: 'Courier New',
+      });
+
+      const overlay = { position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' };
+
+      return (
+        <div style={{width:'100vw',height:'100vh',position:'relative'}}>
+          <canvas
+            ref={canvasRef}
+            style={{display:'block', cursor: screen==='playing' ? 'crosshair' : 'default'}}
+            onClick={onMouseClick}
+            onTouchStart={onTouchStart}
+          />
+
+          {screen === 'start' && (
+            <div style={{...overlay, background:'rgba(6,0,20,0.72)'}}>
+              <div style={{fontSize:'clamp(28px,7vw,64px)',fontWeight:'bold',color:'#00ffff',textShadow:'0 0 40px #00ffff,0 0 80px #00ffff55',letterSpacing:4,marginBottom:6,textAlign:'center'}}>
+                NEON PROPHET
+              </div>
+              <div style={{color:'#ff44cc',fontSize:'clamp(11px,2vw,16px)',marginBottom:34,letterSpacing:3,textShadow:'0 0 12px #ff44cc',textAlign:'center'}}>
+                PREDICT WHERE ORBS WILL BE
+              </div>
+              <div style={{background:'rgba(0,0,0,0.55)',border:'1px solid #2a2a3a',borderRadius:12,padding:'16px 26px',maxWidth:370,marginBottom:34,textAlign:'center',lineHeight:1.9,color:'#aaa',fontSize:13}}>
+                Click to place a <span style={{color:'#ffcc00',fontWeight:'bold'}}>prediction ring</span><br/>
+                Any neon orb inside when the ring <span style={{color:'#ffcc00',fontWeight:'bold'}}>detonates (2s)</span> scores points<br/>
+                Catch multiple orbs at once for <span style={{color:'#ff44cc',fontWeight:'bold'}}>COMBO</span> multipliers<br/>
+                Max <span style={{color:'#00ffff',fontWeight:'bold'}}>{MAX_RINGS} active rings</span> — place them wisely!
+              </div>
+              {highScore > 0 && <div style={{color:'#ffff00',fontSize:15,marginBottom:18,textShadow:'0 0 10px #ffff00'}}>BEST: {highScore.toLocaleString()}</div>}
+              <button onClick={startGame} style={btn('#00ffff')}>PLAY</button>
+            </div>
+          )}
+
+          {screen === 'gameover' && (
+            <div style={{...overlay, background:'rgba(6,0,20,0.84)'}}>
+              <div style={{fontSize:'clamp(24px,6vw,52px)',fontWeight:'bold',color:'#ff44cc',textShadow:'0 0 40px #ff44cc',letterSpacing:4,marginBottom:8,textAlign:'center'}}>
+                TIME'S UP!
+              </div>
+              <div style={{color:'#555',fontSize:14,marginBottom:28,letterSpacing:3}}>PROPHECY COMPLETE</div>
+              <div style={{textAlign:'center',marginBottom:36}}>
+                <div style={{color:'#444',fontSize:11,letterSpacing:3,marginBottom:4}}>FINAL SCORE</div>
+                <div style={{color:'#fff',fontSize:'clamp(38px,10vw,72px)',fontWeight:'bold',textShadow:'0 0 25px #00ffff',lineHeight:1}}>
+                  {finalScore.toLocaleString()}
+                </div>
+                {finalScore >= highScore && finalScore > 0 && (
+                  <div style={{color:'#ffff00',fontSize:17,textShadow:'0 0 12px #ffff00',marginTop:8}}>NEW BEST!</div>
+                )}
+                <div style={{color:'#555',fontSize:14,marginTop:8}}>Best: {highScore.toLocaleString()}</div>
+              </div>
+              <button onClick={startGame} style={btn('#ff44cc')}>PLAY AGAIN</button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<NeonProphet />, document.getElementById('root'));
+  </script>
+</body>
+</html>

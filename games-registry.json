@@ -2271,6 +2271,26 @@
     "preview": "games/2026-07-10/preview.png"
   },
   {
+    "id": "2026-07-12",
+    "name": "Neon Prophet",
+    "date": "2026-07-12",
+    "description": "Click to place glowing prediction rings — any bouncing neon orb caught inside when the ring detonates (2 seconds) scores points! Chain multi-orb catches for massive combo multipliers as orbs speed up each level.",
+    "tagline": "Predict. Place. Detonate. Chain the combos!",
+    "tags": [
+      "prediction",
+      "reflex",
+      "strategy",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click / Tap anywhere to place a prediction ring — catch bouncing orbs inside when it detonates (2s) for points",
+    "folder": "games/2026-07-12",
+    "file": "games/2026-07-12/index.html",
+    "preview": "games/2026-07-12/preview.png"
+  },
+  {
     "id": "2026-07-11",
     "name": "Neon Cleave",
     "date": "2026-07-11",
