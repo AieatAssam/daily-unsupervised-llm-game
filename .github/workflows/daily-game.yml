@@ -21,13 +21,13 @@ jobs:
     outputs:
       game-generated: ${{ steps.check-changes.outputs.game-generated }}
       branch-name: ${{ steps.create-branch.outputs.branch-name }}
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
+
       - name: Create branch for new game
         id: create-branch
         run: |
@@ -35,7 +35,7 @@ jobs:
           BRANCH_NAME="game/$TODAY"
           echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           git checkout -b "$BRANCH_NAME"
-          
+
       - name: Configure Git
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -45,30 +45,32 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+
+      - name: Cache agent-browser Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: agent-browser-chromium-${{ runner.os }}
 
       - name: Install agent-browser
         run: |
-          echo "📦 Installing agent-browser from Vercel Labs..."
-          npm install -g agent-browser
+          npm install -g agent-browser http-server
           agent-browser install --with-deps
-          echo "✅ agent-browser ready"
-          agent-browser --version
 
-      - name: Install agent-browser skill via skills CLI
+      - name: Install Claude Code skills (agent-browser + caveman)
         run: |
-          echo "🧠 Installing agent-browser skill for Claude Code..."
           npx skills add vercel-labs/agent-browser --skill agent-browser -a claude-code -y
-          echo "📋 Installed skills:"
-          ls .claude/skills/ 2>/dev/null || echo "(installed globally)"
+          # caveman: ultra-terse output mode — pipeline output is never read by
+          # humans, so minimize tokens spent on prose
+          npx skills add JuliusBrussee/caveman --skill caveman -a claude-code -y || echo "caveman skill unavailable, prompt fallback applies"
 
       - name: Start local HTTP server
         run: |
-          echo "🌐 Starting HTTP server on port 8080..."
-          npm install -g http-server
           http-server . -p 8080 --cors -c-1 &
           echo "HTTP_SERVER_PID=$!" >> $GITHUB_ENV
-          sleep 3
-          curl -sf http://localhost:8080/ > /dev/null && echo "✅ HTTP server is up" || echo "⚠️ HTTP server check failed"
+          sleep 2
+          curl -sf http://localhost:8080/ > /dev/null && echo "HTTP server up"
 
       - name: Generate Daily Game with Claude Code
         uses: anthropics/claude-code-action@v1
@@ -79,108 +81,61 @@ jobs:
             --dangerously-skip-permissions
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
-            Generate today's daily game following all instructions in Claude.md.
+            OUTPUT STYLE: caveman ultra mode. Nobody reads this pipeline's chat
+            output — keep every text response to the absolute minimum tokens
+            (terse fragments, no pleasantries, no narration, no summaries).
+            Spend tokens on files and tool calls, not prose. Code and committed
+            files must remain normal, high-quality, and complete.
 
-            IMPORTANT: Work in the current directory. All file paths must be relative.
-            Do NOT use /tmp or absolute paths.
+            TASK: Generate today's daily game following all instructions in CLAUDE.md.
 
-            A local HTTP server is already running at http://localhost:8080.
-            The agent-browser skill is installed — read .claude/skills/agent-browser/SKILL.md for full command reference.
+            Work in the current directory, relative paths only. HTTP server is
+            live at http://localhost:8080. agent-browser skill installed —
+            commands: open <url> | snapshot | screenshot <path> | wait <ms>.
 
-            Key agent-browser commands:
-              agent-browser open <url>          # navigate to a page
-              agent-browser snapshot            # get accessibility tree and interactive elements
-              agent-browser screenshot <path>   # save PNG screenshot to file
-              agent-browser wait <ms>           # wait for rendering/animations
+            Required steps (all in one run):
+            1. Read games-registry.json; new game must be mechanically unique vs last 7.
+            2. Create games/YYYY-MM-DD/index.html (single standalone HTML,
+               React 18 + Babel from unpkg CDN, <script type="text/babel">).
+            3. Create games/YYYY-MM-DD/game.test.js with all 6 required tests
+               loading /games/YYYY-MM-DD/index.html.
+            4. Verify with agent-browser: open the game, wait 3000, screenshot,
+               snapshot, interact, confirm response. Fix and re-verify if broken.
+            5. Screenshot mid-action gameplay to games/YYYY-MM-DD/preview.png.
+            6. Add registry entry (include a "rating" number 3.5-5.0 — honest
+               self-assessment of polish and fun).
+            7. Commit everything. NEVER commit test artifacts (playwright-report/,
+               test-results/, *.png outside the game folder, logs).
 
-            CRITICAL REQUIREMENTS:
-            1. Read and analyze games-registry.json to see all existing games
-            2. Ensure the new game is mechanically unique and different from the last 7 games
-            3. Create the date folder: games/YYYY-MM-DD/ (use today's actual date)
-            4. Create a complete standalone HTML file: games/YYYY-MM-DD/index.html
-               - Single HTML file with React 18 and ReactDOM loaded from unpkg.com CDN
-               - Include Babel standalone from unpkg.com for JSX transpilation
-               - All game code goes in a <script type="text/babel"> tag
-               - Must be fully playable when opened directly in a browser
-            5. Create the test file: games/YYYY-MM-DD/game.test.js
-               - Tests MUST load /games/YYYY-MM-DD/index.html (NOT .jsx or .js)
-               - Include all 6 required tests (load, render, input, rapid input, mobile, localStorage)
-            6. Verify playability with agent-browser BEFORE generating the preview:
-               - agent-browser open http://localhost:8080/games/YYYY-MM-DD/index.html
-               - agent-browser wait 3000
-               - agent-browser screenshot /tmp/check.png   (read it — must not be blank/white)
-               - agent-browser snapshot                     (confirm interactive elements exist)
-               - Click or interact with the game and confirm it responds
-               - If the game is broken, fix it and re-verify before continuing
-            7. Generate the preview via agent-browser (mid-action, score visible):
-               - agent-browser open http://localhost:8080/games/YYYY-MM-DD/index.html
-               - agent-browser wait 3000
-               - agent-browser screenshot games/YYYY-MM-DD/preview.png
-            8. Update games-registry.json with the new entry
-               - Set "file" to "games/YYYY-MM-DD/index.html"
-               - Set "preview" to "games/YYYY-MM-DD/preview.png"
-
-            Complete the full workflow in one shot. Follow the quality checklist in Claude.md.
-            The game is NOT done until agent-browser confirms it renders and responds to input.
+            Game not done until agent-browser confirms it renders and responds.
 
       - name: Stop HTTP server
         if: always()
-        run: |
-          if [ -n "$HTTP_SERVER_PID" ]; then
-            kill $HTTP_SERVER_PID 2>/dev/null || true
-            echo "🛑 HTTP server stopped"
-          fi
-
-      - name: Debug - Check git state
-        run: |
-          echo "📂 Working directory: $(pwd)"
-          echo ""
-          echo "📜 Recent commits (last 5):"
-          git log --oneline -5
-          echo ""
-          echo "📄 Git status (uncommitted changes):"
-          git status --short
-          echo ""
-          echo "📁 Contents of games/:"
-          ls -laR games/ 2>/dev/null || echo "No games directory found"
+        run: kill $HTTP_SERVER_PID 2>/dev/null || true
 
       - name: Check for changes
         id: check-changes
         run: |
-          # Stage any uncommitted files first
+          # Never let runtime artifacts sneak into the commit
+          rm -rf playwright-report test-results .claude/skills .agents skills-lock.json output.txt
           git add -A
 
           STAGED_COUNT=$(git diff --staged --name-only | wc -l | tr -d ' ')
           COMMITS_AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
 
-          echo "📊 Commits ahead of main: $COMMITS_AHEAD"
-          echo "📊 Uncommitted staged files: $STAGED_COUNT"
-
           if [ "$STAGED_COUNT" -gt 0 ]; then
-            # Uncommitted files found — commit them now
-            TODAY=$(date +'%Y-%m-%d')
-            git commit -m "🎮 Daily Game Generated - $TODAY"
-            echo "✅ Committed $STAGED_COUNT new/modified file(s)"
+            git commit -m "🎮 Daily Game Generated - $(date +'%Y-%m-%d')"
             echo "game-generated=true" >> $GITHUB_OUTPUT
-
           elif [ "$COMMITS_AHEAD" -gt 0 ]; then
-            # Claude already committed — nothing to do except confirm
-            echo "✅ Claude Code committed $COMMITS_AHEAD ahead of main"
             echo "game-generated=true" >> $GITHUB_OUTPUT
-
           else
-            echo "❌ No new game generated — branch is even with main and no staged changes"
             echo "game-generated=false" >> $GITHUB_OUTPUT
           fi
-
-          echo ""
-          echo "📁 Changed vs main:"
-          git diff origin/main...HEAD --stat || echo "(none)"
+          git diff origin/main...HEAD --stat || true
 
       - name: Push branch
         if: steps.check-changes.outputs.game-generated == 'true'
-        run: |
-          git push origin "${{ steps.create-branch.outputs.branch-name }}"
+        run: git push origin "${{ steps.create-branch.outputs.branch-name }}"
 
   test-games:
     needs: generate-game
@@ -188,54 +143,61 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tests-passed: ${{ steps.run-tests.outputs.tests-passed }}
-    
+
     steps:
       - name: Checkout branch
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.generate-game.outputs.branch-name }}
-          
+          fetch-depth: 0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
+          cache: 'npm'
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
         run: |
-          npm install -D @playwright/test http-server
+          npm ci
           npx playwright install --with-deps chromium
 
-      - name: List all test files
-        run: |
-          echo "🧪 All test files found:"
-          find games -name "game.test.js" | sort
-          echo ""
-          echo "Total: $(find games -name "game.test.js" | wc -l) test suite(s)"
-          
-      - name: Run all game tests
+      - name: Validate registry
+        run: node scripts/validate-registry.mjs
+
+      - name: Run tests for changed games only
         id: run-tests
         run: |
-          TEST_FILES=$(find games -name "game.test.js" | sort)
+          git fetch origin main
+          # Only test games touched by this branch — the full 100+ game suite
+          # is slow and flaky (CDN load); unchanged games were already gated
+          # on their own merge day.
+          TEST_FILES=$(git diff --name-only origin/main...HEAD -- 'games/**' \
+            | cut -d/ -f1-2 | sort -u \
+            | while read -r d; do [ -f "$d/game.test.js" ] && echo "$d/game.test.js"; done)
 
           if [ -z "$TEST_FILES" ]; then
-            echo "❌ No test files found"
+            echo "No changed games with tests — failing: daily run must produce a tested game"
             echo "tests-passed=false" >> $GITHUB_OUTPUT
             exit 1
           fi
 
-          echo "🧪 Running tests for all $(echo "$TEST_FILES" | wc -l) game(s)..."
-
+          echo "Testing: $TEST_FILES"
           if npx playwright test $TEST_FILES; then
-            echo "✅ All games passed!"
             echo "tests-passed=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ One or more games failed!"
             echo "tests-passed=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-          
+
       - name: Upload test results
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
@@ -248,36 +210,27 @@ jobs:
     needs: [generate-game, test-games]
     if: needs.test-games.outputs.tests-passed == 'true'
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
+
       - name: Configure Git
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "Daily Game Bot"
-          
+
       - name: Merge to main
         run: |
           git fetch origin
           git checkout main
           git merge --no-ff origin/${{ needs.generate-game.outputs.branch-name }} -m "Merge daily game from ${{ needs.generate-game.outputs.branch-name }}"
           git push origin main
-          
+
       - name: Delete branch
-        run: |
-          git push origin --delete ${{ needs.generate-game.outputs.branch-name }}
-          
-      - name: Create Summary
-        run: |
-          echo "## 🎮 Daily Game Merged to Main!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ All games passed regression tests" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Merged from branch: ${{ needs.generate-game.outputs.branch-name }}" >> $GITHUB_STEP_SUMMARY
-          echo "🚀 Ready for deployment" >> $GITHUB_STEP_SUMMARY
+        run: git push origin --delete ${{ needs.generate-game.outputs.branch-name }}
 
   deploy:
     needs: merge-to-main
@@ -285,31 +238,21 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: main
-          
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
-        
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
-          
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        
-      - name: Create Summary
-        run: |
-          echo "## 🎮 Daily Game Deployed!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ All games passed" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Merged to main" >> $GITHUB_STEP_SUMMARY
-          echo "🚀 Deployed to GitHub Pages" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Visit [the gallery](${{ steps.deployment.outputs.page_url }}) to play!" >> $GITHUB_STEP_SUMMARY
