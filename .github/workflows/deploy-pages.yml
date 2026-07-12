@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Called by daily-game and fix-and-polish after their bot merges —
+  # GITHUB_TOKEN pushes don't fire the push trigger (anti-recursion)
+  workflow_call:
 
 permissions:
   contents: read
