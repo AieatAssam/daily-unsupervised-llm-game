@@ -2385,6 +2385,27 @@
     "rating": 4.7
   },
   {
+    "id": "2026-07-13",
+    "name": "Depth Surge",
+    "date": "2026-07-13",
+    "description": "Dive a glowing neon orb through a dark ocean — buoyancy floats you up, but hold to plunge down and thread through neon purple barrier walls! Collect glowing cyan and gold gems for combo-multiplied points while keeping safe between the deadly surface spikes and seafloor fangs.",
+    "tagline": "Hold to dive. Release to rise. Thread the gaps!",
+    "tags": [
+      "arcade",
+      "reflex",
+      "action",
+      "underwater",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Hold mouse / touch / Space to dive down · Release to float up",
+    "folder": "games/2026-07-13",
+    "file": "games/2026-07-13/index.html",
+    "preview": "games/2026-07-13/preview.png",
+    "rating": 4.5
+  },
+  {
     "id": "2026-07-11",
     "name": "Neon Cleave",
     "date": "2026-07-11",
