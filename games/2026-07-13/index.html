@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Depth Surge</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    touch-action: none;
+  }
+  #root { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+  canvas { display: block; cursor: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useRef, useEffect, useCallback } = React;
+
+const STATES = { TITLE: 0, PLAYING: 1, GAMEOVER: 2 };
+
+function createAudioCtx() {
+  try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+}
+
+function playBeep(ctx, freq, type, duration, vol = 0.3) {
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  } catch(e) {}
+}
+
+function App() {
+  const canvasRef = useRef(null);
+  const stateRef = useRef({
+    state: STATES.TITLE,
+    score: 0,
+    highScore: 0,
+    lives: 3,
+    combo: 0,
+    comboTimer: 0,
+    distance: 0,
+    gameSpeed: 3,
+    holding: false,
+    frameCount: 0,
+    player: { x: 0, y: 0, vy: 0, radius: 14, trail: [], invincible: false, invincibleTimer: 0 },
+    obstacles: [],
+    gems: [],
+    particles: [],
+    bubbles: [],
+    scorePops: [],
+    audioCtx: null,
+  });
+  const animRef = useRef(null);
+  const holdingRef = useRef(false);
+
+  const getSize = useCallback(() => {
+    const W = Math.min(800, window.innerWidth);
+    const H = Math.min(600, window.innerHeight);
+    return { W, H };
+  }, []);
+
+  useEffect(() => {
+    const gs = stateRef.current;
+    gs.audioCtx = createAudioCtx();
+    try { gs.highScore = parseInt(localStorage.getItem('depthSurgeHighScore')) || 0; } catch(e) {}
+    // Always persist key so it's detectable
+    try { localStorage.setItem('depthSurgeHighScore', gs.highScore); } catch(e) {}
+
+    const canvas = canvasRef.current;
+    const handleResize = () => {
+      const { W, H } = getSize();
+      canvas.width = W;
+      canvas.height = H;
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [getSize]);
+
+  const SURFACE_H = 65;
+  const FLOOR_H = 65;
+
+  const initGame = useCallback(() => {
+    const gs = stateRef.current;
+    const { H } = getSize();
+    gs.score = 0;
+    gs.lives = 3;
+    gs.combo = 0;
+    gs.comboTimer = 0;
+    gs.distance = 0;
+    gs.gameSpeed = 3;
+    gs.frameCount = 0;
+    gs.obstacles = [];
+    gs.gems = [];
+    gs.particles = [];
+    gs.bubbles = [];
+    gs.scorePops = [];
+    gs.player = {
+      x: 140,
+      y: H / 2,
+      vy: 0,
+      radius: 14,
+      trail: [],
+      invincible: false,
+      invincibleTimer: 0,
+    };
+    for (let i = 0; i < 3; i++) gs.gems.push(makeGem(getSize().W + 80 + i * 240, H, SURFACE_H, FLOOR_H));
+    // Always persist highScore so localStorage test can find it
+    try { localStorage.setItem('depthSurgeHighScore', gs.highScore); } catch(e) {}
+  }, [getSize, SURFACE_H, FLOOR_H]);
+
+  const makeGem = (x, H, surfH, floorH) => ({
+    x,
+    y: surfH + 30 + Math.random() * (H - surfH - floorH - 60),
+    radius: 10,
+    collected: false,
+    angle: Math.random() * Math.PI * 2,
+    gold: Math.random() < 0.25,
+  });
+
+  const makeObstacle = (x, W, H, score, surfH, floorH) => {
+    const gapSize = Math.max(90, 155 - score * 0.04);
+    const gapY = surfH + 10 + Math.random() * (H - surfH - floorH - gapSize - 20);
+    return { x: x || W + 20, gapY, gapSize, width: 26, phase: Math.random() * Math.PI * 2 };
+  };
+
+  const spawnParticles = (gs, x, y, color, count = 12) => {
+    for (let i = 0; i < count; i++) {
+      gs.particles.push({
+        x, y,
+        vx: (Math.random() - 0.5) * 5,
+        vy: (Math.random() - 0.5) * 5,
+        radius: 1.5 + Math.random() * 2.5,
+        life: 1,
+        fade: 0.018 + Math.random() * 0.02,
+        color,
+      });
+    }
+  };
+
+  const hitPlayer = useCallback((gs) => {
+    if (gs.player.invincible) return;
+    gs.lives--;
+    gs.player.invincible = true;
+    gs.player.invincibleTimer = 110;
+    gs.combo = 0;
+    gs.comboTimer = 0;
+    spawnParticles(gs, gs.player.x, gs.player.y, '#ff3366', 20);
+    playBeep(gs.audioCtx, 120, 'sawtooth', 0.3, 0.4);
+    if (gs.lives <= 0) {
+      gs.state = STATES.GAMEOVER;
+      if (gs.score > gs.highScore) {
+        gs.highScore = gs.score;
+        try { localStorage.setItem('depthSurgeHighScore', gs.highScore); } catch(e) {}
+      }
+    }
+  }, []);
+
+  const circleHitsRect = (cx, cy, cr, rx, ry, rw, rh) => {
+    const nx = Math.max(rx, Math.min(cx, rx + rw));
+    const ny = Math.max(ry, Math.min(cy, ry + rh));
+    return Math.hypot(cx - nx, cy - ny) < cr;
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const gs = stateRef.current;
+
+    const update = () => {
+      if (gs.state !== STATES.PLAYING) return;
+      const { W, H } = getSize();
+      const surfH = SURFACE_H;
+      const floorH = FLOOR_H;
+      gs.frameCount++;
+      const fc = gs.frameCount;
+      const holding = holdingRef.current;
+
+      // Player physics: hold = dive force, release = buoyancy up
+      const force = holding ? 0.38 : -0.22;
+      gs.player.vy = Math.max(-4.5, Math.min(5.5, gs.player.vy + force));
+      gs.player.y += gs.player.vy;
+      gs.player.y = Math.max(gs.player.radius, Math.min(H - gs.player.radius, gs.player.y));
+
+      // Trail
+      gs.player.trail.push({ x: gs.player.x, y: gs.player.y });
+      if (gs.player.trail.length > 22) gs.player.trail.shift();
+
+      // Bubbles when diving
+      if (holding && Math.random() < 0.35) {
+        gs.bubbles.push({
+          x: gs.player.x + (Math.random() - 0.5) * 16,
+          y: gs.player.y,
+          vx: -1.2 - Math.random() * 0.8,
+          vy: -(1.2 + Math.random() * 2),
+          radius: 2 + Math.random() * 3,
+          life: 1,
+        });
+      }
+
+      // Invincibility
+      if (gs.player.invincible) {
+        gs.player.invincibleTimer--;
+        if (gs.player.invincibleTimer <= 0) gs.player.invincible = false;
+      }
+
+      // Danger zones
+      if (gs.player.y - gs.player.radius < surfH) {
+        hitPlayer(gs);
+        gs.player.y = surfH + gs.player.radius + 2;
+        gs.player.vy = 3;
+      }
+      if (gs.player.y + gs.player.radius > H - floorH) {
+        hitPlayer(gs);
+        gs.player.y = H - floorH - gs.player.radius - 2;
+        gs.player.vy = -3;
+      }
+
+      // Distance & speed
+      gs.distance++;
+      gs.gameSpeed = 3 + gs.distance / 2200;
+      gs.score = Math.floor(gs.distance / 8);
+
+      // Spawn obstacles
+      const obsPeriod = Math.max(55, 130 - gs.distance / 600);
+      if (fc % Math.floor(obsPeriod) === 0) {
+        gs.obstacles.push(makeObstacle(W + 20, W, H, gs.score, surfH, floorH));
+      }
+
+      // Spawn gems
+      if (fc % 80 === 0) gs.gems.push(makeGem(W + 30, H, surfH, floorH));
+
+      // Update obstacles
+      const spd = gs.gameSpeed;
+      for (let i = gs.obstacles.length - 1; i >= 0; i--) {
+        const obs = gs.obstacles[i];
+        obs.x -= spd;
+        if (!gs.player.invincible) {
+          const p = gs.player;
+          if (circleHitsRect(p.x, p.y, p.radius, obs.x, surfH, obs.width, obs.gapY - surfH)) hitPlayer(gs);
+          const botY = obs.gapY + obs.gapSize;
+          if (circleHitsRect(p.x, p.y, p.radius, obs.x, botY, obs.width, H - floorH - botY)) hitPlayer(gs);
+        }
+        if (obs.x + obs.width < 0) gs.obstacles.splice(i, 1);
+      }
+
+      // Update gems
+      for (let i = gs.gems.length - 1; i >= 0; i--) {
+        const gem = gs.gems[i];
+        gem.x -= spd;
+        gem.angle += 0.05;
+        if (!gem.collected) {
+          const p = gs.player;
+          if (Math.hypot(p.x - gem.x, p.y - gem.y) < p.radius + gem.radius + 2) {
+            gem.collected = true;
+            gs.combo++;
+            gs.comboTimer = 110;
+            const val = (gem.gold ? 50 : 10) * Math.max(1, gs.combo);
+            gs.score += val;
+            spawnParticles(gs, gem.x, gem.y, gem.gold ? '#ffd700' : '#00ffff');
+            gs.scorePops.push({ x: gem.x, y: gem.y, text: `+${val}`, life: 1, color: gem.gold ? '#ffd700' : '#00ffff' });
+            playBeep(gs.audioCtx, gem.gold ? 1100 : 880, 'sine', 0.18, 0.25);
+          }
+        }
+        if (gem.x + gem.radius < 0) gs.gems.splice(i, 1);
+      }
+
+      // Combo timer
+      if (gs.comboTimer > 0) gs.comboTimer--;
+      else if (gs.comboTimer === 0) gs.combo = 0;
+
+      // Particles
+      for (let i = gs.particles.length - 1; i >= 0; i--) {
+        const p = gs.particles[i];
+        p.x += p.vx; p.y += p.vy;
+        p.life -= p.fade;
+        if (p.life <= 0) gs.particles.splice(i, 1);
+      }
+
+      // Bubbles
+      for (let i = gs.bubbles.length - 1; i >= 0; i--) {
+        const b = gs.bubbles[i];
+        b.x += b.vx; b.y += b.vy;
+        b.life -= 0.016;
+        if (b.life <= 0 || b.y < 0) gs.bubbles.splice(i, 1);
+      }
+
+      // Score pops
+      for (let i = gs.scorePops.length - 1; i >= 0; i--) {
+        const sp = gs.scorePops[i];
+        sp.y -= 1.2;
+        sp.life -= 0.022;
+        if (sp.life <= 0) gs.scorePops.splice(i, 1);
+      }
+    };
+
+    const draw = () => {
+      const { W, H } = getSize();
+      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+      const surfH = SURFACE_H;
+      const floorH = FLOOR_H;
+      const gs = stateRef.current;
+      const fc = gs.frameCount;
+      const t = fc * 0.016;
+
+      // Ocean background
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, '#000d1a');
+      bg.addColorStop(0.4, '#001528');
+      bg.addColorStop(0.8, '#000a18');
+      bg.addColorStop(1, '#000309');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      if (gs.state === STATES.TITLE) { drawTitle(ctx, W, H, t); return; }
+      if (gs.state === STATES.GAMEOVER) { drawGameOver(ctx, W, H, gs); return; }
+
+      // Bioluminescent ambient dots
+      if (fc % 4 === 0) {
+        ctx.fillStyle = `rgba(0,200,255,${0.03 + Math.random() * 0.04})`;
+        ctx.beginPath();
+        ctx.arc(Math.random() * W, surfH + Math.random() * (H - surfH - floorH), 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Caustic light shimmer near surface
+      for (let i = 0; i < 8; i++) {
+        const cx = ((i * 97 + t * 30) % W);
+        const cy = surfH + 5 + Math.sin(cx * 0.03 + t + i) * 12;
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 25);
+        grad.addColorStop(0, 'rgba(0,180,255,0.06)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 25, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Surface danger zone
+      const surfGrad = ctx.createLinearGradient(0, 0, 0, surfH + 10);
+      surfGrad.addColorStop(0, 'rgba(255,0,80,0.5)');
+      surfGrad.addColorStop(1, 'rgba(255,0,80,0)');
+      ctx.fillStyle = surfGrad;
+      ctx.fillRect(0, 0, W, surfH + 10);
+
+      // Surface wave line
+      ctx.strokeStyle = '#ff1155';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#ff1155';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 4) {
+        const y = surfH + Math.sin(x * 0.018 + t * 1.2) * 5 + Math.sin(x * 0.044 + t * 0.8) * 3;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Surface spikes
+      for (let x = 10; x < W; x += 28) {
+        const sy = surfH - 3 + Math.sin(x * 0.09 + t) * 3;
+        ctx.fillStyle = 'rgba(255,30,90,0.55)';
+        ctx.beginPath();
+        ctx.moveTo(x, sy);
+        ctx.lineTo(x - 5, sy - 14);
+        ctx.lineTo(x + 5, sy - 14);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Floor danger zone
+      const floorGrad = ctx.createLinearGradient(0, H - floorH - 10, 0, H);
+      floorGrad.addColorStop(0, 'rgba(255,80,0,0)');
+      floorGrad.addColorStop(1, 'rgba(255,80,0,0.5)');
+      ctx.fillStyle = floorGrad;
+      ctx.fillRect(0, H - floorH - 10, W, floorH + 10);
+
+      // Floor spikes (pointing up)
+      for (let x = 5; x < W; x += 22) {
+        const sy = H - floorH + 4 + Math.sin(x * 0.11 + t * 0.9) * 3;
+        ctx.fillStyle = 'rgba(255,120,0,0.65)';
+        ctx.beginPath();
+        ctx.moveTo(x, sy);
+        ctx.lineTo(x - 6, sy + 17);
+        ctx.lineTo(x + 6, sy + 17);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Floor decorative coral
+      for (let x = 20; x < W; x += 55) {
+        const coralH = 15 + Math.sin(x * 0.07 + 1) * 8;
+        const coralColor = x % 110 < 55 ? 'rgba(255,60,120,0.4)' : 'rgba(180,60,255,0.4)';
+        ctx.fillStyle = coralColor;
+        ctx.fillRect(x - 3, H - floorH + 20, 6, coralH);
+        ctx.beginPath();
+        ctx.arc(x, H - floorH + 20, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Obstacles
+      for (const obs of gs.obstacles) {
+        const pulse = 0.6 + Math.sin(t * 2.5 + obs.phase) * 0.4;
+        ctx.save();
+        ctx.shadowColor = `rgba(150,0,255,${pulse})`;
+        ctx.shadowBlur = 22;
+        const obsColor = `rgba(80,0,180,0.92)`;
+        ctx.fillStyle = obsColor;
+        // Top wall
+        const topH = obs.gapY - surfH;
+        if (topH > 0) {
+          ctx.fillRect(obs.x, surfH, obs.width, topH);
+          ctx.strokeStyle = `rgba(180,50,255,${pulse})`;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(obs.x, surfH, obs.width, topH);
+        }
+        // Bottom wall
+        const botY = obs.gapY + obs.gapSize;
+        const botH = H - floorH - botY;
+        if (botH > 0) {
+          ctx.fillStyle = obsColor;
+          ctx.fillRect(obs.x, botY, obs.width, botH);
+          ctx.strokeStyle = `rgba(180,50,255,${pulse})`;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(obs.x, botY, obs.width, botH);
+        }
+        // Gap glow hint
+        ctx.fillStyle = `rgba(100,0,255,0.12)`;
+        ctx.fillRect(obs.x, obs.gapY, obs.width, obs.gapSize);
+        ctx.restore();
+      }
+
+      // Gems
+      for (const gem of gs.gems) {
+        if (gem.collected) continue;
+        const color = gem.gold ? '#ffd700' : '#00ffff';
+        const glow = gem.gold ? '#ff9900' : '#0088ff';
+        ctx.save();
+        ctx.shadowColor = glow;
+        ctx.shadowBlur = gem.gold ? 20 : 14;
+        ctx.translate(gem.x, gem.y);
+        ctx.rotate(gem.angle);
+        ctx.beginPath();
+        const pts = 8;
+        for (let j = 0; j < pts; j++) {
+          const ang = (j / pts) * Math.PI * 2;
+          const r = j % 2 === 0 ? gem.radius : gem.radius * 0.45;
+          const px = Math.cos(ang) * r, py = Math.sin(ang) * r;
+          j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        if (gem.gold) {
+          ctx.strokeStyle = '#fff8';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // Bubbles
+      for (const b of gs.bubbles) {
+        ctx.save();
+        ctx.globalAlpha = b.life * 0.55;
+        ctx.strokeStyle = '#88ddff';
+        ctx.lineWidth = 1;
+        ctx.shadowColor = '#00ccff';
+        ctx.shadowBlur = 4;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Particles
+      for (const p of gs.particles) {
+        ctx.save();
+        ctx.globalAlpha = p.life;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Player trail
+      for (let i = 0; i < gs.player.trail.length; i++) {
+        const tr = gs.player.trail[i];
+        const frac = i / gs.player.trail.length;
+        ctx.save();
+        ctx.globalAlpha = frac * 0.45;
+        ctx.shadowColor = '#00ddff';
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = '#00ccff';
+        ctx.beginPath();
+        ctx.arc(tr.x, tr.y, gs.player.radius * frac * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Player orb
+      const inv = gs.player.invincible && fc % 6 < 3;
+      if (!inv) {
+        const holding = holdingRef.current;
+        const pc = holding ? '#0088ff' : '#00ffee';
+        const pglow = holding ? '#0044ff' : '#00ffcc';
+        ctx.save();
+        ctx.shadowColor = pglow;
+        ctx.shadowBlur = 28;
+        ctx.fillStyle = pc;
+        ctx.beginPath();
+        ctx.arc(gs.player.x, gs.player.y, gs.player.radius, 0, Math.PI * 2);
+        ctx.fill();
+        // Inner shine
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath();
+        ctx.arc(gs.player.x - 4, gs.player.y - 4, gs.player.radius * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+        // Dive ring
+        if (holding) {
+          ctx.strokeStyle = 'rgba(0,100,255,0.5)';
+          ctx.lineWidth = 2;
+          ctx.shadowColor = '#0055ff';
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.arc(gs.player.x, gs.player.y, gs.player.radius + 7, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // Score pops
+      ctx.textAlign = 'center';
+      for (const sp of gs.scorePops) {
+        ctx.save();
+        ctx.globalAlpha = sp.life;
+        ctx.fillStyle = sp.color;
+        ctx.shadowColor = sp.color;
+        ctx.shadowBlur = 10;
+        ctx.font = 'bold 15px Courier New';
+        ctx.fillText(sp.text, sp.x, sp.y);
+        ctx.restore();
+      }
+
+      // Depth meter (right edge)
+      const meterX = W - 18;
+      const meterTop = surfH + 4;
+      const meterBot = H - floorH - 4;
+      const meterLen = meterBot - meterTop;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(meterX - 4, meterTop, 12, meterLen);
+      const depthFrac = Math.max(0, Math.min(1, (gs.player.y - surfH) / (H - surfH - floorH)));
+      const mColor = depthFrac < 0.15 ? '#ff2255' : depthFrac > 0.85 ? '#ff7700' : '#00ffcc';
+      ctx.fillStyle = mColor;
+      ctx.shadowColor = mColor;
+      ctx.shadowBlur = 8;
+      ctx.fillRect(meterX - 2, meterTop + depthFrac * meterLen - 6, 8, 12);
+      ctx.shadowBlur = 0;
+
+      // HUD
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 19px Courier New';
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 10;
+      ctx.fillText(`SCORE ${gs.score}`, 14, 28);
+
+      ctx.font = '13px Courier New';
+      ctx.fillStyle = '#7755cc';
+      ctx.shadowColor = '#7755cc';
+      ctx.fillText(`BEST ${gs.highScore}`, 14, 46);
+
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 20px Courier New';
+      ctx.fillStyle = '#ff3366';
+      ctx.shadowColor = '#ff3366';
+      const hearts = '♥'.repeat(gs.lives) + '♡'.repeat(Math.max(0, 3 - gs.lives));
+      ctx.fillText(hearts, W - 28, 28);
+
+      // Combo
+      if (gs.combo > 1) {
+        ctx.textAlign = 'center';
+        const ca = gs.comboTimer / 110;
+        ctx.globalAlpha = ca;
+        ctx.font = 'bold 22px Courier New';
+        ctx.fillStyle = '#ffee00';
+        ctx.shadowColor = '#ffee00';
+        ctx.shadowBlur = 18;
+        ctx.fillText(`×${gs.combo} COMBO!`, W / 2, 46);
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+      }
+
+      // Controls hint at start
+      if (fc < 200) {
+        const hAlpha = Math.min(1, Math.max(0, (200 - fc) / 80));
+        ctx.globalAlpha = hAlpha;
+        ctx.textAlign = 'center';
+        ctx.font = '13px Courier New';
+        ctx.fillStyle = '#aaddff';
+        ctx.shadowColor = '#00aaff';
+        ctx.shadowBlur = 8;
+        ctx.fillText('HOLD to dive  ·  RELEASE to rise', W / 2, H - 16);
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+      }
+
+      // Speed indicator (subtle)
+      const speedFrac = Math.min(1, (gs.gameSpeed - 3) / 4);
+      if (speedFrac > 0.05) {
+        ctx.fillStyle = `rgba(0,200,255,${speedFrac * 0.25})`;
+        ctx.font = '11px Courier New';
+        ctx.textAlign = 'left';
+        ctx.fillText(`SPEED ${gs.gameSpeed.toFixed(1)}×`, 14, H - 14);
+      }
+    };
+
+    const drawTitle = (ctx, W, H, t) => {
+      // Animated waves in background
+      for (let layer = 0; layer < 6; layer++) {
+        ctx.strokeStyle = `rgba(0,${100 + layer * 25},255,${0.07 + layer * 0.04})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = 0; x <= W; x += 5) {
+          const y = H * 0.18 + layer * 22 + Math.sin(x * 0.016 + t + layer * 0.9) * 14 + Math.sin(x * 0.04 + t * 1.2 + layer) * 7;
+          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+
+      // Floating gems decoration
+      for (let i = 0; i < 6; i++) {
+        const gx = W * 0.1 + i * (W * 0.16) + Math.sin(t * 0.8 + i) * 20;
+        const gy = H * 0.78 + Math.cos(t + i * 1.1) * 18;
+        const gc = i % 3 === 0 ? '#ffd700' : '#00ffee';
+        ctx.save();
+        ctx.shadowColor = gc; ctx.shadowBlur = 12;
+        ctx.translate(gx, gy); ctx.rotate(t * 0.6 + i);
+        ctx.beginPath();
+        for (let j = 0; j < 8; j++) {
+          const ang = (j / 8) * Math.PI * 2;
+          const r = j % 2 === 0 ? 8 : 4;
+          const px = Math.cos(ang) * r, py = Math.sin(ang) * r;
+          j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = gc; ctx.fill();
+        ctx.restore();
+      }
+
+      // Title text
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 52px Courier New';
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 35;
+      ctx.fillText('DEPTH SURGE', W / 2, H * 0.33);
+
+      ctx.shadowBlur = 15;
+      ctx.font = '17px Courier New';
+      ctx.fillStyle = '#aa44ff';
+      ctx.shadowColor = '#aa44ff';
+      ctx.fillText('Hold to dive  ·  Release to rise', W / 2, H * 0.45);
+
+      ctx.font = '14px Courier New';
+      ctx.fillStyle = '#00ddaa';
+      ctx.shadowColor = '#00ddaa';
+      ctx.fillText('Thread the gaps  ·  Collect gems  ·  Avoid the edges', W / 2, H * 0.52);
+
+      const pulse = Math.sin(t * 3) * 0.3 + 0.7;
+      ctx.globalAlpha = pulse;
+      ctx.font = 'bold 21px Courier New';
+      ctx.fillStyle = '#ffee00';
+      ctx.shadowColor = '#ffee00';
+      ctx.shadowBlur = 20;
+      ctx.fillText('HOLD MOUSE / SPACE TO START', W / 2, H * 0.68);
+      ctx.globalAlpha = 1;
+
+      const hs = stateRef.current.highScore;
+      if (hs > 0) {
+        ctx.font = '14px Courier New';
+        ctx.fillStyle = '#ff9900';
+        ctx.shadowColor = '#ff9900';
+        ctx.shadowBlur = 10;
+        ctx.fillText(`BEST SCORE: ${hs}`, W / 2, H * 0.78);
+      }
+      ctx.shadowBlur = 0;
+    };
+
+    const drawGameOver = (ctx, W, H, gs) => {
+      ctx.fillStyle = 'rgba(0,5,20,0.88)';
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 48px Courier New';
+      ctx.fillStyle = '#ff3366';
+      ctx.shadowColor = '#ff3366';
+      ctx.shadowBlur = 30;
+      ctx.fillText('GAME OVER', W / 2, H * 0.33);
+
+      ctx.shadowBlur = 15;
+      ctx.font = 'bold 26px Courier New';
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowColor = '#00ffcc';
+      ctx.fillText(`SCORE: ${gs.score}`, W / 2, H * 0.48);
+
+      if (gs.score >= gs.highScore && gs.score > 0) {
+        ctx.font = 'bold 20px Courier New';
+        ctx.fillStyle = '#ffd700';
+        ctx.shadowColor = '#ffd700';
+        ctx.fillText('NEW HIGH SCORE!', W / 2, H * 0.58);
+      } else {
+        ctx.font = '17px Courier New';
+        ctx.fillStyle = '#aa44ff';
+        ctx.shadowColor = '#aa44ff';
+        ctx.fillText(`BEST: ${gs.highScore}`, W / 2, H * 0.58);
+      }
+
+      const pulse = Math.sin(Date.now() / 280) * 0.3 + 0.7;
+      ctx.globalAlpha = pulse;
+      ctx.font = 'bold 17px Courier New';
+      ctx.fillStyle = '#ffee00';
+      ctx.shadowColor = '#ffee00';
+      ctx.shadowBlur = 20;
+      ctx.fillText('CLICK / HOLD TO PLAY AGAIN', W / 2, H * 0.73);
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+    };
+
+    const loop = () => {
+      update();
+      draw();
+      animRef.current = requestAnimationFrame(loop);
+    };
+
+    animRef.current = requestAnimationFrame(loop);
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
+  }, [getSize, hitPlayer, SURFACE_H, FLOOR_H]);
+
+  // Input handlers
+  const startOrRestart = useCallback(() => {
+    const gs = stateRef.current;
+    if (gs.audioCtx && gs.audioCtx.state === 'suspended') gs.audioCtx.resume();
+    if (gs.state === STATES.TITLE) {
+      gs.state = STATES.PLAYING;
+      initGame();
+    } else if (gs.state === STATES.GAMEOVER) {
+      gs.state = STATES.TITLE;
+    }
+  }, [initGame]);
+
+  useEffect(() => {
+    const onDown = (e) => {
+      holdingRef.current = true;
+      startOrRestart();
+    };
+    const onUp = () => { holdingRef.current = false; };
+    const onKey = (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
+        holdingRef.current = true;
+        startOrRestart();
+      }
+    };
+    const onKeyUp = (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'KeyS') {
+        holdingRef.current = false;
+      }
+    };
+
+    const canvas = canvasRef.current;
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mouseup', onUp);
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); onDown(); }, { passive: false });
+    window.addEventListener('touchend', (e) => { e.preventDefault(); onUp(); }, { passive: false });
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+
+    return () => {
+      canvas.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [startOrRestart]);
+
+  return <canvas ref={canvasRef} />;
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
