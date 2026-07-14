@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nova Pop</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050510;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #root { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useEffect, useRef, useState, useCallback } = React;
+
+const COLORS = [
+  { fill: '#ff2d78', glow: '#ff2d78', name: 'pink' },
+  { fill: '#00f5ff', glow: '#00f5ff', name: 'cyan' },
+  { fill: '#aaff00', glow: '#aaff00', name: 'lime' },
+  { fill: '#ff9500', glow: '#ff9500', name: 'orange' },
+  { fill: '#bf5fff', glow: '#bf5fff', name: 'violet' },
+];
+
+const MAX_RADIUS = 46;
+const SUPERNOVA_SIZE = 0.88;
+const BASE_SPAWN_INTERVAL = 2200;
+const MIN_SPAWN_INTERVAL = 650;
+
+function createAudioCtx() {
+  try { return new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+}
+
+function playPop(ctx, freq, vol = 0.4) {
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.3, ctx.currentTime + 0.18);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.22);
+  } catch(e) {}
+}
+
+function playChain(ctx, count) {
+  if (!ctx) return;
+  try {
+    const freqs = [320, 480, 640, 800, 960, 1120];
+    const f = freqs[Math.min(count - 1, freqs.length - 1)];
+    playPop(ctx, f, 0.35 + Math.min(count * 0.05, 0.3));
+  } catch(e) {}
+}
+
+function playSupernova(ctx) {
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(80, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(20, ctx.currentTime + 0.5);
+    gain.gain.setValueAtTime(0.6, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+  } catch(e) {}
+}
+
+function playWarning(ctx) {
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(220, ctx.currentTime);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.08);
+  } catch(e) {}
+}
+
+function distance(a, b) {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
+function App() {
+  const canvasRef = useRef(null);
+  const stateRef = useRef(null);
+  const audioRef = useRef(null);
+  const animRef = useRef(null);
+  const [phase, setPhase] = useState('title'); // title | playing | dead
+  const [score, setScore] = useState(0);
+  const [hiScore, setHiScore] = useState(() => parseInt(localStorage.getItem('novapop-hi') || '0'));
+  const [combo, setCombo] = useState(1);
+  const [lastChain, setLastChain] = useState(0);
+
+  const W = useRef(0);
+  const H = useRef(0);
+
+  function initState() {
+    return {
+      orbs: [],
+      particles: [],
+      shockwaves: [],
+      scorePopups: [],
+      score: 0,
+      combo: 1,
+      lastChainTime: 0,
+      nextId: 0,
+      spawnTimer: 0,
+      spawnInterval: BASE_SPAWN_INTERVAL,
+      elapsed: 0,
+      running: false,
+      warnTimer: 0,
+    };
+  }
+
+  function spawnOrb(state, w, h) {
+    const margin = 60;
+    let attempts = 0;
+    let x, y;
+    do {
+      x = margin + Math.random() * (w - margin * 2);
+      y = margin + Math.random() * (h - margin * 2);
+      attempts++;
+    } while (
+      attempts < 30 &&
+      state.orbs.some(o => distance({x, y}, o) < 55)
+    );
+
+    const colorIdx = Math.floor(Math.random() * COLORS.length);
+    state.orbs.push({
+      id: state.nextId++,
+      x, y,
+      r: 8,
+      colorIdx,
+      phase: Math.random() * Math.PI * 2,
+      alive: true,
+    });
+  }
+
+  function triggerPop(state, orb, w, h, chainDepth = 0) {
+    if (!orb.alive) return 0;
+    orb.alive = false;
+
+    const points = Math.round(orb.r * 2 * (state.combo + chainDepth * 0.5));
+    state.score += points;
+
+    // shockwave
+    state.shockwaves.push({
+      x: orb.x, y: orb.y,
+      r: orb.r,
+      maxR: orb.r * 2.8,
+      colorIdx: orb.colorIdx,
+      alpha: 1,
+    });
+
+    // particles
+    const count = 8 + Math.floor(orb.r / 4);
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+      const speed = 2 + Math.random() * 4 + orb.r * 0.15;
+      state.particles.push({
+        x: orb.x, y: orb.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        r: 2 + Math.random() * 4,
+        colorIdx: orb.colorIdx,
+        alpha: 1,
+        life: 0.6 + Math.random() * 0.5,
+      });
+    }
+
+    state.scorePopups.push({
+      x: orb.x,
+      y: orb.y - orb.r,
+      text: `+${points}${chainDepth > 0 ? ` ×${chainDepth + 1}` : ''}`,
+      alpha: 1,
+      vy: -1.5,
+      colorIdx: orb.colorIdx,
+    });
+
+    // chain: pop nearby same-color orbs
+    let chainCount = 0;
+    const blastR = orb.r * 2.5;
+    state.orbs.forEach(other => {
+      if (other.alive && other.colorIdx === orb.colorIdx && distance(orb, other) < blastR + other.r) {
+        chainCount += triggerPop(state, other, w, h, chainDepth + 1);
+        chainCount++;
+      }
+    });
+
+    return chainCount;
+  }
+
+  function handleClick(cx, cy) {
+    const state = stateRef.current;
+    if (!state || !state.running) return;
+
+    const w = W.current, h = H.current;
+    // find topmost orb at click
+    let hit = null;
+    let maxR = 0;
+    state.orbs.forEach(orb => {
+      if (!orb.alive) return;
+      if (distance({x: cx, y: cy}, orb) < orb.r + 8 && orb.r > maxR) {
+        hit = orb;
+        maxR = orb.r;
+      }
+    });
+
+    if (!hit) return;
+
+    const now = performance.now();
+    const timeSinceLast = now - state.lastChainTime;
+    if (timeSinceLast < 1200) {
+      state.combo = Math.min(state.combo + 1, 8);
+    } else {
+      state.combo = 1;
+    }
+    state.lastChainTime = now;
+
+    const chains = triggerPop(state, hit, w, h);
+    playChain(audioRef.current, chains + 1);
+    setCombo(state.combo);
+    setLastChain(chains);
+  }
+
+  const loop = useCallback((ts) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const state = stateRef.current;
+    if (!state || !state.running) return;
+
+    const dt = 16; // fixed ~60fps
+    const w = canvas.width, h = canvas.height;
+    W.current = w; H.current = h;
+
+    state.elapsed += dt;
+    state.spawnTimer += dt;
+    state.warnTimer += dt;
+
+    // difficulty ramp
+    const t = state.elapsed / 1000;
+    state.spawnInterval = Math.max(MIN_SPAWN_INTERVAL, BASE_SPAWN_INTERVAL - t * 28);
+
+    // spawn
+    if (state.spawnTimer >= state.spawnInterval) {
+      state.spawnTimer = 0;
+      if (state.orbs.filter(o => o.alive).length < 22) {
+        spawnOrb(state, w, h);
+      }
+    }
+
+    // grow orbs
+    const growRate = 0.025 + t * 0.0005;
+    state.orbs.forEach(orb => {
+      if (!orb.alive) return;
+      orb.r += growRate;
+      orb.phase += 0.04;
+      if (orb.r >= MAX_RADIUS) {
+        // supernova!
+        playSupernova(audioRef.current);
+        state.running = false;
+        setPhase('dead');
+        const hi = Math.max(parseInt(localStorage.getItem('novapop-hi') || '0'), state.score);
+        localStorage.setItem('novapop-hi', hi);
+        setHiScore(hi);
+        setScore(state.score);
+        return;
+      }
+      if (orb.r / MAX_RADIUS > SUPERNOVA_SIZE && state.warnTimer > 120) {
+        playWarning(audioRef.current);
+        state.warnTimer = 0;
+      }
+    });
+
+    // prune dead orbs
+    state.orbs = state.orbs.filter(o => o.alive || true); // keep for now to draw fades
+    // actually filter truly dead immediately
+    state.orbs = state.orbs.filter(o => o.alive);
+
+    // update particles
+    state.particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.08;
+      p.vx *= 0.97; p.vy *= 0.97;
+      p.alpha -= dt / (p.life * 1000);
+      p.r *= 0.98;
+    });
+    state.particles = state.particles.filter(p => p.alpha > 0.02);
+
+    // update shockwaves
+    state.shockwaves.forEach(sw => {
+      sw.r += (sw.maxR - sw.r) * 0.18;
+      sw.alpha -= 0.06;
+    });
+    state.shockwaves = state.shockwaves.filter(sw => sw.alpha > 0.01);
+
+    // update score popups
+    state.scorePopups.forEach(sp => {
+      sp.y += sp.vy;
+      sp.alpha -= 0.025;
+    });
+    state.scorePopups = state.scorePopups.filter(sp => sp.alpha > 0.01);
+
+    // sync score to react state (throttled via rAF)
+    setScore(state.score);
+
+    // --- DRAW ---
+    ctx.clearRect(0, 0, w, h);
+
+    // BG grid
+    ctx.strokeStyle = 'rgba(0,200,255,0.04)';
+    ctx.lineWidth = 1;
+    for (let gx = 0; gx < w; gx += 60) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+    }
+    for (let gy = 0; gy < h; gy += 60) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+    }
+
+    // shockwaves
+    state.shockwaves.forEach(sw => {
+      const c = COLORS[sw.colorIdx];
+      ctx.beginPath();
+      ctx.arc(sw.x, sw.y, sw.r, 0, Math.PI * 2);
+      ctx.strokeStyle = c.glow.replace(')', `,${sw.alpha})`).replace('rgb', 'rgba');
+      ctx.lineWidth = 3;
+      ctx.shadowColor = c.glow;
+      ctx.shadowBlur = 18;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    });
+
+    // particles
+    state.particles.forEach(p => {
+      const c = COLORS[p.colorIdx];
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = c.fill.replace(')', `,${p.alpha})`).replace('rgb', 'rgba');
+      ctx.shadowColor = c.glow;
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+    // orbs
+    state.orbs.forEach(orb => {
+      if (!orb.alive) return;
+      const c = COLORS[orb.colorIdx];
+      const danger = orb.r / MAX_RADIUS;
+      const pulse = Math.sin(orb.phase) * 0.12 + 0.88;
+      const drawR = orb.r * pulse;
+      const glowSize = 8 + danger * 30;
+
+      // warning ring for large orbs
+      if (danger > SUPERNOVA_SIZE) {
+        const warnAlpha = 0.5 + Math.sin(orb.phase * 4) * 0.5;
+        ctx.beginPath();
+        ctx.arc(orb.x, orb.y, drawR + 6, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255,255,255,${warnAlpha * 0.8})`;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+
+      // glow outer
+      const grad = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, drawR * 1.4);
+      grad.addColorStop(0, c.fill);
+      grad.addColorStop(0.6, c.fill + 'cc');
+      grad.addColorStop(1, c.fill + '00');
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, drawR * 1.4, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // core
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, drawR, 0, Math.PI * 2);
+      ctx.fillStyle = c.fill;
+      ctx.shadowColor = c.glow;
+      ctx.shadowBlur = glowSize;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // inner highlight
+      ctx.beginPath();
+      ctx.arc(orb.x - drawR * 0.3, orb.y - drawR * 0.3, drawR * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fill();
+
+      // danger progress ring
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, drawR + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * danger);
+      ctx.strokeStyle = danger > 0.7 ? `rgba(255,80,80,${danger})` : `rgba(255,255,255,${danger * 0.5})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+
+    // score popups
+    ctx.textAlign = 'center';
+    state.scorePopups.forEach(sp => {
+      const c = COLORS[sp.colorIdx];
+      ctx.font = 'bold 16px Courier New';
+      ctx.fillStyle = c.fill.replace(')', `,${sp.alpha})`).replace('rgb', 'rgba');
+      ctx.shadowColor = c.glow;
+      ctx.shadowBlur = 10;
+      ctx.fillText(sp.text, sp.x, sp.y);
+      ctx.shadowBlur = 0;
+    });
+
+    ctx.textAlign = 'left';
+    animRef.current = requestAnimationFrame(loop);
+  }, []);
+
+  function startGame() {
+    if (!audioRef.current) {
+      audioRef.current = createAudioCtx();
+    }
+    const state = initState();
+    state.running = true;
+    stateRef.current = state;
+    setPhase('playing');
+    setScore(0);
+    setCombo(1);
+    setLastChain(0);
+
+    // spawn initial orbs
+    const w = W.current || window.innerWidth;
+    const h = H.current || window.innerHeight;
+    for (let i = 0; i < 4; i++) spawnOrb(state, w, h);
+
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    animRef.current = requestAnimationFrame(loop);
+  }
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      W.current = canvas.width;
+      H.current = canvas.height;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
+  }, []);
+
+  function onCanvasClick(e) {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const cx = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
+    const cy = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
+    handleClick(cx, cy);
+  }
+
+  function onCanvasTouch(e) {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const t = e.changedTouches[0];
+    const cx = t.clientX - rect.left;
+    const cy = t.clientY - rect.top;
+    handleClick(cx, cy);
+  }
+
+  return (
+    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+      <canvas
+        ref={canvasRef}
+        onClick={phase === 'playing' ? onCanvasClick : undefined}
+        onTouchStart={phase === 'playing' ? onCanvasTouch : undefined}
+        style={{ position: 'absolute', top: 0, left: 0 }}
+      />
+
+      {/* HUD */}
+      {phase === 'playing' && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          padding: '16px 20px', pointerEvents: 'none',
+        }}>
+          <div>
+            <div style={{ color: '#00f5ff', fontSize: 13, textShadow: '0 0 10px #00f5ff', letterSpacing: 2 }}>SCORE</div>
+            <div style={{ color: '#fff', fontSize: 28, fontWeight: 'bold', textShadow: '0 0 15px #00f5ff' }}>{score.toLocaleString()}</div>
+          </div>
+          {combo > 1 && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#ff9500', fontSize: 13, textShadow: '0 0 10px #ff9500', letterSpacing: 2 }}>COMBO</div>
+              <div style={{ color: '#ff9500', fontSize: 28, fontWeight: 'bold', textShadow: '0 0 20px #ff9500' }}>×{combo}</div>
+            </div>
+          )}
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ color: '#bf5fff', fontSize: 13, textShadow: '0 0 10px #bf5fff', letterSpacing: 2 }}>BEST</div>
+            <div style={{ color: '#fff', fontSize: 22, textShadow: '0 0 10px #bf5fff' }}>{hiScore.toLocaleString()}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Title screen */}
+      {phase === 'title' && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(5,5,16,0.88)',
+        }}>
+          <div style={{
+            fontSize: 'clamp(48px, 10vw, 88px)', fontWeight: 900,
+            background: 'linear-gradient(135deg, #ff2d78, #00f5ff, #aaff00)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            textShadow: 'none', letterSpacing: 4, marginBottom: 8,
+          }}>NOVA POP</div>
+          <div style={{ color: '#00f5ff', fontSize: 'clamp(13px, 2.5vw, 18px)', letterSpacing: 3, marginBottom: 36, textShadow: '0 0 12px #00f5ff' }}>
+            POP ORBS · CHAIN COMBOS · SURVIVE
+          </div>
+          <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 'clamp(12px, 2vw, 15px)', textAlign: 'center', marginBottom: 48, lineHeight: 1.8, maxWidth: 380, padding: '0 20px' }}>
+            Orbs grow over time — click to pop them.<br/>
+            Same-color orbs nearby chain-explode.<br/>
+            Let one reach full size and it <span style={{ color: '#ff2d78' }}>SUPERNOVAS</span>.
+          </div>
+          {hiScore > 0 && (
+            <div style={{ color: '#bf5fff', fontSize: 15, marginBottom: 28, textShadow: '0 0 10px #bf5fff' }}>
+              BEST: {hiScore.toLocaleString()}
+            </div>
+          )}
+          <button onClick={startGame} style={{
+            background: 'linear-gradient(135deg, #ff2d78, #bf5fff)',
+            border: 'none', borderRadius: 40, color: '#fff',
+            fontSize: 'clamp(16px, 3vw, 22px)', fontWeight: 'bold',
+            padding: '14px 52px', cursor: 'pointer',
+            boxShadow: '0 0 30px rgba(255,45,120,0.6)',
+            letterSpacing: 2, fontFamily: 'Courier New',
+            transition: 'transform 0.1s',
+          }}>
+            PLAY
+          </button>
+        </div>
+      )}
+
+      {/* Game Over */}
+      {phase === 'dead' && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(5,5,16,0.9)',
+        }}>
+          <div style={{
+            fontSize: 'clamp(36px, 8vw, 72px)', fontWeight: 900,
+            color: '#ff2d78', textShadow: '0 0 30px #ff2d78', letterSpacing: 4, marginBottom: 8,
+          }}>SUPERNOVA!</div>
+          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 15, marginBottom: 40, letterSpacing: 2 }}>
+            AN ORB WENT CRITICAL
+          </div>
+          <div style={{ color: '#00f5ff', fontSize: 14, textShadow: '0 0 10px #00f5ff', letterSpacing: 3 }}>SCORE</div>
+          <div style={{ color: '#fff', fontSize: 'clamp(44px, 9vw, 80px)', fontWeight: 900, marginBottom: 12, textShadow: '0 0 20px #00f5ff' }}>
+            {score.toLocaleString()}
+          </div>
+          {score >= hiScore && score > 0 && (
+            <div style={{ color: '#aaff00', fontSize: 18, fontWeight: 'bold', marginBottom: 8, textShadow: '0 0 15px #aaff00', letterSpacing: 2 }}>
+              NEW BEST!
+            </div>
+          )}
+          <div style={{ color: '#bf5fff', fontSize: 15, marginBottom: 40, textShadow: '0 0 10px #bf5fff' }}>
+            BEST: {hiScore.toLocaleString()}
+          </div>
+          <button onClick={startGame} style={{
+            background: 'linear-gradient(135deg, #ff2d78, #bf5fff)',
+            border: 'none', borderRadius: 40, color: '#fff',
+            fontSize: 'clamp(16px, 3vw, 22px)', fontWeight: 'bold',
+            padding: '14px 52px', cursor: 'pointer',
+            boxShadow: '0 0 30px rgba(255,45,120,0.6)',
+            letterSpacing: 2, fontFamily: 'Courier New',
+          }}>
+            TRY AGAIN
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

@@ -2425,5 +2425,20 @@
     "file": "games/2026-07-11/index.html",
     "preview": "games/2026-07-11/preview.png",
     "rating": 4.5
+  },
+  {
+    "id": "2026-07-14",
+    "name": "Nova Pop",
+    "date": "2026-07-14",
+    "description": "Neon orbs grow on-screen and will supernova if you let them reach full size. Click to pop them — nearby same-color orbs chain-explode in a cascade of shockwaves and particles. Let orbs grow big for massive chain combos, but one supernova ends the run.",
+    "tagline": "Pop before they blow — chain the combos!",
+    "tags": ["action", "reflex", "casual", "arcade", "chain"],
+    "difficulty": "easy",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap an orb to pop it — same-color orbs nearby chain-explode for combo points",
+    "folder": "games/2026-07-14",
+    "file": "games/2026-07-14/index.html",
+    "preview": "games/2026-07-14/preview.png",
+    "rating": 4.3
   }
 ]
