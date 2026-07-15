@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Static Surge</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; touch-action: none; }
+    #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useEffect, useRef, useState, useCallback } = React;
+
+const ENEMY_COLORS = ['#ff2266', '#ff6622', '#dd22ff', '#ff2299'];
+const PLAYER_COLOR = '#00ffcc';
+const LS_KEY = 'staticsurge-hi';
+
+function getCanvasSize() {
+  const size = Math.min(window.innerWidth, window.innerHeight, 700);
+  return { W: Math.min(window.innerWidth, 800), H: Math.min(window.innerHeight, 700) };
+}
+
+function makeAudioCtx() {
+  return new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playTone(ac, freq, type, dur, vol = 0.25) {
+  if (!ac) return;
+  try {
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq * 0.4), ac.currentTime + dur);
+    gain.gain.setValueAtTime(vol, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    osc.start(); osc.stop(ac.currentTime + dur);
+  } catch(e) {}
+}
+
+function playNoise(ac, dur, vol = 0.5) {
+  if (!ac) return;
+  try {
+    const len = Math.floor(ac.sampleRate * dur);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.exp(-i / (len*0.25));
+    const src = ac.createBufferSource();
+    const gain = ac.createGain();
+    src.buffer = buf;
+    src.connect(gain); gain.connect(ac.destination);
+    gain.gain.value = vol;
+    src.start();
+  } catch(e) {}
+}
+
+function App() {
+  const canvasRef = useRef(null);
+  const gameRef = useRef(null);
+  const rafRef = useRef(null);
+  const audioRef = useRef(null);
+  const [screen, setScreen] = useState('title');
+  const [finalScore, setFinalScore] = useState(0);
+  const [hiScore, setHiScore] = useState(() => parseInt(localStorage.getItem(LS_KEY) || '0'));
+
+  const startGame = useCallback(() => {
+    setScreen('game');
+  }, []);
+
+  // Canvas resize
+  useEffect(() => {
+    const onResize = () => {
+      if (screen === 'game' && canvasRef.current && gameRef.current) {
+        const { W, H } = getCanvasSize();
+        canvasRef.current.width = W;
+        canvasRef.current.height = H;
+        gameRef.current.W = W;
+        gameRef.current.H = H;
+        // Clamp player
+        const p = gameRef.current.player;
+        p.x = Math.max(p.r, Math.min(W - p.r, p.x));
+        p.y = Math.max(p.r, Math.min(H - p.r, p.y));
+      }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen !== 'game') return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const { W, H } = getCanvasSize();
+    canvas.width = W; canvas.height = H;
+
+    try {
+      if (!audioRef.current) audioRef.current = makeAudioCtx();
+    } catch(e) {}
+
+    gameRef.current = {
+      W, H,
+      player: { x: W/2, y: H/2, r: 15 },
+      charge: 0, chargeFrames: 0,
+      enemies: [], particles: [], blastWaves: [], floatTexts: [],
+      score: 0, lives: 3, combo: 0, comboTimer: 0,
+      level: 1, spawnTimer: 0, keys: {}, frame: 0,
+      hitFlash: 0, dead: false, graceFrames: 180,
+    };
+
+    const ctx = canvas.getContext('2d');
+    const g = gameRef.current;
+    const ac = audioRef.current;
+
+    const discharge = () => {
+      if (g.charge < 0.05 || g.dead) return;
+      const { W, H, player, charge } = g;
+      const maxDim = Math.sqrt(W*W + H*H);
+      const radius = 50 + charge * maxDim * 0.55;
+
+      playNoise(ac, 0.4 + charge * 0.3, 0.5 + charge * 0.4);
+
+      let killed = 0;
+      g.enemies = g.enemies.filter(e => {
+        const dx = e.x - player.x, dy = e.y - player.y;
+        if (Math.sqrt(dx*dx + dy*dy) < radius + e.r) {
+          for (let i = 0; i < 10; i++) {
+            const a = Math.random() * Math.PI * 2, spd = 2 + Math.random() * 5;
+            g.particles.push({ x: e.x, y: e.y, vx: Math.cos(a)*spd, vy: Math.sin(a)*spd,
+              life: 1, decay: 0.018 + Math.random()*0.02, r: 2 + Math.random()*3, color: e.color });
+          }
+          killed++;
+          return false;
+        }
+        return true;
+      });
+
+      if (killed > 0) {
+        g.combo += killed;
+        g.comboTimer = 150;
+        const mult = g.combo >= 20 ? 5 : g.combo >= 10 ? 3 : g.combo >= 4 ? 2 : 1;
+        const chargeMult = Math.ceil(charge * 4);
+        const pts = killed * 100 * mult * chargeMult;
+        g.score += pts;
+        g.floatTexts.push({ x: player.x, y: player.y - 30, text: `+${pts}`, life: 1, decay: 0.015,
+          color: mult >= 3 ? '#ffff00' : '#00ffcc' });
+      }
+
+      const wColor = charge > 0.75 ? '#ffffff' : charge > 0.45 ? '#ffff44' : '#00ffcc';
+      g.blastWaves.push({ x: player.x, y: player.y, r: player.r, maxR: radius, life: 1, color: wColor });
+      // Arc particles outward
+      for (let i = 0; i < Math.floor(charge * 20 + 5); i++) {
+        const a = Math.random() * Math.PI * 2, spd = 3 + Math.random() * (charge * 8);
+        g.particles.push({ x: player.x, y: player.y, vx: Math.cos(a)*spd, vy: Math.sin(a)*spd,
+          life: 1, decay: 0.02 + Math.random()*0.02, r: 1 + Math.random()*3, color: wColor });
+      }
+
+      g.charge = 0;
+      g.chargeFrames = 0;
+    };
+
+    const keyDown = (e) => {
+      g.keys[e.code] = true;
+      if (e.code === 'Space') { e.preventDefault(); discharge(); }
+    };
+    const keyUp = (e) => { g.keys[e.code] = false; };
+    const mouseDown = (e) => { if (e.button === 0) discharge(); };
+    const touchStart = (e) => { e.preventDefault(); discharge(); };
+
+    document.addEventListener('keydown', keyDown);
+    document.addEventListener('keyup', keyUp);
+    canvas.addEventListener('mousedown', mouseDown);
+    canvas.addEventListener('touchstart', touchStart, { passive: false });
+
+    const spawnEnemy = () => {
+      const { W, H } = g;
+      const side = Math.floor(Math.random() * 4);
+      let x, y;
+      if (side === 0)      { x = Math.random() * W; y = -25; }
+      else if (side === 1) { x = W + 25; y = Math.random() * H; }
+      else if (side === 2) { x = Math.random() * W; y = H + 25; }
+      else                 { x = -25; y = Math.random() * H; }
+      const spd = 0.7 + g.level * 0.12 + Math.random() * 0.5;
+      const r = 10 + Math.random() * 7;
+      g.enemies.push({ x, y, r, speed: spd, angle: Math.random() * Math.PI * 2,
+        rotSpd: (Math.random()-0.5) * 0.08,
+        color: ENEMY_COLORS[Math.floor(Math.random() * ENEMY_COLORS.length)] });
+    };
+
+    let running = true;
+
+    const loop = () => {
+      if (!running) return;
+      const { W, H, player, keys } = g;
+      g.frame++;
+
+      // Player movement
+      const spd = 3.5;
+      let dx = 0, dy = 0;
+      if (keys['ArrowLeft'] || keys['KeyA']) dx -= spd;
+      if (keys['ArrowRight'] || keys['KeyD']) dx += spd;
+      if (keys['ArrowUp'] || keys['KeyW']) dy -= spd;
+      if (keys['ArrowDown'] || keys['KeyS']) dy += spd;
+      if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
+      const moving = dx !== 0 || dy !== 0;
+
+      if (moving) {
+        player.x = Math.max(player.r, Math.min(W - player.r, player.x + dx));
+        player.y = Math.max(player.r, Math.min(H - player.r, player.y + dy));
+      }
+
+      // Charge
+      if (moving) {
+        g.chargeFrames = 0;
+        g.charge = Math.max(0, g.charge - 0.025);
+      } else {
+        g.chargeFrames++;
+        const rate = 0.003 + (g.chargeFrames > 60 ? 0.003 : 0);
+        g.charge = Math.min(1, g.charge + rate);
+      }
+
+      // Combo decay
+      if (g.comboTimer > 0) { g.comboTimer--; if (g.comboTimer === 0) g.combo = 0; }
+
+      // Spawn
+      g.spawnTimer++;
+      const spawnInterval = Math.max(35, 110 - g.level * 7);
+      if (g.spawnTimer >= spawnInterval) {
+        g.spawnTimer = 0;
+        spawnEnemy();
+        if (g.level >= 4 && Math.random() < 0.35) spawnEnemy();
+        if (g.level >= 7 && Math.random() < 0.25) spawnEnemy();
+      }
+
+      // Update enemies
+      for (let i = g.enemies.length - 1; i >= 0; i--) {
+        const e = g.enemies[i];
+        const ex = player.x - e.x, ey = player.y - e.y;
+        const dist = Math.sqrt(ex*ex + ey*ey) || 1;
+        e.x += (ex / dist) * e.speed;
+        e.y += (ey / dist) * e.speed;
+        e.angle += e.rotSpd;
+
+        if (dist < player.r + e.r - 3 && g.hitFlash === 0 && g.graceFrames === 0) {
+          g.lives--;
+          g.hitFlash = 45;
+          g.combo = 0;
+          g.comboTimer = 0;
+          playTone(ac, 100, 'sawtooth', 0.35, 0.4);
+          e.x -= ex / dist * 50;
+          e.y -= ey / dist * 50;
+          if (g.lives <= 0) { g.dead = true; }
+        }
+      }
+
+      if (g.hitFlash > 0) g.hitFlash--;
+      if (g.graceFrames > 0) g.graceFrames--;
+
+      // Level
+      g.level = 1 + Math.floor(g.score / 2500);
+
+      // Sparks while charging
+      if (g.charge > 0.4 && g.frame % 3 === 0) {
+        const wColor = g.charge > 0.75 ? '#ffffff' : g.charge > 0.45 ? '#ffff44' : '#00ffcc';
+        for (let i = 0; i < 2; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const sr = player.r + 5 + Math.random() * g.charge * 45;
+          g.particles.push({
+            x: player.x + Math.cos(a) * sr, y: player.y + Math.sin(a) * sr,
+            vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2,
+            life: 0.6 + Math.random()*0.4, decay: 0.06 + Math.random()*0.04,
+            r: 1 + Math.random()*2, color: wColor
+          });
+        }
+      }
+
+      // Update particles
+      g.particles = g.particles.filter(p => {
+        p.x += p.vx; p.y += p.vy; p.vx *= 0.95; p.vy *= 0.95;
+        p.life -= p.decay; return p.life > 0;
+      });
+      g.blastWaves = g.blastWaves.filter(w => {
+        w.r += (w.maxR - w.r) * 0.18; w.life -= 0.05; return w.life > 0;
+      });
+      g.floatTexts = g.floatTexts.filter(ft => {
+        ft.y -= 1.2; ft.life -= ft.decay; return ft.life > 0;
+      });
+
+      // ===== DRAW =====
+      const hitAlpha = g.hitFlash / 45;
+      ctx.fillStyle = hitAlpha > 0 ? `rgb(${Math.floor(20+hitAlpha*40)},0,${Math.floor(10+hitAlpha*8)})` : '#06020f';
+      ctx.fillRect(0, 0, W, H);
+
+      // Grid
+      ctx.strokeStyle = 'rgba(0,255,200,0.06)';
+      ctx.lineWidth = 1;
+      const gs = 45;
+      const offX = (g.frame * 0.3) % gs, offY = (g.frame * 0.2) % gs;
+      for (let gx = -gs + offX; gx < W + gs; gx += gs) {
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+      }
+      for (let gy = -gs + offY; gy < H + gs; gy += gs) {
+        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+      }
+
+      // Blast waves
+      ctx.save();
+      g.blastWaves.forEach(w => {
+        ctx.globalAlpha = w.life * 0.85;
+        ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI*2);
+        ctx.strokeStyle = w.color; ctx.lineWidth = 3 + w.life * 2; ctx.stroke();
+        ctx.globalAlpha = w.life * 0.08;
+        ctx.fillStyle = w.color; ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+      // Particles
+      ctx.save();
+      g.particles.forEach(p => {
+        ctx.globalAlpha = p.life * 0.9;
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color; ctx.shadowBlur = 6;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * Math.min(1, p.life * 1.5), 0, Math.PI*2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+      ctx.restore();
+
+      // Enemies
+      g.enemies.forEach(e => {
+        ctx.save();
+        ctx.translate(e.x, e.y); ctx.rotate(e.angle);
+        ctx.shadowColor = e.color; ctx.shadowBlur = 18;
+        ctx.fillStyle = e.color;
+        ctx.beginPath();
+        ctx.moveTo(0, -e.r);
+        ctx.lineTo(e.r * 0.87, e.r * 0.5);
+        ctx.lineTo(-e.r * 0.87, e.r * 0.5);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.beginPath();
+        ctx.moveTo(0, -e.r*0.5);
+        ctx.lineTo(e.r*0.43, e.r*0.25);
+        ctx.lineTo(-e.r*0.43, e.r*0.25);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      });
+
+      // Charge ring
+      const charge = g.charge;
+      if (charge > 0.02) {
+        const wColor = charge > 0.75 ? '#ffffff' : charge > 0.45 ? '#ffff44' : '#00ffcc';
+        const ringR = player.r + 10 + charge * 35;
+        ctx.save();
+        ctx.shadowColor = wColor; ctx.shadowBlur = 15 + charge * 25;
+        ctx.strokeStyle = wColor;
+        ctx.lineWidth = 1.5 + charge * 3;
+        ctx.globalAlpha = 0.35 + charge * 0.65;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, ringR, -Math.PI/2, -Math.PI/2 + Math.PI*2*charge);
+        ctx.stroke();
+        ctx.globalAlpha = 1; ctx.restore();
+      }
+
+      // Player
+      ctx.save();
+      const pColor = g.hitFlash > 0 ? '#ff0044' : PLAYER_COLOR;
+      ctx.shadowColor = pColor; ctx.shadowBlur = 20 + charge * 20;
+      ctx.fillStyle = pColor;
+      ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.beginPath(); ctx.arc(player.x - player.r*0.3, player.y - player.r*0.35, player.r*0.38, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+
+      // Float texts
+      ctx.save();
+      g.floatTexts.forEach(ft => {
+        ctx.globalAlpha = ft.life;
+        ctx.fillStyle = ft.color; ctx.shadowColor = ft.color; ctx.shadowBlur = 12;
+        ctx.font = 'bold 18px Courier New'; ctx.textAlign = 'center';
+        ctx.fillText(ft.text, ft.x, ft.y);
+      });
+      ctx.globalAlpha = 1; ctx.shadowBlur = 0; ctx.restore();
+
+      // HUD
+      ctx.shadowBlur = 0;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#00ffcc'; ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 8;
+      ctx.font = 'bold 22px Courier New';
+      ctx.fillText(`SCORE: ${g.score}`, 14, 34);
+      ctx.font = '14px Courier New'; ctx.fillStyle = '#55bbaa';
+      ctx.fillText(`LVL ${g.level}  HI: ${Math.max(g.score, hiScore)}`, 14, 56);
+
+      ctx.textAlign = 'right';
+      const livesStr = '♥'.repeat(Math.max(0, g.lives)) + '♡'.repeat(Math.max(0, 3 - g.lives));
+      ctx.fillStyle = '#ff4488'; ctx.shadowColor = '#ff4488'; ctx.shadowBlur = 10;
+      ctx.font = 'bold 22px Courier New';
+      ctx.fillText(livesStr, W - 14, 34);
+
+      // Charge bar
+      const mW = Math.min(220, W * 0.4), mH = 13;
+      const mX = W/2 - mW/2, mY = H - 46;
+      const cColor = charge > 0.75 ? '#ffffff' : charge > 0.45 ? '#ffff44' : '#00ffcc';
+      ctx.fillStyle = 'rgba(0,255,200,0.12)'; ctx.fillRect(mX, mY, mW, mH);
+      ctx.shadowColor = cColor; ctx.shadowBlur = 12;
+      ctx.fillStyle = cColor; ctx.fillRect(mX, mY, mW * charge, mH);
+      ctx.strokeStyle = 'rgba(0,255,200,0.35)'; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+      ctx.strokeRect(mX, mY, mW, mH);
+
+      ctx.textAlign = 'center'; ctx.font = 'bold 11px Courier New';
+      ctx.fillStyle = 'rgba(0,255,200,0.7)'; ctx.fillText('CHARGE', W/2, mY - 5);
+
+      const label = charge >= 1 ? '⚡ DISCHARGE NOW!' : charge < 0.08 ? 'STAND STILL TO CHARGE' : `${Math.floor(charge*100)}%`;
+      ctx.fillStyle = charge >= 1 ? '#ffff44' : '#88ddcc';
+      ctx.shadowColor = charge >= 1 ? '#ffff44' : '#00ffcc';
+      ctx.shadowBlur = charge >= 1 ? 18 : 4;
+      ctx.font = `bold ${charge >= 1 ? 14 : 12}px Courier New`;
+      ctx.fillText(label, W/2, mY + mH + 17);
+
+      // Combo
+      if (g.combo > 0 && g.comboTimer > 0) {
+        const mult = g.combo >= 20 ? 5 : g.combo >= 10 ? 3 : g.combo >= 4 ? 2 : 1;
+        const alpha = Math.min(1, g.comboTimer / 40);
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.font = `bold ${18 + mult*4}px Courier New`;
+        ctx.fillStyle = '#ffff00'; ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 22;
+        ctx.fillText(`×${mult} COMBO`, W/2, 70);
+        ctx.font = '13px Courier New'; ctx.fillStyle = '#ffdd88'; ctx.shadowBlur = 8;
+        ctx.fillText(`${g.combo} enemies killed`, W/2, 90);
+        ctx.globalAlpha = 1;
+      }
+
+      // Grace period shield pulse
+      if (g.graceFrames > 0) {
+        const gAlpha = (g.graceFrames / 180) * 0.5 * (0.5 + 0.5 * Math.sin(g.frame * 0.3));
+        ctx.globalAlpha = gAlpha;
+        ctx.strokeStyle = '#00ffcc'; ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 20;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(player.x, player.y, player.r + 20 + Math.sin(g.frame*0.1)*5, 0, Math.PI*2); ctx.stroke();
+        ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+      }
+
+      ctx.shadowBlur = 0;
+
+      if (g.dead) {
+        running = false;
+        const hi = Math.max(g.score, parseInt(localStorage.getItem(LS_KEY) || '0'));
+        localStorage.setItem(LS_KEY, String(hi));
+        setHiScore(hi);
+        setFinalScore(g.score);
+        setTimeout(() => setScreen('gameover'), 700);
+        return;
+      }
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafRef.current);
+      document.removeEventListener('keydown', keyDown);
+      document.removeEventListener('keyup', keyUp);
+      canvas.removeEventListener('mousedown', mouseDown);
+      canvas.removeEventListener('touchstart', touchStart);
+    };
+  }, [screen]);
+
+  // Mobile d-pad touch for movement
+  const dpadRef = useRef({});
+  const startMove = useCallback((dir) => {
+    if (!gameRef.current) return;
+    // Clear other dirs first then set
+    const map = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD' };
+    gameRef.current.keys[map[dir]] = true;
+    dpadRef.current[dir] = true;
+  }, []);
+  const stopMove = useCallback((dir) => {
+    if (!gameRef.current) return;
+    const map = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD' };
+    gameRef.current.keys[map[dir]] = false;
+    dpadRef.current[dir] = false;
+  }, []);
+
+  if (screen === 'title') {
+    const hi = parseInt(localStorage.getItem(LS_KEY) || '0');
+    return (<>
+      <canvas ref={canvasRef} style={{ display:'none' }} />
+      <div style={{ width:'100vw', height:'100vh', background:'#06020f', display:'flex', flexDirection:'column',
+        alignItems:'center', justifyContent:'center', color:'#00ffcc',
+        fontFamily:"'Courier New', monospace", textAlign:'center', userSelect:'none' }}>
+        <div style={{ fontSize:'11px', letterSpacing:'6px', color:'#55aabb', marginBottom:'8px' }}>NEON ARCADE</div>
+        <div style={{ fontSize:'clamp(36px,8vw,64px)', fontWeight:'bold', letterSpacing:'4px',
+          textShadow:'0 0 30px #00ffcc, 0 0 60px #00ffcc', marginBottom:'6px' }}>STATIC</div>
+        <div style={{ fontSize:'clamp(36px,8vw,64px)', fontWeight:'bold', letterSpacing:'4px',
+          textShadow:'0 0 30px #ffff44, 0 0 60px #ffff44', color:'#ffff44', marginBottom:'30px' }}>SURGE</div>
+        <div style={{ maxWidth:'360px', color:'#88ccbb', fontSize:'14px', lineHeight:'1.7', marginBottom:'28px', padding:'0 20px' }}>
+          <strong style={{color:'#00ffcc'}}>STAND STILL</strong> to build static charge as neon enemies close in.
+          <br/>Release a <strong style={{color:'#ffff44'}}>DISCHARGE</strong> to blast everything in radius!
+          <br/>Bigger charge = bigger explosion = more points.
+        </div>
+        <div style={{ color:'#778899', fontSize:'12px', marginBottom:'28px', lineHeight:'1.8' }}>
+          <div><span style={{color:'#00ffcc'}}>WASD / ←→↑↓</span> — move player</div>
+          <div><span style={{color:'#ffff44'}}>SPACE / CLICK</span> — discharge static</div>
+        </div>
+        {hi > 0 && <div style={{ color:'#aa88ff', fontSize:'14px', marginBottom:'16px' }}>BEST: {hi}</div>}
+        <button onClick={startGame}
+          style={{ background:'none', border:'2px solid #00ffcc', color:'#00ffcc', padding:'14px 40px',
+            fontSize:'18px', fontFamily:"'Courier New', monospace", fontWeight:'bold', cursor:'pointer',
+            letterSpacing:'3px', boxShadow:'0 0 20px #00ffcc', borderRadius:'4px' }}>
+          PLAY
+        </button>
+      </div>
+    </>);
+  }
+
+  if (screen === 'gameover') {
+    return (
+      <div style={{ width:'100vw', height:'100vh', background:'#06020f', display:'flex', flexDirection:'column',
+        alignItems:'center', justifyContent:'center', color:'#ff2266',
+        fontFamily:"'Courier New', monospace", textAlign:'center', userSelect:'none' }}>
+        <div style={{ fontSize:'clamp(28px,7vw,54px)', fontWeight:'bold', letterSpacing:'4px',
+          textShadow:'0 0 30px #ff2266', marginBottom:'20px' }}>OVERLOADED</div>
+        <div style={{ color:'#00ffcc', fontSize:'22px', marginBottom:'8px' }}>SCORE: {finalScore}</div>
+        <div style={{ color:'#aa88ff', fontSize:'16px', marginBottom:'30px' }}>BEST: {hiScore}</div>
+        {finalScore >= hiScore && finalScore > 0 && (
+          <div style={{ color:'#ffff44', fontSize:'14px', marginBottom:'20px',
+            textShadow:'0 0 15px #ffff44', letterSpacing:'2px' }}>⚡ NEW HIGH SCORE! ⚡</div>
+        )}
+        <button onClick={startGame}
+          style={{ background:'none', border:'2px solid #00ffcc', color:'#00ffcc', padding:'12px 36px',
+            fontSize:'16px', fontFamily:"'Courier New', monospace", fontWeight:'bold', cursor:'pointer',
+            letterSpacing:'3px', boxShadow:'0 0 16px #00ffcc', borderRadius:'4px', marginBottom:'12px' }}>
+          PLAY AGAIN
+        </button>
+        <button onClick={() => setScreen('title')}
+          style={{ background:'none', border:'1px solid #334455', color:'#557788', padding:'8px 24px',
+            fontSize:'13px', fontFamily:"'Courier New', monospace", cursor:'pointer', borderRadius:'4px' }}>
+          TITLE
+        </button>
+      </div>
+    );
+  }
+
+  // Game screen
+  const isMobile = window.innerWidth < 600;
+  return (
+    <div style={{ width:'100vw', height:'100vh', background:'#06020f', position:'relative', overflow:'hidden' }}>
+      <canvas ref={canvasRef} style={{ display:'block', position:'absolute', top:0, left:0 }} />
+      {isMobile && (
+        <div style={{ position:'absolute', bottom:'80px', left:0, right:0, display:'flex', justifyContent:'center', pointerEvents:'none' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'50px 50px 50px', gridTemplateRows:'50px 50px',
+            gap:'4px', pointerEvents:'all' }}>
+            {/* Empty, Up, Empty */}
+            <div />
+            <button onTouchStart={()=>startMove('up')} onTouchEnd={()=>stopMove('up')}
+              style={dpadStyle}>▲</button>
+            <div />
+            {/* Left, Down, Right */}
+            <button onTouchStart={()=>startMove('left')} onTouchEnd={()=>stopMove('left')}
+              style={dpadStyle}>◄</button>
+            <button onTouchStart={()=>startMove('down')} onTouchEnd={()=>stopMove('down')}
+              style={dpadStyle}>▼</button>
+            <button onTouchStart={()=>startMove('right')} onTouchEnd={()=>stopMove('right')}
+              style={dpadStyle}>►</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const dpadStyle = {
+  background:'rgba(0,255,200,0.12)', border:'1px solid rgba(0,255,200,0.4)',
+  color:'#00ffcc', fontSize:'18px', borderRadius:'6px', cursor:'pointer',
+  display:'flex', alignItems:'center', justifyContent:'center', userSelect:'none',
+  touchAction:'none',
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

@@ -2440,5 +2440,20 @@
     "file": "games/2026-07-14/index.html",
     "preview": "games/2026-07-14/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-07-15",
+    "name": "Static Surge",
+    "date": "2026-07-15",
+    "description": "Stand perfectly still to build a crackling static charge as neon enemy triangles swarm toward you — then DISCHARGE to unleash a massive area blast that destroys everything in radius! Bigger charge means wider devastation. Dodge to survive, stand still to power up, and chain massive discharges for explosive combo multipliers.",
+    "tagline": "Stand still. Build charge. Discharge the swarm!",
+    "tags": ["action", "reflex", "strategy", "arcade", "risk-reward"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "WASD / Arrow Keys to move and dodge · Space / Click to discharge static energy",
+    "folder": "games/2026-07-15",
+    "file": "games/2026-07-15/index.html",
+    "preview": "games/2026-07-15/preview.png",
+    "rating": 4.6
   }
 ]
