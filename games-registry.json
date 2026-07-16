@@ -2455,5 +2455,20 @@
     "file": "games/2026-07-15/index.html",
     "preview": "games/2026-07-15/preview.png",
     "rating": 4.6
+  },
+  {
+    "id": "2026-07-16",
+    "name": "Surge Push",
+    "date": "2026-07-16",
+    "description": "Push all neon blocks simultaneously with arrow keys — same-color blocks that slam into each other explode into particles and score points! Plan each directional push carefully to chain adjacency matches for massive combo multipliers as the grid fills faster each level.",
+    "tagline": "Push all blocks. Collide the colors. Chain the combos!",
+    "tags": ["puzzle", "strategy", "reflex", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "← → ↑ ↓ or WASD to push all blocks in a direction | On-screen D-pad on mobile",
+    "folder": "games/2026-07-16",
+    "file": "games/2026-07-16/index.html",
+    "preview": "games/2026-07-16/preview.png",
+    "rating": 4.6
   }
 ]
