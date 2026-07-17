@@ -2470,5 +2470,20 @@
     "file": "games/2026-07-16/index.html",
     "preview": "games/2026-07-16/preview.png",
     "rating": 4.6
+  },
+  {
+    "id": "2026-07-17",
+    "name": "Glyph Blitz",
+    "date": "2026-07-17",
+    "description": "Neon letters rain from the sky — type them before they escape to the bottom! Each correct keystroke triggers a neon particle explosion and builds your combo multiplier. Miss three letters and it's game over — how high can your combo climb before your fingers give out?",
+    "tagline": "Type fast. Blitz the glyphs. Build the combo!",
+    "tags": ["typing", "reflex", "action", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Keyboard: type the letter shown on each falling glyph | Mobile: tap letter buttons at the bottom",
+    "folder": "games/2026-07-17",
+    "file": "games/2026-07-17/index.html",
+    "preview": "games/2026-07-17/preview.png",
+    "rating": 4.3
   }
 ]

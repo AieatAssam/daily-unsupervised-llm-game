@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glyph Blitz</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0010;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.05); }
+  }
+  @keyframes comboFlash {
+    0% { transform: scale(1.5); opacity: 1; }
+    100% { transform: scale(1); opacity: 0; }
+  }
+  @keyframes lifeShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    75% { transform: translateX(8px); }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const NEON_COLORS = [
+  '#ff00ff', '#00ffff', '#ff6600', '#00ff88', '#ff0066',
+  '#6600ff', '#ffff00', '#00ff44', '#ff3399', '#33ccff',
+  '#ff9900', '#cc00ff', '#00ffcc', '#ff0044', '#44ff00'
+];
+
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+class AudioEngine {
+  constructor() {
+    this.ctx = null;
+  }
+  init() {
+    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  play(freq, type, duration, vol = 0.3) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.5, this.ctx.currentTime + duration);
+    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+    osc.start();
+    osc.stop(this.ctx.currentTime + duration);
+  }
+  hit(combo) {
+    this.init();
+    const baseFreq = 300 + Math.min(combo * 40, 400);
+    this.play(baseFreq, 'sawtooth', 0.12, 0.25);
+    setTimeout(() => this.play(baseFreq * 1.5, 'sine', 0.08, 0.15), 40);
+  }
+  miss() {
+    this.init();
+    this.play(80, 'sawtooth', 0.3, 0.4);
+  }
+  comboBreak() {
+    this.init();
+    this.play(200, 'square', 0.2, 0.3);
+    setTimeout(() => this.play(100, 'sawtooth', 0.25, 0.3), 80);
+  }
+  gameOver() {
+    this.init();
+    [400, 300, 200, 100].forEach((f, i) => {
+      setTimeout(() => this.play(f, 'sawtooth', 0.25, 0.5), i * 120);
+    });
+  }
+  start() {
+    this.init();
+    [300, 450, 600].forEach((f, i) => {
+      setTimeout(() => this.play(f, 'sine', 0.15, 0.2), i * 100);
+    });
+  }
+}
+
+const audio = new AudioEngine();
+
+function Particle({ x, y, color, onDone }) {
+  const canvasRef = useRef(null);
+  const animRef = useRef(null);
+  const startRef = useRef(null);
+  const particles = useRef([]);
+
+  useEffect(() => {
+    particles.current = Array.from({ length: 20 }, () => ({
+      x: 0, y: 0,
+      vx: (Math.random() - 0.5) * 12,
+      vy: (Math.random() - 0.5) * 12,
+      life: 1,
+      size: Math.random() * 6 + 2,
+      color
+    }));
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    const animate = (ts) => {
+      if (!startRef.current) startRef.current = ts;
+      const elapsed = ts - startRef.current;
+      if (elapsed > 600) { onDone(); return; }
+
+      ctx.clearRect(0, 0, 160, 160);
+      particles.current.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.3;
+        p.life -= 0.025;
+        if (p.life > 0) {
+          ctx.save();
+          ctx.globalAlpha = p.life;
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = p.color;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(80 + p.x, 80 + p.y, p.size * p.life, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      });
+      animRef.current = requestAnimationFrame(animate);
+    };
+    animRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animRef.current);
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={160} height={160}
+      style={{
+        position: 'absolute',
+        left: x - 80, top: y - 80,
+        pointerEvents: 'none',
+        zIndex: 50
+      }}
+    />
+  );
+}
+
+function GlyphLetter({ letter, x, y, color, speed, onMiss, onHit, targetKey }) {
+  const yRef = useRef(y);
+  const animRef = useRef(null);
+  const [posY, setPosY] = useState(y);
+  const startRef = useRef(null);
+  const hitRef = useRef(false);
+  const missRef = useRef(false);
+
+  useEffect(() => {
+    const animate = (ts) => {
+      if (hitRef.current || missRef.current) return;
+      if (!startRef.current) startRef.current = ts;
+      const elapsed = (ts - startRef.current) / 1000;
+      const newY = y + elapsed * speed * 60;
+      yRef.current = newY;
+      setPosY(newY);
+
+      if (newY > window.innerHeight + 60) {
+        missRef.current = true;
+        onMiss(letter);
+        return;
+      }
+      animRef.current = requestAnimationFrame(animate);
+    };
+    animRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animRef.current);
+  }, []);
+
+  const fontSize = Math.min(window.innerWidth, 600) < 400 ? 36 : 52;
+
+  return (
+    <div style={{
+      position: 'absolute',
+      left: x,
+      top: posY,
+      transform: 'translate(-50%, -50%)',
+      color,
+      fontSize: fontSize,
+      fontWeight: 'bold',
+      fontFamily: 'Courier New, monospace',
+      textShadow: `0 0 10px ${color}, 0 0 25px ${color}, 0 0 50px ${color}`,
+      filter: `drop-shadow(0 0 8px ${color})`,
+      pointerEvents: 'none',
+      zIndex: 10,
+      transition: 'none',
+      letterSpacing: '2px'
+    }}>
+      {letter}
+    </div>
+  );
+}
+
+let idCounter = 0;
+
+function App() {
+  const [phase, setPhase] = useState('title'); // title | playing | gameover
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('glyphblitz-highscore') || '0'));
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [maxCombo, setMaxCombo] = useState(0);
+  const [glyphs, setGlyphs] = useState([]);
+  const [particles, setParticles] = useState([]);
+  const [comboFlash, setComboFlash] = useState(null);
+  const [lifeShake, setLifeShake] = useState(false);
+  const [level, setLevel] = useState(1);
+
+  const scoreRef = useRef(0);
+  const livesRef = useRef(3);
+  const comboRef = useRef(0);
+  const maxComboRef = useRef(0);
+  const glyphsRef = useRef([]);
+  const levelRef = useRef(1);
+  const phaseRef = useRef('title');
+  const spawnTimerRef = useRef(null);
+  const missedLetters = useRef(new Set());
+
+  const sync = useCallback(() => {
+    setScore(scoreRef.current);
+    setLives(livesRef.current);
+    setCombo(comboRef.current);
+    setMaxCombo(maxComboRef.current);
+    setLevel(levelRef.current);
+    setGlyphs([...glyphsRef.current]);
+  }, []);
+
+  const scheduleSpawn = useCallback(() => {
+    if (spawnTimerRef.current) clearTimeout(spawnTimerRef.current);
+    if (phaseRef.current !== 'playing') return;
+
+    const lvl = levelRef.current;
+    const baseInterval = Math.max(600, 2000 - lvl * 80);
+    const interval = baseInterval + (Math.random() - 0.5) * 400;
+
+    spawnTimerRef.current = setTimeout(() => {
+      if (phaseRef.current !== 'playing') return;
+
+      const usedX = glyphsRef.current.map(g => g.x);
+      const cols = Math.min(6, 3 + Math.floor(lvl / 3));
+      const colW = (window.innerWidth * 0.85) / cols;
+      const colStart = window.innerWidth * 0.075;
+      let col;
+      let attempts = 0;
+      do {
+        col = Math.floor(Math.random() * cols);
+        attempts++;
+      } while (
+        usedX.some(x => Math.abs(x - (colStart + col * colW + colW / 2)) < 60) &&
+        attempts < 10
+      );
+
+      const x = colStart + col * colW + colW / 2;
+      const letter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+      const color = NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];
+      const speed = 1.2 + lvl * 0.18 + Math.random() * 0.4;
+
+      const glyph = {
+        id: ++idCounter,
+        letter, x, y: -40, color, speed,
+        targetKey: letter
+      };
+      glyphsRef.current = [...glyphsRef.current, glyph];
+      setGlyphs([...glyphsRef.current]);
+
+      scheduleSpawn();
+    }, interval);
+  }, []);
+
+  const startGame = useCallback(() => {
+    audio.start();
+    scoreRef.current = 0;
+    livesRef.current = 3;
+    comboRef.current = 0;
+    maxComboRef.current = 0;
+    levelRef.current = 1;
+    glyphsRef.current = [];
+    missedLetters.current = new Set();
+    phaseRef.current = 'playing';
+    idCounter = 0;
+    setPhase('playing');
+    sync();
+    scheduleSpawn();
+  }, [sync, scheduleSpawn]);
+
+  const handleMiss = useCallback((letter, id) => {
+    if (phaseRef.current !== 'playing') return;
+    if (missedLetters.current.has(id)) return;
+    missedLetters.current.add(id);
+
+    glyphsRef.current = glyphsRef.current.filter(g => g.id !== id);
+    setGlyphs([...glyphsRef.current]);
+
+    audio.miss();
+    if (comboRef.current > 1) audio.comboBreak();
+    comboRef.current = 0;
+    livesRef.current -= 1;
+    setLifeShake(true);
+    setTimeout(() => setLifeShake(false), 400);
+    sync();
+
+    if (livesRef.current <= 0) {
+      phaseRef.current = 'gameover';
+      if (spawnTimerRef.current) clearTimeout(spawnTimerRef.current);
+      const hs = Math.max(scoreRef.current, highScore);
+      localStorage.setItem('glyphblitz-highscore', String(hs));
+      setHighScore(hs);
+      audio.gameOver();
+      setPhase('gameover');
+    }
+  }, [highScore, sync]);
+
+  useEffect(() => {
+    if (phase !== 'playing') return;
+
+    const onKey = (e) => {
+      if (phaseRef.current !== 'playing') return;
+      const key = e.key.toUpperCase();
+      if (key.length !== 1 || !/[A-Z]/.test(key)) return;
+
+      const idx = glyphsRef.current.findIndex(g => g.letter === key);
+      if (idx !== -1) {
+        const glyph = glyphsRef.current[idx];
+        glyphsRef.current = glyphsRef.current.filter((_, i) => i !== idx);
+
+        comboRef.current += 1;
+        if (comboRef.current > maxComboRef.current) maxComboRef.current = comboRef.current;
+
+        const basePoints = 10;
+        const comboBonus = Math.min(comboRef.current, 20);
+        const earned = basePoints * comboBonus;
+        scoreRef.current += earned;
+
+        const newLevel = Math.floor(scoreRef.current / 300) + 1;
+        levelRef.current = Math.max(levelRef.current, Math.min(newLevel, 20));
+
+        setParticles(prev => [...prev, { id: idCounter++, x: glyph.x, y: glyph.y || 100, color: glyph.color }]);
+        if (comboRef.current >= 3) {
+          setComboFlash({ combo: comboRef.current, color: glyph.color });
+          setTimeout(() => setComboFlash(null), 500);
+        }
+        audio.hit(comboRef.current);
+        sync();
+      } else {
+        if (glyphsRef.current.length > 0) {
+          comboRef.current = 0;
+          sync();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [phase, sync]);
+
+  const removeParticle = useCallback((id) => {
+    setParticles(prev => prev.filter(p => p.id !== id));
+  }, []);
+
+  const isMobile = window.innerWidth < 600;
+
+  const onTapLetter = useCallback((letter) => {
+    if (phaseRef.current !== 'playing') return;
+    const event = new KeyboardEvent('keydown', { key: letter });
+    window.dispatchEvent(event);
+  }, []);
+
+  const bgStyle = {
+    background: 'radial-gradient(ellipse at 50% 0%, #1a0030 0%, #0a0010 60%)',
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    overflow: 'hidden'
+  };
+
+  if (phase === 'title') {
+    return (
+      <div style={bgStyle}>
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'radial-gradient(ellipse at 30% 70%, rgba(102,0,255,0.15) 0%, transparent 60%)',
+          pointerEvents: 'none',
+        }} />
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', height: '100%', gap: 24, padding: 20
+        }}>
+          <div style={{
+            fontSize: isMobile ? 48 : 72, fontWeight: 900, letterSpacing: 8,
+            color: '#ff00ff',
+            textShadow: '0 0 20px #ff00ff, 0 0 60px #ff00ff, 0 0 100px #ff00ff',
+            animation: 'pulse 2s ease-in-out infinite',
+            fontFamily: 'Courier New, monospace'
+          }}>GLYPH</div>
+          <div style={{
+            fontSize: isMobile ? 48 : 72, fontWeight: 900, letterSpacing: 8,
+            color: '#00ffff',
+            textShadow: '0 0 20px #00ffff, 0 0 60px #00ffff, 0 0 100px #00ffff',
+            animation: 'pulse 2s ease-in-out infinite 0.3s',
+            fontFamily: 'Courier New, monospace'
+          }}>BLITZ</div>
+
+          <div style={{
+            color: '#aaa', fontSize: isMobile ? 14 : 16, textAlign: 'center',
+            maxWidth: 360, lineHeight: 1.6, marginTop: 8
+          }}>
+            {isMobile
+              ? 'Tap the falling letters before they escape!'
+              : 'Type the falling letters before they escape!'}
+            <br />Build combos for massive point multipliers.
+          </div>
+
+          <div style={{
+            display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center',
+            marginTop: 8
+          }}>
+            {['A', 'B', 'C', 'Z'].map((l, i) => (
+              <div key={l} style={{
+                color: NEON_COLORS[i * 3],
+                fontSize: 32, fontWeight: 'bold',
+                textShadow: `0 0 15px ${NEON_COLORS[i * 3]}`,
+                animation: `pulse 1.5s ease-in-out infinite ${i * 0.2}s`,
+                fontFamily: 'Courier New, monospace'
+              }}>{l}</div>
+            ))}
+          </div>
+
+          {highScore > 0 && (
+            <div style={{ color: '#ffff00', fontSize: 18, textShadow: '0 0 10px #ffff00' }}>
+              HIGH SCORE: {highScore}
+            </div>
+          )}
+
+          <button
+            id="start-btn"
+            onClick={startGame}
+            style={{
+              marginTop: 16,
+              padding: '16px 48px',
+              fontSize: 22, fontWeight: 900, letterSpacing: 4,
+              background: 'transparent',
+              border: '2px solid #ff00ff',
+              color: '#ff00ff',
+              cursor: 'pointer',
+              borderRadius: 4,
+              fontFamily: 'Courier New, monospace',
+              textShadow: '0 0 10px #ff00ff',
+              boxShadow: '0 0 20px #ff00ff44, inset 0 0 20px #ff00ff11',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => {
+              e.target.style.background = '#ff00ff22';
+              e.target.style.boxShadow = '0 0 40px #ff00ff88, inset 0 0 30px #ff00ff22';
+            }}
+            onMouseLeave={e => {
+              e.target.style.background = 'transparent';
+              e.target.style.boxShadow = '0 0 20px #ff00ff44, inset 0 0 20px #ff00ff11';
+            }}
+          >
+            PLAY
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'gameover') {
+    return (
+      <div style={bgStyle}>
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', height: '100%', gap: 20
+        }}>
+          <div style={{
+            fontSize: isMobile ? 36 : 52, fontWeight: 900, color: '#ff0044',
+            textShadow: '0 0 20px #ff0044, 0 0 60px #ff0044',
+            fontFamily: 'Courier New, monospace', letterSpacing: 6
+          }}>GAME OVER</div>
+          <div style={{ color: '#fff', fontSize: 28, fontFamily: 'Courier New, monospace' }}>
+            Score: <span style={{ color: '#00ffff', textShadow: '0 0 10px #00ffff' }}>{score}</span>
+          </div>
+          <div style={{ color: '#ffff00', fontSize: 20, textShadow: '0 0 10px #ffff00', fontFamily: 'Courier New, monospace' }}>
+            High Score: {highScore}
+          </div>
+          <div style={{ color: '#ff6600', fontSize: 16, fontFamily: 'Courier New, monospace' }}>
+            Max Combo: x{maxCombo} &nbsp;|&nbsp; Level: {level}
+          </div>
+          <button
+            id="start-btn"
+            onClick={startGame}
+            style={{
+              marginTop: 16, padding: '14px 40px',
+              fontSize: 20, fontWeight: 900, letterSpacing: 4,
+              background: 'transparent', border: '2px solid #00ffff',
+              color: '#00ffff', cursor: 'pointer', borderRadius: 4,
+              fontFamily: 'Courier New, monospace',
+              textShadow: '0 0 10px #00ffff',
+              boxShadow: '0 0 20px #00ffff44',
+            }}
+          >PLAY AGAIN</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={bgStyle}>
+      {/* Ambient background effect */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'radial-gradient(ellipse at 50% 100%, rgba(102,0,255,0.1) 0%, transparent 70%)',
+        pointerEvents: 'none',
+      }} />
+
+      {/* HUD */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0,
+        padding: isMobile ? '8px 12px' : '12px 24px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
+        zIndex: 100, borderBottom: '1px solid #333'
+      }}>
+        <div style={{ fontFamily: 'Courier New, monospace' }}>
+          <div style={{ color: '#888', fontSize: 11 }}>SCORE</div>
+          <div style={{ color: '#00ffff', fontSize: isMobile ? 20 : 26, fontWeight: 'bold',
+            textShadow: '0 0 10px #00ffff' }}>{score}</div>
+        </div>
+        <div style={{ textAlign: 'center', fontFamily: 'Courier New, monospace' }}>
+          <div style={{ color: '#888', fontSize: 11 }}>COMBO</div>
+          <div style={{
+            color: combo > 5 ? '#ff00ff' : combo > 2 ? '#ff6600' : '#fff',
+            fontSize: isMobile ? 18 : 22, fontWeight: 'bold',
+            textShadow: combo > 5 ? '0 0 15px #ff00ff' : combo > 2 ? '0 0 10px #ff6600' : 'none'
+          }}>x{combo}</div>
+        </div>
+        <div style={{ textAlign: 'center', fontFamily: 'Courier New, monospace' }}>
+          <div style={{ color: '#888', fontSize: 11 }}>LEVEL</div>
+          <div style={{ color: '#ffff00', fontSize: isMobile ? 18 : 22, fontWeight: 'bold',
+            textShadow: '0 0 10px #ffff00' }}>{level}</div>
+        </div>
+        <div style={{
+          display: 'flex', gap: 6, alignItems: 'center',
+          animation: lifeShake ? 'lifeShake 0.4s ease' : 'none'
+        }}>
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} style={{
+              width: isMobile ? 14 : 18, height: isMobile ? 14 : 18,
+              borderRadius: '50%',
+              background: i < lives ? '#ff0066' : '#333',
+              boxShadow: i < lives ? '0 0 10px #ff0066' : 'none',
+              transition: 'all 0.3s'
+            }} />
+          ))}
+        </div>
+      </div>
+
+      {/* Danger zone line */}
+      <div style={{
+        position: 'absolute',
+        bottom: isMobile ? 220 : 20,
+        left: 0, right: 0,
+        height: 2,
+        background: 'rgba(255,0,0,0.3)',
+        boxShadow: '0 0 10px rgba(255,0,0,0.5)',
+        zIndex: 5
+      }} />
+
+      {/* Falling glyphs */}
+      {glyphs.map(g => (
+        <GlyphLetter
+          key={g.id}
+          letter={g.letter}
+          x={g.x}
+          y={g.y}
+          color={g.color}
+          speed={g.speed}
+          onMiss={(letter) => handleMiss(letter, g.id)}
+          onHit={() => {}}
+          targetKey={g.targetKey}
+        />
+      ))}
+
+      {/* Particles */}
+      {particles.map(p => (
+        <Particle
+          key={p.id}
+          x={p.x}
+          y={p.y}
+          color={p.color}
+          onDone={() => removeParticle(p.id)}
+        />
+      ))}
+
+      {/* Combo flash */}
+      {comboFlash && (
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          fontSize: 48, fontWeight: 900, fontFamily: 'Courier New, monospace',
+          color: comboFlash.color,
+          textShadow: `0 0 20px ${comboFlash.color}, 0 0 60px ${comboFlash.color}`,
+          pointerEvents: 'none', zIndex: 200,
+          animation: 'comboFlash 0.5s ease-out forwards'
+        }}>
+          x{comboFlash.combo}!
+        </div>
+      )}
+
+      {/* Mobile keyboard */}
+      {isMobile && (
+        <div id="mobile-keys" style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          padding: '8px 4px 12px',
+          background: 'rgba(0,0,0,0.85)',
+          borderTop: '1px solid #333',
+          zIndex: 100,
+          display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 4
+        }}>
+          {LETTERS.map((l, i) => (
+            <button
+              key={l}
+              className={`tap-key tap-key-${l}`}
+              onPointerDown={() => onTapLetter(l)}
+              style={{
+                width: 36, height: 36,
+                background: 'rgba(255,255,255,0.05)',
+                border: `1px solid ${NEON_COLORS[i % NEON_COLORS.length]}44`,
+                color: NEON_COLORS[i % NEON_COLORS.length],
+                fontSize: 14, fontWeight: 'bold',
+                cursor: 'pointer', borderRadius: 4,
+                fontFamily: 'Courier New, monospace',
+                textShadow: `0 0 6px ${NEON_COLORS[i % NEON_COLORS.length]}`,
+                WebkitTapHighlightColor: 'transparent'
+              }}
+            >{l}</button>
+          ))}
+        </div>
+      )}
+
+      {/* High score indicator */}
+      <div style={{
+        position: 'absolute', top: isMobile ? 68 : 80, right: 12,
+        fontFamily: 'Courier New, monospace', fontSize: 11,
+        color: '#555'
+      }}>
+        BEST: {highScore}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
