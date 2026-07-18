@@ -2485,5 +2485,20 @@
     "file": "games/2026-07-17/index.html",
     "preview": "games/2026-07-17/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-07-18",
+    "name": "Mirror Dash",
+    "date": "2026-07-18",
+    "description": "Rotate a glowing neon mirror in the center of the screen to deflect incoming colored laser beams toward their matching crystal targets! Move your mouse left and right to angle the mirror — deflect cyan to cyan, magenta to magenta, and chain consecutive perfect deflections for massive combo multipliers.",
+    "tagline": "Rotate the mirror. Deflect the beam. Chain the combos!",
+    "tags": ["reflex", "precision", "action", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse left/right to rotate the central mirror — deflect each colored laser to its matching crystal target",
+    "folder": "games/2026-07-18",
+    "file": "games/2026-07-18/index.html",
+    "preview": "games/2026-07-18/preview.png",
+    "rating": 4.4
   }
 ]
