@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mirror Dash</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+  #gameCanvas {
+    display: block;
+    cursor: none;
+    touch-action: none;
+  }
+  #ui {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .stat {
+    color: #0ff;
+    font-size: 14px;
+    text-shadow: 0 0 10px #0ff;
+    letter-spacing: 2px;
+  }
+  .stat span {
+    color: #fff;
+    font-size: 18px;
+    text-shadow: 0 0 15px #0ff, 0 0 30px #0ff;
+  }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    gap: 18px;
+  }
+  #overlay h1 {
+    font-size: clamp(36px, 8vw, 72px);
+    letter-spacing: 6px;
+    background: linear-gradient(135deg, #0ff, #f0f, #ff0, #0f0);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 20px #0ff);
+    animation: titlePulse 2s ease-in-out infinite;
+  }
+  @keyframes titlePulse {
+    0%,100% { filter: drop-shadow(0 0 20px #0ff); }
+    50% { filter: drop-shadow(0 0 40px #f0f); }
+  }
+  #overlay p {
+    color: #aaa;
+    font-size: clamp(12px, 2.5vw, 16px);
+    text-align: center;
+    max-width: 420px;
+    line-height: 1.6;
+    letter-spacing: 1px;
+    padding: 0 20px;
+  }
+  .start-btn {
+    background: transparent;
+    border: 2px solid #0ff;
+    color: #0ff;
+    font-family: 'Courier New', monospace;
+    font-size: 20px;
+    letter-spacing: 4px;
+    padding: 12px 40px;
+    cursor: pointer;
+    box-shadow: 0 0 20px #0ff, inset 0 0 20px rgba(0,255,255,0.1);
+    transition: all 0.2s;
+  }
+  .start-btn:hover {
+    background: rgba(0,255,255,0.15);
+    box-shadow: 0 0 40px #0ff, inset 0 0 30px rgba(0,255,255,0.2);
+  }
+  .hs-text {
+    color: #ff0;
+    font-size: 14px;
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px #ff0;
+  }
+  .color-hints {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .hint-dot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+  .dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  #livesBar {
+    display: flex;
+    gap: 6px;
+  }
+  .life-icon {
+    width: 14px; height: 14px;
+    background: #f0f;
+    clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+    box-shadow: 0 0 8px #f0f;
+  }
+  .life-icon.empty {
+    background: #333;
+    box-shadow: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<div id="ui">
+  <div class="stat">SCORE<br><span id="scoreVal">0</span></div>
+  <div>
+    <div class="stat" style="text-align:center">COMBO<br><span id="comboVal">x1</span></div>
+  </div>
+  <div>
+    <div class="stat" style="text-align:right">HI<br><span id="hiVal">0</span></div>
+    <div id="livesBar" style="justify-content:flex-end;margin-top:4px"></div>
+  </div>
+</div>
+<div id="overlay">
+  <h1>MIRROR DASH</h1>
+  <p>Rotate the neon mirror with your mouse to deflect incoming laser beams to their matching crystal targets!</p>
+  <div class="color-hints">
+    <div class="hint-dot"><span class="dot" style="background:#0ff;box-shadow:0 0 6px #0ff"></span><span style="color:#0ff">CYAN</span></div>
+    <div class="hint-dot"><span class="dot" style="background:#f0f;box-shadow:0 0 6px #f0f"></span><span style="color:#f0f">MAGENTA</span></div>
+    <div class="hint-dot"><span class="dot" style="background:#ff0;box-shadow:0 0 6px #ff0"></span><span style="color:#ff0">YELLOW</span></div>
+    <div class="hint-dot"><span class="dot" style="background:#0f0;box-shadow:0 0 6px #0f0"></span><span style="color:#0f0">GREEN</span></div>
+  </div>
+  <p style="font-size:13px;color:#888">Move mouse left/right to rotate mirror · 3 lives · Chain hits for combo!</p>
+  <div class="hs-text" id="hsDisplay"></div>
+  <button class="start-btn" id="start-btn">PLAY</button>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const scoreEl = document.getElementById('scoreVal');
+const comboEl = document.getElementById('comboVal');
+const hiEl = document.getElementById('hiVal');
+const livesBar = document.getElementById('livesBar');
+const hsDisplay = document.getElementById('hsDisplay');
+
+const LS_KEY = 'mirrordash-highscore';
+let highScore = parseInt(localStorage.getItem(LS_KEY) || '0');
+hiEl.textContent = highScore;
+if (highScore > 0) hsDisplay.textContent = `BEST: ${highScore}`;
+
+// Audio
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playTone(freq, type, dur, vol=0.3, detune=0) {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.type = type; o.frequency.value = freq; o.detune.value = detune;
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+function soundHit(color) {
+  const freqs = { '#0ff': 880, '#f0f': 660, '#ff0': 770, '#0f0': 990 };
+  const f = freqs[color] || 880;
+  playTone(f, 'sine', 0.18, 0.4);
+  playTone(f*2, 'sine', 0.12, 0.15);
+}
+function soundMiss() {
+  playTone(220, 'sawtooth', 0.25, 0.3);
+  playTone(180, 'sawtooth', 0.2, 0.2, -50);
+}
+function soundCombo(c) {
+  playTone(440 + c*60, 'square', 0.1, 0.2);
+}
+
+// Game state
+let W, H, CX, CY;
+let score = 0, combo = 1, lives = 3;
+let mirrorAngle = 0; // radians, 0 = horizontal
+let mouseX = 0;
+let running = false;
+let particles = [];
+let lasers = [];
+let targets = [];
+let flashes = [];
+let misses = [];
+let frameId = null;
+let level = 1;
+let spawnTimer = 0;
+let spawnInterval = 180; // frames
+let lastTime = 0;
+
+const COLORS = ['#0ff', '#f0f', '#ff0', '#0f0'];
+const MIRROR_LEN = 70;
+const MIRROR_W = 4;
+const LASER_SPEED = 2.5;
+const TARGET_RADIUS = 22;
+const BEAM_WIDTH = 3;
+
+function resize() {
+  W = canvas.width = Math.min(window.innerWidth, window.innerHeight * 1.2);
+  H = canvas.height = Math.min(window.innerHeight, W / 1.2);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  CX = W / 2; CY = H / 2;
+  if (running) buildTargets();
+}
+
+// Targets are fixed crystal gems around the perimeter
+function buildTargets() {
+  targets = [];
+  const margin = 40;
+  // 4 colors, place 4 targets each at cardinal + diagonal edges
+  const positions = [
+    { x: CX, y: margin },           // top center
+    { x: W - margin, y: CY * 0.6 }, // right upper
+    { x: W - margin, y: CY * 1.4 }, // right lower
+    { x: CX, y: H - margin },        // bottom center
+    { x: margin, y: CY * 0.6 },      // left upper
+    { x: margin, y: CY * 1.4 },      // left lower
+    { x: CX * 0.4, y: margin },       // top left
+    { x: CX * 1.6, y: margin },       // top right
+  ];
+  for (let i = 0; i < 4; i++) {
+    const pos1 = positions[i * 2];
+    const pos2 = positions[i * 2 + 1];
+    targets.push({ x: pos1.x, y: pos1.y, color: COLORS[i], pulse: 0, hit: false, hitTimer: 0 });
+    targets.push({ x: pos2.x, y: pos2.y, color: COLORS[i], pulse: 0, hit: false, hitTimer: 0 });
+  }
+}
+
+// Spawn laser from a random edge, heading toward center area
+function spawnLaser() {
+  const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+  const edge = Math.floor(Math.random() * 4);
+  let sx, sy;
+  // Spawn from edges
+  if (edge === 0) { // top
+    sx = CX + (Math.random() - 0.5) * W * 0.6; sy = 0;
+  } else if (edge === 1) { // bottom
+    sx = CX + (Math.random() - 0.5) * W * 0.6; sy = H;
+  } else if (edge === 2) { // left
+    sx = 0; sy = CY + (Math.random() - 0.5) * H * 0.6;
+  } else { // right
+    sx = W; sy = CY + (Math.random() - 0.5) * H * 0.6;
+  }
+  // Always aim at center
+  const tx = CX;
+  const ty = CY;
+  const dx = tx - sx, dy = ty - sy;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  lasers.push({
+    x: sx, y: sy,
+    vx: dx/len * LASER_SPEED,
+    vy: dy/len * LASER_SPEED,
+    color, state: 'incoming', // incoming -> reflecting -> gone
+    trail: [],
+    reflectX: 0, reflectY: 0,
+    reflectVx: 0, reflectVy: 0,
+    age: 0,
+    missed: false,
+  });
+}
+
+// Reflect angle off mirror
+function reflectDirection(vx, vy, angle) {
+  // Mirror normal is perpendicular to mirror line at `angle`
+  const nx = Math.sin(angle), ny = -Math.cos(angle); // normal
+  const dot = vx*nx + vy*ny;
+  return { rx: vx - 2*dot*nx, ry: vy - 2*dot*ny };
+}
+
+// Check if reflected beam hits any target
+function checkTargetHit(ox, oy, dx, dy, color) {
+  let bestT = Infinity, bestIdx = -1;
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    // Ray-circle intersection
+    const fx = t.x - ox, fy = t.y - oy;
+    const proj = fx*dx + fy*dy;
+    if (proj < 0) continue;
+    const cx2 = fx - proj*dx, cy2 = fy - proj*dy;
+    const d2 = cx2*cx2 + cy2*cy2;
+    if (d2 < TARGET_RADIUS*TARGET_RADIUS && proj < bestT) {
+      bestT = proj;
+      bestIdx = i;
+    }
+  }
+  return { idx: bestIdx, t: bestT };
+}
+
+function updateLives() {
+  livesBar.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const d = document.createElement('div');
+    d.className = 'life-icon' + (i >= lives ? ' empty' : '');
+    livesBar.appendChild(d);
+  }
+}
+
+function spawnParticles(x, y, color, count=15) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1.5 + Math.random() * 4;
+    particles.push({
+      x, y, color,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1, decay: 0.02 + Math.random() * 0.03,
+      size: 2 + Math.random() * 4,
+    });
+  }
+}
+
+function gameOver() {
+  running = false;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem(LS_KEY, highScore);
+  }
+  hiEl.textContent = highScore;
+  hsDisplay.textContent = `BEST: ${highScore}`;
+  overlay.querySelector('h1').textContent = 'GAME OVER';
+  overlay.querySelector('p').textContent = `Score: ${score} | Best: ${highScore}`;
+  document.getElementById('start-btn').textContent = 'RETRY';
+  overlay.style.display = 'flex';
+  cancelAnimationFrame(frameId);
+}
+
+function startGame() {
+  audioCtx.resume();
+  score = 0; combo = 1; lives = 3;
+  lasers = []; particles = []; flashes = []; misses = [];
+  spawnTimer = 0; spawnInterval = 160; level = 1;
+  mirrorAngle = 0;
+  running = true;
+  scoreEl.textContent = '0';
+  comboEl.textContent = 'x1';
+  updateLives();
+  overlay.style.display = 'none';
+  resize();
+  buildTargets();
+  lastTime = performance.now();
+  frameId = requestAnimationFrame(loop);
+}
+
+function loop(ts) {
+  if (!running) return;
+  const dt = Math.min(ts - lastTime, 50);
+  lastTime = ts;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw grid bg
+  ctx.strokeStyle = 'rgba(0,255,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  // Update mirror angle from mouse
+  const targetAngle = ((mouseX / W) - 0.5) * Math.PI * 0.9; // -80 to +80 degrees
+  mirrorAngle += (targetAngle - mirrorAngle) * 0.15;
+
+  // Spawn lasers
+  spawnTimer++;
+  if (spawnTimer >= spawnInterval) {
+    spawnTimer = 0;
+    spawnLaser();
+    if (level < 8 && score > level * 300) {
+      level++;
+      spawnInterval = Math.max(70, 160 - level * 15);
+    }
+  }
+
+  // Update lasers
+  for (let i = lasers.length - 1; i >= 0; i--) {
+    const l = lasers[i];
+    l.age++;
+
+    if (l.state === 'incoming') {
+      l.trail.push({ x: l.x, y: l.y });
+      if (l.trail.length > 25) l.trail.shift();
+      l.x += l.vx;
+      l.y += l.vy;
+
+      // Check if near mirror center
+      const dx = l.x - CX, dy = l.y - CY;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < MIRROR_LEN + 10) {
+        // Reflect
+        const { rx, ry } = reflectDirection(l.vx, l.vy, mirrorAngle);
+        l.reflectX = l.x; l.reflectY = l.y;
+        l.reflectVx = rx; l.reflectVy = ry;
+        l.state = 'reflecting';
+        // Check hit
+        const norm = Math.sqrt(rx*rx + ry*ry);
+        const { idx } = checkTargetHit(l.x, l.y, rx/norm, ry/norm, l.color);
+        if (idx >= 0 && targets[idx].color === l.color) {
+          l.hitTarget = idx;
+          // Will score when beam reaches target
+        } else {
+          l.hitTarget = -1;
+        }
+        spawnParticles(l.x, l.y, '#fff', 8);
+      }
+
+      // Incoming laser off-screen (shouldn't happen since all aim at center)
+      if (l.age > 30 && (l.x < -20 || l.x > W+20 || l.y < -20 || l.y > H+20)) {
+        if (!l.missed) { l.missed = true; combo = 1; comboEl.textContent = 'x1'; }
+        lasers.splice(i, 1);
+        continue;
+      }
+    }
+
+    if (l.state === 'reflecting') {
+      l.x += l.reflectVx;
+      l.y += l.reflectVy;
+      l.trail.push({ x: l.x, y: l.y });
+      if (l.trail.length > 60) l.trail.shift();
+
+      // Check if it reaches the target it's aimed at
+      if (l.hitTarget >= 0) {
+        const t = targets[l.hitTarget];
+        const dx = l.x - t.x, dy = l.y - t.y;
+        if (Math.sqrt(dx*dx+dy*dy) < TARGET_RADIUS) {
+          // Score!
+          const pts = 100 * combo;
+          score += pts;
+          scoreEl.textContent = score;
+          combo = Math.min(combo + 1, 16);
+          comboEl.textContent = 'x' + combo;
+          t.hitTimer = 30;
+          soundHit(l.color);
+          if (combo > 3) soundCombo(combo);
+          spawnParticles(t.x, t.y, l.color, 25);
+          flashes.push({ x: t.x, y: t.y, color: l.color, r: 0, maxR: TARGET_RADIUS * 3, alpha: 1 });
+          // Show score popup
+          misses.push({ x: t.x, y: t.y - 20, text: '+' + pts, color: l.color, life: 1, vy: -1.5 });
+          lasers.splice(i, 1);
+          continue;
+        }
+      }
+
+      // Reflected beam went off-screen = combo reset only (no life loss)
+      if (l.x < -20 || l.x > W+20 || l.y < -20 || l.y > H+20) {
+        if (!l.missed) {
+          l.missed = true;
+          combo = 1; comboEl.textContent = 'x1';
+          soundMiss();
+        }
+        lasers.splice(i, 1);
+        continue;
+      }
+
+      // Hit a different-colored target = miss
+      for (let ti = 0; ti < targets.length; ti++) {
+        const t = targets[ti];
+        if (ti === l.hitTarget) continue;
+        const dx = l.x - t.x, dy = l.y - t.y;
+        if (Math.sqrt(dx*dx+dy*dy) < TARGET_RADIUS && t.color !== l.color) {
+          combo = 1; comboEl.textContent = 'x1';
+          lives--;
+          updateLives();
+          soundMiss();
+          spawnParticles(l.x, l.y, '#f00', 12);
+          flashes.push({ x: l.x, y: l.y, color: '#f00', r: 0, maxR: 60, alpha: 0.8 });
+          if (lives <= 0) { setTimeout(gameOver, 300); return; }
+          lasers.splice(i, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  // Draw targets
+  for (const t of targets) {
+    if (t.hitTimer > 0) t.hitTimer--;
+    t.pulse = (t.pulse + 0.06) % (Math.PI * 2);
+    const pScale = 1 + 0.15 * Math.sin(t.pulse);
+    const r = TARGET_RADIUS * pScale;
+    const bright = t.hitTimer > 0 ? 2 : 1;
+
+    // Crystal shape (diamond)
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.shadowBlur = 20 * bright;
+    ctx.shadowColor = t.color;
+    ctx.strokeStyle = t.color;
+    ctx.lineWidth = 2 * bright;
+    ctx.beginPath();
+    ctx.moveTo(0, -r); ctx.lineTo(r*0.7, 0);
+    ctx.lineTo(0, r); ctx.lineTo(-r*0.7, 0);
+    ctx.closePath();
+    // Fill with semi-transparent color
+    ctx.fillStyle = t.color + '33';
+    ctx.fill();
+    ctx.stroke();
+
+    // Inner shine
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = t.color;
+    ctx.beginPath(); ctx.arc(0, -r*0.3, r*0.15, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // Target label
+    ctx.fillStyle = t.color;
+    ctx.font = 'bold 9px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('●', t.x, t.y + 2);
+  }
+
+  // Draw laser beams
+  for (const l of lasers) {
+    if (l.trail.length < 2) continue;
+    ctx.save();
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = l.color;
+    ctx.strokeStyle = l.color;
+    ctx.lineCap = 'round';
+
+    // Draw trail with fading alpha
+    for (let j = 1; j < l.trail.length; j++) {
+      const alpha = j / l.trail.length;
+      ctx.globalAlpha = alpha * 0.9;
+      ctx.lineWidth = BEAM_WIDTH * alpha;
+      ctx.beginPath();
+      ctx.moveTo(l.trail[j-1].x, l.trail[j-1].y);
+      ctx.lineTo(l.trail[j].x, l.trail[j].y);
+      ctx.stroke();
+    }
+
+    // Bright head
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 25;
+    ctx.lineWidth = BEAM_WIDTH;
+    ctx.beginPath();
+    ctx.arc(l.x, l.y, 5, 0, Math.PI*2);
+    ctx.fillStyle = l.color;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Draw mirror
+  const mx1 = CX - Math.cos(mirrorAngle) * MIRROR_LEN;
+  const my1 = CY - Math.sin(mirrorAngle) * MIRROR_LEN;
+  const mx2 = CX + Math.cos(mirrorAngle) * MIRROR_LEN;
+  const my2 = CY + Math.sin(mirrorAngle) * MIRROR_LEN;
+
+  ctx.save();
+  ctx.shadowBlur = 25;
+  ctx.shadowColor = '#fff';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = MIRROR_W;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(mx1, my1); ctx.lineTo(mx2, my2); ctx.stroke();
+
+  // Mirror shimmer
+  ctx.strokeStyle = 'rgba(200,255,255,0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(mx1, my1); ctx.lineTo(mx2, my2); ctx.stroke();
+
+  // Center hub
+  ctx.shadowBlur = 30;
+  ctx.shadowColor = '#0ff';
+  ctx.fillStyle = '#0ff';
+  ctx.beginPath(); ctx.arc(CX, CY, 8, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(CX, CY, 4, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // Draw angle indicator lines (ghost beams showing possible reflections)
+  const ghostAlpha = 0.07;
+  for (const color of COLORS) {
+    ctx.save();
+    ctx.globalAlpha = ghostAlpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 10]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw flashes
+  for (let i = flashes.length - 1; i >= 0; i--) {
+    const f = flashes[i];
+    f.r += 5;
+    f.alpha -= 0.06;
+    if (f.alpha <= 0) { flashes.splice(i, 1); continue; }
+    ctx.save();
+    ctx.globalAlpha = f.alpha;
+    ctx.strokeStyle = f.color;
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = f.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.93; p.vy *= 0.93;
+    p.life -= p.decay;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Draw score popups
+  for (let i = misses.length - 1; i >= 0; i--) {
+    const m = misses[i];
+    m.y += m.vy; m.life -= 0.025;
+    if (m.life <= 0) { misses.splice(i, 1); continue; }
+    ctx.save();
+    ctx.globalAlpha = m.life;
+    ctx.fillStyle = m.color;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = m.color;
+    ctx.font = 'bold 18px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText(m.text, m.x, m.y);
+    ctx.restore();
+  }
+
+  // Level indicator
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,255,255,0.3)';
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'right';
+  ctx.fillText(`LEVEL ${level}`, W - 10, H - 10);
+  ctx.restore();
+
+  frameId = requestAnimationFrame(loop);
+}
+
+// Mouse input
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = (e.clientX - rect.left) * (W / rect.width);
+});
+
+// Touch input
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  mouseX = (e.touches[0].clientX - rect.left) * (W / rect.width);
+}, { passive: false });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  mouseX = (e.touches[0].clientX - rect.left) * (W / rect.width);
+}, { passive: false });
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+
+window.addEventListener('resize', () => { resize(); });
+resize();
+mouseX = W / 2;
+</script>
+</body>
+</html>
