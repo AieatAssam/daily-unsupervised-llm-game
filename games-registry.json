@@ -2500,5 +2500,20 @@
     "file": "games/2026-07-18/index.html",
     "preview": "games/2026-07-18/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-07-19",
+    "name": "Gravity Flip",
+    "date": "2026-07-19",
+    "description": "Tap or click to flip gravity and guide your glowing neon orb through an endless gauntlet of neon walls. Each flip erupts in a burst of particles as you weave through tight gaps — flip too early or too late and it's game over. How far can you survive as the speed relentlessly climbs?",
+    "tagline": "One tap. Flip gravity. Survive.",
+    "tags": ["reflex", "action", "arcade", "precision", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click / Tap / Space to flip gravity — navigate through the gaps in the neon walls",
+    "folder": "games/2026-07-19",
+    "file": "games/2026-07-19/index.html",
+    "preview": "games/2026-07-19/preview.png",
+    "rating": 4.2
   }
 ]

@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Flip</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05020f;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useEffect, useRef, useState, useCallback } = React;
+
+// ── Audio ──────────────────────────────────────────────────────────────────
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playFlip() {
+  try {
+    const ctx = getAudio();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'sine';
+    o.frequency.setValueAtTime(440, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.08);
+    g.gain.setValueAtTime(0.3, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+    o.start(); o.stop(ctx.currentTime + 0.12);
+  } catch(e) {}
+}
+function playScore() {
+  try {
+    const ctx = getAudio();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'square';
+    o.frequency.setValueAtTime(660, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.05);
+    g.gain.setValueAtTime(0.15, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    o.start(); o.stop(ctx.currentTime + 0.15);
+  } catch(e) {}
+}
+function playDeath() {
+  try {
+    const ctx = getAudio();
+    [100, 80, 60].forEach((freq, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = 'sawtooth';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.08);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.08 + 0.25);
+      o.start(ctx.currentTime + i * 0.08);
+      o.stop(ctx.currentTime + i * 0.08 + 0.25);
+    });
+  } catch(e) {}
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const PLAYER_X = 120;
+const PLAYER_SIZE = 18;
+const GRAVITY = 0.55;
+const WALL_WIDTH = 38;
+const BASE_GAP = 220;
+const MIN_GAP = 130;
+const BASE_SPEED = 3.2;
+
+// ── Game ───────────────────────────────────────────────────────────────────
+function GravityFlip() {
+  const canvasRef = useRef(null);
+  const stateRef = useRef(null);
+  const animRef = useRef(null);
+  const [screen, setScreen] = useState('menu'); // menu | playing | dead
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('gravityfliip-highscore') || '0'));
+  const [combo, setCombo] = useState(0);
+
+  const getSize = () => {
+    const w = Math.min(window.innerWidth, 520);
+    const h = Math.min(window.innerHeight, 800);
+    return { w, h };
+  };
+
+  const initState = useCallback(() => {
+    const { w, h } = getSize();
+    return {
+      w, h,
+      player: { x: PLAYER_X, y: h / 2, vy: 0 },
+      gravDir: 1, // 1 = down, -1 = up
+      walls: [],
+      particles: [],
+      trail: [],
+      score: 0,
+      combo: 0,
+      speed: BASE_SPEED,
+      dist: 0,
+      nextWall: w + 80,
+      wallCount: 0,
+      alive: true,
+      flashTimer: 0,
+      gravCooldown: 0,
+      bgHue: 260,
+    };
+  }, []);
+
+  const spawnWall = (state) => {
+    const { w, h } = state;
+    const progress = state.wallCount;
+    const gap = Math.max(MIN_GAP, BASE_GAP - progress * 4);
+    const margin = 60;
+    const topMin = margin;
+    const topMax = h - gap - margin;
+    const topH = topMin + Math.random() * (topMax - topMin);
+    const hue = (state.bgHue + 40 + Math.random() * 60) % 360;
+    state.walls.push({ x: w, topH, botY: topH + gap, hue, passed: false });
+    state.nextWall = w + 200 + Math.random() * 120 - progress * 1.5;
+    state.wallCount++;
+  };
+
+  const emitFlipParticles = (state) => {
+    const { player } = state;
+    for (let i = 0; i < 22; i++) {
+      const angle = (Math.PI * 2 * i) / 22 + Math.random() * 0.3;
+      const speed = 2 + Math.random() * 4;
+      state.particles.push({
+        x: player.x, y: player.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1, maxLife: 0.7 + Math.random() * 0.4,
+        hue: 180 + Math.random() * 80,
+        size: 2 + Math.random() * 3,
+      });
+    }
+  };
+
+  const emitDeathParticles = (state) => {
+    const { player } = state;
+    for (let i = 0; i < 50; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 7;
+      state.particles.push({
+        x: player.x, y: player.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1, maxLife: 0.8 + Math.random() * 0.8,
+        hue: 0 + Math.random() * 60,
+        size: 2 + Math.random() * 5,
+      });
+    }
+  };
+
+  const flip = useCallback(() => {
+    const s = stateRef.current;
+    if (!s || !s.alive || s.gravCooldown > 0) return;
+    s.gravDir *= -1;
+    s.gravCooldown = 6;
+    s.bgHue = (s.bgHue + 30) % 360;
+    s.flashTimer = 8;
+    emitFlipParticles(s);
+    playFlip();
+    try { getAudio(); } catch(e) {}
+  }, []);
+
+  const startGame = useCallback(() => {
+    const s = initState();
+    stateRef.current = s;
+    spawnWall(s);
+    setScreen('playing');
+    setScore(0);
+    setCombo(0);
+  }, [initState]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const { w, h } = getSize();
+    canvas.width = w;
+    canvas.height = h;
+  }, []);
+
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    const loop = () => {
+      const s = stateRef.current;
+      if (!s || !s.alive) return;
+      const { w, h } = s;
+
+      // Physics
+      s.player.vy += GRAVITY * s.gravDir;
+      s.player.vy = Math.max(-14, Math.min(14, s.player.vy));
+      s.player.y += s.player.vy;
+
+      // Trail
+      s.trail.push({ x: s.player.x, y: s.player.y, t: 1 });
+      if (s.trail.length > 22) s.trail.shift();
+      s.trail.forEach(t => { t.t -= 0.042; });
+
+      // Cooldown
+      if (s.gravCooldown > 0) s.gravCooldown--;
+      if (s.flashTimer > 0) s.flashTimer--;
+
+      // Walls
+      s.speed = BASE_SPEED + s.score * 0.018;
+      s.dist++;
+      if (s.dist >= s.nextWall) spawnWall(s);
+
+      for (const wall of s.walls) {
+        wall.x -= s.speed;
+        if (!wall.passed && wall.x + WALL_WIDTH < s.player.x) {
+          wall.passed = true;
+          s.score++;
+          s.combo++;
+          playScore();
+          setScore(s.score);
+          setCombo(s.combo);
+        }
+      }
+      s.walls = s.walls.filter(w => w.x + WALL_WIDTH > -20);
+
+      // Collision
+      const px = s.player.x, py = s.player.y, pr = PLAYER_SIZE / 2;
+      if (py - pr < 0 || py + pr > h) {
+        s.alive = false;
+        emitDeathParticles(s);
+        playDeath();
+        const hs = Math.max(s.score, parseInt(localStorage.getItem('gravityfliip-highscore') || '0'));
+        localStorage.setItem('gravityfliip-highscore', hs);
+        setHighScore(hs);
+        setTimeout(() => setScreen('dead'), 700);
+        return;
+      }
+      for (const wall of s.walls) {
+        const inX = px + pr > wall.x && px - pr < wall.x + WALL_WIDTH;
+        if (inX && (py - pr < wall.topH || py + pr > wall.botY)) {
+          s.alive = false;
+          emitDeathParticles(s);
+          playDeath();
+          const hs = Math.max(s.score, parseInt(localStorage.getItem('gravityfliip-highscore') || '0'));
+          localStorage.setItem('gravityfliip-highscore', hs);
+          setHighScore(hs);
+          setTimeout(() => setScreen('dead'), 700);
+          return;
+        }
+      }
+
+      // Particles
+      for (const p of s.particles) {
+        p.x += p.vx; p.y += p.vy;
+        p.vx *= 0.94; p.vy *= 0.94;
+        p.life -= 0.025 / p.maxLife;
+      }
+      s.particles = s.particles.filter(p => p.life > 0);
+
+      // ── Draw ────────────────────────────────────────────────────────────
+
+      // BG gradient
+      const hue = s.bgHue;
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, `hsl(${hue},60%,4%)`);
+      grad.addColorStop(1, `hsl(${(hue + 60) % 360},50%,8%)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Flash on flip
+      if (s.flashTimer > 0) {
+        ctx.fillStyle = `rgba(0,255,255,${s.flashTimer * 0.012})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      // Scanlines
+      for (let y = 0; y < h; y += 4) {
+        ctx.fillStyle = 'rgba(0,0,0,0.08)';
+        ctx.fillRect(0, y, w, 1);
+      }
+
+      // Walls
+      for (const wall of s.walls) {
+        const wHue = wall.hue;
+        // Glow
+        ctx.shadowColor = `hsl(${wHue},100%,60%)`;
+        ctx.shadowBlur = 18;
+        const wg1 = ctx.createLinearGradient(wall.x, 0, wall.x + WALL_WIDTH, 0);
+        wg1.addColorStop(0, `hsl(${wHue},100%,25%)`);
+        wg1.addColorStop(0.5, `hsl(${wHue},100%,50%)`);
+        wg1.addColorStop(1, `hsl(${wHue},100%,25%)`);
+        ctx.fillStyle = wg1;
+        // Top wall
+        ctx.fillRect(wall.x, 0, WALL_WIDTH, wall.topH);
+        // Bot wall
+        ctx.fillRect(wall.x, wall.botY, WALL_WIDTH, h - wall.botY);
+        // Gap edges glow
+        ctx.shadowBlur = 30;
+        ctx.fillStyle = `hsl(${wHue},100%,80%)`;
+        ctx.fillRect(wall.x, wall.topH - 3, WALL_WIDTH, 6);
+        ctx.fillRect(wall.x, wall.botY - 3, WALL_WIDTH, 6);
+        ctx.shadowBlur = 0;
+      }
+
+      // Trail
+      for (let i = 0; i < s.trail.length; i++) {
+        const t = s.trail[i];
+        const alpha = t.t * 0.7;
+        const size = PLAYER_SIZE * 0.5 * (i / s.trail.length);
+        ctx.shadowColor = `hsl(${hue + 120},100%,70%)`;
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = `hsla(${hue + 120},100%,70%,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Player
+      ctx.shadowColor = `hsl(${hue + 120},100%,70%)`;
+      ctx.shadowBlur = 25;
+      // Body
+      ctx.fillStyle = `hsl(${hue + 120},100%,75%)`;
+      ctx.beginPath();
+      ctx.arc(px, py, PLAYER_SIZE / 2, 0, Math.PI * 2);
+      ctx.fill();
+      // Inner core
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(px, py, PLAYER_SIZE / 4, 0, Math.PI * 2);
+      ctx.fill();
+      // Gravity direction indicator arrow
+      ctx.strokeStyle = `hsla(${hue + 120},100%,90%,0.7)`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const arrowDir = s.gravDir;
+      ctx.moveTo(px, py - arrowDir * 6);
+      ctx.lineTo(px, py + arrowDir * 10);
+      ctx.moveTo(px - 4, py + arrowDir * 6);
+      ctx.lineTo(px, py + arrowDir * 10);
+      ctx.lineTo(px + 4, py + arrowDir * 6);
+      ctx.stroke();
+
+      // Particles
+      for (const p of s.particles) {
+        ctx.shadowColor = `hsl(${p.hue},100%,60%)`;
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = `hsla(${p.hue},100%,70%,${p.life})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+
+      // Gravity indicator bars (top/bottom)
+      const barAlpha = s.gravDir === 1 ? 0.6 : 0.2;
+      const barAlpha2 = s.gravDir === -1 ? 0.6 : 0.2;
+      ctx.fillStyle = `rgba(0,255,200,${barAlpha2})`;
+      ctx.fillRect(0, 0, w, 4);
+      ctx.fillStyle = `rgba(255,100,0,${barAlpha})`;
+      ctx.fillRect(0, h - 4, w, 4);
+
+      // Score HUD
+      ctx.shadowColor = 'rgba(0,255,255,0.8)';
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 28px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillText(`SCORE  ${s.score}`, 20, 42);
+      ctx.font = '14px Courier New';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText(`BEST ${Math.max(s.score, parseInt(localStorage.getItem('gravityfliip-highscore')||'0'))}`, 20, 62);
+
+      if (s.combo >= 3) {
+        const cAlpha = Math.min(1, (s.combo - 2) * 0.2);
+        ctx.fillStyle = `hsla(55,100%,70%,${cAlpha})`;
+        ctx.font = `bold ${16 + Math.min(s.combo, 10)}px Courier New`;
+        ctx.textAlign = 'right';
+        ctx.fillText(`${s.combo}x COMBO!`, w - 20, 42);
+      }
+      ctx.textAlign = 'left';
+      ctx.shadowBlur = 0;
+
+      animRef.current = requestAnimationFrame(loop);
+    };
+
+    animRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [screen]);
+
+  // Input
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    const onKey = (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+        e.preventDefault();
+        flip();
+      }
+    };
+    const onDown = (e) => { e.preventDefault(); flip(); };
+    window.addEventListener('keydown', onKey);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.addEventListener('mousedown', onDown);
+      canvas.addEventListener('touchstart', onDown, { passive: false });
+    }
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (canvas) {
+        canvas.removeEventListener('mousedown', onDown);
+        canvas.removeEventListener('touchstart', onDown);
+      }
+    };
+  }, [screen, flip]);
+
+  // Idle animation on menu/dead screens
+  useEffect(() => {
+    if (screen !== 'menu' && screen !== 'dead') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const { w, h } = getSize();
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    let t = 0;
+    let raf;
+    const particles = Array.from({ length: 40 }, () => ({
+      x: Math.random() * w, y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.8,
+      vy: (Math.random() - 0.5) * 0.8,
+      hue: Math.random() * 360, size: 1 + Math.random() * 3,
+    }));
+    const draw = () => {
+      t++;
+      const hue = (t * 0.3) % 360;
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, `hsl(${hue},60%,4%)`);
+      grad.addColorStop(1, `hsl(${(hue + 60) % 360},50%,8%)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      for (const p of particles) {
+        p.x += p.vx; p.y += p.vy;
+        p.hue = (p.hue + 0.5) % 360;
+        if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+        if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+        ctx.shadowColor = `hsl(${p.hue},100%,60%)`;
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = `hsla(${p.hue},100%,70%,0.6)`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [screen]);
+
+  const { w, h } = getSize();
+
+  return (
+    <div style={{ position: 'relative', width: w, height: h }}>
+      <canvas ref={canvasRef} width={w} height={h} style={{ position: 'absolute', top: 0, left: 0 }} />
+
+      {screen === 'menu' && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 16,
+          background: 'rgba(0,0,0,0.45)',
+        }}>
+          <div style={{
+            fontFamily: 'Courier New', fontWeight: 'bold', fontSize: 48,
+            color: '#0ff', textShadow: '0 0 20px #0ff, 0 0 40px #0ff',
+            letterSpacing: 6, lineHeight: 1.1, textAlign: 'center',
+          }}>
+            GRAVITY<br/>
+            <span style={{ color: '#f0f', textShadow: '0 0 20px #f0f' }}>FLIP</span>
+          </div>
+          <div style={{
+            fontFamily: 'Courier New', color: 'rgba(255,255,255,0.6)',
+            fontSize: 13, textAlign: 'center', lineHeight: 1.8, maxWidth: 280,
+          }}>
+            TAP / CLICK / SPACE<br/>
+            to flip gravity<br/>
+            navigate through the gaps
+          </div>
+          {highScore > 0 && (
+            <div style={{ fontFamily: 'Courier New', color: '#ff0', fontSize: 14,
+              textShadow: '0 0 12px #ff0' }}>
+              BEST: {highScore}
+            </div>
+          )}
+          <button
+            id="start-btn"
+            onClick={startGame}
+            style={{
+              marginTop: 16,
+              padding: '14px 50px', fontSize: 20, fontWeight: 'bold',
+              fontFamily: 'Courier New', letterSpacing: 4,
+              background: 'transparent',
+              border: '2px solid #0ff', color: '#0ff',
+              textShadow: '0 0 12px #0ff', boxShadow: '0 0 20px #0ff44, inset 0 0 20px rgba(0,255,255,0.1)',
+              cursor: 'pointer', borderRadius: 4,
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { e.target.style.background = 'rgba(0,255,255,0.15)'; e.target.style.boxShadow = '0 0 35px #0ff'; }}
+            onMouseLeave={e => { e.target.style.background = 'transparent'; e.target.style.boxShadow = '0 0 20px #0ff4, inset 0 0 20px rgba(0,255,255,0.1)'; }}
+          >
+            PLAY
+          </button>
+          <div style={{ fontFamily: 'Courier New', color: 'rgba(255,255,255,0.3)', fontSize: 11, marginTop: 8 }}>
+            Orange bar = gravity pulls DOWN &nbsp;|&nbsp; Cyan bar = gravity pulls UP
+          </div>
+        </div>
+      )}
+
+      {screen === 'dead' && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 16,
+          background: 'rgba(0,0,0,0.55)',
+        }}>
+          <div style={{
+            fontFamily: 'Courier New', fontWeight: 'bold', fontSize: 42,
+            color: '#f44', textShadow: '0 0 25px #f44',
+            letterSpacing: 4,
+          }}>
+            GAME OVER
+          </div>
+          <div style={{ fontFamily: 'Courier New', color: '#fff', fontSize: 22, textShadow: '0 0 12px #0ff' }}>
+            SCORE: <span style={{ color: '#0ff' }}>{score}</span>
+          </div>
+          {score >= highScore && score > 0 && (
+            <div style={{ fontFamily: 'Courier New', color: '#ff0', fontSize: 16,
+              textShadow: '0 0 14px #ff0', animation: 'pulse 0.8s infinite' }}>
+              ★ NEW BEST: {highScore} ★
+            </div>
+          )}
+          {score < highScore && (
+            <div style={{ fontFamily: 'Courier New', color: 'rgba(255,255,0,0.6)', fontSize: 14 }}>
+              BEST: {highScore}
+            </div>
+          )}
+          {combo >= 3 && (
+            <div style={{ fontFamily: 'Courier New', color: '#f0f', fontSize: 14,
+              textShadow: '0 0 10px #f0f' }}>
+              MAX COMBO: {combo}x
+            </div>
+          )}
+          <button
+            id="start-btn"
+            onClick={startGame}
+            style={{
+              marginTop: 16,
+              padding: '14px 50px', fontSize: 20, fontWeight: 'bold',
+              fontFamily: 'Courier New', letterSpacing: 4,
+              background: 'transparent',
+              border: '2px solid #0ff', color: '#0ff',
+              textShadow: '0 0 12px #0ff', boxShadow: '0 0 20px rgba(0,255,255,0.3)',
+              cursor: 'pointer', borderRadius: 4,
+            }}
+          >
+            RETRY
+          </button>
+        </div>
+      )}
+      <style>{`
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+      `}</style>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<GravityFlip />);
+</script>
+</body>
+</html>
