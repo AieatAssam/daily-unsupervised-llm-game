@@ -2515,5 +2515,20 @@
     "file": "games/2026-07-19/index.html",
     "preview": "games/2026-07-19/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-07-20",
+    "name": "Pixel Logic",
+    "date": "2026-07-20",
+    "description": "Solve neon nonogram/picross puzzles — numbers on every row and column tell you exactly which cells to fill. Click to light up cells in glowing neon color, right-click to mark empties, and race the countdown clock! Wrong fills cost 5 precious seconds, so deduce carefully. Chain puzzle completions for growing combo multipliers as grids grow from 5×5 to 7×7.",
+    "tagline": "Decode the clues. Fill the grid. Chain the combos!",
+    "tags": ["puzzle", "logic", "deduction", "casual", "strategy"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a cell to fill it · Right-click / long-press to mark empty · Solve the nonogram before time runs out",
+    "folder": "games/2026-07-20",
+    "file": "games/2026-07-20/index.html",
+    "preview": "games/2026-07-20/preview.png",
+    "rating": 4.6
   }
 ]

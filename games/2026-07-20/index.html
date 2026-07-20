@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixel Logic</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050510;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  canvas.particles { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 0; }
+</style>
+</head>
+<body>
+<canvas class="particles" id="bgCanvas"></canvas>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Audio ────────────────────────────────────────────────────────────────────
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let actx = null;
+function getACtx() {
+  if (!actx) actx = new AudioCtx();
+  return actx;
+}
+function beep(freq, dur = 0.1, type = 'sine', vol = 0.3) {
+  try {
+    const ctx = getACtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = freq; osc.type = type;
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.start(); osc.stop(ctx.currentTime + dur);
+  } catch(e) {}
+}
+function playFill() { beep(440, 0.06, 'square', 0.15); }
+function playClear() { beep(220, 0.06, 'square', 0.1); }
+function playRowComplete() {
+  [523, 659, 784].forEach((f,i) => setTimeout(() => beep(f, 0.1, 'sine', 0.2), i*60));
+}
+function playWin() {
+  [523,659,784,1047].forEach((f,i) => setTimeout(() => beep(f, 0.2, 'sine', 0.3), i*80));
+}
+function playError() { beep(150, 0.15, 'sawtooth', 0.2); }
+
+// ── Particle background ──────────────────────────────────────────────────────
+function initBg() {
+  const canvas = document.getElementById('bgCanvas');
+  canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+  const stars = Array.from({length: 80}, () => ({
+    x: Math.random()*canvas.width, y: Math.random()*canvas.height,
+    r: Math.random()*1.5+0.3, speed: Math.random()*0.3+0.1,
+    a: Math.random()
+  }));
+  function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    stars.forEach(s => {
+      s.a += s.speed * 0.02;
+      const alpha = (Math.sin(s.a)+1)/2 * 0.6 + 0.1;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(0,200,255,${alpha})`; ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  draw();
+  window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+  });
+}
+
+// ── Burst particles ──────────────────────────────────────────────────────────
+function spawnBurst(x, y, color) {
+  const canvas = document.getElementById('bgCanvas');
+  const ctx = canvas.getContext('2d');
+  const ps = Array.from({length:18}, () => ({
+    x, y,
+    vx: (Math.random()-0.5)*6, vy: (Math.random()-0.5)*6,
+    life: 1, color
+  }));
+  function draw() {
+    ps.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.life-=0.04; p.vy+=0.1; });
+    ps.forEach(p => {
+      if(p.life<=0) return;
+      ctx.beginPath(); ctx.arc(p.x,p.y,3*p.life,0,Math.PI*2);
+      ctx.fillStyle = p.color.replace(')',`,${p.life})`).replace('rgb','rgba');
+      ctx.fill();
+    });
+    if(ps.some(p=>p.life>0)) requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+}
+
+// ── Puzzle definitions (unique-solution nonograms) ───────────────────────────
+const PUZZLES = [
+  {
+    name: 'Cross',
+    size: 5,
+    grid: [
+      [0,1,0,1,0],
+      [1,1,1,1,1],
+      [0,1,0,1,0],
+      [1,1,1,1,1],
+      [0,1,0,1,0],
+    ],
+    color: 'rgb(0,255,220)',
+  },
+  {
+    name: 'Z Shape',
+    size: 5,
+    grid: [
+      [1,1,1,1,1],
+      [0,0,0,1,0],
+      [0,0,1,0,0],
+      [0,1,0,0,0],
+      [1,1,1,1,1],
+    ],
+    color: 'rgb(200,100,255)',
+  },
+  {
+    name: 'Neon H',
+    size: 5,
+    grid: [
+      [1,0,0,0,1],
+      [1,0,0,0,1],
+      [1,1,1,1,1],
+      [1,0,0,0,1],
+      [1,0,0,0,1],
+    ],
+    color: 'rgb(255,80,200)',
+  },
+  {
+    name: 'Arrow',
+    size: 5,
+    grid: [
+      [0,0,1,0,0],
+      [0,1,1,1,0],
+      [1,1,1,1,1],
+      [0,0,1,0,0],
+      [0,0,1,0,0],
+    ],
+    color: 'rgb(0,200,255)',
+  },
+  {
+    name: 'Frame',
+    size: 5,
+    grid: [
+      [1,1,1,1,1],
+      [1,0,0,0,1],
+      [1,0,0,0,1],
+      [1,0,0,0,1],
+      [1,1,1,1,1],
+    ],
+    color: 'rgb(255,200,0)',
+  },
+  {
+    name: 'Spiral',
+    size: 6,
+    grid: [
+      [1,1,1,1,1,1],
+      [1,0,0,0,0,0],
+      [1,0,1,1,1,0],
+      [1,0,1,0,1,0],
+      [1,0,0,0,1,0],
+      [1,1,1,1,1,0],
+    ],
+    color: 'rgb(0,255,150)',
+  },
+  {
+    name: 'Neon X',
+    size: 6,
+    grid: [
+      [1,0,0,0,0,1],
+      [0,1,0,0,1,0],
+      [0,0,1,1,0,0],
+      [0,0,1,1,0,0],
+      [0,1,0,0,1,0],
+      [1,0,0,0,0,1],
+    ],
+    color: 'rgb(255,120,0)',
+  },
+  {
+    name: 'Diamond',
+    size: 7,
+    grid: [
+      [0,0,0,1,0,0,0],
+      [0,0,1,0,1,0,0],
+      [0,1,0,0,0,1,0],
+      [1,0,0,0,0,0,1],
+      [0,1,0,0,0,1,0],
+      [0,0,1,0,1,0,0],
+      [0,0,0,1,0,0,0],
+    ],
+    color: 'rgb(100,200,255)',
+  },
+  {
+    name: 'Sigma',
+    size: 7,
+    grid: [
+      [1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0],
+      [0,1,0,0,0,0,0],
+      [0,0,1,1,1,0,0],
+      [0,0,0,0,0,1,0],
+      [0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1],
+    ],
+    color: 'rgb(220,80,255)',
+  },
+  {
+    name: 'Neon E',
+    size: 7,
+    grid: [
+      [1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0],
+      [1,0,0,0,0,0,0],
+      [1,1,1,1,1,0,0],
+      [1,0,0,0,0,0,0],
+      [1,0,0,0,0,0,0],
+      [1,1,1,1,1,1,1],
+    ],
+    color: 'rgb(0,255,200)',
+  },
+];
+
+// ── Clue computation ─────────────────────────────────────────────────────────
+function computeClues(grid) {
+  const n = grid.length;
+  const rowClues = grid.map(row => {
+    const runs = []; let cnt = 0;
+    row.forEach(c => { if(c) cnt++; else { if(cnt) runs.push(cnt); cnt=0; } });
+    if(cnt) runs.push(cnt);
+    return runs.length ? runs : [0];
+  });
+  const colClues = Array.from({length: n}, (_,c) => {
+    const runs = []; let cnt = 0;
+    for(let r=0;r<n;r++) { if(grid[r][c]) cnt++; else { if(cnt) runs.push(cnt); cnt=0; } }
+    if(cnt) runs.push(cnt);
+    return runs.length ? runs : [0];
+  });
+  return { rowClues, colClues };
+}
+
+// ── Clue satisfaction check ──────────────────────────────────────────────────
+function getRunsFromLine(line) {
+  const runs = []; let cnt = 0;
+  line.forEach(c => { if(c===1) cnt++; else { if(cnt) runs.push(cnt); cnt=0; } });
+  if(cnt) runs.push(cnt);
+  return runs.length ? runs : [0];
+}
+function cluesSatisfied(playerLine, clue) {
+  const runs = getRunsFromLine(playerLine);
+  if(runs.length !== clue.length) return false;
+  return runs.every((r,i) => r === clue[i]);
+}
+
+// ── Puzzle timer allowances ───────────────────────────────────────────────────
+function timeForPuzzle(idx) {
+  if(idx < 5) return 120;
+  if(idx < 7) return 150;
+  return 180;
+}
+
+// ── Main Game ────────────────────────────────────────────────────────────────
+function Game() {
+  const [screen, setScreen] = useState('menu'); // menu | play | result
+  const [puzzleIdx, setPuzzleIdx] = useState(0);
+  const [playerGrid, setPlayerGrid] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(120);
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(1);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('pixellogic-highscore')||'0'));
+  const [flash, setFlash] = useState(null); // text flash
+  const [completed, setCompleted] = useState([]); // completed row/col indices
+  const [errors, setErrors] = useState(0);
+  const [wrongCells, setWrongCells] = useState(new Set());
+  const [gameOver, setGameOver] = useState(false);
+  const timerRef = useRef(null);
+  const cellRefs = useRef({});
+
+  const puzzle = PUZZLES[puzzleIdx % PUZZLES.length];
+  const { rowClues, colClues } = computeClues(puzzle.grid);
+  const n = puzzle.size;
+
+  const startPuzzle = useCallback((idx, sc, cb) => {
+    const p = PUZZLES[idx % PUZZLES.length];
+    const size = p.size;
+    setPlayerGrid(Array.from({length:size}, () => Array(size).fill(0)));
+    setTimeLeft(timeForPuzzle(idx));
+    setCompleted([]);
+    setWrongCells(new Set());
+    setGameOver(false);
+  }, []);
+
+  const startGame = () => {
+    setScore(0); setCombo(1); setErrors(0); setPuzzleIdx(0);
+    startPuzzle(0, 0, 1);
+    setScreen('play');
+  };
+
+  // Timer
+  useEffect(() => {
+    if(screen !== 'play' || gameOver) return;
+    timerRef.current = setInterval(() => {
+      setTimeLeft(t => {
+        if(t <= 1) {
+          clearInterval(timerRef.current);
+          setGameOver(true);
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [screen, gameOver, puzzleIdx]);
+
+  // Check win after player grid changes
+  const checkWin = useCallback((pg, idx) => {
+    const p = PUZZLES[idx % PUZZLES.length];
+    const size = p.size;
+    const { rowClues: rc, colClues: cc } = computeClues(p.grid);
+    const newCompleted = new Set();
+    let allDone = true;
+    for(let r=0; r<size; r++) {
+      if(cluesSatisfied(pg[r], rc[r])) newCompleted.add('r'+r);
+      else allDone = false;
+    }
+    for(let c=0; c<size; c++) {
+      const col = pg.map(row => row[c]);
+      if(cluesSatisfied(col, cc[c])) newCompleted.add('c'+c);
+      else allDone = false;
+    }
+    return { newCompleted, allDone };
+  }, []);
+
+  const handleCellClick = useCallback((r, c, rightClick) => {
+    if(screen !== 'play' || gameOver) return;
+    setPlayerGrid(prev => {
+      const ng = prev.map(row => [...row]);
+      if(rightClick) {
+        ng[r][c] = ng[r][c] === 2 ? 0 : 2; // 2 = X mark
+        playClear();
+      } else {
+        ng[r][c] = ng[r][c] === 1 ? 0 : 1; // 1 = filled
+        if(ng[r][c] === 1) {
+          playFill();
+          // check if wrong
+          if(puzzle.grid[r][c] === 0) {
+            playError();
+            setErrors(e => e+1);
+            setWrongCells(prev => new Set([...prev, `${r},${c}`]));
+            setCombo(1);
+            setTimeLeft(t => Math.max(0, t-5));
+            setFlash('−5s');
+            setTimeout(() => setFlash(null), 700);
+          }
+        }
+      }
+      // check completion
+      const { newCompleted, allDone } = checkWin(ng, puzzleIdx);
+      setCompleted([...newCompleted]);
+      if(allDone) {
+        clearInterval(timerRef.current);
+        setGameOver(true);
+        playWin();
+        setTimeLeft(t => {
+          const bonus = t * 10 * combo;
+          setScore(s => {
+            const ns = s + bonus;
+            if(ns > highScore) {
+              setHighScore(ns);
+              localStorage.setItem('pixellogic-highscore', String(ns));
+            }
+            return ns;
+          });
+          setFlash(`+${bonus} pts!`);
+          setTimeout(() => {
+            setFlash(null);
+            // next puzzle
+            const nextIdx = puzzleIdx + 1;
+            setPuzzleIdx(nextIdx);
+            setCombo(c => c + 1);
+            startPuzzle(nextIdx, 0, combo + 1);
+            setGameOver(false);
+            setFlash(null);
+          }, 1800);
+          return t;
+        });
+      }
+      return ng;
+    });
+  }, [screen, gameOver, puzzleIdx, combo, highScore, puzzle, checkWin, startPuzzle]);
+
+  // Context menu prevention
+  const handleContextMenu = (e, r, c) => {
+    e.preventDefault();
+    handleCellClick(r, c, true);
+  };
+
+  const CELL_SIZE = Math.min(
+    Math.floor((window.innerWidth * 0.55) / (n + (n > 5 ? 3 : 2))),
+    Math.floor((window.innerHeight * 0.55) / (n + 2)),
+    52
+  );
+  const CLUE_W = CELL_SIZE * (n > 6 ? 1.4 : 1.6);
+
+  // Color for satisfied clues
+  const rowSat = playerGrid ? Array.from({length:n},(_,r)=>cluesSatisfied(playerGrid[r], rowClues[r])) : [];
+  const colSat = playerGrid ? Array.from({length:n},(_,c)=>cluesSatisfied(playerGrid.map(row=>row[c]), colClues[c])) : [];
+
+  if(screen === 'menu') {
+    return (
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:24,zIndex:10,position:'relative'}}>
+        <div style={{fontSize:'clamp(2rem,5vw,3.5rem)',fontWeight:'bold',letterSpacing:4,
+          background:'linear-gradient(135deg,#00ffe0,#a040ff,#ff00c8)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',
+          textShadow:'none',textAlign:'center'}}>PIXEL LOGIC</div>
+        <div style={{color:'#80e8ff',fontSize:'1rem',textAlign:'center',maxWidth:320,lineHeight:1.6}}>
+          Solve neon nonogram puzzles!<br/>
+          <b style={{color:'#00ffe0'}}>Click</b> to fill a cell &nbsp;|&nbsp; <b style={{color:'#ff80c0'}}>Right-click</b> to mark empty<br/>
+          Wrong fills cost <b style={{color:'#ff4060'}}>−5 seconds</b>
+        </div>
+        <div style={{color:'#a060ff',fontSize:'0.9rem'}}>High Score: <span style={{color:'#ffcc00'}}>{highScore}</span></div>
+        <button id="start-btn" onClick={startGame} style={{
+          padding:'14px 48px',fontSize:'1.3rem',fontWeight:'bold',letterSpacing:3,
+          background:'linear-gradient(135deg,#00ffe0,#a040ff)',border:'none',borderRadius:8,
+          color:'#000',cursor:'pointer',boxShadow:'0 0 30px #00ffe080',transition:'transform 0.1s'
+        }}>PLAY</button>
+        <div style={{color:'#404060',fontSize:'0.8rem'}}>10 puzzles · 5×5 to 7×7</div>
+      </div>
+    );
+  }
+
+  if(screen === 'play') {
+    const timerColor = timeLeft > 30 ? '#00ffe0' : timeLeft > 10 ? '#ffcc00' : '#ff4060';
+    const pct = (timeLeft / timeForPuzzle(puzzleIdx % PUZZLES.length)) * 100;
+    const isLast = puzzleIdx >= PUZZLES.length;
+
+    if(gameOver && timeLeft === 0) {
+      // Time up → show final result
+      return (
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:20,zIndex:10,position:'relative'}}>
+          <div style={{fontSize:'2.5rem',fontWeight:'bold',color:'#ff4060',textShadow:'0 0 20px #ff406080'}}>TIME'S UP</div>
+          <div style={{color:'#80e8ff',fontSize:'1.1rem'}}>Puzzle {Math.min(puzzleIdx+1,PUZZLES.length)} of {PUZZLES.length}</div>
+          <div style={{fontSize:'2rem',color:'#ffcc00'}}>Score: {score}</div>
+          <div style={{color:'#a040ff'}}>Best: {highScore}</div>
+          <div style={{display:'flex',gap:16,marginTop:8}}>
+            <button id="start-btn" onClick={startGame} style={{
+              padding:'12px 36px',fontSize:'1.1rem',fontWeight:'bold',
+              background:'linear-gradient(135deg,#00ffe0,#a040ff)',border:'none',borderRadius:8,
+              color:'#000',cursor:'pointer',boxShadow:'0 0 20px #00ffe060'
+            }}>PLAY AGAIN</button>
+            <button onClick={()=>setScreen('menu')} style={{
+              padding:'12px 36px',fontSize:'1.1rem',fontWeight:'bold',
+              background:'transparent',border:'2px solid #a040ff',borderRadius:8,
+              color:'#a040ff',cursor:'pointer'
+            }}>MENU</button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,zIndex:10,position:'relative',userSelect:'none'}}>
+        {/* HUD */}
+        <div style={{display:'flex',alignItems:'center',gap:24,marginBottom:4}}>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:'0.65rem',color:'#606080',letterSpacing:2}}>SCORE</div>
+            <div style={{fontSize:'1.3rem',color:'#ffcc00',fontWeight:'bold'}}>{score}</div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:'0.65rem',color:'#606080',letterSpacing:2}}>PUZZLE</div>
+            <div style={{fontSize:'1.3rem',color:'#a040ff',fontWeight:'bold'}}>{(puzzleIdx%PUZZLES.length)+1}/{PUZZLES.length}</div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:'0.65rem',color:'#606080',letterSpacing:2}}>COMBO</div>
+            <div style={{fontSize:'1.3rem',color:'#00ffe0',fontWeight:'bold'}}>×{combo}</div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:'0.65rem',color:'#606080',letterSpacing:2}}>BEST</div>
+            <div style={{fontSize:'1rem',color:'#80a0c0'}}>{highScore}</div>
+          </div>
+        </div>
+
+        {/* Timer bar */}
+        <div style={{width:Math.min(window.innerWidth-40, 420),height:8,background:'#1a1a2e',borderRadius:4,overflow:'hidden'}}>
+          <div style={{width:`${pct}%`,height:'100%',background:timerColor,borderRadius:4,transition:'width 0.5s,background 0.5s',boxShadow:`0 0 8px ${timerColor}`}}/>
+        </div>
+        <div style={{fontSize:'1rem',color:timerColor,fontWeight:'bold'}}>{timeLeft}s</div>
+
+        {/* Puzzle name */}
+        <div style={{fontSize:'0.75rem',color:'#5050a0',letterSpacing:3,textTransform:'uppercase'}}>
+          {puzzle.name}
+        </div>
+
+        {/* Flash message */}
+        {flash && (
+          <div style={{
+            position:'fixed',top:'10%',left:'50%',transform:'translateX(-50%)',
+            fontSize:'2rem',fontWeight:'bold',color:flash.includes('+') ? '#00ffe0' : '#ff4060',
+            textShadow:`0 0 20px currentColor`,pointerEvents:'none',zIndex:100,
+            animation:'fadeUp 0.7s ease-out forwards'
+          }}>{flash}</div>
+        )}
+
+        {/* Grid */}
+        <div style={{display:'grid', gridTemplateColumns:`${CLUE_W}px repeat(${n},${CELL_SIZE}px)`,
+          gridTemplateRows:`${CLUE_W}px repeat(${n},${CELL_SIZE}px)`,gap:2}}>
+          {/* Top-left corner */}
+          <div style={{gridColumn:1,gridRow:1}}/>
+          {/* Column clues */}
+          {colClues.map((clue,c) => (
+            <div key={'cc'+c} style={{
+              gridColumn:c+2,gridRow:1,display:'flex',flexDirection:'column',
+              alignItems:'center',justifyContent:'flex-end',paddingBottom:4,
+              gap:2
+            }}>
+              {clue.map((n,i) => (
+                <span key={i} style={{fontSize:CELL_SIZE*0.3+'px',fontWeight:'bold',lineHeight:1,
+                  color: colSat[c] ? '#00ff80' : '#8080c0',
+                  textShadow: colSat[c] ? '0 0 8px #00ff80' : 'none',
+                  transition:'color 0.3s'}}>{n}</span>
+              ))}
+            </div>
+          ))}
+          {/* Rows */}
+          {Array.from({length:n},(_,r) => (
+            <React.Fragment key={'row'+r}>
+              {/* Row clue */}
+              <div style={{
+                gridColumn:1,gridRow:r+2,display:'flex',alignItems:'center',
+                justifyContent:'flex-end',paddingRight:6,gap:3
+              }}>
+                {rowClues[r].map((num,i) => (
+                  <span key={i} style={{fontSize:CELL_SIZE*0.3+'px',fontWeight:'bold',
+                    color: rowSat[r] ? '#00ff80' : '#8080c0',
+                    textShadow: rowSat[r] ? '0 0 8px #00ff80' : 'none',
+                    transition:'color 0.3s'}}>{num}</span>
+                ))}
+              </div>
+              {/* Cells */}
+              {Array.from({length:n},(_,c) => {
+                const val = playerGrid ? playerGrid[r][c] : 0;
+                const isWrong = wrongCells.has(`${r},${c}`);
+                return (
+                  <div key={`${r},${c}`}
+                    ref={el => cellRefs.current[`${r},${c}`] = el}
+                    onClick={() => handleCellClick(r, c, false)}
+                    onContextMenu={(e) => handleContextMenu(e, r, c)}
+                    style={{
+                      gridColumn:c+2,gridRow:r+2,
+                      width:CELL_SIZE,height:CELL_SIZE,
+                      background: val===1
+                        ? (isWrong ? 'rgba(255,40,60,0.9)' : puzzle.color.replace('rgb','rgba').replace(')',',0.85)'))
+                        : val===2 ? 'rgba(255,60,80,0.12)' : 'rgba(255,255,255,0.04)',
+                      border: val===1
+                        ? `2px solid ${isWrong?'#ff3040':puzzle.color}`
+                        : '2px solid rgba(100,100,160,0.4)',
+                      borderRadius:4,
+                      cursor:'pointer',
+                      display:'flex',alignItems:'center',justifyContent:'center',
+                      fontSize:CELL_SIZE*0.5+'px',
+                      boxShadow: val===1 ? `0 0 10px ${isWrong?'#ff304080':puzzle.color+'60'}` : 'none',
+                      transition:'all 0.1s',
+                      position:'relative'
+                    }}>
+                    {val===2 && <span style={{color:'rgba(255,80,80,0.7)',fontSize:CELL_SIZE*0.55+'px',lineHeight:1}}>×</span>}
+                  </div>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+        <div style={{fontSize:'0.7rem',color:'#303050',marginTop:4}}>Left click = fill &nbsp;|&nbsp; Right click = mark empty</div>
+      </div>
+    );
+  }
+}
+
+// ── Entry ────────────────────────────────────────────────────────────────────
+function App() {
+  useEffect(() => { initBg(); }, []);
+  return <Game />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<style>
+@keyframes fadeUp {
+  0%   { opacity:1; transform:translateX(-50%) translateY(0); }
+  100% { opacity:0; transform:translateX(-50%) translateY(-40px); }
+}
+</style>
+</body>
+</html>
