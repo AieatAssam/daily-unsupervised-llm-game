@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Cascade Blitz</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body {
+  background: #04040f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'Courier New', monospace;
+}
+#root {
+  width: 100%;
+  max-width: 520px;
+  padding: 12px;
+}
+@keyframes floatUp {
+  0%   { transform: translate(-50%, 0); opacity: 1; }
+  100% { transform: translate(-50%, -56px); opacity: 0; }
+}
+@keyframes pulseDot {
+  0%   { transform: scale(0.85); opacity: 0.7; }
+  100% { transform: scale(1.15); opacity: 1; }
+}
+@keyframes cellFlash {
+  0%   { background: rgba(255,255,255,0.6); transform: scale(1.15); }
+  50%  { background: rgba(255,220,0,0.3); transform: scale(1.05); }
+  100% { background: transparent; transform: scale(1); }
+}
+@keyframes comboAnim {
+  0%   { transform: scale(0.8); opacity: 0; }
+  40%  { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes gradientPulse {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const ROWS = 6;
+const COLS = 8;
+const GAME_DURATION = 90;
+const LS_KEY = 'cascadeBlitz_hi';
+
+const ELECTRON_COLORS = ['#00ffff', '#ff00ff', '#ffff00', '#ff6600'];
+const PARTICLE_COLORS = ['#00ffff', '#ff00ff', '#ffff00', '#00ff99', '#ff6600'];
+
+function getCap(r, c) {
+  let cap = 0;
+  if (r > 0) cap++;
+  if (r < ROWS - 1) cap++;
+  if (c > 0) cap++;
+  if (c < COLS - 1) cap++;
+  return cap;
+}
+
+function makeGrid() {
+  return Array.from({ length: ROWS }, (_, r) =>
+    Array.from({ length: COLS }, (_, c) => ({
+      e: 0,
+      cap: getCap(r, c),
+    }))
+  );
+}
+
+function deepClone(grid) {
+  return grid.map(row => row.map(cell => ({ ...cell })));
+}
+
+function runCascade(grid) {
+  const g = deepClone(grid);
+  const exploded = [];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (g[r][c].e >= g[r][c].cap) {
+          changed = true;
+          g[r][c].e -= g[r][c].cap;
+          exploded.push([r, c]);
+          const nb = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+          for (const [nr, nc] of nb) {
+            if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+              g[nr][nc].e++;
+            }
+          }
+        }
+      }
+    }
+  }
+  return { grid: g, exploded };
+}
+
+function addAndCascade(grid, r, c) {
+  const g = deepClone(grid);
+  g[r][c].e++;
+  return runCascade(g);
+}
+
+let _audioCtx = null;
+function audio() {
+  if (!_audioCtx) {
+    try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+  }
+  return _audioCtx;
+}
+
+function playClick() {
+  try {
+    const ctx = audio(); if (!ctx) return;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'sine'; o.frequency.value = 660;
+    g.gain.setValueAtTime(0.08, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    o.start(); o.stop(ctx.currentTime + 0.08);
+  } catch(e) {}
+}
+
+function playBlast(n) {
+  try {
+    const ctx = audio(); if (!ctx) return;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(300 + n * 40, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.35);
+    g.gain.setValueAtTime(Math.min(0.25, 0.06 + n * 0.015), ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    o.start(); o.stop(ctx.currentTime + 0.35);
+  } catch(e) {}
+}
+
+function playLevelUp() {
+  try {
+    const ctx = audio(); if (!ctx) return;
+    [523, 659, 784, 1047].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = 'sine'; o.frequency.value = f;
+      const t = ctx.currentTime + i * 0.1;
+      g.gain.setValueAtTime(0.12, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+      o.start(t); o.stop(t + 0.15);
+    });
+  } catch(e) {}
+}
+
+const particles = [];
+
+function spawnParticles(x, y, count, color) {
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.8;
+    const spd = 2.5 + Math.random() * 4.5;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      life: 1,
+      decay: 0.035 + Math.random() * 0.03,
+      r: 3 + Math.random() * 4,
+      color,
+    });
+  }
+}
+
+function App() {
+  const [phase, setPhase] = useState('idle');
+  const [grid, setGrid] = useState(makeGrid);
+  const [score, setScore] = useState(0);
+  const [hi, setHi] = useState(() => parseInt(localStorage.getItem(LS_KEY) || '0'));
+  const [timer, setTimer] = useState(GAME_DURATION);
+  const [combo, setCombo] = useState(1);
+  const [popups, setPopups] = useState([]);
+  const [explodingCells, setExplodingCells] = useState(new Set());
+  const [autoFills, setAutoFills] = useState(new Set());
+
+  const canvasRef = useRef(null);
+  const cellRefs = useRef({});
+  const gridRef = useRef(grid);
+  const scoreRef = useRef(score);
+  const comboRef = useRef(combo);
+  const hiRef = useRef(hi);
+  const lastBlastRef = useRef(0);
+  const comboTimer = useRef(null);
+  const autoFillTimer = useRef(null);
+  const timerInterval = useRef(null);
+  const animFrame = useRef(null);
+  const phaseRef = useRef(phase);
+  const timerRef = useRef(GAME_DURATION);
+
+  gridRef.current = grid;
+  scoreRef.current = score;
+  comboRef.current = combo;
+  hiRef.current = hi;
+  phaseRef.current = phase;
+  timerRef.current = timer;
+
+  // Canvas particle loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const fit = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+
+    const ctx = canvas.getContext('2d');
+    const loop = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx; p.y += p.vy; p.vy += 0.12;
+        p.life -= p.decay;
+        if (p.life <= 0) { particles.splice(i, 1); continue; }
+        ctx.save();
+        ctx.globalAlpha = p.life;
+        ctx.shadowBlur = 12; ctx.shadowColor = p.color;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      animFrame.current = requestAnimationFrame(loop);
+    };
+    animFrame.current = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(animFrame.current);
+      window.removeEventListener('resize', fit);
+    };
+  }, []);
+
+  const handleExploded = useCallback((exploded, isAuto, clickR, clickC) => {
+    const n = exploded.length;
+    if (n === 0) return;
+
+    const color = PARTICLE_COLORS[n % PARTICLE_COLORS.length];
+    for (const [er, ec] of exploded) {
+      const el = cellRefs.current[`${er},${ec}`];
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        spawnParticles(cx, cy, isAuto ? 5 : 10, color);
+      }
+    }
+
+    const keys = new Set(exploded.map(([r, c]) => `${r},${c}`));
+    setExplodingCells(prev => new Set([...prev, ...keys]));
+    setTimeout(() => setExplodingCells(prev => {
+      const next = new Set(prev);
+      for (const k of keys) next.delete(k);
+      return next;
+    }), 320);
+
+    if (!isAuto) {
+      const now = Date.now();
+      const timeDiff = now - lastBlastRef.current;
+      const newCombo = timeDiff < 2200 ? comboRef.current + 1 : 1;
+      lastBlastRef.current = now;
+
+      const pts = Math.round(n * n * 5 * newCombo);
+      const newScore = scoreRef.current + pts;
+      setScore(newScore);
+      setCombo(newCombo);
+
+      if (newScore > hiRef.current) {
+        setHi(newScore);
+        localStorage.setItem(LS_KEY, newScore);
+        playLevelUp();
+      } else {
+        playBlast(n);
+      }
+
+      // Score popup
+      const srcEl = cellRefs.current[`${clickR},${clickC}`];
+      if (srcEl) {
+        const rect = srcEl.getBoundingClientRect();
+        const id = now + Math.random();
+        const popup = {
+          id,
+          x: rect.left + rect.width / 2,
+          y: rect.top,
+          text: newCombo > 1 ? `+${pts} x${newCombo}` : `+${pts}`,
+          big: n >= 5,
+        };
+        setPopups(prev => [...prev, popup]);
+        setTimeout(() => setPopups(prev => prev.filter(p => p.id !== id)), 900);
+      }
+
+      if (comboTimer.current) clearTimeout(comboTimer.current);
+      comboTimer.current = setTimeout(() => setCombo(1), 2200);
+    }
+  }, []);
+
+  const doAutoFill = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+
+    const g = gridRef.current;
+    const available = [];
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (g[r][c].e < g[r][c].cap) available.push([r, c]);
+
+    if (available.length === 0) return;
+
+    const [r, c] = available[Math.floor(Math.random() * available.length)];
+    const { grid: ng, exploded } = addAndCascade(g, r, c);
+
+    gridRef.current = ng;
+    setGrid(ng);
+
+    // Highlight auto-filled cell briefly
+    const key = `${r},${c}`;
+    setAutoFills(prev => new Set([...prev, key]));
+    setTimeout(() => setAutoFills(prev => { const n = new Set(prev); n.delete(key); return n; }), 400);
+
+    if (exploded.length > 0) handleExploded(exploded, true, r, c);
+
+    // Schedule next auto-fill (speeds up over time)
+    const elapsed = GAME_DURATION - timerRef.current;
+    const interval = Math.max(800, 2800 - elapsed * 22);
+    autoFillTimer.current = setTimeout(doAutoFill, interval);
+  }, [handleExploded]);
+
+  const handleCellClick = useCallback((r, c) => {
+    if (phaseRef.current !== 'playing') return;
+    playClick();
+    const { grid: ng, exploded } = addAndCascade(gridRef.current, r, c);
+    gridRef.current = ng;
+    setGrid(ng);
+    if (exploded.length > 0) handleExploded(exploded, false, r, c);
+  }, [handleExploded]);
+
+  const startGame = useCallback(() => {
+    const g = makeGrid();
+    gridRef.current = g;
+    setGrid(g);
+    setScore(0); scoreRef.current = 0;
+    setTimer(GAME_DURATION); timerRef.current = GAME_DURATION;
+    setCombo(1);
+    setPopups([]);
+    setExplodingCells(new Set());
+    setAutoFills(new Set());
+    lastBlastRef.current = 0;
+    particles.length = 0;
+
+    clearTimeout(autoFillTimer.current);
+    clearInterval(timerInterval.current);
+
+    setPhase('playing');
+
+    // Start timer
+    timerInterval.current = setInterval(() => {
+      timerRef.current -= 1;
+      setTimer(timerRef.current);
+      if (timerRef.current <= 0) {
+        clearInterval(timerInterval.current);
+        clearTimeout(autoFillTimer.current);
+        setPhase('over');
+      }
+    }, 1000);
+
+    // Start auto-fill after short delay
+    autoFillTimer.current = setTimeout(doAutoFill, 2000);
+  }, [doAutoFill]);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    clearInterval(timerInterval.current);
+    clearTimeout(autoFillTimer.current);
+    clearTimeout(comboTimer.current);
+  }, []);
+
+  const timerPct = (timer / GAME_DURATION) * 100;
+  const timerColor = timer <= 10 ? '#ff4444' : timer <= 20 ? '#ff8800' : '#00ffff';
+
+  return (
+    <div style={{ position: 'relative', userSelect: 'none' }}>
+      {/* Fixed particle canvas */}
+      <canvas ref={canvasRef} style={{
+        position: 'fixed', inset: 0,
+        width: '100vw', height: '100vh',
+        pointerEvents: 'none', zIndex: 200,
+      }} />
+
+      {/* Score popups */}
+      {popups.map(p => (
+        <div key={p.id} style={{
+          position: 'fixed',
+          left: p.x, top: p.y,
+          color: p.big ? '#ff6600' : '#ffff00',
+          fontSize: p.big ? '22px' : '16px',
+          fontWeight: 'bold',
+          textShadow: `0 0 12px ${p.big ? '#ff6600' : '#ffff00'}`,
+          pointerEvents: 'none',
+          zIndex: 201,
+          animation: 'floatUp 0.9s ease-out forwards',
+          whiteSpace: 'nowrap',
+          fontFamily: 'Courier New, monospace',
+        }}>{p.text}</div>
+      ))}
+
+      {/* Title bar */}
+      <div style={{
+        textAlign: 'center', marginBottom: '10px',
+        background: 'linear-gradient(135deg, #0d0d2b, #1a0033)',
+        borderRadius: '10px',
+        padding: '8px 12px',
+        border: '1px solid #2a2a5a',
+      }}>
+        <div style={{
+          fontSize: 'clamp(18px,5vw,26px)',
+          fontWeight: 'bold',
+          background: 'linear-gradient(90deg, #00ffff, #ff00ff, #ffff00)',
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          backgroundSize: '200%',
+          animation: 'gradientPulse 3s ease infinite',
+        }}>CASCADE BLITZ</div>
+        <div style={{ color: '#666', fontSize: '10px', letterSpacing: '2px' }}>
+          CHAIN REACTION STRATEGY
+        </div>
+      </div>
+
+      {/* HUD */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
+        marginBottom: '8px',
+        padding: '6px 10px',
+        background: 'rgba(10,10,30,0.8)',
+        borderRadius: '8px',
+        border: '1px solid #1a1a4a',
+      }}>
+        <div>
+          <div style={{ color: '#444', fontSize: '10px', letterSpacing: '1px' }}>SCORE</div>
+          <div id="score-display" style={{
+            color: '#00ffff', fontSize: 'clamp(16px,4vw,22px)',
+            fontWeight: 'bold', textShadow: '0 0 12px #00ffff',
+          }}>{score.toLocaleString()}</div>
+        </div>
+
+        <div style={{ textAlign: 'center', flex: 1, padding: '0 10px' }}>
+          <div style={{ color: '#444', fontSize: '10px', letterSpacing: '1px' }}>TIME</div>
+          <div style={{
+            color: timerColor, fontSize: 'clamp(18px,5vw,26px)',
+            fontWeight: 'bold',
+            textShadow: `0 0 15px ${timerColor}`,
+            transition: 'color 0.3s',
+          }}>{timer}s</div>
+          <div style={{
+            height: '4px', background: '#111', borderRadius: '2px',
+            marginTop: '3px', overflow: 'hidden',
+          }}>
+            <div style={{
+              height: '100%', width: `${timerPct}%`,
+              background: timerColor,
+              boxShadow: `0 0 8px ${timerColor}`,
+              transition: 'width 1s linear, background 0.3s',
+            }} />
+          </div>
+        </div>
+
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ color: '#444', fontSize: '10px', letterSpacing: '1px' }}>BEST</div>
+          <div style={{
+            color: '#ff00ff', fontSize: 'clamp(16px,4vw,22px)',
+            fontWeight: 'bold', textShadow: '0 0 12px #ff00ff',
+          }}>{hi.toLocaleString()}</div>
+        </div>
+      </div>
+
+      {/* Combo badge */}
+      {combo > 1 && phase === 'playing' && (
+        <div style={{
+          textAlign: 'center', marginBottom: '6px',
+          animation: 'comboAnim 0.3s ease',
+        }}>
+          <span style={{
+            color: '#ff6600', fontSize: 'clamp(14px,3.5vw,18px)',
+            fontWeight: 'bold',
+            textShadow: '0 0 15px #ff6600, 0 0 30px #ff6600',
+          }}>⚡ CHAIN x{combo}</span>
+        </div>
+      )}
+
+      {/* Grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+        gap: '3px',
+        background: '#080818',
+        border: '2px solid #1a1a4a',
+        borderRadius: '10px',
+        padding: '8px',
+        boxShadow: '0 0 30px rgba(0,0,255,0.1)',
+      }}>
+        {grid.map((row, r) => row.map((cell, c) => {
+          const key = `${r},${c}`;
+          const isExploding = explodingCells.has(key);
+          const isAutoFill = autoFills.has(key);
+          const critical = cell.e >= cell.cap - 1 && cell.e > 0;
+          const full = cell.e >= cell.cap;
+          const eColor = cell.e > 0
+            ? ELECTRON_COLORS[Math.min(cell.e - 1, ELECTRON_COLORS.length - 1)]
+            : null;
+
+          return (
+            <div
+              key={key}
+              ref={el => cellRefs.current[key] = el}
+              onClick={() => handleCellClick(r, c)}
+              style={{
+                aspectRatio: '1',
+                borderRadius: '5px',
+                border: isExploding
+                  ? '2px solid #fff'
+                  : isAutoFill
+                  ? '2px solid #ff6600'
+                  : critical
+                  ? `2px solid ${eColor}`
+                  : '1px solid #1a1a3a',
+                background: isExploding
+                  ? 'rgba(255,255,255,0.25)'
+                  : isAutoFill
+                  ? 'rgba(255,100,0,0.12)'
+                  : critical
+                  ? `rgba(${eColor === '#00ffff' ? '0,255,255' : eColor === '#ff00ff' ? '255,0,255' : eColor === '#ffff00' ? '255,255,0' : '255,102,0'},0.1)`
+                  : 'rgba(8,8,24,0.9)',
+                cursor: phase === 'playing' ? 'pointer' : 'default',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '2px',
+                padding: '3px',
+                minWidth: 0,
+                position: 'relative',
+                boxShadow: isExploding
+                  ? '0 0 20px rgba(255,255,255,0.8), inset 0 0 15px rgba(255,255,255,0.3)'
+                  : full
+                  ? `0 0 12px ${eColor}80`
+                  : critical
+                  ? `0 0 6px ${eColor}40`
+                  : 'none',
+                animation: isExploding ? 'cellFlash 0.32s ease' : 'none',
+                transition: isExploding ? 'none' : 'box-shadow 0.2s, border-color 0.2s, background 0.2s',
+              }}
+            >
+              {cell.e > 0 && Array.from({ length: Math.min(cell.e, 4) }, (_, i) => (
+                <div key={i} style={{
+                  width: cell.cap <= 2 ? '35%' : cell.cap === 3 ? '30%' : '28%',
+                  aspectRatio: '1',
+                  borderRadius: '50%',
+                  background: eColor,
+                  boxShadow: `0 0 ${critical ? 8 : 4}px ${eColor}`,
+                  animation: critical && !isExploding ? `pulseDot 0.4s ease-in-out infinite alternate` : 'none',
+                  transition: 'background 0.2s',
+                }} />
+              ))}
+              {/* Capacity indicator in corner */}
+              <div style={{
+                position: 'absolute', bottom: '1px', right: '2px',
+                fontSize: '7px', color: 'rgba(255,255,255,0.15)',
+                lineHeight: 1, pointerEvents: 'none',
+              }}>{cell.cap}</div>
+            </div>
+          );
+        }))}
+      </div>
+
+      {/* Instructions during play */}
+      {phase === 'playing' && (
+        <div style={{
+          textAlign: 'center', marginTop: '8px',
+          color: '#333', fontSize: '10px', letterSpacing: '1px',
+        }}>
+          CLICK CELLS TO ADD ELECTRONS · FILL TO CAPACITY → CHAIN REACTION!
+        </div>
+      )}
+
+      {/* Overlay */}
+      {phase !== 'playing' && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'rgba(2,2,15,0.92)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          borderRadius: '10px',
+          zIndex: 50,
+          gap: '12px',
+        }}>
+          <div style={{
+            fontSize: 'clamp(26px,7vw,40px)',
+            fontWeight: 'bold',
+            background: 'linear-gradient(90deg, #00ffff, #ff00ff)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            textAlign: 'center',
+          }}>
+            {phase === 'over' ? 'TIME\'S UP!' : 'CASCADE BLITZ'}
+          </div>
+
+          {phase === 'over' && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#ffff00', fontSize: 'clamp(20px,5vw,28px)', textShadow: '0 0 10px #ffff00' }}>
+                {score.toLocaleString()} pts
+              </div>
+              {score >= hi && score > 0 && (
+                <div style={{ color: '#ff6600', fontSize: '14px', marginTop: '4px', textShadow: '0 0 8px #ff6600' }}>
+                  ★ NEW HIGH SCORE ★
+                </div>
+              )}
+              <div style={{ color: '#ff00ff', fontSize: '14px', marginTop: '4px', textShadow: '0 0 8px #ff00ff' }}>
+                Best: {hi.toLocaleString()}
+              </div>
+            </div>
+          )}
+
+          {phase === 'idle' && (
+            <div style={{
+              color: '#666', fontSize: 'clamp(11px,3vw,13px)',
+              textAlign: 'center', maxWidth: '280px',
+              lineHeight: '1.6', padding: '0 16px',
+            }}>
+              Click cells to add ⚡ electrons.<br/>
+              Fill a cell to its <span style={{ color: '#ff6600' }}>capacity</span> and it<br/>
+              explodes — triggering a chain reaction!<br/>
+              <span style={{ color: '#00ffff' }}>Bigger chains</span> score exponentially more.
+            </div>
+          )}
+
+          <button
+            id="start-btn"
+            onClick={startGame}
+            style={{
+              background: 'transparent',
+              border: '2px solid #00ffff',
+              color: '#00ffff',
+              padding: '12px 36px',
+              fontSize: 'clamp(14px,4vw,18px)',
+              cursor: 'pointer',
+              borderRadius: '6px',
+              fontFamily: 'Courier New, monospace',
+              fontWeight: 'bold',
+              letterSpacing: '2px',
+              textShadow: '0 0 10px #00ffff',
+              boxShadow: '0 0 15px rgba(0,255,255,0.3)',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => {
+              e.target.style.background = 'rgba(0,255,255,0.1)';
+              e.target.style.boxShadow = '0 0 25px rgba(0,255,255,0.5)';
+            }}
+            onMouseLeave={e => {
+              e.target.style.background = 'transparent';
+              e.target.style.boxShadow = '0 0 15px rgba(0,255,255,0.3)';
+            }}
+          >
+            {phase === 'over' ? 'PLAY AGAIN' : 'START GAME'}
+          </button>
+
+          {phase === 'idle' && hi > 0 && (
+            <div style={{ color: '#444', fontSize: '12px' }}>
+              Your best: <span style={{ color: '#ff00ff' }}>{hi.toLocaleString()}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

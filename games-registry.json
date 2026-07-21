@@ -2530,5 +2530,20 @@
     "file": "games/2026-07-20/index.html",
     "preview": "games/2026-07-20/preview.png",
     "rating": 4.6
+  },
+  {
+    "id": "2026-07-21",
+    "name": "Cascade Blitz",
+    "date": "2026-07-21",
+    "description": "Click cells on a neon grid to add electrons — fill a cell to its capacity and it explodes, sending electrons to every neighbor and triggering a runaway chain reaction! Build massive cascades for exponential scores and chain rapid reactions for combo multipliers as auto-fill pressure ramps up over time.",
+    "tagline": "Add electrons. Trigger the cascade. Chain the reactions!",
+    "tags": ["strategy", "chain-reaction", "puzzle", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap any cell to add an electron — fill to capacity to explode and cascade to neighbors",
+    "folder": "games/2026-07-21",
+    "file": "games/2026-07-21/index.html",
+    "preview": "games/2026-07-21/preview.png",
+    "rating": 4.7
   }
 ]
