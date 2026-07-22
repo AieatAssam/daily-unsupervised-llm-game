@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Depth Blitz</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000814; }
+    #root { width: 100vw; height: 100vh; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const { useRef, useEffect, useState, useCallback } = React;
+
+    /* ── Audio ── */
+    let _actx = null;
+    function getActx() {
+      if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+      return _actx;
+    }
+    function tone(freq, type, dur, vol) {
+      try {
+        const a = getActx();
+        const o = a.createOscillator(); const g = a.createGain();
+        o.type = type; o.frequency.setValueAtTime(freq, a.currentTime);
+        o.frequency.exponentialRampToValueAtTime(freq * 0.2, a.currentTime + dur);
+        g.gain.setValueAtTime(vol, a.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur);
+        o.connect(g); g.connect(a.destination);
+        o.start(); o.stop(a.currentTime + dur);
+      } catch(e){}
+    }
+    function noise(dur, cutoff, vol) {
+      try {
+        const a = getActx();
+        const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1)*(1-i/d.length);
+        const src = a.createBufferSource(); src.buffer = buf;
+        const f = a.createBiquadFilter(); f.type='lowpass'; f.frequency.value=cutoff;
+        const g = a.createGain(); g.gain.setValueAtTime(vol, a.currentTime);
+        src.connect(f); f.connect(g); g.connect(a.destination);
+        src.start(); src.stop(a.currentTime + dur);
+      } catch(e){}
+    }
+    const sfxPing = () => { tone(550, 'sine', 0.25, 0.18); tone(900, 'sine', 0.12, 0.08); };
+    const sfxBoom = () => { noise(0.55, 280, 0.45); tone(65, 'sawtooth', 0.5, 0.3); };
+    const sfxEscape = () => { tone(180, 'sawtooth', 0.4, 0.25); noise(0.3, 120, 0.2); };
+    const sfxLevelUp = () => { [440,550,660,880].forEach((f,i)=>setTimeout(()=>tone(f,'sine',0.15,0.2),i*80)); };
+
+    /* ── Constants ── */
+    const SHIP_Y       = 44;
+    const CHARGE_SPD   = 190;
+    const EXPL_R       = 82;
+    const MAX_CHARGES  = 6;
+    const LANE_COLS    = ['#00ffff','#ff00ff','#00ff88','#ffaa00','#ff44ff'];
+    const LS_KEY       = 'depthBlitz_hi';
+
+    /* ── Helpers ── */
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+    /* ── App ── */
+    function App() {
+      const canvasRef   = useRef(null);
+      const gameRef     = useRef(null);
+      const mouseXRef   = useRef(null);
+      const rafRef      = useRef(null);
+      const [phase, setPhase]           = useState('start');
+      const [finalScore, setFinalScore] = useState(0);
+      const [hiScore, setHiScore]       = useState(() => parseInt(localStorage.getItem(LS_KEY)||'0'));
+
+      /* resize canvas to window */
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        resize();
+        window.addEventListener('resize', resize);
+        return () => window.removeEventListener('resize', resize);
+      }, []);
+
+      /* drop charge */
+      const dropCharge = useCallback(() => {
+        const g = gameRef.current;
+        if (!g || g.phase !== 'playing') return;
+        if (g.charges.length >= MAX_CHARGES) return;
+        g.charges.push({ x: g.shipX, y: SHIP_Y + 20, alive: true, trail: [] });
+        sfxPing();
+      }, []);
+
+      /* pointer / keyboard */
+      const onMouseMove = useCallback(e => {
+        const c = canvasRef.current; if (!c) return;
+        const r = c.getBoundingClientRect();
+        mouseXRef.current = (e.clientX - r.left) * (c.width / r.width);
+      }, []);
+      const onClick = useCallback(e => {
+        const c = canvasRef.current; if (!c) return;
+        const r = c.getBoundingClientRect();
+        mouseXRef.current = (e.clientX - r.left) * (c.width / r.width);
+        dropCharge();
+      }, [dropCharge]);
+      const onTouchMove = useCallback(e => {
+        e.preventDefault();
+        const c = canvasRef.current; if (!c) return;
+        const r = c.getBoundingClientRect();
+        mouseXRef.current = (e.touches[0].clientX - r.left) * (c.width / r.width);
+      }, []);
+      const onTouchStart = useCallback(e => {
+        e.preventDefault();
+        const c = canvasRef.current; if (!c) return;
+        const r = c.getBoundingClientRect();
+        mouseXRef.current = (e.touches[0].clientX - r.left) * (c.width / r.width);
+        dropCharge();
+      }, [dropCharge]);
+      const onKey = useCallback(e => {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); dropCharge(); }
+      }, [dropCharge]);
+      useEffect(() => {
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [onKey]);
+
+      /* start game */
+      const startGame = useCallback(() => {
+        try { getActx(); } catch(e){}
+        const canvas = canvasRef.current;
+        const W = canvas.width, H = canvas.height;
+
+        const numLanes = 5;
+        const topY = SHIP_Y + 70;
+        const botY = H - 50;
+        const step = (botY - topY) / (numLanes - 1);
+        const lanes = Array.from({ length: numLanes }, (_, i) => ({
+          y: topY + i * step,
+          col: LANE_COLS[i],
+        }));
+
+        gameRef.current = {
+          W, H, phase: 'playing',
+          shipX: W / 2,
+          charges: [], subs: [], particles: [], explosions: [], floats: [],
+          score: 0, lives: 3, combo: 0, comboTimer: 0,
+          level: 1, levelPts: 0,
+          spawnTimer: 1.2, spawnInterval: 2.4,
+          lanes, lastTs: null, elapsed: 0,
+          sonarX: 0, sonarDir: 1,
+        };
+        mouseXRef.current = W / 2;
+        setPhase('playing');
+      }, []);
+
+      /* game loop */
+      useEffect(() => {
+        if (phase !== 'playing') return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const g = gameRef.current;
+
+        /* ── helper: end game ── */
+        function endGame() {
+          g.phase = 'over';
+          const hs = Math.max(g.score, parseInt(localStorage.getItem(LS_KEY)||'0'));
+          localStorage.setItem(LS_KEY, String(hs));
+          setFinalScore(g.score);
+          setHiScore(hs);
+          setPhase('gameover');
+        }
+
+        /* ── spawn sub ── */
+        function spawnSub() {
+          const laneIdx = Math.floor(Math.random() * g.lanes.length);
+          const lane = g.lanes[laneIdx];
+          const dir = Math.random() > 0.5 ? 1 : -1;
+          const baseSpd = 55 + g.level * 12;
+          const spd = baseSpd + Math.random() * 25;
+          const w = 72 + Math.random() * 35;
+          g.subs.push({
+            laneIdx, x: dir > 0 ? -100 : g.W + 100,
+            y: lane.y, vx: spd * dir, col: lane.col,
+            w, h: 24, alive: true, glowT: Math.random() * Math.PI * 2,
+            danger: false,
+          });
+        }
+
+        /* ── hit a sub ── */
+        function hitSub(sub, cx, cy) {
+          sub.alive = false;
+          g.combo++;
+          g.comboTimer = 1.6;
+          const mult = clamp(g.combo, 1, 12);
+          const pts = 100 * mult;
+          g.score += pts;
+          g.levelPts += pts;
+
+          const hs = Math.max(g.score, parseInt(localStorage.getItem(LS_KEY)||'0'));
+          localStorage.setItem(LS_KEY, String(hs));
+
+          sfxBoom();
+
+          /* particle burst */
+          for (let i = 0; i < 28; i++) {
+            const angle = (i / 28) * Math.PI * 2;
+            const spd = 70 + Math.random() * 140;
+            g.particles.push({
+              x: sub.x + (Math.random()-.5)*sub.w*.7, y: sub.y,
+              vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd,
+              life: 0.7+Math.random()*0.6, maxLife: 1.3,
+              col: sub.col, size: 3+Math.random()*5,
+            });
+          }
+          /* metal debris */
+          for (let i = 0; i < 8; i++) {
+            const angle = Math.random()*Math.PI*2;
+            const spd = 40+Math.random()*80;
+            g.particles.push({
+              x: sub.x, y: sub.y,
+              vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd - 40,
+              life: 1+Math.random(), maxLife: 2,
+              col: '#aaaacc', size: 5+Math.random()*6,
+            });
+          }
+
+          /* explosion ring at charge position */
+          g.explosions.push({ x: cx, y: cy, cx: sub.x, cy: sub.y, r: 0, life: 0.55, maxLife: 0.55 });
+
+          /* floating score text */
+          g.floats.push({ x: sub.x, y: sub.y-20, text: `+${pts}`, life: 1.2, maxLife: 1.2, col: sub.col });
+
+          /* level up? */
+          if (g.levelPts >= g.level * 600) {
+            g.level++;
+            g.levelPts = 0;
+            g.spawnInterval = Math.max(0.9, 2.4 - g.level * 0.18);
+            sfxLevelUp();
+            g.floats.push({ x: g.W/2, y: g.H/2, text: `LEVEL ${g.level}`, life: 1.8, maxLife: 1.8, col: '#ffee44' });
+          }
+        }
+
+        /* ── sub escaped ── */
+        function subEscaped() {
+          g.combo = 0;
+          g.lives--;
+          sfxEscape();
+          if (g.lives <= 0) { endGame(); return false; }
+          return true;
+        }
+
+        /* ── update ── */
+        function update(dt, ts) {
+          g.elapsed += dt;
+
+          /* ship follows mouse */
+          const tx = mouseXRef.current !== null ? mouseXRef.current : g.W/2;
+          g.shipX += (tx - g.shipX) * clamp(12*dt, 0, 1);
+          g.shipX = clamp(g.shipX, 32, g.W-32);
+
+          /* sonar sweep */
+          g.sonarX += g.sonarDir * dt * (g.W * 0.6);
+          if (g.sonarX > g.W+60) { g.sonarX = g.W+60; g.sonarDir = -1; }
+          if (g.sonarX < -60)    { g.sonarX = -60;    g.sonarDir =  1; }
+
+          /* combo timer */
+          if (g.combo > 0) {
+            g.comboTimer -= dt;
+            if (g.comboTimer <= 0) g.combo = 0;
+          }
+
+          /* spawn subs */
+          g.spawnTimer -= dt;
+          if (g.spawnTimer <= 0) {
+            spawnSub();
+            /* double spawn at high levels */
+            if (g.level >= 4 && Math.random() < 0.3) spawnSub();
+            g.spawnTimer = g.spawnInterval * (0.7 + Math.random()*0.6);
+          }
+
+          /* update charges */
+          for (const c of g.charges) {
+            if (!c.alive) continue;
+            c.y += CHARGE_SPD * dt;
+            c.trail.push({ x: c.x, y: c.y });
+            if (c.trail.length > 14) c.trail.shift();
+
+            let hit = false;
+            for (const sub of g.subs) {
+              if (!sub.alive) continue;
+              if (Math.abs(c.x - sub.x) < EXPL_R && Math.abs(c.y - sub.y) < sub.h + 8) {
+                hitSub(sub, c.x, c.y);
+                c.alive = false;
+                hit = true;
+                break;
+              }
+            }
+            if (!hit && c.y > g.H + 10) {
+              c.alive = false;
+              /* small splash at bottom */
+              g.explosions.push({ x: c.x, y: g.H-8, cx: c.x, cy: g.H-8, r: 0, life: 0.22, maxLife: 0.22, small: true });
+            }
+          }
+          g.charges = g.charges.filter(c => c.alive);
+
+          /* update subs */
+          for (const sub of g.subs) {
+            if (!sub.alive) continue;
+            sub.x += sub.vx * dt;
+            sub.glowT += dt * 2.2;
+            /* danger hint: near edge */
+            const margin = 60;
+            sub.danger = (sub.vx > 0 && sub.x > g.W - margin) ||
+                         (sub.vx < 0 && sub.x < margin);
+
+            if ((sub.vx > 0 && sub.x > g.W + 110) ||
+                (sub.vx < 0 && sub.x < -110)) {
+              sub.alive = false;
+              const ok = subEscaped();
+              if (!ok) return false; /* game over */
+            }
+          }
+          g.subs = g.subs.filter(s => s.alive);
+
+          /* particles */
+          for (const p of g.particles) {
+            p.x += p.vx * dt; p.y += p.vy * dt;
+            p.vy += 90 * dt;
+            p.life -= dt;
+          }
+          g.particles = g.particles.filter(p => p.life > 0);
+
+          /* explosions */
+          for (const e of g.explosions) {
+            e.r += (e.small ? 90 : 220) * dt;
+            e.life -= dt;
+          }
+          g.explosions = g.explosions.filter(e => e.life > 0);
+
+          /* floats */
+          for (const f of g.floats) {
+            f.y -= 28 * dt;
+            f.life -= dt;
+          }
+          g.floats = g.floats.filter(f => f.life > 0);
+
+          return true;
+        }
+
+        /* ── draw background ── */
+        function drawBg(ts) {
+          const { W, H } = g;
+          /* ocean gradient */
+          const bg = ctx.createLinearGradient(0, 0, 0, H);
+          bg.addColorStop(0,   '#000a1e');
+          bg.addColorStop(0.18,'#000f2a');
+          bg.addColorStop(1,   '#000818');
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, W, H);
+
+          /* CRT scanlines */
+          ctx.save();
+          ctx.globalAlpha = 0.035;
+          for (let y = 0; y < H; y += 4) {
+            ctx.fillStyle = '#001133';
+            ctx.fillRect(0, y, W, 2);
+          }
+          ctx.restore();
+
+          /* sonar sweep glow */
+          ctx.save();
+          ctx.globalAlpha = 0.06;
+          const sweepGrad = ctx.createLinearGradient(g.sonarX - 80, 0, g.sonarX + 20, 0);
+          sweepGrad.addColorStop(0, 'transparent');
+          sweepGrad.addColorStop(0.7, '#00ffcc');
+          sweepGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = sweepGrad;
+          ctx.fillRect(0, SHIP_Y + 20, W, H);
+          ctx.restore();
+
+          /* depth lane tints */
+          for (const lane of g.lanes) {
+            ctx.save();
+            ctx.globalAlpha = 0.05;
+            ctx.fillStyle = lane.col;
+            ctx.fillRect(0, lane.y - 22, W, 44);
+            ctx.restore();
+            /* depth label */
+            ctx.save();
+            ctx.globalAlpha = 0.22;
+            ctx.fillStyle = lane.col;
+            ctx.font = '11px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`${g.lanes.indexOf(lane)*40+40}m`, 10, lane.y + 4);
+            ctx.textAlign = 'right';
+            ctx.fillText(`${g.lanes.indexOf(lane)*40+40}m`, W-10, lane.y + 4);
+            ctx.restore();
+          }
+
+          /* water surface */
+          ctx.save();
+          ctx.strokeStyle = '#0088ff';
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 14;
+          ctx.shadowColor = '#0055cc';
+          ctx.globalAlpha = 0.65;
+          ctx.beginPath();
+          for (let x = 0; x <= W; x += 4) {
+            const y = SHIP_Y + 16 + Math.sin(x*0.025 + ts*0.0018)*3.5
+                                   + Math.sin(x*0.011 + ts*0.0009)*2;
+            x === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+          }
+          ctx.stroke();
+          ctx.restore();
+
+          /* shimmer above surface */
+          ctx.save();
+          ctx.globalAlpha = 0.18;
+          const shimmer = ctx.createLinearGradient(0, SHIP_Y+16, 0, SHIP_Y+55);
+          shimmer.addColorStop(0, '#0066cc');
+          shimmer.addColorStop(1, 'transparent');
+          ctx.fillStyle = shimmer;
+          ctx.fillRect(0, SHIP_Y+16, W, 39);
+          ctx.restore();
+        }
+
+        /* ── draw ship ── */
+        function drawShip() {
+          const sx = g.shipX, sy = SHIP_Y;
+          ctx.save();
+          ctx.shadowBlur = 28;
+          ctx.shadowColor = '#00aaff';
+
+          /* hull */
+          ctx.fillStyle = '#00ccff';
+          ctx.beginPath();
+          ctx.moveTo(sx-30, sy);
+          ctx.lineTo(sx+30, sy);
+          ctx.lineTo(sx+24, sy-13);
+          ctx.lineTo(sx+2,  sy-18);
+          ctx.lineTo(sx-2,  sy-18);
+          ctx.lineTo(sx-24, sy-13);
+          ctx.closePath();
+          ctx.fill();
+
+          /* bridge */
+          ctx.fillStyle = '#0099cc';
+          ctx.shadowColor = '#00bbff';
+          ctx.fillRect(sx-9, sy-28, 18, 14);
+
+          /* radar dish */
+          ctx.strokeStyle = '#00eeff';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(sx, sy-32, 6, Math.PI, Math.PI*2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(sx, sy-32); ctx.lineTo(sx, sy-28);
+          ctx.stroke();
+
+          /* cannon / launch tube */
+          ctx.strokeStyle = '#ffff88';
+          ctx.lineWidth = 3.5;
+          ctx.lineCap = 'round';
+          ctx.shadowColor = '#ffff44';
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy-8); ctx.lineTo(sx, sy+8);
+          ctx.stroke();
+
+          ctx.restore();
+        }
+
+        /* ── draw sub ── */
+        function drawSub(sub, ts) {
+          const glow = 0.65 + 0.35*Math.sin(sub.glowT);
+          ctx.save();
+          ctx.shadowBlur = sub.danger ? 35 : 18*glow;
+          ctx.shadowColor = sub.danger ? '#ff2244' : sub.col;
+          ctx.globalAlpha = 0.88;
+
+          const hw = sub.w/2, hh = sub.h/2;
+          const r = hh;
+
+          /* hull capsule */
+          ctx.fillStyle = sub.danger ? '#ff3355' : sub.col;
+          ctx.beginPath();
+          ctx.moveTo(sub.x - hw + r, sub.y - hh);
+          ctx.lineTo(sub.x + hw - r, sub.y - hh);
+          ctx.arc(sub.x + hw - r, sub.y, hh, -Math.PI/2, Math.PI/2);
+          ctx.lineTo(sub.x - hw + r, sub.y + hh);
+          ctx.arc(sub.x - hw + r, sub.y, hh, Math.PI/2, -Math.PI/2);
+          ctx.closePath();
+          ctx.fill();
+
+          /* conning tower */
+          const twr = sub.vx > 0 ? sub.x - hw*0.3 : sub.x + hw*0.3;
+          ctx.fillStyle = sub.danger ? '#ff2244' : sub.col;
+          ctx.globalAlpha = 0.95;
+          ctx.fillRect(twr - 9, sub.y - hh - 16, 18, 16);
+
+          /* periscope */
+          const pDir = sub.vx > 0 ? 1 : -1;
+          ctx.strokeStyle = sub.danger ? '#ff4466' : sub.col;
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = 'round';
+          ctx.globalAlpha = 0.75;
+          ctx.beginPath();
+          ctx.moveTo(twr, sub.y-hh-16);
+          ctx.lineTo(twr, sub.y-hh-26);
+          ctx.lineTo(twr + pDir*12, sub.y-hh-26);
+          ctx.stroke();
+
+          /* porthole */
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = '#ffffff';
+          ctx.shadowBlur = 10;
+          ctx.globalAlpha = 0.85;
+          ctx.beginPath();
+          ctx.arc(sub.x - hw*0.2, sub.y, 4, 0, Math.PI*2);
+          ctx.fill();
+          ctx.fillStyle = '#aaeeff';
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = 0.6;
+          ctx.beginPath();
+          ctx.arc(sub.x - hw*0.2, sub.y, 2.2, 0, Math.PI*2);
+          ctx.fill();
+
+          /* propeller */
+          const propX = sub.vx > 0 ? sub.x + hw : sub.x - hw;
+          const propT = ts * 0.015;
+          ctx.globalAlpha = 0.55;
+          ctx.fillStyle = sub.col;
+          ctx.shadowBlur = 6;
+          for (let b = 0; b < 3; b++) {
+            const ang = propT + b*(Math.PI*2/3);
+            ctx.beginPath();
+            ctx.ellipse(propX, sub.y + Math.sin(ang)*9, 2.2, 7, ang, 0, Math.PI*2);
+            ctx.fill();
+          }
+
+          ctx.restore();
+        }
+
+        /* ── draw charge ── */
+        function drawCharge(c) {
+          ctx.save();
+          /* trail */
+          for (let i = 0; i < c.trail.length; i++) {
+            const t = i/c.trail.length;
+            ctx.globalAlpha = t*0.45;
+            ctx.fillStyle = '#ffee44';
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = '#ffcc00';
+            ctx.beginPath();
+            ctx.arc(c.trail[i].x, c.trail[i].y, 3.5*t, 0, Math.PI*2);
+            ctx.fill();
+          }
+          /* body */
+          ctx.shadowBlur = 22;
+          ctx.shadowColor = '#ffee44';
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#ffee44';
+          ctx.beginPath();
+          ctx.ellipse(c.x, c.y, 5.5, 10, 0, 0, Math.PI*2);
+          ctx.fill();
+          ctx.fillStyle = '#fffacc';
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.ellipse(c.x, c.y-2.5, 2.5, 4, 0, 0, Math.PI*2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        /* ── draw explosion ── */
+        function drawExplosion(e) {
+          const a = e.life/e.maxLife;
+          ctx.save();
+          /* outer ring */
+          ctx.globalAlpha = a * 0.55;
+          ctx.strokeStyle = e.small ? '#88aaff' : '#ff8800';
+          ctx.lineWidth   = e.small ? 1.5 : 3.5;
+          ctx.shadowBlur  = e.small ? 10 : 35;
+          ctx.shadowColor = e.small ? '#88aaff' : '#ff7700';
+          ctx.beginPath();
+          ctx.arc(e.x, e.y, e.r, 0, Math.PI*2);
+          ctx.stroke();
+          if (!e.small && a > 0.45) {
+            /* inner fireball */
+            ctx.globalAlpha = (a-0.45)*1.8 * 0.35;
+            ctx.fillStyle = '#ffcc33';
+            ctx.shadowColor = '#ffcc33';
+            ctx.beginPath();
+            ctx.arc(e.cx, e.cy, e.r*0.38, 0, Math.PI*2);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+
+        /* ── draw HUD ── */
+        function drawHUD() {
+          const { W, score, lives, combo, level } = g;
+          ctx.save();
+          ctx.font = 'bold 15px monospace';
+          ctx.textAlign = 'left';
+
+          /* left panel */
+          ctx.fillStyle = 'rgba(0,10,30,0.55)';
+          ctx.fillRect(0, 0, 160, 60);
+          ctx.fillStyle = '#00ccff';
+          ctx.shadowColor = '#00ccff';
+          ctx.shadowBlur = 8;
+          ctx.fillText('SCORE', 12, 20);
+          ctx.font = 'bold 20px monospace';
+          ctx.fillText(score.toLocaleString(), 12, 44);
+
+          /* right panel */
+          ctx.fillStyle = 'rgba(0,10,30,0.55)';
+          ctx.fillRect(W-160, 0, 160, 60);
+          ctx.font = 'bold 15px monospace';
+          ctx.textAlign = 'right';
+          ctx.fillStyle = '#00ccff';
+          ctx.fillText(`LV ${level}`, W-12, 20);
+          const hearts = '♥'.repeat(lives) + '♡'.repeat(Math.max(0,3-lives));
+          ctx.fillStyle = lives <= 1 ? '#ff4444' : '#ff88aa';
+          ctx.shadowColor = lives <= 1 ? '#ff4444' : '#ff88aa';
+          ctx.fillText(hearts, W-12, 44);
+
+          /* combo badge */
+          if (combo > 1) {
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 22px monospace';
+            ctx.fillStyle = '#ffee44';
+            ctx.shadowColor = '#ffee44';
+            ctx.shadowBlur = 18;
+            ctx.fillText(`×${combo} COMBO!`, W/2, 34);
+          }
+
+          ctx.restore();
+        }
+
+        /* ── draw aim line ── */
+        function drawAimLine() {
+          ctx.save();
+          ctx.globalAlpha = 0.18;
+          ctx.strokeStyle = '#ffee44';
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([5,8]);
+          ctx.shadowBlur = 6;
+          ctx.shadowColor = '#ffee44';
+          ctx.beginPath();
+          ctx.moveTo(g.shipX, SHIP_Y+12);
+          ctx.lineTo(g.shipX, g.H);
+          ctx.stroke();
+          ctx.globalAlpha = 0.12;
+          ctx.setLineDash([]);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(g.shipX, g.H-18, 16, 0, Math.PI*2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        /* ── draw particles ── */
+        function drawParticles() {
+          for (const p of g.particles) {
+            const a = p.life/p.maxLife;
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.fillStyle = p.col;
+            ctx.shadowBlur = 9;
+            ctx.shadowColor = p.col;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size*Math.max(0.2,a), 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        /* ── draw floats ── */
+        function drawFloats() {
+          for (const f of g.floats) {
+            const a = f.life/f.maxLife;
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.fillStyle = f.col;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = f.col;
+            ctx.font = `bold ${f.text.length > 5 ? 18 : 22}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.fillText(f.text, f.x, f.y);
+            ctx.restore();
+          }
+        }
+
+        /* ── main render ── */
+        function draw(ts) {
+          const { W, H } = g;
+          ctx.clearRect(0, 0, W, H);
+          drawBg(ts);
+          for (const e of g.explosions) drawExplosion(e);
+          for (const sub of g.subs) { if (sub.alive) drawSub(sub, ts); }
+          for (const c of g.charges) drawCharge(c);
+          drawAimLine();
+          drawShip();
+          drawParticles();
+          drawFloats();
+          drawHUD();
+        }
+
+        /* ── loop ── */
+        function loop(ts) {
+          if (!gameRef.current || gameRef.current.phase !== 'playing') return;
+          const gg = gameRef.current;
+          if (!gg.lastTs) gg.lastTs = ts;
+          const dt = Math.min((ts - gg.lastTs)/1000, 0.05);
+          gg.lastTs = ts;
+
+          const ok = update(dt, ts);
+          if (!ok) return; /* game over triggered */
+          if (gameRef.current.phase !== 'playing') return;
+          draw(ts);
+          rafRef.current = requestAnimationFrame(loop);
+        }
+
+        rafRef.current = requestAnimationFrame(loop);
+        return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+      }, [phase]);
+
+      /* ── render ── */
+      const btnStyle = {
+        background: 'transparent',
+        border: '2px solid #00ccff',
+        color: '#00ccff',
+        fontFamily: 'Courier New, monospace',
+        cursor: 'pointer',
+        letterSpacing: '4px',
+        textShadow: '0 0 10px #00ccff',
+        boxShadow: '0 0 22px rgba(0,204,255,0.4)',
+        transition: 'all 0.15s',
+      };
+
+      return (
+        <div style={{ position:'relative', width:'100vw', height:'100vh', overflow:'hidden', background:'#000814' }}>
+          <canvas
+            ref={canvasRef}
+            style={{ display:'block', width:'100%', height:'100%', cursor: phase==='playing' ? 'crosshair' : 'default' }}
+            onMouseMove={onMouseMove}
+            onClick={onClick}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+          />
+
+          {/* ── START ── */}
+          {phase === 'start' && (
+            <div style={{
+              position:'absolute', inset:0, display:'flex', flexDirection:'column',
+              alignItems:'center', justifyContent:'center',
+              background:'rgba(0,8,22,0.88)', fontFamily:'Courier New, monospace',
+            }}>
+              <div style={{ color:'#004488', fontSize:'clamp(11px,2.5vw,14px)', letterSpacing:'10px', marginBottom:'10px' }}>
+                ◈ DEPTH BLITZ ◈
+              </div>
+              <h1 style={{
+                fontSize:'clamp(48px,13vw,96px)', lineHeight:1.05,
+                color:'#00ccff', textShadow:'0 0 30px #00ccff, 0 0 70px #0055cc',
+                margin:'0 0 4px', letterSpacing:'3px',
+              }}>DEPTH</h1>
+              <h1 style={{
+                fontSize:'clamp(48px,13vw,96px)', lineHeight:1.05,
+                color:'#00ffff', textShadow:'0 0 30px #00ffff, 0 0 70px #00aadd',
+                margin:'0 0 26px', letterSpacing:'3px',
+              }}>BLITZ</h1>
+              <p style={{
+                color:'#7799bb', fontSize:'clamp(13px,3vw,17px)', textAlign:'center',
+                maxWidth:'420px', lineHeight:1.75, marginBottom:'22px', padding:'0 20px',
+              }}>
+                Enemy submarines are crossing the ocean.<br/>
+                Aim your destroyer and drop depth charges<br/>
+                to intercept them before they escape!<br/>
+                <span style={{color:'#ff8899'}}>3 lives — don't let any sub slip through.</span>
+              </p>
+              <div style={{ color:'#446677', fontSize:'13px', textAlign:'center', lineHeight:2, marginBottom:'30px' }}>
+                🖱 Move mouse to aim &nbsp;·&nbsp; Click / Space to fire<br/>
+                📱 Touch &amp; drag to aim, tap to drop charge
+              </div>
+              <button id="start-btn" onClick={startGame}
+                style={{ ...btnStyle, fontSize:'clamp(16px,4vw,22px)', padding:'14px 52px' }}>
+                DIVE IN
+              </button>
+              <div style={{ color:'#223344', fontFamily:'Courier New', fontSize:'12px', marginTop:'18px' }}>
+                BEST: {hiScore.toLocaleString()}
+              </div>
+            </div>
+          )}
+
+          {/* ── GAME OVER ── */}
+          {phase === 'gameover' && (
+            <div style={{
+              position:'absolute', inset:0, display:'flex', flexDirection:'column',
+              alignItems:'center', justifyContent:'center',
+              background:'rgba(0,4,14,0.92)', fontFamily:'Courier New, monospace',
+            }}>
+              <div style={{ color:'#882233', fontSize:'clamp(11px,2.5vw,14px)', letterSpacing:'6px', marginBottom:'12px' }}>
+                ▼ MISSION FAILED ▼
+              </div>
+              <h2 style={{
+                color:'#ff3355', fontSize:'clamp(28px,8vw,54px)',
+                textShadow:'0 0 22px #ff3355, 0 0 50px #cc1133',
+                letterSpacing:'2px', margin:'0 0 28px',
+              }}>HULL BREACHED</h2>
+              <div style={{ color:'#00ccff', fontSize:'clamp(20px,5.5vw,32px)', textShadow:'0 0 12px #00ccff', marginBottom:'8px' }}>
+                SCORE: {finalScore.toLocaleString()}
+              </div>
+              <div style={{ color:'#ffee44', fontSize:'clamp(14px,3.5vw,22px)', textShadow:'0 0 10px #ffee44', marginBottom:'42px' }}>
+                BEST:&nbsp; {hiScore.toLocaleString()}
+              </div>
+              <button id="start-btn" onClick={startGame}
+                style={{ ...btnStyle, fontSize:'clamp(14px,4vw,20px)', padding:'12px 44px' }}>
+                RETRY
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

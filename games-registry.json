@@ -2545,5 +2545,20 @@
     "file": "games/2026-07-21/index.html",
     "preview": "games/2026-07-21/preview.png",
     "rating": 4.7
+  },
+  {
+    "id": "2026-07-22",
+    "name": "Depth Blitz",
+    "date": "2026-07-22",
+    "description": "Enemy submarines cross the ocean at five glowing neon depths — move your destroyer with the mouse to aim, then drop depth charges and time each shot to intercept the subs before they slip off the edge! Chain consecutive kills for massive combo multipliers as subs grow faster and more numerous each level.",
+    "tagline": "Aim the destroyer. Drop the charge. Intercept the sub!",
+    "tags": ["action", "reflex", "precision", "arcade", "prediction"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse / drag to aim ship · Click / Tap / Space to drop depth charge",
+    "folder": "games/2026-07-22",
+    "file": "games/2026-07-22/index.html",
+    "preview": "games/2026-07-22/preview.png",
+    "rating": 4.6
   }
 ]
