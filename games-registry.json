@@ -2560,5 +2560,20 @@
     "file": "games/2026-07-22/index.html",
     "preview": "games/2026-07-22/preview.png",
     "rating": 4.6
+  },
+  {
+    "id": "2026-07-23",
+    "name": "Ring Rush",
+    "date": "2026-07-23",
+    "description": "Your ship orbits a glowing neon star — tap to jump between three concentric orbit rings, collecting star-shaped gems while dodging jagged red asteroids that hurtle along each ring. Master the rotational timing as speed and spawn rate escalate to test your orbital instincts.",
+    "tagline": "Orbit. Collect. Survive.",
+    "tags": ["reflex", "action", "arcade", "timing", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click / Tap / Space to jump to next orbit ring",
+    "folder": "games/2026-07-23",
+    "file": "games/2026-07-23/index.html",
+    "preview": "games/2026-07-23/preview.png",
+    "rating": 4.4
   }
 ]
