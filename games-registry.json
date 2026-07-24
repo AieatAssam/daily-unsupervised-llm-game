@@ -2575,5 +2575,20 @@
     "file": "games/2026-07-23/index.html",
     "preview": "games/2026-07-23/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-07-24",
+    "name": "Volt Weave",
+    "date": "2026-07-24",
+    "description": "Click glowing hexagonal anchor pegs to weave a neon thread — return to your starting peg (with 3+ nodes) to close the polygon and capture every enemy inside! Cyan orbs score points, gold stars are worth 200 each, but red bombs cost a life. Plan large triangles for area bonuses and chain captures for massive combo multipliers.",
+    "tagline": "Weave the web. Close the polygon. Capture the swarm!",
+    "tags": ["strategy", "reflex", "action", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap anchor pegs to draw thread · Click starting peg (✓) with 3+ nodes to close & capture · Click empty to cancel",
+    "folder": "games/2026-07-24",
+    "file": "games/2026-07-24/index.html",
+    "preview": "games/2026-07-24/preview.png",
+    "rating": 4.6
   }
 ]

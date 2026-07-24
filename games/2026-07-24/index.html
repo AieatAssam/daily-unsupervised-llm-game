@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Volt Weave</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      user-select: none;
+      touch-action: none;
+    }
+    #root { width: 100vw; height: 100vh; position: relative; }
+    canvas {
+      display: block;
+      position: absolute;
+      top: 0; left: 0;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    .overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,4,20,0.88);
+      z-index: 10;
+    }
+    .game-title {
+      font-size: clamp(40px, 9vw, 80px);
+      font-weight: bold;
+      letter-spacing: 8px;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .t-volt { color: #00ffff; text-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff; }
+    .t-weave { color: #ff00ff; text-shadow: 0 0 20px #ff00ff, 0 0 40px #ff00ff; }
+    .tagline {
+      color: #888;
+      font-size: clamp(11px, 2.5vw, 15px);
+      margin-bottom: 36px;
+      text-align: center;
+      max-width: 500px;
+      padding: 0 20px;
+      line-height: 1.6;
+    }
+    .tagline strong { color: #0ff; }
+    #start-btn {
+      background: transparent;
+      border: 2px solid #00ffff;
+      color: #00ffff;
+      font-family: 'Courier New', monospace;
+      font-size: clamp(16px, 3vw, 22px);
+      padding: 14px 48px;
+      cursor: pointer;
+      border-radius: 4px;
+      letter-spacing: 4px;
+      text-shadow: 0 0 10px #0ff;
+      box-shadow: 0 0 20px rgba(0,255,255,0.4), inset 0 0 20px rgba(0,255,255,0.05);
+      transition: all 0.2s;
+    }
+    #start-btn:hover, #start-btn:active {
+      background: rgba(0,255,255,0.12);
+      box-shadow: 0 0 40px rgba(0,255,255,0.7), inset 0 0 30px rgba(0,255,255,0.1);
+    }
+    .hint {
+      margin-top: 24px;
+      color: #444;
+      font-size: clamp(10px, 2vw, 12px);
+      text-align: center;
+      padding: 0 16px;
+      line-height: 1.8;
+    }
+    .go-score {
+      font-size: clamp(48px, 12vw, 96px);
+      color: #ff0;
+      text-shadow: 0 0 24px #ff0, 0 0 48px #ff0;
+      font-weight: bold;
+      margin: 8px 0 4px;
+    }
+    .go-title {
+      font-size: clamp(28px, 7vw, 52px);
+      color: #ff00ff;
+      text-shadow: 0 0 20px #f0f;
+      letter-spacing: 6px;
+      margin-bottom: 4px;
+    }
+    .hi-line {
+      color: #0ff;
+      font-size: clamp(12px, 2.5vw, 16px);
+      text-shadow: 0 0 8px #0ff;
+      margin-bottom: 32px;
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ── Audio ───────────────────────────────────────────────────────────────── */
+let _ac = null;
+function ac() {
+  if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+  return _ac;
+}
+function tone(freq, type, dur, vol, at = 0) {
+  try {
+    const c = ac(), o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination);
+    o.type = type; o.frequency.value = freq;
+    const t = c.currentTime + at;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.start(t); o.stop(t + dur + 0.05);
+  } catch (_) {}
+}
+const sfx = {
+  click:   () => tone(480, 'square', 0.06, 0.15),
+  extend:  () => tone(640, 'sine',   0.08, 0.18),
+  cancel:  () => tone(200, 'sine',   0.1,  0.12),
+  capture: (n) => {
+    for (let i = 0; i < Math.min(n, 6); i++) tone(300 + i * 120, 'sine', 0.18, 0.25, i * 0.06);
+    tone(800, 'sine', 0.3, 0.35, 0.25);
+  },
+  bomb:    () => { tone(180, 'sawtooth', 0.35, 0.4); tone(90, 'square', 0.5, 0.5, 0.1); },
+  over:    () => [440,370,300,240].forEach((f,i) => tone(f, 'sine', 0.3, 0.3, i * 0.18)),
+};
+
+/* ── Peg layout (normalized 0–1) ─────────────────────────────────────────── */
+const PEG_NORM = [
+  // outer ring (8)
+  {x:0.12,y:0.12},{x:0.50,y:0.07},{x:0.88,y:0.12},
+  {x:0.93,y:0.50},{x:0.88,y:0.88},{x:0.50,y:0.93},
+  {x:0.12,y:0.88},{x:0.07,y:0.50},
+  // middle ring (8)
+  {x:0.28,y:0.22},{x:0.72,y:0.22},
+  {x:0.78,y:0.50},{x:0.72,y:0.78},
+  {x:0.50,y:0.80},{x:0.28,y:0.78},
+  {x:0.22,y:0.50},{x:0.35,y:0.35},
+  // inner cluster (4)
+  {x:0.50,y:0.50},{x:0.65,y:0.35},
+  {x:0.65,y:0.65},{x:0.35,y:0.65},
+];
+
+/* ── Geometry helpers ────────────────────────────────────────────────────── */
+function pointInPoly(px, py, verts) {
+  let inside = false;
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    const xi = verts[i].x, yi = verts[i].y, xj = verts[j].x, yj = verts[j].y;
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi)
+      inside = !inside;
+  }
+  return inside;
+}
+function polyArea(verts) {
+  let a = 0;
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++)
+    a += (verts[j].x + verts[i].x) * (verts[j].y - verts[i].y);
+  return Math.abs(a / 2);
+}
+
+/* ── Game factory ────────────────────────────────────────────────────────── */
+function makeGame(W, H) {
+  const PR = Math.max(13, W * 0.036);
+  const pegs = PEG_NORM.map((p, id) => ({ id, x: p.x * W, y: p.y * H, r: PR }));
+
+  const stars = Array.from({ length: 70 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    r: Math.random() * 1.4 + 0.3,
+    speed: Math.random() * 0.4 + 0.05,
+    phase: Math.random() * Math.PI * 2,
+  }));
+
+  const g = {
+    W, H, PR, pegs, stars,
+    enemies: [], particles: [], floaters: [],
+    thread: [],        // peg indices forming current path
+    hovered: -1,
+    score: 0, lives: 3, combo: 0,
+    t: 0,
+    spawnCd: 90, spawnInterval: 90,
+    diffCd: 0, speedMult: 1.0,
+    over: false,
+  };
+
+  // Spawn initial enemies
+  for (let i = 0; i < 7; i++) spawnEnemy(g);
+  return g;
+}
+
+let eid = 0;
+function spawnEnemy(g) {
+  const r = Math.random();
+  let type, col, pts;
+  if (r < 0.13) { type = 'bomb'; col = '#ff2244'; pts = 0; }
+  else if (r < 0.30) { type = 'gold'; col = '#ffcc00'; pts = 200; }
+  else { type = 'normal'; col = '#00ffee'; pts = 60; }
+
+  const side = Math.floor(Math.random() * 4);
+  let x, y;
+  const pad = 20;
+  if (side === 0) { x = pad + Math.random() * (g.W - 2*pad); y = -15; }
+  else if (side === 1) { x = g.W + 15; y = pad + Math.random() * (g.H - 2*pad); }
+  else if (side === 2) { x = pad + Math.random() * (g.W - 2*pad); y = g.H + 15; }
+  else { x = -15; y = pad + Math.random() * (g.H - 2*pad); }
+
+  const cx = g.W * (0.25 + Math.random() * 0.5);
+  const cy = g.H * (0.25 + Math.random() * 0.5);
+  const ang = Math.atan2(cy - y, cx - x) + (Math.random() - 0.5) * 1.0;
+  const spd = 0.6 + Math.random() * 1.0;
+
+  g.enemies.push({
+    id: ++eid,
+    x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+    type, col, pts,
+    r: type === 'gold' ? 13 : (type === 'bomb' ? 11 : 10),
+    phase: Math.random() * Math.PI * 2,
+  });
+}
+
+function burst(g, x, y, col, n = 20) {
+  for (let i = 0; i < n; i++) {
+    const ang = (Math.PI * 2 * i / n) + Math.random() * 0.6;
+    const spd = 1.5 + Math.random() * 4;
+    g.particles.push({
+      x, y,
+      vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      col, life: 1,
+      decay: 0.018 + Math.random() * 0.025,
+      r: 2 + Math.random() * 3,
+    });
+  }
+}
+
+function floatText(g, x, y, text, col) {
+  g.floaters.push({ x, y, text, col, life: 1, vy: -1.5 });
+}
+
+/* ── Update ──────────────────────────────────────────────────────────────── */
+function updateGame(g) {
+  g.t++;
+
+  // Spawn
+  g.spawnCd--;
+  if (g.spawnCd <= 0 && g.enemies.length < 18) {
+    g.spawnCd = g.spawnInterval;
+    spawnEnemy(g);
+  }
+
+  // Difficulty ramp
+  g.diffCd++;
+  if (g.diffCd % 540 === 0) {
+    g.spawnInterval = Math.max(45, g.spawnInterval - 10);
+    g.speedMult = Math.min(2.8, g.speedMult + 0.12);
+  }
+
+  // Move enemies
+  for (let i = g.enemies.length - 1; i >= 0; i--) {
+    const e = g.enemies[i];
+    e.x += e.vx * g.speedMult;
+    e.y += e.vy * g.speedMult;
+    // bounce
+    if (e.x < e.r)       { e.x = e.r;       e.vx =  Math.abs(e.vx); }
+    if (e.x > g.W - e.r) { e.x = g.W - e.r; e.vx = -Math.abs(e.vx); }
+    if (e.y < e.r)       { e.y = e.r;        e.vy =  Math.abs(e.vy); }
+    if (e.y > g.H - e.r) { e.y = g.H - e.r; e.vy = -Math.abs(e.vy); }
+  }
+
+  // Particles
+  for (let i = g.particles.length - 1; i >= 0; i--) {
+    const p = g.particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.94; p.vy *= 0.94;
+    p.life -= p.decay;
+    if (p.life <= 0) g.particles.splice(i, 1);
+  }
+
+  // Floaters
+  for (let i = g.floaters.length - 1; i >= 0; i--) {
+    const f = g.floaters[i];
+    f.y += f.vy; f.life -= 0.022;
+    if (f.life <= 0) g.floaters.splice(i, 1);
+  }
+}
+
+/* ── Draw ────────────────────────────────────────────────────────────────── */
+function drawGame(canvas, g) {
+  const ctx = canvas.getContext('2d');
+  const { W, H } = g;
+  ctx.clearRect(0, 0, W, H);
+
+  // Sky
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#000a1f');
+  sky.addColorStop(1, '#000510');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,80,120,0.25)';
+  ctx.lineWidth = 0.5;
+  const gv = H / 10;
+  for (let y = 0; y < H; y += gv) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  const gh = W / 10;
+  for (let x = 0; x < W; x += gh) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  ctx.restore();
+
+  // Stars
+  g.stars.forEach(s => {
+    const b = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(g.t * s.speed * 0.05 + s.phase));
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(140,200,255,${b * 0.7})`;
+    ctx.fill();
+  });
+
+  // Thread polygon fill
+  if (g.thread.length >= 3) {
+    ctx.beginPath();
+    g.thread.forEach((idx, i) => {
+      const p = g.pegs[idx];
+      i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(0,255,255,0.07)';
+    ctx.fill();
+  }
+
+  // Thread lines
+  if (g.thread.length >= 2) {
+    ctx.save();
+    ctx.shadowColor = '#00ffff';
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    g.thread.forEach((idx, i) => {
+      const p = g.pegs[idx];
+      i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Dashed preview to hovered peg
+  if (g.thread.length >= 1 && g.hovered >= 0 && !g.thread.includes(g.hovered)) {
+    const last = g.pegs[g.thread[g.thread.length - 1]];
+    const hov = g.pegs[g.hovered];
+    ctx.save();
+    ctx.setLineDash([6, 5]);
+    ctx.strokeStyle = 'rgba(0,255,255,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(hov.x, hov.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // Enemies
+  g.enemies.forEach(e => {
+    const pulse = 0.82 + 0.18 * Math.sin(g.t * 0.09 + e.phase);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.r * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = e.col;
+    ctx.shadowColor = e.col;
+    ctx.shadowBlur = 18;
+    ctx.fill();
+    ctx.restore();
+
+    if (e.type === 'bomb') {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(e.x - 4, e.y - 4); ctx.lineTo(e.x + 4, e.y + 4);
+      ctx.moveTo(e.x + 4, e.y - 4); ctx.lineTo(e.x - 4, e.y + 4);
+      ctx.stroke();
+      ctx.restore();
+    } else if (e.type === 'gold') {
+      ctx.save();
+      ctx.fillStyle = '#fff8';
+      ctx.font = `bold ${Math.floor(e.r * 0.9)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('★', e.x, e.y + 1);
+      ctx.restore();
+    }
+  });
+
+  // Pegs
+  g.pegs.forEach((p, i) => {
+    const inThread = g.thread.includes(i);
+    const isFirst = g.thread[0] === i && g.thread.length > 0;
+    const isHov = g.hovered === i;
+
+    const glowCol = isFirst ? '#ff44ff' : (inThread ? '#00ffff' : (isHov ? '#66ddff' : '#006688'));
+    const fillCol = isFirst ? 'rgba(160,0,200,0.25)' : (inThread ? 'rgba(0,100,140,0.35)' : (isHov ? 'rgba(0,80,100,0.2)' : 'rgba(0,20,30,0.5)'));
+
+    ctx.save();
+    ctx.shadowColor = glowCol;
+    ctx.shadowBlur = inThread || isFirst ? 22 : (isHov ? 12 : 5);
+
+    // Hexagon
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const a = k * Math.PI / 3 + Math.PI / 6;
+      const r = p.r * 0.82;
+      k === 0 ? ctx.moveTo(p.x + r * Math.cos(a), p.y + r * Math.sin(a))
+              : ctx.lineTo(p.x + r * Math.cos(a), p.y + r * Math.sin(a));
+    }
+    ctx.closePath();
+    ctx.fillStyle = fillCol;
+    ctx.fill();
+    ctx.strokeStyle = glowCol;
+    ctx.lineWidth = isFirst || inThread ? 2 : 1.5;
+    ctx.stroke();
+
+    // Center dot
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, inThread || isFirst ? 4 : 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = glowCol;
+    ctx.fill();
+
+    ctx.restore();
+
+    // "✓ CLOSE" label above first peg when closeable
+    if (isFirst && g.thread.length >= 3) {
+      ctx.save();
+      ctx.fillStyle = '#ff44ff';
+      ctx.shadowColor = '#ff44ff';
+      ctx.shadowBlur = 10;
+      ctx.font = `bold ${Math.max(9, p.r * 0.65)}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('✓ CLOSE', p.x, p.y - p.r - 4);
+      ctx.restore();
+    }
+  });
+
+  // Particles
+  ctx.save();
+  g.particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = p.col;
+    ctx.fill();
+  });
+  ctx.restore();
+
+  // Floaters
+  g.floaters.forEach(f => {
+    ctx.save();
+    ctx.globalAlpha = f.life;
+    ctx.fillStyle = f.col;
+    ctx.shadowColor = f.col;
+    ctx.shadowBlur = 8;
+    ctx.font = `bold ${Math.max(13, W * 0.025)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(f.text, f.x, f.y);
+    ctx.restore();
+  });
+
+  // HUD
+  const hudY = Math.max(30, H * 0.04);
+  ctx.save();
+  ctx.font = `bold ${Math.max(14, W * 0.022)}px monospace`;
+  // Score (left)
+  ctx.fillStyle = '#ff0';
+  ctx.shadowColor = '#ff0';
+  ctx.shadowBlur = 10;
+  ctx.textAlign = 'left';
+  ctx.fillText(`SCORE  ${g.score}`, W * 0.03, hudY);
+  // Lives (center)
+  ctx.fillStyle = '#f0f';
+  ctx.shadowColor = '#f0f';
+  ctx.textAlign = 'center';
+  const hearts = '♥'.repeat(Math.max(0, g.lives)) + '♡'.repeat(Math.max(0, 3 - g.lives));
+  ctx.fillText(hearts, W * 0.5, hudY);
+  // Combo (right)
+  if (g.combo > 1) {
+    ctx.fillStyle = '#0ff';
+    ctx.shadowColor = '#0ff';
+    ctx.textAlign = 'right';
+    ctx.fillText(`COMBO ×${g.combo}`, W * 0.97, hudY);
+  }
+  ctx.restore();
+
+  // Instruction strip at bottom
+  if (g.t < 300) {
+    const alpha = g.t < 240 ? 1 : 1 - (g.t - 240) / 60;
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.65;
+    ctx.fillStyle = '#0ff';
+    ctx.font = `${Math.max(10, W * 0.016)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('Click pegs to draw · Click starting peg (3+ nodes) to capture · Click empty to cancel', W / 2, H - 18);
+    ctx.restore();
+  }
+}
+
+/* ── App ─────────────────────────────────────────────────────────────────── */
+function App() {
+  const canvasRef = useRef(null);
+  const gameRef  = useRef(null);
+  const stateRef = useRef('title'); // 'title' | 'playing' | 'dead'
+  const rafRef   = useRef(null);
+
+  const [screen,   setScreen]   = useState('title');
+  const [goScore,  setGoScore]  = useState(0);
+  const [hiScore,  setHiScore]  = useState(0);
+
+  const LS_KEY = 'voltWeaveHi';
+
+  useEffect(() => {
+    setHiScore(parseInt(localStorage.getItem(LS_KEY) || '0'));
+  }, []);
+
+  // Canvas resize
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const resize = () => {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  /* ── Game loop ─────────────────────────────────────────────────────────── */
+  const startGame = useCallback(() => {
+    const canvas = canvasRef.current;
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const g = makeGame(canvas.width, canvas.height);
+    gameRef.current = g;
+    stateRef.current = 'playing';
+    setScreen('playing');
+
+    // Ensure localStorage key exists
+    if (!localStorage.getItem(LS_KEY)) localStorage.setItem(LS_KEY, '0');
+
+    cancelAnimationFrame(rafRef.current);
+    const loop = () => {
+      const g = gameRef.current;
+      if (!g || stateRef.current !== 'playing') return;
+      updateGame(g);
+      drawGame(canvas, g);
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+  }, []);
+
+  /* ── Input ─────────────────────────────────────────────────────────────── */
+  const resolveClick = useCallback((clientX, clientY) => {
+    if (stateRef.current !== 'playing') return;
+    const canvas = canvasRef.current;
+    const g = gameRef.current;
+    if (!canvas || !g) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width  / rect.width;
+    const sy = canvas.height / rect.height;
+    const mx = (clientX - rect.left) * sx;
+    const my = (clientY - rect.top)  * sy;
+
+    // Find nearest peg in hit radius
+    let nearest = -1, bestD = Infinity;
+    g.pegs.forEach((p, i) => {
+      const d = Math.hypot(p.x - mx, p.y - my);
+      if (d < p.r * 1.6 && d < bestD) { nearest = i; bestD = d; }
+    });
+
+    if (nearest < 0) {
+      // Miss — cancel thread
+      if (g.thread.length > 0) { sfx.cancel(); g.thread = []; }
+      return;
+    }
+
+    sfx.click();
+
+    if (g.thread.length === 0) {
+      // Start thread
+      g.thread = [nearest];
+      return;
+    }
+
+    if (nearest === g.thread[0] && g.thread.length >= 3) {
+      // Close loop — capture!
+      const verts = g.thread.map(idx => ({ x: g.pegs[idx].x, y: g.pegs[idx].y }));
+      const area  = polyArea(verts);
+
+      const inside  = g.enemies.filter(e => pointInPoly(e.x, e.y, verts));
+      const scored  = inside.filter(e => e.type !== 'bomb');
+      const bombs   = inside.filter(e => e.type === 'bomb');
+
+      const cx = verts.reduce((s, v) => s + v.x, 0) / verts.length;
+      const cy = verts.reduce((s, v) => s + v.y, 0) / verts.length;
+
+      if (scored.length > 0) {
+        g.combo++;
+        const areaBonus  = Math.min(2.5, area / (g.W * g.H * 0.06));
+        const comboMult  = 1 + (g.combo - 1) * 0.5;
+        const rawPts     = scored.reduce((s, e) => s + e.pts, 0);
+        const pts        = Math.round(rawPts * (1 + areaBonus * 0.4) * comboMult);
+        g.score += pts;
+        burst(g, cx, cy, '#00ffff', 30);
+        burst(g, cx, cy, '#ff00ff', 18);
+        scored.forEach(e => burst(g, e.x, e.y, e.col, 15));
+        floatText(g, cx, cy - 20, `+${pts}${g.combo > 1 ? ` ×${g.combo}` : ''}`, '#ff0');
+        sfx.capture(scored.length);
+        const hs = Math.max(g.score, parseInt(localStorage.getItem(LS_KEY) || '0'));
+        localStorage.setItem(LS_KEY, String(hs));
+        setHiScore(hs);
+      } else {
+        g.combo = 0;
+      }
+
+      if (bombs.length > 0) {
+        g.lives -= bombs.length;
+        g.combo = 0;
+        bombs.forEach(e => burst(g, e.x, e.y, '#ff2244', 28));
+        sfx.bomb();
+        floatText(g, cx, cy - 20, `BOMB! -${bombs.length}`, '#ff2244');
+
+        if (g.lives <= 0) {
+          g.lives = 0;
+          stateRef.current = 'dead';
+          cancelAnimationFrame(rafRef.current);
+          sfx.over();
+          const finalHs = Math.max(g.score, parseInt(localStorage.getItem(LS_KEY) || '0'));
+          localStorage.setItem(LS_KEY, String(finalHs));
+          setGoScore(g.score);
+          setHiScore(finalHs);
+          setScreen('dead');
+          g.thread = [];
+          // Draw final frame
+          drawGame(canvas, g);
+          return;
+        }
+      }
+
+      // Remove captured enemies
+      const captured = new Set([...scored, ...bombs].map(e => e.id));
+      g.enemies = g.enemies.filter(e => !captured.has(e.id));
+      g.thread = [];
+      return;
+    }
+
+    if (g.thread.includes(nearest)) return; // already in thread, ignore
+    // Extend thread
+    g.thread.push(nearest);
+    sfx.extend();
+  }, []);
+
+  const handleClick = useCallback((e) => resolveClick(e.clientX, e.clientY), [resolveClick]);
+
+  const handleTouch = useCallback((e) => {
+    e.preventDefault();
+    resolveClick(e.touches[0].clientX, e.touches[0].clientY);
+  }, [resolveClick]);
+
+  const handleMouseMove = useCallback((e) => {
+    if (stateRef.current !== 'playing') return;
+    const g = gameRef.current;
+    const canvas = canvasRef.current;
+    if (!g || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+    const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
+    let nearest = -1, bestD = Infinity;
+    g.pegs.forEach((p, i) => {
+      const d = Math.hypot(p.x - mx, p.y - my);
+      if (d < p.r * 2.2 && d < bestD) { nearest = i; bestD = d; }
+    });
+    g.hovered = nearest;
+  }, []);
+
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        onClick={handleClick}
+        onMouseMove={handleMouseMove}
+        onTouchStart={handleTouch}
+      />
+
+      {screen === 'title' && (
+        <div className="overlay">
+          <div className="game-title">
+            <span className="t-volt">VOLT</span>&nbsp;<span className="t-weave">WEAVE</span>
+          </div>
+          <div className="tagline">
+            Click anchor pegs to draw a neon thread web.<br />
+            <strong>Return to the first peg</strong> (3+ nodes) to close the polygon<br />
+            and capture all enemies inside for points!<br />
+            Avoid <span style={{color:'#f44'}}>red bombs</span> — they cost a life.
+          </div>
+          <button id="start-btn" onClick={startGame}>PLAY</button>
+          <div className="hint">
+            Click pegs → draw thread · Click first peg (✓) to close &amp; capture · Click empty to cancel<br />
+            Mobile: Tap pegs &nbsp;|&nbsp; <span style={{color:'#ffcc00'}}>★ gold</span> = 200pts &nbsp;
+            <span style={{color:'#0ff'}}>● cyan</span> = 60pts &nbsp;
+            <span style={{color:'#f44'}}>✕ bomb</span> = -1 life
+          </div>
+        </div>
+      )}
+
+      {screen === 'dead' && (
+        <div className="overlay">
+          <div className="go-title">GAME OVER</div>
+          <div className="go-score">{goScore.toLocaleString()}</div>
+          <div className="hi-line">BEST&nbsp;&nbsp;{hiScore.toLocaleString()}</div>
+          <button id="start-btn" onClick={startGame}>PLAY AGAIN</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
