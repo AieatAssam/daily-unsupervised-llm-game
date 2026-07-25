@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Barrage</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; background:#030310; overflow:hidden; user-select:none; font-family:'Courier New',monospace; }
+  #root { width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  button { outline:none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ── Constants ───────────────────────────────────────────────── */
+const LANES       = 5;
+const CW          = 600;   // canvas logical width
+const LANE_H      = 80;    // px per lane
+const CH          = LANES * LANE_H;   // 400
+const CANNON_X    = 42;
+const DEATH_X     = CANNON_X - 12;   // enemy reaches base line
+const SPAWN_X     = CW + 20;
+const COOLDOWN_MS = 1300;
+const LS_KEY      = 'barrageHi';
+
+/* ── Enemy types ─────────────────────────────────────────────── */
+const ETYPES = {
+  grunt:   { hp:1, spd:0.75, w:18, h:18, color:'#00ffff',  pts:10 },
+  speeder: { hp:1, spd:2.2,  w:13, h:13, color:'#ff8800',  pts:20 },
+  tank:    { hp:4, spd:0.42, w:27, h:27, color:'#ff44ff',  pts:50 },
+  bomber:  { hp:2, spd:1.1,  w:20, h:20, color:'#ffff44',  pts:30 },
+};
+
+/* ── Sound ───────────────────────────────────────────────────── */
+function makeAudio() {
+  try { return new (window.AudioContext || window.webkitAudioContext)(); }
+  catch { return null; }
+}
+function playSound(ctx, type) {
+  if (!ctx) return;
+  const g = ctx.createGain();
+  g.connect(ctx.destination);
+  const o = ctx.createOscillator();
+  o.connect(g);
+  if (type === 'fire') {
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(880, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.08);
+    g.gain.setValueAtTime(0.12, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+    o.start(); o.stop(ctx.currentTime + 0.1);
+  } else if (type === 'kill') {
+    o.type = 'square'; o.frequency.setValueAtTime(660, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.06);
+    g.gain.setValueAtTime(0.15, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+    o.start(); o.stop(ctx.currentTime + 0.12);
+  } else if (type === 'hit') {
+    o.type = 'triangle'; o.frequency.setValueAtTime(440, ctx.currentTime);
+    g.gain.setValueAtTime(0.1, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    o.start(); o.stop(ctx.currentTime + 0.08);
+  } else if (type === 'die') {
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(300, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.35);
+    g.gain.setValueAtTime(0.2, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    o.start(); o.stop(ctx.currentTime + 0.4);
+  } else if (type === 'over') {
+    [300, 240, 180, 120].forEach((f, i) => {
+      const oo = ctx.createOscillator(), gg = ctx.createGain();
+      oo.connect(gg); gg.connect(ctx.destination);
+      oo.type = 'sawtooth'; oo.frequency.value = f;
+      const t = ctx.currentTime + i * 0.18;
+      gg.gain.setValueAtTime(0.18, t);
+      gg.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      oo.start(t); oo.stop(t + 0.25);
+    });
+  }
+}
+
+/* ── Particle helpers ────────────────────────────────────────── */
+let _pid = 0;
+function burst(arr, x, y, color, n = 20) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = 1.5 + Math.random() * 4.5;
+    arr.push({ id: _pid++, x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+               life: 1, color, sz: 2 + Math.random()*3, t: 'dot' });
+  }
+}
+function floatText(arr, x, y, txt, color) {
+  arr.push({ id: _pid++, x, y, vx: 0, vy: -1.4, life: 1, color, txt, t: 'txt' });
+}
+
+/* ── Draw helpers ────────────────────────────────────────────── */
+const NUM_COLORS = ['', '#00ffff','#44ff88','#ffaa00','#ff4466','#ff2200','#ff00ff','#ffffff','#aaaaaa'];
+
+function drawEnemy(ctx, e, ts) {
+  const cy = e.lane * LANE_H + LANE_H / 2;
+  const dangerPulse = e.x < 120;
+  const glow = dangerPulse ? (0.5 + 0.5 * Math.sin(ts * 0.012)) * 25 + 8 : 12;
+
+  // HP bar
+  if (e.maxHp > 1) {
+    const bw = e.w + 6;
+    ctx.fillStyle = '#220000';
+    ctx.fillRect(e.x - bw/2, cy - e.h/2 - 10, bw, 5);
+    ctx.fillStyle = e.color;
+    ctx.fillRect(e.x - bw/2, cy - e.h/2 - 10, bw * (e.hp / e.maxHp), 5);
+  }
+
+  ctx.shadowBlur = glow;
+  ctx.shadowColor = dangerPulse ? '#ff2200' : e.color;
+  ctx.fillStyle = dangerPulse ? '#ff5500' : e.color;
+
+  if (e.type === 'grunt') {
+    ctx.fillRect(e.x - e.w/2, cy - e.h/2, e.w, e.h);
+  } else if (e.type === 'speeder') {
+    ctx.beginPath();
+    ctx.moveTo(e.x - e.w/2, cy);
+    ctx.lineTo(e.x + e.w/2, cy - e.h/2);
+    ctx.lineTo(e.x + e.w/2, cy + e.h/2);
+    ctx.closePath(); ctx.fill();
+  } else if (e.type === 'tank') {
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const a = (k/6)*Math.PI*2 - Math.PI/6, r = e.w/2;
+      k===0 ? ctx.moveTo(e.x+r*Math.cos(a), cy+r*Math.sin(a))
+            : ctx.lineTo(e.x+r*Math.cos(a), cy+r*Math.sin(a));
+    }
+    ctx.closePath(); ctx.fill();
+  } else { // bomber
+    ctx.beginPath();
+    ctx.moveTo(e.x, cy - e.h/2);
+    ctx.lineTo(e.x + e.w/2, cy);
+    ctx.lineTo(e.x, cy + e.h/2);
+    ctx.lineTo(e.x - e.w/2, cy);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+/* ── Main App ────────────────────────────────────────────────── */
+function App() {
+  const canvasRef  = useRef(null);
+  const gRef       = useRef(null);   // game state
+  const rafRef     = useRef(null);
+  const audioRef   = useRef(null);
+
+  const [phase,    setPhase]    = useState('start');
+  const [uiScore,  setUiScore]  = useState(0);
+  const [uiHi,     setUiHi]     = useState(() => parseInt(localStorage.getItem(LS_KEY)||'0'));
+  const [uiLives,  setUiLives]  = useState(3);
+  const [uiCombo,  setUiCombo]  = useState(0);
+  const [uiLevel,  setUiLevel]  = useState(1);
+  const [uiCools,  setUiCools]  = useState([0,0,0,0,0]);
+
+  /* scale canvas to fit viewport */
+  const scale = Math.min(1,
+    (typeof window !== 'undefined' ? window.innerWidth  : CW) / (CW + 20),
+    (typeof window !== 'undefined' ? window.innerHeight : CH) / (CH + 160)
+  );
+
+  /* ── init game state ─────────────────────────────────────── */
+  function newGame() {
+    if (!audioRef.current) audioRef.current = makeAudio();
+    let eid = 0;
+    gRef.current = {
+      enemies:      [],
+      blasts:       [],
+      particles:    [],
+      cooldowns:    [0,0,0,0,0],
+      lives:        3,
+      score:        0,
+      combo:        0,
+      comboTimer:   0,
+      level:        1,
+      spawnTimer:   1800,
+      spawnInterval:1800,
+      totalMs:      0,
+      lastTs:       null,
+      dead:         false,
+      nextEid:      () => eid++,
+    };
+    setPhase('playing');
+    setUiScore(0); setUiLives(3); setUiCombo(0); setUiLevel(1);
+    setUiCools([0,0,0,0,0]);
+  }
+
+  /* ── fire a lane ─────────────────────────────────────────── */
+  const fireLane = useCallback((lane) => {
+    if (phase !== 'playing') return;
+    const g = gRef.current;
+    if (!g || g.dead || lane < 0 || lane >= LANES) return;
+    if (g.cooldowns[lane] > 0) return;
+
+    const targets = g.enemies.filter(e => e.lane === lane).sort((a,b) => a.x - b.x);
+    if (targets.length === 0) { playSound(audioRef.current, 'fire'); return; }
+
+    const tgt = targets[0];
+    tgt.hp -= 1;
+    const cy = lane * LANE_H + LANE_H / 2;
+    g.blasts.push({ lane, x1:CANNON_X, y1:cy, x2:tgt.x, y2:cy, life:1 });
+    playSound(audioRef.current, 'fire');
+
+    if (tgt.hp <= 0) {
+      g.enemies = g.enemies.filter(e => e !== tgt);
+      burst(g.particles, tgt.x, cy, tgt.color, 22);
+      const pts = tgt.pts * (1 + Math.min(g.combo, 9));
+      floatText(g.particles, tgt.x, cy - 14, `+${pts}`, tgt.color);
+      g.score += pts;
+      g.combo++;
+      g.comboTimer = 2500;
+      playSound(audioRef.current, 'kill');
+      setUiScore(g.score);
+      setUiCombo(g.combo);
+    } else {
+      playSound(audioRef.current, 'hit');
+      burst(g.particles, tgt.x, cy, '#ffffff', 8);
+    }
+
+    g.cooldowns[lane] = COOLDOWN_MS;
+  }, [phase]);
+
+  /* ── key listener ─────────────────────────────────────────── */
+  useEffect(() => {
+    function onKey(e) {
+      const k = e.key;
+      if (k >= '1' && k <= '5') { e.preventDefault(); fireLane(parseInt(k)-1); }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fireLane]);
+
+  /* ── click / touch ─────────────────────────────────────────── */
+  function getClickLane(clientY) {
+    const canvas = canvasRef.current;
+    if (!canvas) return -1;
+    const rect = canvas.getBoundingClientRect();
+    const py = (clientY - rect.top) * (CH / rect.height);
+    return Math.floor(py / LANE_H);
+  }
+  function handleClick(e) { fireLane(getClickLane(e.clientY)); }
+  function handleTouch(e) {
+    e.preventDefault();
+    fireLane(getClickLane(e.touches[0].clientY));
+  }
+
+  /* ── RAF game loop ─────────────────────────────────────────── */
+  useEffect(() => {
+    if (phase !== 'playing') { cancelAnimationFrame(rafRef.current); return; }
+    const canvas = canvasRef.current;
+    const ctx    = canvas.getContext('2d');
+    const g      = gRef.current;
+    g.lastTs     = null;
+
+    function pickType(lv) {
+      const r = Math.random();
+      if (lv < 3) return r < 0.75 ? 'grunt' : 'speeder';
+      if (lv < 6) return r < 0.45 ? 'grunt' : r < 0.75 ? 'speeder' : 'tank';
+      return r < 0.25 ? 'grunt' : r < 0.55 ? 'speeder' : r < 0.8 ? 'tank' : 'bomber';
+    }
+
+    function spawnEnemy() {
+      const lane = Math.floor(Math.random() * LANES);
+      const type = pickType(g.level);
+      const def  = ETYPES[type];
+      g.enemies.push({
+        id: g.nextEid(), lane, x: SPAWN_X, type,
+        hp: def.hp, maxHp: def.hp,
+        spd: def.spd * (1 + (g.level-1)*0.12),
+        w: def.w, h: def.h, color: def.color, pts: def.pts,
+      });
+    }
+
+    function loop(ts) {
+      if (!g.lastTs) g.lastTs = ts;
+      const dt = Math.min(ts - g.lastTs, 50);
+      g.lastTs = ts;
+      if (g.dead) return;
+
+      g.totalMs += dt;
+
+      /* level up */
+      const newLv = 1 + Math.floor(g.totalMs / 25000);
+      if (newLv !== g.level && newLv <= 12) {
+        g.level = newLv;
+        g.spawnInterval = Math.max(500, 1800 - newLv * 120);
+        setUiLevel(newLv);
+      }
+
+      /* cooldowns */
+      for (let i = 0; i < LANES; i++)
+        if (g.cooldowns[i] > 0) g.cooldowns[i] = Math.max(0, g.cooldowns[i]-dt);
+      setUiCools([...g.cooldowns]);
+
+      /* combo decay */
+      if (g.comboTimer > 0) {
+        g.comboTimer -= dt;
+        if (g.comboTimer <= 0) { g.combo = 0; g.comboTimer = 0; setUiCombo(0); }
+      }
+
+      /* spawn */
+      g.spawnTimer -= dt;
+      if (g.spawnTimer <= 0) {
+        spawnEnemy();
+        g.spawnTimer = g.spawnInterval * (0.6 + Math.random()*0.8);
+      }
+
+      /* move enemies */
+      for (const e of g.enemies) e.x -= e.spd * (dt/16.67);
+
+      /* enemies reaching base */
+      const reached = g.enemies.filter(e => e.x <= DEATH_X);
+      for (const e of reached) {
+        g.lives--;
+        g.combo = 0; g.comboTimer = 0;
+        const cy = e.lane * LANE_H + LANE_H/2;
+        burst(g.particles, CANNON_X + 10, cy, '#ff2200', 25);
+        floatText(g.particles, CANNON_X + 30, cy - 14, '-LIFE!', '#ff2200');
+        playSound(audioRef.current, 'die');
+      }
+      g.enemies = g.enemies.filter(e => e.x > DEATH_X);
+
+      if (g.lives <= 0) {
+        g.dead = true;
+        const hs = parseInt(localStorage.getItem(LS_KEY)||'0');
+        const newHs = Math.max(g.score, hs);
+        localStorage.setItem(LS_KEY, newHs.toString());
+        playSound(audioRef.current, 'over');
+        setUiHi(newHs); setUiScore(g.score); setUiLives(0); setUiCombo(0);
+        setPhase('gameover');
+        return;
+      }
+      setUiLives(g.lives);
+
+      /* update particles */
+      g.blasts = g.blasts.filter(b => b.life > 0);
+      for (const b of g.blasts) b.life -= dt / 120;
+      g.particles = g.particles.filter(p => p.life > 0);
+      for (const p of g.particles) {
+        p.x += p.vx * (dt/16.67); p.y += p.vy * (dt/16.67);
+        if (p.t === 'dot') { p.vy += 0.09; p.life -= dt/900; }
+        else               { p.life -= dt/1800; }
+      }
+
+      /* ── DRAW ──────────────────────────────────────────────── */
+      ctx.clearRect(0, 0, CW, CH);
+
+      /* Lane backgrounds with subtle gradient */
+      for (let i = 0; i < LANES; i++) {
+        const y0 = i * LANE_H;
+        ctx.fillStyle = i%2===0 ? '#02020f' : '#02030e';
+        ctx.fillRect(0, y0, CW, LANE_H);
+
+        /* lane separator */
+        if (i > 0) {
+          ctx.strokeStyle = '#0a1a30';
+          ctx.lineWidth = 1; ctx.setLineDash([]);
+          ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(CW, y0); ctx.stroke();
+        }
+
+        /* lane side rails glow */
+        const grad = ctx.createLinearGradient(0, y0, 80, y0);
+        grad.addColorStop(0,   'rgba(0,150,255,0.08)');
+        grad.addColorStop(1,   'rgba(0,150,255,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, y0+2, 100, LANE_H-4);
+      }
+
+      /* base danger line */
+      ctx.strokeStyle = 'rgba(255,30,30,0.35)';
+      ctx.lineWidth = 2; ctx.setLineDash([6,5]);
+      ctx.beginPath(); ctx.moveTo(DEATH_X, 0); ctx.lineTo(DEATH_X, CH); ctx.stroke();
+      ctx.setLineDash([]);
+
+      /* cannons */
+      for (let i = 0; i < LANES; i++) {
+        const cy = i * LANE_H + LANE_H/2;
+        const cr = g.cooldowns[i] / COOLDOWN_MS;
+        const ready = cr <= 0;
+
+        /* outer ring (cooldown arc) */
+        if (!ready) {
+          ctx.strokeStyle = '#004466';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(CANNON_X, cy, 18, -Math.PI/2, -Math.PI/2 + (1-cr)*Math.PI*2);
+          ctx.stroke();
+        }
+
+        /* body */
+        ctx.shadowBlur = ready ? 20 : 4;
+        ctx.shadowColor = ready ? '#00ffff' : '#003344';
+        ctx.fillStyle = ready ? '#00ddff' : '#004455';
+        ctx.beginPath();
+        ctx.arc(CANNON_X, cy, 13, 0, Math.PI*2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        /* barrel pointing right */
+        ctx.fillStyle = ready ? '#00ffff' : '#005566';
+        ctx.fillRect(CANNON_X+10, cy-3, 14, 6);
+
+        /* lane number */
+        ctx.fillStyle = ready ? '#001a1a' : '#003344';
+        ctx.font = 'bold 10px Courier New';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(i+1), CANNON_X, cy);
+      }
+
+      /* laser blasts */
+      for (const b of g.blasts) {
+        ctx.globalAlpha = b.life;
+        ctx.strokeStyle = '#ffffff';
+        ctx.shadowBlur = 18; ctx.shadowColor = '#00ffff';
+        ctx.lineWidth = 2 + b.life * 3;
+        ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
+        ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+      }
+
+      /* enemies */
+      for (const e of g.enemies) drawEnemy(ctx, e, ts);
+
+      /* particles */
+      for (const p of g.particles) {
+        ctx.globalAlpha = p.life;
+        if (p.t === 'dot') {
+          ctx.fillStyle = p.color; ctx.shadowBlur = 9; ctx.shadowColor = p.color;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, Math.PI*2); ctx.fill();
+          ctx.shadowBlur = 0;
+        } else {
+          ctx.fillStyle = p.color; ctx.shadowBlur = 11; ctx.shadowColor = p.color;
+          ctx.font = 'bold 13px Courier New';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(p.txt, p.x, p.y); ctx.shadowBlur = 0;
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      /* right-edge enemy spawning glow */
+      const rGrad = ctx.createLinearGradient(CW-40, 0, CW, 0);
+      rGrad.addColorStop(0, 'rgba(255,40,40,0)');
+      rGrad.addColorStop(1, 'rgba(255,40,40,0.12)');
+      ctx.fillStyle = rGrad;
+      ctx.fillRect(CW-40, 0, 40, CH);
+
+      rafRef.current = requestAnimationFrame(loop);
+    }
+
+    rafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [phase]);
+
+  /* ── Render ──────────────────────────────────────────────── */
+  const cw = Math.round(CW * scale);
+  const ch = Math.round(CH * scale);
+
+  if (phase === 'start') {
+    return (
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:18}}>
+        <div style={{fontFamily:'Courier New',fontWeight:'bold',fontSize:Math.min(56,window.innerWidth*0.14),
+          color:'#00ffff',textShadow:'0 0 30px #00ffff,0 0 70px #0055ff',letterSpacing:10}}>BARRAGE</div>
+        <div style={{color:'#4488bb',fontSize:13,textAlign:'center',maxWidth:320,lineHeight:1.8}}>
+          5 lanes of neon enemies march on your base!<br/>
+          <span style={{color:'#00ffff'}}>Click a lane</span> or press <span style={{color:'#ff8800'}}>1–5</span> to fire that cannon.<br/>
+          Cannons need time to reload — <span style={{color:'#ffff44'}}>prioritize wisely!</span><br/>
+          Chain kills for COMBO×10 multipliers!
+        </div>
+        <div style={{display:'flex',gap:18,fontSize:12,marginTop:4}}>
+          <span style={{color:'#00ffff'}}>■ Grunt  10pt</span>
+          <span style={{color:'#ff8800'}}>▶ Speed  20pt</span>
+          <span style={{color:'#ff44ff'}}>⬡ Tank   50pt</span>
+          <span style={{color:'#ffff44'}}>◆ Bomb   30pt</span>
+        </div>
+        <button id="start-btn" onClick={newGame}
+          style={{marginTop:8,padding:'13px 36px',background:'transparent',border:'2px solid #00ffff',
+            color:'#00ffff',fontFamily:'Courier New',fontSize:16,fontWeight:'bold',cursor:'pointer',
+            letterSpacing:3,boxShadow:'0 0 20px #00ffff55',borderRadius:3}}>
+          START BARRAGE
+        </button>
+        {uiHi > 0 && <div style={{color:'#ffaa00',fontSize:13}}>BEST: {uiHi.toLocaleString()}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:8}}>
+
+      {/* HUD */}
+      <div style={{width:cw,display:'flex',justifyContent:'space-between',alignItems:'center',
+        padding:'4px 6px',background:'rgba(0,0,0,0.4)',border:'1px solid #0a2040',borderRadius:4}}>
+        <div>
+          <span style={{color:'#4488aa',fontSize:11,letterSpacing:1}}>SCORE</span>
+          <span style={{color:'#00ffff',fontSize:20,fontWeight:'bold',marginLeft:6}}>{uiScore.toLocaleString()}</span>
+        </div>
+        <div style={{display:'flex',gap:4}}>
+          {Array.from({length:3},(_,i)=>(
+            <span key={i} style={{fontSize:20,color:i<uiLives?'#ff4466':'#22113a'}}>♥</span>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:12,alignItems:'center'}}>
+          {uiCombo > 0 &&
+            <span style={{color:'#ff8800',fontWeight:'bold',fontSize:14,
+              textShadow:'0 0 10px #ff8800'}}>×{Math.min(uiCombo+1,10)}</span>}
+          <span style={{color:'#ffaa44',fontSize:12}}>LV {uiLevel}</span>
+          <span style={{color:'#446677',fontSize:11}}>HI:{uiHi.toLocaleString()}</span>
+        </div>
+      </div>
+
+      {/* Canvas */}
+      <div style={{position:'relative'}}>
+        <canvas ref={canvasRef} width={CW} height={CH}
+          style={{display:'block',width:cw,height:ch,cursor:'crosshair',
+            border:'1px solid #0a2244',borderRadius:3,
+            boxShadow:'0 0 25px rgba(0,120,255,0.2)'}}
+          onClick={handleClick}
+          onTouchStart={handleTouch}
+        />
+
+        {/* Game Over overlay */}
+        {phase === 'gameover' && (
+          <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',
+            alignItems:'center',justifyContent:'center',background:'rgba(3,3,20,0.88)',
+            borderRadius:3,gap:14}}>
+            <div style={{color:'#ff3355',fontSize:36,fontWeight:'bold',fontFamily:'Courier New',
+              textShadow:'0 0 25px #ff2244',letterSpacing:4}}>OVERRUN</div>
+            <div style={{color:'#00ffff',fontSize:24,fontWeight:'bold'}}>{uiScore.toLocaleString()} pts</div>
+            {uiScore >= uiHi && uiScore > 0 &&
+              <div style={{color:'#ffaa00',fontSize:14}}>✦ NEW HIGH SCORE ✦</div>}
+            <div style={{color:'#556677',fontSize:13}}>Best: {uiHi.toLocaleString()}</div>
+            <button id="start-btn" onClick={newGame}
+              style={{marginTop:6,padding:'11px 30px',background:'transparent',
+                border:'2px solid #00ffff',color:'#00ffff',fontFamily:'Courier New',
+                fontSize:15,fontWeight:'bold',cursor:'pointer',letterSpacing:2,
+                boxShadow:'0 0 18px #00ffff44',borderRadius:3}}>
+              TRY AGAIN
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Lane fire buttons (mobile-friendly) */}
+      <div style={{width:cw,display:'flex',gap:6}}>
+        {Array.from({length:LANES},(_,i)=>{
+          const cr = uiCools[i] / COOLDOWN_MS;
+          const ready = cr <= 0;
+          return (
+            <button key={i} onClick={()=>fireLane(i)}
+              style={{flex:1,height:Math.max(34,Math.round(44*scale)),
+                background:ready?'rgba(0,255,255,0.08)':'rgba(0,30,50,0.6)',
+                border:`1px solid ${ready?'#00ffff':'#004455'}`,
+                borderRadius:3,color:ready?'#00ffff':'#004466',
+                fontFamily:'Courier New',fontSize:Math.max(14,Math.round(18*scale)),
+                fontWeight:'bold',cursor:'pointer',
+                boxShadow:ready?'0 0 10px #00ffff33':'none',
+                position:'relative',overflow:'hidden'}}>
+              {/* cooldown fill */}
+              {!ready && (
+                <div style={{position:'absolute',bottom:0,left:0,height:'3px',
+                  width:`${(1-cr)*100}%`,background:'#00aaff',transition:'width 0.05s'}}/>
+              )}
+              {i+1}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{color:'#1a3040',fontSize:11,letterSpacing:1}}>
+        CLICK LANE · KEYS 1-5 · CHAIN KILLS FOR COMBOS
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
