@@ -2590,5 +2590,20 @@
     "file": "games/2026-07-24/index.html",
     "preview": "games/2026-07-24/preview.png",
     "rating": 4.6
+  },
+  {
+    "id": "2026-07-25",
+    "name": "Barrage",
+    "date": "2026-07-25",
+    "description": "Five lanes of neon enemies march on your base — click a lane or press 1–5 to fire that cannon and blast them before they breach! Each cannon needs time to reload, so prioritize wisely: ignore a lane and three enemies slip through to end your run. Chain kills across all five lanes for combo multipliers that can hit 10×!",
+    "tagline": "Five lanes. Five cannons. One chance to hold the line.",
+    "tags": ["action", "strategy", "reflex", "arcade", "defense"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click a lane or press 1–5 to fire that cannon · Tap lane buttons on mobile",
+    "folder": "games/2026-07-25",
+    "file": "games/2026-07-25/index.html",
+    "preview": "games/2026-07-25/preview.png",
+    "rating": 4.5
   }
 ]
