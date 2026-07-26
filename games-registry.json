@@ -2605,5 +2605,20 @@
     "file": "games/2026-07-25/index.html",
     "preview": "games/2026-07-25/preview.png",
     "rating": 4.5
+  },
+  {
+    "id": "2026-07-26",
+    "name": "Signal Dash",
+    "date": "2026-07-26",
+    "description": "Four neon signal packets race across their lanes toward a glowing sync zone — click or tap the lane at the exact moment each packet crosses the center line for Perfect hits and combo chains. Miss too many and it's game over; nail them in sequence and the score multiplier blazes out of control.",
+    "tagline": "Hit the sync. Chase the combo.",
+    "tags": ["rhythm", "reflex", "timing", "arcade", "action"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap a lane as the packet crosses the sync zone · Keyboard: A S D F",
+    "folder": "games/2026-07-26",
+    "file": "games/2026-07-26/index.html",
+    "preview": "games/2026-07-26/preview.png",
+    "rating": 4.3
   }
 ]
