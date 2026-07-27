@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Glow Hunt</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050510; overflow: hidden; font-family: monospace; }
+    #root { width: 100vw; height: 100vh; }
+    canvas { display: block; cursor: crosshair; touch-action: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const { useRef, useEffect } = React;
+
+    const ORB_R = 28;
+    const REVEAL_MS = 1800;
+    const TRACK_BASE_MS = 3200;
+    const TRACK_MIN_MS = 1200;
+    const RESULT_MS = 900;
+    const INITIAL_LIVES = 3;
+    const HS_KEY = 'glowhunt_hs';
+
+    /* ── audio ── */
+    let _actx = null;
+    function getACtx() {
+      if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+      return _actx;
+    }
+    function playTone(freq, type, dur, startGain, endFreq) {
+      try {
+        const ctx = getACtx();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = type || 'sine';
+        o.frequency.setValueAtTime(freq, ctx.currentTime);
+        if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + dur);
+        g.gain.setValueAtTime(startGain || 0.25, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.start(ctx.currentTime);
+        o.stop(ctx.currentTime + dur);
+      } catch (_) {}
+    }
+    function sfxReveal() {
+      playTone(660, 'sine', 0.15, 0.3, 880);
+      setTimeout(() => playTone(880, 'sine', 0.2, 0.2, 1100), 120);
+    }
+    function sfxCorrect() {
+      playTone(523, 'sine', 0.12, 0.3);
+      setTimeout(() => playTone(659, 'sine', 0.12, 0.3), 100);
+      setTimeout(() => playTone(784, 'sine', 0.2, 0.3), 200);
+    }
+    function sfxWrong() {
+      playTone(220, 'sawtooth', 0.35, 0.3, 110);
+    }
+    function sfxCombo(n) {
+      const base = 523 * Math.pow(1.06, Math.min(n, 10));
+      playTone(base, 'sine', 0.18, 0.25);
+    }
+
+    /* ── particles ── */
+    function spawnParticles(list, x, y, color, count) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 2 + Math.random() * 5;
+        list.push({
+          x, y,
+          vx: Math.cos(a) * sp,
+          vy: Math.sin(a) * sp,
+          life: 1,
+          decay: 0.018 + Math.random() * 0.012,
+          size: 3 + Math.random() * 4,
+          color,
+        });
+      }
+    }
+
+    /* ── orb factory ── */
+    function makeOrb(W, H, speedMult) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = (1.8 + Math.random() * 1.8) * speedMult;
+      return {
+        x: ORB_R + 80 + Math.random() * (W - ORB_R * 2 - 160),
+        y: ORB_R + 80 + Math.random() * (H - ORB_R * 2 - 80),
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        trail: [],
+      };
+    }
+
+    /* ── main component ── */
+    function App() {
+      const canvasRef = useRef(null);
+      const G = useRef({
+        phase: 'idle', // idle | reveal | track | result | gameover
+        orbs: [],
+        targetIdx: 0,
+        lives: INITIAL_LIVES,
+        score: 0,
+        combo: 1,
+        level: 1,
+        hs: parseInt(localStorage.getItem(HS_KEY) || '0'),
+        particles: [],
+        clickedIdx: -1,
+        correct: false,
+        phaseTimer: 0,
+        trackLeft: TRACK_BASE_MS,
+        trackTotal: TRACK_BASE_MS,
+        wrongPulse: 0,
+        correctPulse: 0,
+        stars: [],
+      });
+      const rafRef = useRef(null);
+      const prevT = useRef(0);
+
+      /* ─ build star field once ─ */
+      useEffect(() => {
+        const g = G.current;
+        const W = window.innerWidth, H = window.innerHeight;
+        for (let i = 0; i < 90; i++) {
+          g.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5, blink: Math.random() * Math.PI * 2 });
+        }
+      }, []);
+
+      /* ─ round management ─ */
+      function startRound() {
+        const g = G.current;
+        const canvas = canvasRef.current;
+        const W = canvas.width, H = canvas.height;
+        const count = Math.min(3 + Math.floor((g.level - 1) / 3), 8);
+        const speedMult = 1 + (g.level - 1) * 0.1;
+        const trackDur = Math.max(TRACK_MIN_MS, TRACK_BASE_MS - (g.level - 1) * 80);
+
+        g.orbs = [];
+        for (let i = 0; i < count; i++) g.orbs.push(makeOrb(W, H, speedMult));
+
+        // Separate orbs so they don't overlap
+        for (let iter = 0; iter < 30; iter++) {
+          for (let a = 0; a < g.orbs.length; a++) {
+            for (let b = a + 1; b < g.orbs.length; b++) {
+              const dx = g.orbs[b].x - g.orbs[a].x;
+              const dy = g.orbs[b].y - g.orbs[a].y;
+              const dist = Math.hypot(dx, dy);
+              if (dist < ORB_R * 3) {
+                const nx = dx / dist, ny = dy / dist;
+                const push = (ORB_R * 3 - dist) / 2;
+                g.orbs[a].x -= nx * push; g.orbs[a].y -= ny * push;
+                g.orbs[b].x += nx * push; g.orbs[b].y += ny * push;
+              }
+            }
+          }
+        }
+
+        g.targetIdx = Math.floor(Math.random() * count);
+        g.phase = 'reveal';
+        g.phaseTimer = REVEAL_MS;
+        g.trackLeft = trackDur;
+        g.trackTotal = trackDur;
+        g.clickedIdx = -1;
+        g.correct = false;
+        g.particles = [];
+        g.wrongPulse = 0;
+        g.correctPulse = 0;
+
+        sfxReveal();
+      }
+
+      function handleInput(cx, cy) {
+        const g = G.current;
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const sx = canvas.width / rect.width;
+        const sy = canvas.height / rect.height;
+        const x = (cx - rect.left) * sx;
+        const y = (cy - rect.top) * sy;
+
+        if (g.phase === 'idle' || g.phase === 'gameover') {
+          g.lives = INITIAL_LIVES;
+          g.score = 0;
+          g.combo = 1;
+          g.level = 1;
+          g.particles = [];
+          startRound();
+          return;
+        }
+
+        if (g.phase === 'track') {
+          let hit = -1;
+          for (let i = 0; i < g.orbs.length; i++) {
+            const o = g.orbs[i];
+            if (Math.hypot(x - o.x, y - o.y) <= ORB_R + 12) { hit = i; break; }
+          }
+          if (hit === -1) return;
+
+          g.clickedIdx = hit;
+          g.correct = hit === g.targetIdx;
+          g.phase = 'result';
+          g.phaseTimer = RESULT_MS;
+
+          if (g.correct) {
+            const tBonus = Math.floor(g.trackLeft / 80);
+            const pts = (100 + tBonus) * g.combo;
+            g.score += pts;
+            g.combo = Math.min(g.combo + 1, 12);
+            if (g.score > g.hs) { g.hs = g.score; localStorage.setItem(HS_KEY, String(g.hs)); }
+            spawnParticles(g.particles, g.orbs[g.targetIdx].x, g.orbs[g.targetIdx].y, '#ffcc00', 28);
+            sfxCorrect();
+            if (g.combo > 2) sfxCombo(g.combo);
+            g.correctPulse = 1;
+          } else {
+            g.lives--;
+            g.combo = 1;
+            spawnParticles(g.particles, g.orbs[hit].x, g.orbs[hit].y, '#ff3366', 18);
+            sfxWrong();
+            g.wrongPulse = 1;
+            if (g.lives <= 0) {
+              localStorage.setItem(HS_KEY, String(g.hs));
+              g.phase = 'gameover';
+              return;
+            }
+          }
+        }
+      }
+
+      /* ─ update ─ */
+      function update(dt, W, H) {
+        const g = G.current;
+
+        // Particles
+        for (let i = g.particles.length - 1; i >= 0; i--) {
+          const p = g.particles[i];
+          p.x += p.vx; p.y += p.vy;
+          p.vy += 0.08;
+          p.life -= p.decay;
+          if (p.life <= 0) g.particles.splice(i, 1);
+        }
+
+        // Pulses decay
+        if (g.wrongPulse > 0) g.wrongPulse = Math.max(0, g.wrongPulse - dt / 400);
+        if (g.correctPulse > 0) g.correctPulse = Math.max(0, g.correctPulse - dt / 500);
+
+        if (g.phase === 'reveal') {
+          moveOrbs(g.orbs, dt * 0.3, W, H);
+          g.phaseTimer -= dt;
+          if (g.phaseTimer <= 0) g.phase = 'track';
+
+        } else if (g.phase === 'track') {
+          moveOrbs(g.orbs, dt, W, H);
+          // Update trails on target
+          const t = g.orbs[g.targetIdx];
+          if (!t._trailTick || t._trailTick > 5) {
+            t.trail.push({ x: t.x, y: t.y });
+            if (t.trail.length > 12) t.trail.shift();
+            t._trailTick = 0;
+          }
+          t._trailTick = (t._trailTick || 0) + 1;
+
+          g.trackLeft -= dt;
+          if (g.trackLeft <= 0) {
+            // Time out = miss
+            g.lives--;
+            g.combo = 1;
+            g.correct = false;
+            g.clickedIdx = -1;
+            g.phase = 'result';
+            g.phaseTimer = RESULT_MS;
+            sfxWrong();
+            g.wrongPulse = 1;
+            if (g.lives <= 0) {
+              localStorage.setItem(HS_KEY, String(g.hs));
+              g.phase = 'gameover';
+            }
+          }
+        } else if (g.phase === 'result') {
+          moveOrbs(g.orbs, dt * 0.4, W, H);
+          g.phaseTimer -= dt;
+          if (g.phaseTimer <= 0) {
+            if (g.correct) g.level++;
+            startRound();
+          }
+        }
+      }
+
+      function moveOrbs(orbs, dtScale, W, H) {
+        orbs.forEach(o => {
+          o.x += o.vx * dtScale / 16;
+          o.y += o.vy * dtScale / 16;
+          if (o.x < ORB_R) { o.x = ORB_R; o.vx = Math.abs(o.vx); }
+          if (o.x > W - ORB_R) { o.x = W - ORB_R; o.vx = -Math.abs(o.vx); }
+          if (o.y < ORB_R + 70) { o.y = ORB_R + 70; o.vy = Math.abs(o.vy); }
+          if (o.y > H - ORB_R - 50) { o.y = H - ORB_R - 50; o.vy = -Math.abs(o.vy); }
+        });
+      }
+
+      /* ─ draw ─ */
+      function draw(ctx, W, H, now) {
+        const g = G.current;
+
+        // Background
+        ctx.fillStyle = '#050510';
+        ctx.fillRect(0, 0, W, H);
+
+        // Grid
+        ctx.strokeStyle = 'rgba(0,200,255,0.04)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < W; x += 64) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+        }
+        for (let y = 0; y < H; y += 64) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        }
+
+        // Stars
+        g.stars.forEach(s => {
+          const a = 0.4 + 0.4 * Math.sin(now / 1200 + s.blink);
+          ctx.fillStyle = `rgba(200,220,255,${a})`;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        if (g.phase === 'idle') { drawIdle(ctx, W, H, now); return; }
+        if (g.phase === 'gameover') { drawGameOver(ctx, W, H, now, g); return; }
+
+        // Wrong flash overlay
+        if (g.wrongPulse > 0) {
+          ctx.fillStyle = `rgba(255,51,102,${g.wrongPulse * 0.18})`;
+          ctx.fillRect(0, 0, W, H);
+        }
+        if (g.correctPulse > 0) {
+          ctx.fillStyle = `rgba(0,255,136,${g.correctPulse * 0.15})`;
+          ctx.fillRect(0, 0, W, H);
+        }
+
+        // HUD
+        drawHUD(ctx, W, H, now, g);
+
+        // Orbs
+        g.orbs.forEach((o, i) => drawOrb(ctx, o, i, g, now));
+
+        // Particles
+        g.particles.forEach(p => {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.life);
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = p.color;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Phase banners
+        if (g.phase === 'reveal') {
+          const alpha = 0.7 + 0.3 * Math.sin(now / 200);
+          ctx.save();
+          ctx.shadowBlur = 30;
+          ctx.shadowColor = '#ffcc00';
+          ctx.fillStyle = `rgba(255,204,0,${alpha})`;
+          ctx.font = 'bold 26px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('▲ TRACK THE GLOWING ORB! ▲', W / 2, 60);
+          ctx.restore();
+        }
+
+        if (g.phase === 'track') {
+          const frac = g.trackLeft / g.trackTotal;
+          const barH = 12;
+          const barY = H - 30;
+          const barColor = frac > 0.5 ? '#00ff88' : frac > 0.25 ? '#ffcc00' : '#ff3366';
+
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.fillRect(20, barY, W - 40, barH);
+
+          ctx.fillStyle = barColor;
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = barColor;
+          ctx.fillRect(20, barY, (W - 40) * frac, barH);
+          ctx.shadowBlur = 0;
+
+          ctx.save();
+          ctx.fillStyle = '#00e5ff';
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = '#00e5ff';
+          ctx.font = 'bold 24px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('◆ CLICK THE TARGET ORB! ◆', W / 2, 60);
+          ctx.restore();
+        }
+
+        if (g.phase === 'result') {
+          const col = g.correct ? '#00ff88' : '#ff3366';
+          const msg = g.correct
+            ? `+${(100 + Math.floor(g.trackLeft / 80)) * (g.combo - 1)} CORRECT! ×${g.combo - 1}`
+            : (g.clickedIdx === -1 ? 'TOO SLOW!' : 'WRONG ORB!');
+
+          ctx.save();
+          ctx.shadowBlur = 40;
+          ctx.shadowColor = col;
+          ctx.fillStyle = col;
+          ctx.font = 'bold 38px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(msg, W / 2, H / 2 - 20);
+          ctx.restore();
+
+          // Show target orb reveal pulse
+          if (g.orbs[g.targetIdx]) {
+            const to = g.orbs[g.targetIdx];
+            const pulse = 0.6 + 0.4 * Math.sin(now / 150);
+            ctx.save();
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 3;
+            ctx.shadowBlur = 20 * pulse;
+            ctx.shadowColor = '#ffcc00';
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.arc(to.x, to.y, ORB_R + 18, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+          }
+        }
+      }
+
+      function drawOrb(ctx, o, idx, g, now) {
+        const isTarget = idx === g.targetIdx;
+        const isReveal = g.phase === 'reveal';
+        const isResult = g.phase === 'result';
+        const isWrong = isResult && !g.correct && idx === g.clickedIdx;
+
+        let color, glowSize;
+
+        if (isReveal && isTarget) {
+          const pulse = 0.5 + 0.5 * Math.sin(now / 180);
+          color = `hsl(${45 + pulse * 15}, 100%, ${58 + pulse * 18}%)`;
+          glowSize = 35 + pulse * 20;
+        } else if (isResult && isTarget) {
+          color = '#ffcc00';
+          glowSize = 30;
+        } else if (isWrong) {
+          color = '#ff3366';
+          glowSize = 25;
+        } else {
+          // Uniform appearance during track (and non-target during reveal)
+          if (isReveal && !isTarget) {
+            color = 'rgba(0,229,255,0.35)';
+            glowSize = 6;
+          } else {
+            color = '#00e5ff';
+            glowSize = 18;
+          }
+        }
+
+        ctx.save();
+        ctx.shadowBlur = glowSize;
+        ctx.shadowColor = color;
+
+        // Body
+        const grad = ctx.createRadialGradient(
+          o.x - ORB_R * 0.25, o.y - ORB_R * 0.25, ORB_R * 0.05,
+          o.x, o.y, ORB_R
+        );
+        if (isReveal && isTarget) {
+          grad.addColorStop(0, '#fffde7');
+          grad.addColorStop(0.5, color);
+          grad.addColorStop(1, 'rgba(255,180,0,0.1)');
+        } else {
+          grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+          grad.addColorStop(0.4, color);
+          grad.addColorStop(1, isReveal && !isTarget ? 'rgba(0,229,255,0.05)' : 'rgba(0,120,180,0.15)');
+        }
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, ORB_R, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ring
+        ctx.shadowBlur = glowSize * 0.7;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, ORB_R + 5, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Star/crown during reveal on target
+        if (isReveal && isTarget) {
+          ctx.shadowBlur = 15;
+          ctx.fillStyle = '#fff8dc';
+          ctx.font = `bold ${22}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('★', o.x, o.y);
+          ctx.textBaseline = 'alphabetic';
+        }
+
+        ctx.restore();
+
+        // Outer sparkle ring during reveal
+        if (isReveal && isTarget) {
+          const numSparkles = 8;
+          for (let s = 0; s < numSparkles; s++) {
+            const a = (s / numSparkles) * Math.PI * 2 + now / 600;
+            const r = ORB_R + 20 + 8 * Math.sin(now / 250 + s);
+            const sx = o.x + Math.cos(a) * r;
+            const sy = o.y + Math.sin(a) * r;
+            ctx.save();
+            ctx.fillStyle = '#ffcc00';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#ffcc00';
+            ctx.globalAlpha = 0.7 + 0.3 * Math.sin(now / 150 + s);
+            ctx.beginPath();
+            ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+
+      function drawHUD(ctx, W, H, now, g) {
+        ctx.save();
+
+        // Score
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#00e5ff';
+        ctx.font = 'bold 20px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`SCORE: ${g.score}`, 18, 38);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#aaa';
+        ctx.shadowBlur = 0;
+        ctx.fillText(`BEST: ${g.hs}`, W - 18, 38);
+
+        // Lives
+        ctx.textAlign = 'center';
+        let hearts = '';
+        for (let i = 0; i < INITIAL_LIVES; i++) hearts += i < g.lives ? '♥ ' : '♡ ';
+        ctx.fillStyle = g.lives <= 1 ? '#ff3366' : '#ff6699';
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = '#ff3366';
+        ctx.font = 'bold 22px monospace';
+        ctx.fillText(hearts.trim(), W / 2, 38);
+
+        // Combo
+        if (g.combo > 1) {
+          ctx.fillStyle = '#ff9900';
+          ctx.shadowBlur = 18;
+          ctx.shadowColor = '#ff6600';
+          ctx.font = 'bold 18px monospace';
+          ctx.textAlign = 'right';
+          ctx.fillText(`×${g.combo} COMBO`, W - 18, 64);
+        }
+
+        // Level + orb count
+        ctx.fillStyle = '#8888ff';
+        ctx.shadowBlur = 0;
+        ctx.font = '16px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`LVL ${g.level}  ORBS: ${g.orbs.length}`, 18, 64);
+
+        ctx.restore();
+      }
+
+      function drawIdle(ctx, W, H, now) {
+        const p = 0.7 + 0.3 * Math.sin(now / 900);
+
+        // Drifting orbs behind
+        const demoPos = [
+          { fx: 0.25, fy: 0.45 }, { fx: 0.5, fy: 0.6 }, { fx: 0.75, fy: 0.45 },
+          { fx: 0.35, fy: 0.7 }, { fx: 0.65, fy: 0.7 },
+        ];
+        demoPos.forEach((dp, i) => {
+          const ox = W * dp.fx + Math.sin(now / 1500 + i * 1.3) * 30;
+          const oy = H * dp.fy + Math.cos(now / 1800 + i) * 20;
+          ctx.save();
+          ctx.globalAlpha = 0.25;
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = '#00e5ff';
+          ctx.fillStyle = '#00e5ff';
+          ctx.beginPath();
+          ctx.arc(ox, oy, ORB_R, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Golden target demo
+        const tx = W * 0.5 + Math.sin(now / 1100) * 50;
+        const ty = H * 0.5 - 30 + Math.cos(now / 900) * 25;
+        ctx.save();
+        ctx.shadowBlur = 35 * p;
+        ctx.shadowColor = '#ffcc00';
+        const grad = ctx.createRadialGradient(tx, ty, 4, tx, ty, ORB_R);
+        grad.addColorStop(0, '#fffde7');
+        grad.addColorStop(0.5, '#ffcc00');
+        grad.addColorStop(1, 'rgba(255,180,0,0.1)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(tx, ty, ORB_R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff8dc';
+        ctx.font = 'bold 22px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('★', tx, ty);
+        ctx.textBaseline = 'alphabetic';
+        ctx.restore();
+
+        // Title
+        ctx.save();
+        ctx.shadowBlur = 40 * p;
+        ctx.shadowColor = '#00e5ff';
+        ctx.fillStyle = '#00e5ff';
+        ctx.font = `bold ${Math.min(W / 8, 68)}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText('GLOW HUNT', W / 2, H * 0.22);
+
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ccccff';
+        ctx.font = `${Math.min(W / 22, 22)}px monospace`;
+        ctx.fillText('One orb glows gold — watch it carefully!', W / 2, H * 0.31);
+        ctx.fillText('Then they all look the same… click the one you tracked.', W / 2, H * 0.36);
+
+        ctx.shadowBlur = 22 * p;
+        ctx.shadowColor = '#ff6600';
+        ctx.fillStyle = '#ff9900';
+        ctx.font = `bold ${Math.min(W / 17, 30)}px monospace`;
+        ctx.fillText('TAP / CLICK TO START', W / 2, H * 0.86);
+        ctx.restore();
+
+        // Best score
+        const hs = parseInt(localStorage.getItem(HS_KEY) || '0');
+        if (hs > 0) {
+          ctx.save();
+          ctx.fillStyle = '#888';
+          ctx.font = '16px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(`Best: ${hs}`, W / 2, H * 0.92);
+          ctx.restore();
+        }
+      }
+
+      function drawGameOver(ctx, W, H, now, g) {
+        ctx.fillStyle = 'rgba(5,5,16,0.8)';
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.save();
+        ctx.shadowBlur = 40;
+        ctx.shadowColor = '#ff3366';
+        ctx.fillStyle = '#ff3366';
+        ctx.font = `bold ${Math.min(W / 8, 58)}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', W / 2, H / 2 - 100);
+
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = '#fff';
+        ctx.font = '26px monospace';
+        ctx.fillText(`Score: ${g.score}`, W / 2, H / 2 - 35);
+        ctx.fillText(`Best: ${g.hs}`, W / 2, H / 2 + 5);
+        ctx.fillText(`Level: ${g.level}`, W / 2, H / 2 + 45);
+
+        const bp = 0.7 + 0.3 * Math.sin(now / 500);
+        ctx.shadowBlur = 25 * bp;
+        ctx.shadowColor = '#00e5ff';
+        ctx.fillStyle = '#00e5ff';
+        ctx.globalAlpha = bp;
+        ctx.font = `bold ${Math.min(W / 17, 28)}px monospace`;
+        ctx.fillText('TAP / CLICK TO PLAY AGAIN', W / 2, H / 2 + 130);
+        ctx.restore();
+      }
+
+      /* ─ RAF loop ─ */
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        function onDown(e) {
+          e.preventDefault();
+          const src = e.touches ? e.touches[0] : e;
+          handleInput(src.clientX, src.clientY);
+        }
+        canvas.addEventListener('pointerdown', onDown);
+
+        function loop(now) {
+          const dt = Math.min(now - (prevT.current || now), 80);
+          prevT.current = now;
+          update(dt, canvas.width, canvas.height);
+          draw(ctx, canvas.width, canvas.height, now);
+          rafRef.current = requestAnimationFrame(loop);
+        }
+        rafRef.current = requestAnimationFrame(loop);
+
+        return () => {
+          cancelAnimationFrame(rafRef.current);
+          window.removeEventListener('resize', resize);
+          canvas.removeEventListener('pointerdown', onDown);
+        };
+      }, []);
+
+      return (
+        <canvas
+          ref={canvasRef}
+          data-testid="game-canvas"
+          style={{ display: 'block', width: '100vw', height: '100vh' }}
+        />
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
