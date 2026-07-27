@@ -2620,5 +2620,20 @@
     "file": "games/2026-07-26/index.html",
     "preview": "games/2026-07-26/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-07-27",
+    "name": "Glow Hunt",
+    "date": "2026-07-27",
+    "description": "One orb briefly glows gold with a sparkling crown — then they all turn identical cyan and drift around the screen. Track yours by eye, then click it before the timer runs out! Chain correct picks for massive combo multipliers as more orbs appear and tracking time shrinks each level.",
+    "tagline": "Watch the gold. Track it. Click the one you remember.",
+    "tags": ["reflex", "memory", "tracking", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap the orb you tracked — pick it before the timer bar empties",
+    "folder": "games/2026-07-27",
+    "file": "games/2026-07-27/index.html",
+    "preview": "games/2026-07-27/preview.png",
+    "rating": 4.6
   }
 ]
