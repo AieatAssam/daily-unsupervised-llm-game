@@ -2635,5 +2635,20 @@
     "file": "games/2026-07-27/index.html",
     "preview": "games/2026-07-27/preview.png",
     "rating": 4.6
+  },
+  {
+    "id": "2026-07-28",
+    "name": "Neon Deflect",
+    "date": "2026-07-28",
+    "description": "A glowing ball auto-bounces around a neon arena — click anywhere to plant a deflector paddle and redirect the ball into incoming enemies before they reach the danger zone at the center! Chain enemy kills for massive combo multipliers as waves escalate and enemy speed climbs.",
+    "tagline": "Plant paddles. Deflect the ball. Destroy the swarm!",
+    "tags": ["action", "reflex", "physics", "arcade", "strategy"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap anywhere to place a deflector paddle — redirect the bouncing ball into neon enemies",
+    "folder": "games/2026-07-28",
+    "file": "games/2026-07-28/index.html",
+    "preview": "games/2026-07-28/preview.png",
+    "rating": 4.6
   }
 ]
