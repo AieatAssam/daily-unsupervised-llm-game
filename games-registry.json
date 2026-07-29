@@ -2650,5 +2650,20 @@
     "file": "games/2026-07-28/index.html",
     "preview": "games/2026-07-28/preview.png",
     "rating": 4.6
+  },
+  {
+    "id": "2026-07-29",
+    "name": "Tightrope Rush",
+    "date": "2026-07-29",
+    "description": "Move your mouse left or right to tilt a glowing neon tightrope, rolling a glowing ball along it to catch sparkling falling gems — chain consecutive catches for massive combo multipliers while dodging pulsing red bombs that cost a life! The rope tilts with buttery smoothness as gems rain faster and bombs grow more frequent each passing second.",
+    "tagline": "Tilt the rope. Roll the ball. Catch the gems!",
+    "tags": ["reflex", "physics", "action", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse left/right to tilt the rope — roll ball to catch falling gems, dodge red bombs | Drag finger on mobile",
+    "folder": "games/2026-07-29",
+    "file": "games/2026-07-29/index.html",
+    "preview": "games/2026-07-29/preview.png",
+    "rating": 4.5
   }
 ]
