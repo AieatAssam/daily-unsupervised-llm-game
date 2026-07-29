@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tightrope Rush</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #020210;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+  }
+  #root { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+  canvas { display: block; cursor: none; touch-action: none; }
+</style>
+</head>
+<body>
+<div id="root">
+  <canvas id="gameCanvas" data-testid="game-canvas"></canvas>
+</div>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width  = Math.min(window.innerWidth,  800);
+  canvas.height = Math.min(window.innerHeight, 600);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Audio ──────────────────────────────────────────────────────────────────
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+function tone(freq, dur, type = 'sine', vol = 0.25, ramp = null) {
+  try {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.type = type; o.frequency.value = freq;
+    if (ramp) o.frequency.linearRampToValueAtTime(ramp, AC.currentTime + dur * 0.6);
+    g.gain.setValueAtTime(vol, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + dur);
+    o.start(); o.stop(AC.currentTime + dur);
+  } catch (e) {}
+}
+function sCatch(combo) {
+  const f = [440, 550, 660, 770, 880, 990, 1100, 1320][Math.min(combo - 1, 7)];
+  tone(f, 0.18, 'sine', 0.3, f * 1.3);
+}
+function sBomb()  { tone(120, 0.5, 'sawtooth', 0.4, 60); }
+function sFall()  { tone(220, 0.3, 'triangle', 0.25, 140); }
+function sStart() { tone(330, 0.1, 'sine', 0.2); setTimeout(() => tone(660, 0.2, 'sine', 0.2), 100); }
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const ROPE_Y     = 0.58;   // fraction of canvas height
+const ROPE_PAD   = 80;     // pixels from each edge for anchors
+const MAX_ANGLE  = 28;     // degrees max tilt
+const GRAVITY    = 620;    // pixels/s² along slope
+const FRICTION   = 0.88;   // per-frame velocity damping (applied per 1/60s)
+const BALL_R     = 11;
+const CATCH_R    = 36;
+const GEM_COLORS = ['#00ffff','#ff44ff','#44ff88','#ffdd00','#ff8800'];
+const GEM_PTS    = [100, 150, 200, 250, 300];
+
+// ── State ──────────────────────────────────────────────────────────────────
+let gstate = 'start'; // start | playing | gameover
+let score = 0, hiScore = +( localStorage.getItem('tightroprush_hs') || 0);
+let combo = 0, lives = 3, timeLeft = 90;
+let lastTs = 0, timerAcc = 0;
+let ropeAngle = 0, targetAngle = 0;
+let ball = { x: 0, y: 0, vx: 0 };
+let ballTrail = [];
+let items = [];
+let particles = [];
+let spawnTimer = 0, spawnInterval = 1.8, gameSpeed = 1.0;
+let inputX = -1; // mouse/touch X in canvas coords
+let scorePopups = [];
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function ropeEnds() {
+  const cx = canvas.width / 2;
+  const ry = canvas.height * ROPE_Y;
+  const hw = canvas.width / 2 - ROPE_PAD;
+  const dy = Math.sin(ropeAngle * Math.PI / 180) * hw;
+  return { x1: ROPE_PAD, y1: ry - dy, x2: canvas.width - ROPE_PAD, y2: ry + dy, hw };
+}
+
+function ropeYAt(x) {
+  const { x1, y1, x2, y2 } = ropeEnds();
+  return y1 + (y2 - y1) * ((x - x1) / (x2 - x1));
+}
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+function spark(x, y, color, n = 14, speed = 90) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.PI * 2 * i / n + Math.random() * 0.4;
+    const s = speed * (0.5 + Math.random());
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      color, life: 1.0, decay: 1.8 + Math.random() * 0.8, r: 2 + Math.random() * 2.5 });
+  }
+}
+
+function popup(x, y, text, color) {
+  scorePopups.push({ x, y, vy: -55, text, color, life: 1.0 });
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+function initGame() {
+  score = 0; combo = 0; lives = 3; timeLeft = 90; timerAcc = 0;
+  items = []; particles = []; ballTrail = []; scorePopups = [];
+  spawnTimer = 0; spawnInterval = 1.8; gameSpeed = 1.0;
+  ropeAngle = 0; targetAngle = 0;
+  ball.x = canvas.width / 2; ball.vx = 0;
+  ball.y = canvas.height * ROPE_Y;
+}
+
+// ── Spawn ──────────────────────────────────────────────────────────────────
+function spawnItem() {
+  const { x1, x2 } = ropeEnds();
+  const isBomb = Math.random() < 0.18 + (90 - timeLeft) * 0.003;
+  const ci = Math.floor(Math.random() * GEM_COLORS.length);
+  items.push({
+    x: x1 + Math.random() * (x2 - x1),
+    y: -20,
+    type: isBomb ? 'bomb' : 'gem',
+    color: isBomb ? '#ff2255' : GEM_COLORS[ci],
+    pts: isBomb ? 0 : GEM_PTS[ci],
+    vy: (95 + Math.random() * 70) * gameSpeed,
+    r: isBomb ? 13 : 9,
+    spin: (Math.random() - 0.5) * 4,
+    angle: Math.random() * Math.PI * 2,
+    phase: Math.random() * Math.PI * 2,
+  });
+}
+
+// ── Reset ball ─────────────────────────────────────────────────────────────
+function resetBall() {
+  ball.x = canvas.width / 2; ball.vx = 0;
+  ball.y = ropeYAt(ball.x);
+  ballTrail = [];
+}
+
+// ── Update ─────────────────────────────────────────────────────────────────
+function update(dt) {
+  if (gstate !== 'playing') return;
+
+  // Timer
+  timerAcc += dt;
+  if (timerAcc >= 1) { timerAcc -= 1; timeLeft--; }
+  if (timeLeft <= 0) { timeLeft = 0; endGame(); return; }
+
+  // Ramp difficulty
+  const elapsed = 90 - timeLeft;
+  gameSpeed    = 1 + elapsed / 90 * 1.5;
+  spawnInterval = Math.max(0.7, 1.8 - elapsed / 90 * 1.0);
+
+  // Key-based tilt override
+  if (keys['ArrowLeft']  || keys['a'] || keys['A']) inputX = canvas.width * 0.15;
+  if (keys['ArrowRight'] || keys['d'] || keys['D']) inputX = canvas.width * 0.85;
+
+  // Rope tilt
+  const ix = inputX >= 0 ? inputX : canvas.width / 2;
+  targetAngle = ((ix - canvas.width / 2) / (canvas.width / 2)) * MAX_ANGLE;
+  ropeAngle += (targetAngle - ropeAngle) * Math.min(dt * 9, 1);
+
+  // Ball physics (rolling down slope)
+  const sinA = Math.sin(ropeAngle * Math.PI / 180);
+  ball.vx += sinA * GRAVITY * dt;
+  // Friction
+  const fric = Math.pow(FRICTION, dt * 60);
+  ball.vx *= fric;
+  ball.x  += ball.vx * dt;
+
+  // Check rope bounds
+  const { x1, x2 } = ropeEnds();
+  if (ball.x < x1 - 15 || ball.x > x2 + 15) {
+    spark(clamp(ball.x, x1, x2), ropeYAt(clamp(ball.x, x1, x2)), '#ffffff', 18);
+    lives--; combo = 0; sFall();
+    if (lives <= 0) { endGame(); return; }
+    resetBall(); return;
+  }
+  ball.x = clamp(ball.x, x1, x2);
+  ball.y = ropeYAt(ball.x);
+
+  // Ball trail
+  ballTrail.push({ x: ball.x, y: ball.y, life: 1.0 });
+  if (ballTrail.length > 18) ballTrail.shift();
+  for (const t of ballTrail) t.life -= dt * 5;
+
+  // Spawn
+  spawnTimer += dt;
+  if (spawnTimer >= spawnInterval) {
+    spawnTimer = 0; spawnItem();
+    if (Math.random() < 0.25 + elapsed / 300) spawnItem();
+  }
+
+  // Update items
+  items = items.filter(item => {
+    item.y  += item.vy * dt;
+    item.angle += item.spin * dt;
+
+    // Target Y: where rope is at this item's X
+    const cx = clamp(item.x, x1, x2);
+    const ropey = ropeYAt(cx);
+
+    if (item.y >= ropey - item.r) {
+      const dist = Math.abs(item.x - ball.x);
+      if (dist <= CATCH_R) {
+        if (item.type === 'gem') {
+          combo++;
+          const mul = Math.min(combo, 8);
+          const pts = item.pts * mul;
+          score += pts;
+          if (score > hiScore) { hiScore = score; localStorage.setItem('tightroprush_hs', hiScore); }
+          sCatch(combo);
+          spark(item.x, item.y, item.color, 16, 110);
+          popup(item.x, item.y - 10, `+${pts}`, item.color);
+        } else {
+          lives--; combo = 0; sBomb();
+          spark(item.x, item.y, '#ff2255', 22, 130);
+          if (lives <= 0) { endGame(); return false; }
+        }
+      } else {
+        // Missed gem: break combo
+        if (item.type === 'gem') combo = 0;
+      }
+      return false;
+    }
+    return item.y < canvas.height + 30;
+  });
+
+  // Particles
+  particles = particles.filter(p => {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 80 * dt; p.life -= p.decay * dt;
+    return p.life > 0;
+  });
+
+  // Score popups
+  scorePopups = scorePopups.filter(p => {
+    p.y += p.vy * dt; p.life -= dt * 1.8;
+    return p.life > 0;
+  });
+}
+
+function endGame() {
+  if (score > hiScore) { hiScore = score; localStorage.setItem('tightroprush_hs', hiScore); }
+  gstate = 'gameover';
+}
+
+// ── Draw helpers ───────────────────────────────────────────────────────────
+function glow(color, blur) { ctx.shadowColor = color; ctx.shadowBlur = blur; }
+function noGlow() { ctx.shadowBlur = 0; }
+
+function drawBg() {
+  const g = ctx.createRadialGradient(canvas.width / 2, canvas.height * 0.4, 0,
+                                      canvas.width / 2, canvas.height * 0.4, canvas.width * 0.85);
+  g.addColorStop(0, '#0a0a22');
+  g.addColorStop(1, '#020210');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // subtle grid
+  ctx.save(); ctx.strokeStyle = 'rgba(40,80,160,0.07)'; ctx.lineWidth = 1;
+  for (let x = 0; x < canvas.width; x += 44) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+  }
+  for (let y = 0; y < canvas.height; y += 44) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawRope() {
+  const { x1, y1, x2, y2 } = ropeEnds();
+  ctx.save();
+  // Outer glow layers
+  for (let w = 14; w >= 2; w -= 4) {
+    ctx.strokeStyle = `rgba(0,220,255,${0.07 * (14 - w + 2)})`;
+    ctx.lineWidth = w; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  // Core
+  glow('#00eeff', 18);
+  ctx.strokeStyle = '#00eeff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  noGlow();
+
+  // Anchors
+  for (const [ax, ay] of [[x1, y1], [x2, y2]]) {
+    glow('#00ffff', 25);
+    ctx.fillStyle = '#00ffff';
+    ctx.beginPath(); ctx.arc(ax, ay, 7, 0, Math.PI * 2); ctx.fill();
+    noGlow();
+    ctx.fillStyle = '#003355';
+    ctx.beginPath(); ctx.arc(ax, ay, 3.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBall() {
+  // Trail
+  ballTrail.forEach(t => {
+    if (t.life <= 0) return;
+    ctx.save(); ctx.globalAlpha = t.life * 0.35;
+    glow('#cc44ff', 8);
+    ctx.fillStyle = '#aa22ff';
+    ctx.beginPath(); ctx.arc(t.x, t.y, BALL_R * 0.55 * t.life, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  });
+  // Glow rings
+  ctx.save();
+  for (let i = 3; i >= 1; i--) {
+    ctx.fillStyle = `rgba(220,100,255,${0.12 * i})`;
+    glow('#cc44ff', 12 * i);
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R + i * 5, 0, Math.PI * 2); ctx.fill();
+  }
+  // White core
+  glow('#ffffff', 25);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2); ctx.fill();
+  // Inner neon
+  glow('#ff88ff', 10);
+  ctx.fillStyle = '#ff88ff';
+  ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R * 0.55, 0, Math.PI * 2); ctx.fill();
+  noGlow();
+  ctx.restore();
+}
+
+function drawItems(ts) {
+  items.forEach(item => {
+    ctx.save(); ctx.translate(item.x, item.y); ctx.rotate(item.angle);
+    if (item.type === 'gem') {
+      const r = item.r;
+      glow(item.color, 22);
+      ctx.fillStyle = item.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 1.2); ctx.lineTo(r * 0.8, 0);
+      ctx.lineTo(0, r * 1.2);  ctx.lineTo(-r * 0.8, 0);
+      ctx.closePath(); ctx.fill();
+      // Specular
+      ctx.globalAlpha = 0.45; ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.ellipse(-r * 0.15, -r * 0.35, r * 0.22, r * 0.14, -0.5, 0, Math.PI * 2); ctx.fill();
+    } else {
+      const pulse = 0.85 + 0.15 * Math.sin(item.phase + ts * 0.006);
+      const r = item.r * pulse;
+      glow('#ff2255', 28);
+      ctx.fillStyle = '#ff2255';
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.8; glow('#fff', 5);
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.45, -r * 0.45); ctx.lineTo(r * 0.45,  r * 0.45);
+      ctx.moveTo( r * 0.45, -r * 0.45); ctx.lineTo(-r * 0.45, r * 0.45);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.save(); ctx.globalAlpha = Math.max(0, p.life);
+    glow(p.color, 8);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.3, p.r * p.life), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  });
+}
+
+function drawPopups() {
+  scorePopups.forEach(p => {
+    ctx.save(); ctx.globalAlpha = Math.max(0, p.life);
+    ctx.textAlign = 'center'; ctx.font = `bold ${Math.round(canvas.width * 0.032)}px monospace`;
+    glow(p.color, 12); ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.restore();
+  });
+}
+
+function drawHUD() {
+  const w = canvas.width, h = canvas.height;
+  ctx.save();
+
+  // Score
+  ctx.textAlign = 'left'; ctx.fillStyle = '#ffffff';
+  glow('#00ffff', 10);
+  ctx.font = `bold ${Math.round(w * 0.052)}px monospace`;
+  ctx.fillText(score, 18, 44);
+  ctx.font = `${Math.round(w * 0.022)}px monospace`;
+  ctx.fillStyle = '#6688aa'; noGlow();
+  ctx.fillText(`BEST ${hiScore}`, 18, 66);
+
+  // Timer
+  ctx.textAlign = 'right';
+  const tc = timeLeft <= 10 ? '#ff4444' : '#ffffff';
+  ctx.fillStyle = tc; glow(tc, timeLeft <= 10 ? 22 : 6);
+  ctx.font = `bold ${Math.round(w * 0.052)}px monospace`;
+  ctx.fillText(timeLeft, w - 18, 44);
+  ctx.font = `${Math.round(w * 0.022)}px monospace`;
+  ctx.fillStyle = '#6688aa'; noGlow();
+  ctx.fillText('TIME', w - 18, 66);
+
+  // Combo
+  if (combo >= 2) {
+    ctx.textAlign = 'center';
+    const cc = combo >= 6 ? '#ffdd00' : combo >= 3 ? '#ff88ff' : '#00ffff';
+    glow(cc, 20); ctx.fillStyle = cc;
+    ctx.font = `bold ${Math.round(w * 0.042)}px monospace`;
+    ctx.fillText(`×${Math.min(combo, 8)} COMBO`, w / 2, 46);
+  }
+
+  // Lives (hearts)
+  for (let i = 0; i < 3; i++) {
+    ctx.globalAlpha = i < lives ? 1 : 0.2;
+    glow('#ff4488', i < lives ? 14 : 0);
+    ctx.fillStyle = '#ff4488';
+    ctx.font = `${Math.round(h * 0.04)}px sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText('♥', 18 + i * (Math.round(h * 0.04) + 4), h - 22);
+  }
+  ctx.globalAlpha = 1; noGlow();
+
+  // Tilt guide (subtle arrows at rope ends)
+  const { x1, y1, x2, y2 } = ropeEnds();
+  ctx.fillStyle = 'rgba(0,200,255,0.25)';
+  ctx.font = `${Math.round(w * 0.025)}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText('◄ TILT', x1 + 30, y1 - 18);
+  ctx.fillText('TILT ►', x2 - 30, y2 - 18);
+
+  ctx.restore();
+}
+
+function drawStart(ts) {
+  drawBg();
+  const w = canvas.width, h = canvas.height;
+  ctx.save(); ctx.textAlign = 'center';
+
+  // Decorative rope preview
+  ctx.strokeStyle = 'rgba(0,220,255,0.3)';
+  ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
+  ctx.beginPath(); ctx.moveTo(ROPE_PAD, h * 0.52); ctx.lineTo(w - ROPE_PAD, h * 0.52); ctx.stroke();
+  ctx.setLineDash([]);
+
+  glow('#00ffff', 35); ctx.fillStyle = '#00ffff';
+  ctx.font = `bold ${Math.round(w * 0.1)}px monospace`;
+  ctx.fillText('TIGHTROPE', w / 2, h * 0.28);
+  glow('#ff88ff', 30); ctx.fillStyle = '#ff88ff';
+  ctx.font = `bold ${Math.round(w * 0.09)}px monospace`;
+  ctx.fillText('RUSH', w / 2, h * 0.28 + Math.round(w * 0.11));
+
+  noGlow();
+  ctx.fillStyle = '#aabbcc';
+  ctx.font = `${Math.round(w * 0.028)}px monospace`;
+  ctx.fillText('Move mouse / drag to TILT the rope', w / 2, h * 0.56);
+  ctx.fillText('Roll ball under falling GEMS to catch them', w / 2, h * 0.615);
+  ctx.fillStyle = '#ff6688';
+  ctx.fillText('Avoid red BOMBS!', w / 2, h * 0.665);
+
+  const pulse = 0.65 + 0.35 * Math.sin(ts * 0.003);
+  ctx.globalAlpha = pulse; glow('#ffdd00', 20); ctx.fillStyle = '#ffdd00';
+  ctx.font = `bold ${Math.round(w * 0.042)}px monospace`;
+  ctx.fillText('CLICK / TAP TO START', w / 2, h * 0.82);
+
+  if (hiScore > 0) {
+    ctx.globalAlpha = 0.7; noGlow(); ctx.fillStyle = '#7788aa';
+    ctx.font = `${Math.round(w * 0.025)}px monospace`;
+    ctx.fillText(`BEST: ${hiScore}`, w / 2, h * 0.9);
+  }
+  ctx.restore();
+}
+
+function drawGameOver(ts) {
+  drawBg();
+  const w = canvas.width, h = canvas.height;
+  ctx.save(); ctx.textAlign = 'center';
+
+  glow('#ff4488', 35); ctx.fillStyle = '#ff4488';
+  ctx.font = `bold ${Math.round(w * 0.075)}px monospace`;
+  ctx.fillText('GAME OVER', w / 2, h * 0.28);
+
+  glow('#00ffff', 15); ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${Math.round(w * 0.065)}px monospace`;
+  ctx.fillText(score, w / 2, h * 0.46);
+
+  noGlow(); ctx.fillStyle = '#6688aa';
+  ctx.font = `${Math.round(w * 0.03)}px monospace`;
+  ctx.fillText('SCORE', w / 2, h * 0.535);
+
+  if (score > 0 && score >= hiScore) {
+    glow('#ffdd00', 22); ctx.fillStyle = '#ffdd00';
+    ctx.font = `bold ${Math.round(w * 0.038)}px monospace`;
+    ctx.fillText('NEW BEST!', w / 2, h * 0.62);
+  } else if (hiScore > 0) {
+    noGlow(); ctx.fillStyle = '#7788aa';
+    ctx.font = `${Math.round(w * 0.027)}px monospace`;
+    ctx.fillText(`BEST: ${hiScore}`, w / 2, h * 0.62);
+  }
+
+  const pulse = 0.65 + 0.35 * Math.sin(ts * 0.003);
+  ctx.globalAlpha = pulse; glow('#ffdd00', 18); ctx.fillStyle = '#ffdd00';
+  ctx.font = `bold ${Math.round(w * 0.04)}px monospace`;
+  ctx.fillText('CLICK / TAP TO PLAY AGAIN', w / 2, h * 0.82);
+
+  ctx.restore();
+}
+
+// ── Loop ───────────────────────────────────────────────────────────────────
+function loop(ts) {
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+
+  update(dt);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (gstate === 'start') {
+    drawStart(ts);
+  } else if (gstate === 'gameover') {
+    drawGameOver(ts);
+    drawParticles();
+  } else {
+    drawBg();
+    drawParticles();
+    drawRope();
+    drawItems(ts);
+    drawBall();
+    drawPopups();
+    drawHUD();
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ── Input ──────────────────────────────────────────────────────────────────
+function resume() { try { AC.resume(); } catch(e) {} }
+
+function startOrRestart() {
+  resume(); initGame(); gstate = 'playing'; sStart();
+}
+
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  inputX = (e.clientX - r.left) * (canvas.width / r.width);
+});
+canvas.addEventListener('mouseleave', () => { inputX = -1; });
+
+canvas.addEventListener('click', () => {
+  if (gstate === 'start' || gstate === 'gameover') startOrRestart();
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); resume();
+  if (gstate === 'start' || gstate === 'gameover') { startOrRestart(); return; }
+  const r = canvas.getBoundingClientRect();
+  inputX = (e.touches[0].clientX - r.left) * (canvas.width / r.width);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  inputX = (e.touches[0].clientX - r.left) * (canvas.width / r.width);
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => { inputX = -1; });
+
+// Keyboard fallback: arrow keys / WASD tilt
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ' || e.key === 'Enter') {
+    if (gstate === 'start' || gstate === 'gameover') startOrRestart();
+  }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+</script>
+</body>
+</html>
