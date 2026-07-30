@@ -2665,5 +2665,20 @@
     "file": "games/2026-07-29/index.html",
     "preview": "games/2026-07-29/preview.png",
     "rating": 4.5
+  },
+  {
+    "id": "2026-07-30",
+    "name": "Circuit Rush",
+    "date": "2026-07-30",
+    "description": "Colored neon balls drop through a branching circuit network — toggle six binary switches across two rows to route each ball to its matching colored exit before it arrives! Chain correct routes for massive combo multipliers as balls rain faster and more simultaneously each level.",
+    "tagline": "Toggle the switches. Route the signal. Don't misfire!",
+    "tags": ["strategy", "reflex", "puzzle", "arcade", "routing"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap the ◄► switch nodes to toggle their direction — route each colored ball to the matching exit at the bottom",
+    "folder": "games/2026-07-30",
+    "file": "games/2026-07-30/index.html",
+    "preview": "games/2026-07-30/preview.png",
+    "rating": 4.5
   }
 ]

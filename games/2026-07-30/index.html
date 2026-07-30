@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Circuit Rush</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050510;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+  }
+  canvas { display: block; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" data-testid="game-canvas"></canvas>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = Math.min(window.innerWidth, 640);
+  canvas.height = Math.min(window.innerHeight, 700);
+}
+resize();
+window.addEventListener('resize', () => { resize(); buildLayout(); });
+
+// ── Constants ────────────────────────────────────────────
+const LS_KEY = 'circuitrush_hs';
+const COLS = 4;
+const NEON = ['#00ffff', '#ff00ff', '#ffff00', '#ff6600'];
+const GLOW = ['rgba(0,255,255,', 'rgba(255,0,255,', 'rgba(255,255,0,', 'rgba(255,102,0,'];
+const NAMES = ['CYAN', 'MGNTA', 'YLLW', 'ORNG'];
+
+// ── Game state ────────────────────────────────────────────
+let gs = {
+  phase: 'title', // title | play | over
+  score: 0,
+  hi: parseInt(localStorage.getItem(LS_KEY) || '0'),
+  lives: 3,
+  combo: 0,
+  comboT: 0,
+  level: 1,
+  spawnT: 0,
+  spawnI: 150,
+  tick: 0,
+  balls: [],
+  parts: [],
+  flash: { msg: '', t: 0 },
+  stars: [],
+};
+
+// ── Layout ────────────────────────────────────────────────
+// 4 columns, 6 switches (2 rows × 3), 4 exits
+let L = {}; // layout
+
+function buildLayout() {
+  const W = canvas.width, H = canvas.height;
+  const mx = W * 0.13;
+  const sx = (W - mx * 2) / 3; // column spacing
+  // Column x positions
+  const cols = [mx, mx + sx, mx + sx * 2, mx + sx * 3];
+
+  // Entries at top
+  const entries = cols.map(x => ({ x, y: H * 0.08 }));
+
+  // Exits at bottom
+  const exits = cols.map((x, i) => ({ x, y: H * 0.88, ci: i }));
+
+  // Switches: 3 between columns at 2 levels
+  // Switch k is between column k and k+1
+  // Row 1 switches (sw 0,1,2)
+  const swY1 = H * 0.38;
+  // Row 2 switches (sw 3,4,5)
+  const swY2 = H * 0.63;
+
+  const switches = [];
+  for (let k = 0; k < 3; k++) {
+    const x = (cols[k] + cols[k + 1]) / 2;
+    switches.push({ x, y: swY1, state: 0, id: k }); // row1
+  }
+  for (let k = 0; k < 3; k++) {
+    const x = (cols[k] + cols[k + 1]) / 2;
+    switches.push({ x, y: swY2, state: 0, id: k + 3 }); // row2
+  }
+
+  L = { W, H, cols, entries, exits, switches, swY1, swY2 };
+}
+buildLayout();
+
+// ── Routing ──────────────────────────────────────────────
+// A ball at column C hits:
+//   - Row1 switch between (C-1,C) or (C,C+1) depending on its path
+//   - Actually: ball falls straight down from its column
+//   - At swY1 it "is" at column C. Switch state between (C,C+1) or (C-1,C) diverts it.
+//
+// Rule: At each switch row, check if ball's column has an adjacent switch.
+//   Ball at col 0: can only be diverted RIGHT by sw0 (between 0,1)
+//   Ball at col 1: diverted by sw0 (LEFT) or sw1 (RIGHT)
+//   Ball at col 2: diverted by sw1 (LEFT) or sw2 (RIGHT)
+//   Ball at col 3: can only be diverted LEFT by sw2 (between 2,3)
+//
+// For simplicity: each column routes through one switch per row.
+// Even columns (0,2) pair with left switch; odd columns (1,3) pair with right switch.
+// col 0 -> sw0: state=0 stay col0, state=1 -> col1
+// col 1 -> sw0: state=0 -> col0, state=1 stay col1   (sw0 splits between 0,1)
+// col 2 -> sw2: state=0 stay col2, state=1 -> col3
+// col 3 -> sw2: state=0 -> col2, state=1 stay col3
+// But what about sw1 (between 1,2)?
+// Only balls that end up at col1 or col2 after row1 use sw1 in row2.
+//
+// Clean rule: At a switch row, each ball sees the switch between its current column and an adjacent one.
+// We assign: ball at col C sees sw_index = Math.min(C, 2) (the switch on the left side of C or col2)
+// Actually let me just hardcode:
+
+function routeCol(startCol, swStates) {
+  // swStates: array of 6 bools (sw0..sw5), sw[0..2] = row1, sw[3..5] = row2
+  // Returns final exit column
+  let c = startCol;
+
+  // Row 1: switch k is between cols k and k+1
+  // Ball at col c interacts with switch (c) if c < 3, or switch (c-1) if c > 0
+  // We use: if c==0 check sw0; if c==3 check sw2; else check sw(c-1) or sw(c)
+  // For determinism: ball at col c checks sw(min(c,2))
+  //   sw state=0: ball goes to lower col; state=1: ball goes to higher col
+  if (c === 0) {
+    if (swStates[0]) c = 1;
+  } else if (c === 1) {
+    if (!swStates[0]) c = 0; // sw0 state=0 pulls it left
+    // else stays at 1
+  } else if (c === 2) {
+    if (swStates[2]) c = 3; // sw2 state=1 pushes it right
+    // else stays at 2
+  } else { // c===3
+    if (!swStates[2]) c = 2; // sw2 state=0 pulls it left
+  }
+
+  // Row 2: same logic but with sw3(between 0-1), sw4(between 1-2), sw5(between 2-3)
+  if (c === 0) {
+    if (swStates[3]) c = 1;
+  } else if (c === 1) {
+    if (!swStates[3]) c = 0;
+    else if (swStates[4]) c = 2;
+  } else if (c === 2) {
+    if (!swStates[4]) c = 1;
+    else if (swStates[5]) c = 3;
+  } else { // c===3
+    if (!swStates[5]) c = 2;
+  }
+
+  return c;
+}
+
+function getSwStates() {
+  return L.switches.map(s => s.state === 1);
+}
+
+function reachableExits(entryCol) {
+  // Find all exits reachable by toggling any combination of switches
+  const reachable = new Set();
+  for (let mask = 0; mask < 64; mask++) {
+    const st = Array.from({ length: 6 }, (_, i) => !!(mask & (1 << i)));
+    reachable.add(routeCol(entryCol, st));
+  }
+  return [...reachable];
+}
+
+function currentExit(entryCol) {
+  return routeCol(entryCol, getSwStates());
+}
+
+// ── Ball ──────────────────────────────────────────────────
+function spawnBall() {
+  const entryCol = Math.floor(Math.random() * COLS);
+  const possible = reachableExits(entryCol);
+  const ci = possible[Math.floor(Math.random() * possible.length)];
+  const entry = L.entries[entryCol];
+  const speed = 0.8 + gs.level * 0.18 + Math.random() * 0.3;
+  gs.balls.push({
+    ci,            // color index (target exit)
+    ec: entryCol,  // entry column
+    x: entry.x,
+    y: entry.y,
+    tx: entry.x,   // target x (may shift at switches)
+    ty: L.exits[0].y,
+    col: entryCol, // current column (may change at switches)
+    speed,
+    trail: [],
+    row: 0,        // 0=above row1, 1=between rows, 2=below row2, 3=exited
+    scored: false,
+    dead: false,
+    r: 9,
+  });
+}
+
+function updateBall(b) {
+  b.trail.push({ x: b.x, y: b.y });
+  if (b.trail.length > 14) b.trail.shift();
+
+  // Move toward target x first (horizontal), then fall
+  const dx = b.tx - b.x;
+  if (Math.abs(dx) > 1) {
+    b.x += dx * 0.12;
+  } else {
+    b.x = b.tx;
+  }
+
+  b.y += b.speed;
+
+  // Check switch row 1
+  if (b.row === 0 && b.y >= L.swY1) {
+    b.row = 1;
+    // Apply row1 switching
+    const stBefore = b.col;
+    const swSt = getSwStates();
+    let c = b.col;
+    if (c === 0) { if (swSt[0]) c = 1; }
+    else if (c === 1) { if (!swSt[0]) c = 0; }
+    else if (c === 2) { if (swSt[2]) c = 3; }
+    else { if (!swSt[2]) c = 2; }
+    b.col = c;
+    b.tx = L.cols[c];
+    // Spark effect at switch
+    const swIdx = (stBefore <= 1) ? 0 : 2;
+    spawnParticles(L.switches[swIdx].x, L.swY1, NEON[b.ci], 6);
+  }
+
+  // Check switch row 2
+  if (b.row === 1 && b.y >= L.swY2) {
+    b.row = 2;
+    const swSt = getSwStates();
+    let c = b.col;
+    if (c === 0) { if (swSt[3]) c = 1; }
+    else if (c === 1) { if (!swSt[3]) c = 0; else if (swSt[4]) c = 2; }
+    else if (c === 2) { if (!swSt[4]) c = 1; else if (swSt[5]) c = 3; }
+    else { if (!swSt[5]) c = 2; }
+    b.col = c;
+    b.tx = L.cols[c];
+    const swIdx = (b.col <= 1) ? 3 : 5;
+    spawnParticles(L.switches[swIdx].x, L.swY2, NEON[b.ci], 6);
+  }
+
+  // Check exit
+  if (b.row < 3 && b.y >= L.exits[0].y) {
+    b.row = 3;
+    if (!b.scored) {
+      b.scored = true;
+      const correct = b.col === b.ci;
+      if (correct) {
+        gs.combo++;
+        gs.comboT = 120;
+        const mult = Math.min(gs.combo, 8);
+        const pts = 100 * mult;
+        gs.score += pts;
+        if (gs.score > gs.hi) { gs.hi = gs.score; localStorage.setItem(LS_KEY, gs.hi); }
+        gs.flash = { msg: gs.combo > 1 ? `COMBO ×${mult}!  +${pts}` : `+${pts}`, t: 70 };
+        spawnParticles(b.x, b.y, NEON[b.ci], 16);
+        playTone(330 + b.ci * 110, 'sine', 0.2, 0.25);
+      } else {
+        gs.lives--;
+        gs.combo = 0;
+        gs.comboT = 0;
+        gs.flash = { msg: 'WRONG EXIT! ✕', t: 70 };
+        spawnParticles(b.x, b.y, '#ff3344', 18);
+        playTone(120, 'sawtooth', 0.15, 0.3);
+        if (gs.lives <= 0) gs.phase = 'over';
+      }
+    }
+    b.dead = true;
+  }
+}
+
+// ── Audio ─────────────────────────────────────────────────
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+function playTone(freq, type, vol, dur) {
+  try {
+    const o = AC.createOscillator();
+    const g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + dur);
+    o.start(); o.stop(AC.currentTime + dur);
+  } catch (e) {}
+}
+
+// ── Particles ─────────────────────────────────────────────
+function spawnParticles(x, y, color, n = 8) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.PI * 2 * (i / n) + Math.random() * 0.4;
+    const s = 1.5 + Math.random() * 2.5;
+    gs.parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: 1, dec: 0.025 + Math.random() * 0.02, color, sz: 2 + Math.random() * 3 });
+  }
+}
+
+function initGame() {
+  gs.score = 0; gs.lives = 3; gs.combo = 0; gs.comboT = 0;
+  gs.level = 1; gs.spawnT = 0; gs.spawnI = 150; gs.tick = 0;
+  gs.balls = []; gs.parts = []; gs.flash = { msg: '', t: 0 };
+  gs.stars = Array.from({ length: 55 }, () => ({
+    x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+    r: Math.random() * 1.2, ph: Math.random() * Math.PI * 2
+  }));
+  buildLayout();
+  // Random initial switch states
+  for (const sw of L.switches) sw.state = Math.floor(Math.random() * 2);
+}
+
+// ── Click ─────────────────────────────────────────────────
+function handleInput(px, py) {
+  if (gs.phase === 'title' || gs.phase === 'over') {
+    gs.phase = 'play';
+    initGame();
+    return;
+  }
+  // Toggle switches
+  for (const sw of L.switches) {
+    const d = Math.hypot(px - sw.x, py - sw.y);
+    if (d < 24) {
+      sw.state ^= 1;
+      playTone(sw.state ? 660 : 440, 'square', 0.07, 0.08);
+      spawnParticles(sw.x, sw.y, sw.state ? '#ff8844' : '#4488ff', 5);
+      return;
+    }
+  }
+}
+
+canvas.addEventListener('click', e => {
+  const r = canvas.getBoundingClientRect();
+  handleInput(e.clientX - r.left, e.clientY - r.top);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect(), t = e.touches[0];
+  handleInput(t.clientX - r.left, t.clientY - r.top);
+}, { passive: false });
+
+// ── Draw helpers ──────────────────────────────────────────
+function glow(color) {
+  ctx.shadowBlur = 16; ctx.shadowColor = color;
+}
+function noGlow() { ctx.shadowBlur = 0; }
+
+function drawLine(x1, y1, x2, y2, color, width = 2, alpha = 1) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.restore();
+}
+
+// ── Render ────────────────────────────────────────────────
+function drawBg() {
+  const { W, H } = L;
+  ctx.fillStyle = '#050510';
+  ctx.fillRect(0, 0, W, H);
+  // Grid
+  ctx.strokeStyle = 'rgba(25,25,60,0.35)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 36) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 36) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  // Stars
+  for (const s of (gs.stars || [])) {
+    s.ph += 0.015;
+    const a = 0.25 + 0.25 * Math.sin(s.ph);
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(180,180,255,${a})`; ctx.fill();
+  }
+}
+
+function drawCircuit() {
+  const { cols, entries, exits, switches, swY1, swY2 } = L;
+
+  // Draw track pipes (vertical lines per column, muted)
+  for (let c = 0; c < COLS; c++) {
+    const x = cols[c];
+    drawLine(x, entries[c].y + 12, x, exits[c].y - 14, 'rgba(60,60,120,0.35)', 3);
+  }
+
+  // Draw switch connections (diagonal pipes to show routing options)
+  ctx.setLineDash([4, 5]);
+  ctx.lineWidth = 1.5;
+  // Row1 switch connections
+  for (let k = 0; k < 3; k++) {
+    const sw = switches[k];
+    // Left connection
+    drawLine(cols[k], swY1 - 5, sw.x, sw.y, 'rgba(80,80,180,0.25)', 1.5);
+    drawLine(sw.x, sw.y, cols[k], swY1 + 5, 'rgba(80,80,180,0.25)', 1.5);
+    // Right connection
+    drawLine(cols[k+1], swY1 - 5, sw.x, sw.y, 'rgba(80,80,180,0.25)', 1.5);
+    drawLine(sw.x, sw.y, cols[k+1], swY1 + 5, 'rgba(80,80,180,0.25)', 1.5);
+  }
+  // Row2 switch connections
+  for (let k = 0; k < 3; k++) {
+    const sw = switches[k + 3];
+    drawLine(cols[k], swY2 - 5, sw.x, sw.y, 'rgba(80,80,180,0.25)', 1.5);
+    drawLine(sw.x, sw.y, cols[k], swY2 + 5, 'rgba(80,80,180,0.25)', 1.5);
+    drawLine(cols[k+1], swY2 - 5, sw.x, sw.y, 'rgba(80,80,180,0.25)', 1.5);
+    drawLine(sw.x, sw.y, cols[k+1], swY2 + 5, 'rgba(80,80,180,0.25)', 1.5);
+  }
+  ctx.setLineDash([]);
+
+  // Draw exits
+  for (let i = 0; i < COLS; i++) {
+    const ex = exits[i];
+    const col = NEON[i];
+    // Pulse
+    const pulse = 0.5 + 0.3 * Math.sin(gs.tick * 0.05 + i * 1.2);
+    ctx.beginPath(); ctx.arc(ex.x, ex.y, 15, 0, Math.PI * 2);
+    ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+    glow(col); ctx.stroke(); noGlow();
+    ctx.globalAlpha = 0.15 + pulse * 0.2;
+    ctx.fillStyle = col; ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = col;
+    ctx.font = `bold 9px Courier New`; ctx.textAlign = 'center';
+    ctx.fillText(NAMES[i], ex.x, ex.y + 28);
+  }
+
+  // Draw entry arrows
+  for (let i = 0; i < COLS; i++) {
+    const en = entries[i];
+    ctx.fillStyle = 'rgba(120,120,200,0.5)';
+    ctx.beginPath();
+    ctx.moveTo(en.x - 6, en.y - 4); ctx.lineTo(en.x + 6, en.y - 4);
+    ctx.lineTo(en.x, en.y + 8); ctx.closePath(); ctx.fill();
+  }
+
+  // Draw switches
+  for (const sw of switches) {
+    const isOn = sw.state === 1;
+    const col = isOn ? '#ff8844' : '#4488ff';
+    const pulse = 0.8 + 0.2 * Math.sin(gs.tick * 0.06 + sw.id);
+
+    // Outer ring
+    ctx.beginPath(); ctx.arc(sw.x, sw.y, 17, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(10,10,30,0.9)'; ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+    glow(col); ctx.stroke(); noGlow();
+
+    // Arrow
+    ctx.fillStyle = col;
+    ctx.font = 'bold 13px Courier New';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    glow(col);
+    ctx.fillText(isOn ? '►' : '◄', sw.x, sw.y);
+    noGlow();
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+function drawBalls() {
+  for (const b of gs.balls) {
+    // Trail
+    for (let i = 0; i < b.trail.length; i++) {
+      const tp = b.trail[i];
+      const prog = i / b.trail.length;
+      ctx.beginPath(); ctx.arc(tp.x, tp.y, b.r * 0.55 * prog, 0, Math.PI * 2);
+      ctx.fillStyle = GLOW[b.ci] + (prog * 0.45) + ')';
+      ctx.fill();
+    }
+    // Glow halo
+    const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 2.8);
+    grad.addColorStop(0, GLOW[b.ci] + '0.4)');
+    grad.addColorStop(1, GLOW[b.ci] + '0)');
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 2.8, 0, Math.PI * 2);
+    ctx.fillStyle = grad; ctx.fill();
+    // Ball
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fillStyle = NEON[b.ci];
+    glow(NEON[b.ci]); ctx.fill(); noGlow();
+    // Shine
+    ctx.beginPath(); ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.35, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fill();
+
+    // Color label on ball
+    ctx.fillStyle = '#000';
+    ctx.font = `bold ${b.r * 0.75}px Courier New`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(NAMES[b.ci][0], b.x, b.y);
+    ctx.textBaseline = 'alphabetic';
+
+    // Preview current exit indicator (small dot at destination)
+    const destX = L.cols[b.col];
+    const destY = L.exits[b.ci].y;
+    ctx.beginPath(); ctx.arc(destX, destY - 24, 4, 0, Math.PI * 2);
+    ctx.fillStyle = NEON[b.ci]; ctx.globalAlpha = 0.6; ctx.fill(); ctx.globalAlpha = 1;
+  }
+}
+
+function drawParticles() {
+  for (const p of gs.parts) {
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.sz * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = p.color; ctx.globalAlpha = p.life; ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHUD() {
+  const { W, H } = L;
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 20px Courier New';
+  glow('#00ffff'); ctx.fillStyle = '#00ffff';
+  ctx.fillText(`${gs.score}`, 10, 28); noGlow();
+  ctx.font = '11px Courier New'; ctx.fillStyle = 'rgba(150,200,255,0.65)';
+  ctx.fillText(`HI:${gs.hi}`, 10, 44);
+
+  // Level
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 12px Courier New'; ctx.fillStyle = 'rgba(180,180,255,0.8)';
+  ctx.fillText(`LV ${gs.level}`, W / 2, 24);
+
+  // Lives
+  ctx.textAlign = 'right';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < gs.lives ? '#ff4488' : 'rgba(60,30,50,0.5)';
+    if (i < gs.lives) glow('#ff4488');
+    ctx.font = '17px Courier New';
+    ctx.fillText('♥', W - 8 - i * 22, 26);
+    noGlow();
+  }
+
+  // Combo
+  if (gs.combo > 1 && gs.comboT > 0) {
+    const a = Math.min(1, gs.comboT / 30);
+    ctx.textAlign = 'center'; ctx.font = `bold ${15 + gs.combo}px Courier New`;
+    ctx.fillStyle = `rgba(255,255,0,${a})`; glow('#ffff00');
+    ctx.fillText(`COMBO ×${Math.min(gs.combo, 8)}`, W / 2, 50); noGlow();
+  }
+
+  // Flash
+  if (gs.flash.t > 0) {
+    const a = Math.min(1, gs.flash.t / 25);
+    ctx.textAlign = 'center'; ctx.font = 'bold 22px Courier New';
+    ctx.fillStyle = `rgba(255,255,80,${a})`; glow('#ffff00');
+    ctx.fillText(gs.flash.msg, W / 2, H * 0.5); noGlow();
+  }
+
+  // "Click switches to route balls" hint (early game)
+  if (gs.tick < 200 && gs.balls.length === 0) {
+    ctx.textAlign = 'center'; ctx.font = '11px Courier New';
+    ctx.fillStyle = 'rgba(150,150,200,0.7)';
+    ctx.fillText('Click ◄► switches to route balls to matching exits', W / 2, H * 0.96);
+  }
+}
+
+function drawTitle() {
+  const { W, H } = L;
+  ctx.fillStyle = '#050510'; ctx.fillRect(0, 0, W, H);
+
+  // Moving scan lines
+  const t = gs.tick;
+  for (let i = 0; i < 5; i++) {
+    const x = (W * (i * 0.22 + 0.05) + t * 0.4) % (W * 1.1);
+    ctx.strokeStyle = `rgba(0,80,160,0.15)`; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x - H * 0.3, H); ctx.stroke();
+  }
+
+  ctx.textAlign = 'center';
+  ctx.font = `bold ${Math.min(54, W * 0.12)}px Courier New`;
+  glow('#00ffff'); ctx.fillStyle = '#00ffff';
+  ctx.fillText('CIRCUIT', W / 2, H * 0.3); noGlow();
+  glow('#ff00ff'); ctx.fillStyle = '#ff00ff';
+  ctx.font = `bold ${Math.min(54, W * 0.12)}px Courier New`;
+  ctx.fillText('RUSH', W / 2, H * 0.3 + Math.min(58, W * 0.14)); noGlow();
+
+  ctx.font = `${Math.min(14, W * 0.035)}px Courier New`;
+  ctx.fillStyle = 'rgba(200,200,255,0.85)';
+  ctx.fillText('Toggle switches to route colored balls', W / 2, H * 0.52);
+  ctx.fillText('to their matching exit zones!', W / 2, H * 0.57);
+
+  ctx.font = `${Math.min(12, W * 0.032)}px Courier New`;
+  ctx.fillStyle = 'rgba(140,140,200,0.65)';
+  ctx.fillText('Click switches  ·  Chain correct routes for combos', W / 2, H * 0.64);
+
+  const p = 0.7 + 0.3 * Math.sin(t * 0.05);
+  ctx.font = `bold ${Math.min(18, W * 0.045)}px Courier New`;
+  ctx.fillStyle = `rgba(255,255,80,${p})`; glow('#ffff00');
+  ctx.fillText('CLICK TO START', W / 2, H * 0.76); noGlow();
+
+  if (gs.hi > 0) {
+    ctx.font = `${Math.min(13, W * 0.033)}px Courier New`;
+    ctx.fillStyle = 'rgba(255,200,80,0.8)';
+    ctx.fillText(`BEST: ${gs.hi}`, W / 2, H * 0.86);
+  }
+
+  // Show 4 colored exit dots as preview
+  for (let i = 0; i < 4; i++) {
+    const cx = W * 0.25 + i * W * 0.17;
+    ctx.beginPath(); ctx.arc(cx, H * 0.89, 7, 0, Math.PI * 2);
+    ctx.fillStyle = NEON[i]; glow(NEON[i]); ctx.fill(); noGlow();
+  }
+}
+
+function drawOver() {
+  const { W, H } = L;
+  ctx.fillStyle = 'rgba(5,5,16,0.88)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 42px Courier New';
+  glow('#ff0044'); ctx.fillStyle = '#ff0044';
+  ctx.fillText('GAME OVER', W / 2, H * 0.34); noGlow();
+  ctx.font = 'bold 26px Courier New'; ctx.fillStyle = '#ffff00';
+  ctx.fillText(`SCORE: ${gs.score}`, W / 2, H * 0.48);
+  ctx.font = '16px Courier New'; ctx.fillStyle = '#aaaaff';
+  ctx.fillText(`BEST: ${gs.hi}`, W / 2, H * 0.57);
+  const p = 0.6 + 0.4 * Math.sin(gs.tick * 0.05);
+  ctx.font = 'bold 16px Courier New';
+  ctx.fillStyle = `rgba(255,255,80,${p})`; glow('#ffff00');
+  ctx.fillText('CLICK TO PLAY AGAIN', W / 2, H * 0.73); noGlow();
+}
+
+// ── Main loop ─────────────────────────────────────────────
+function frame() {
+  gs.tick++;
+
+  if (gs.phase === 'play') {
+    // Decay timers
+    if (gs.comboT > 0) { gs.comboT--; if (gs.comboT === 0) gs.combo = 0; }
+    if (gs.flash.t > 0) gs.flash.t--;
+
+    // Level up
+    const nl = 1 + Math.floor(gs.score / 600);
+    if (nl > gs.level) { gs.level = nl; gs.spawnI = Math.max(55, 150 - nl * 12); }
+
+    // Spawn
+    gs.spawnT++;
+    if (gs.spawnT >= gs.spawnI) { gs.spawnT = 0; spawnBall(); }
+
+    // Update balls
+    for (const b of gs.balls) if (!b.dead) updateBall(b);
+    gs.balls = gs.balls.filter(b => !b.dead);
+
+    // Update particles
+    for (const p of gs.parts) {
+      p.x += p.vx; p.y += p.vy; p.vx *= 0.94; p.vy *= 0.94; p.life -= p.dec;
+    }
+    gs.parts = gs.parts.filter(p => p.life > 0);
+  }
+
+  // Render
+  if (!L.W) buildLayout();
+  drawBg();
+
+  if (gs.phase === 'title') {
+    drawTitle();
+  } else {
+    drawCircuit();
+    drawBalls();
+    drawParticles();
+    drawHUD();
+    if (gs.phase === 'over') drawOver();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+// Init stars for title
+gs.stars = Array.from({ length: 55 }, () => ({
+  x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+  r: Math.random() * 1.2, ph: Math.random() * Math.PI * 2
+}));
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
