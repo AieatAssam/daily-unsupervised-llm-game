@@ -2680,5 +2680,20 @@
     "file": "games/2026-07-30/index.html",
     "preview": "games/2026-07-30/preview.png",
     "rating": 4.5
+  },
+  {
+    "id": "2026-07-31",
+    "name": "Neon Angler",
+    "date": "2026-07-31",
+    "description": "Cast a glowing neon line into a bioluminescent deep — watch fish swim past at varying depths, wait for the lure to twitch with a nibble, then CLICK to set the hook the moment BITE! flashes! Cyan Minnows are near the surface, magenta Bass roam mid-water, golden Sunfish lurk in the depths, and legendary white giants haunt the abyss. Avoid the ⚡ ZAPPER at all costs. Chain consecutive catches for massive combo multipliers!",
+    "tagline": "Cast deep. Watch the nibble. Click the BITE!",
+    "tags": ["fishing", "timing", "reflex", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click water to CAST · Click / Space when BITE! flashes to set hook · Chain catches for combo multipliers",
+    "folder": "games/2026-07-31",
+    "file": "games/2026-07-31/index.html",
+    "preview": "games/2026-07-31/preview.png",
+    "rating": 4.6
   }
 ]
