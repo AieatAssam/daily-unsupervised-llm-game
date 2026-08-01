@@ -2695,5 +2695,20 @@
     "file": "games/2026-07-31/index.html",
     "preview": "games/2026-07-31/preview.png",
     "rating": 4.6
+  },
+  {
+    "id": "2026-08-01",
+    "name": "Neon Pinball",
+    "date": "2026-08-01",
+    "description": "Classic pinball reimagined in neon — hold to charge the spring then release to launch a glowing plasma ball into a field of electrified bumpers! Blast five neon bumpers for score, light all three top targets for JACKPOT multipliers, and keep the ball alive with Z and X flippers as combos stack up to 10×. One more ball, one more try.",
+    "tagline": "Charge. Launch. Flip. Chase the jackpot!",
+    "tags": ["pinball", "action", "physics", "arcade", "reflex"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Hold SPACE / click to charge spring · Release to launch · Z/← = left flipper · X/→ = right flipper · Click left/right half of screen on mobile",
+    "folder": "games/2026-08-01",
+    "file": "games/2026-08-01/index.html",
+    "preview": "games/2026-08-01/preview.png",
+    "rating": 4.5
   }
 ]
