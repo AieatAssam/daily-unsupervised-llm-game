@@ -2710,5 +2710,20 @@
     "file": "games/2026-08-01/index.html",
     "preview": "games/2026-08-01/preview.png",
     "rating": 4.5
+  },
+  {
+    "id": "2026-08-02",
+    "name": "Neon Coil",
+    "date": "2026-08-02",
+    "description": "Guide a glowing serpent through a neon grid, devouring pulsing orbs to grow longer and rack up score. Chain quick eats for rising combo multipliers, snag rare golden power orbs for bonus points, and watch the pace quicken as your coil grows — one wrong turn into a wall or your own tail ends the run.",
+    "tagline": "Grow the glow. Don’t bite yourself.",
+    "tags": ["snake", "arcade", "reflex", "casual", "grid"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow keys / WASD to steer · Swipe or on-screen D-pad on mobile",
+    "folder": "games/2026-08-02",
+    "file": "games/2026-08-02/index.html",
+    "preview": "games/2026-08-02/preview.png",
+    "rating": 4.4
   }
 ]
