@@ -2725,5 +2725,20 @@
     "file": "games/2026-08-02/index.html",
     "preview": "games/2026-08-02/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-08-03",
+    "name": "Neon Typist",
+    "date": "2026-08-03",
+    "description": "Neon words plummet toward the deck — type them letter by letter before they slip past your three lives. Lock onto a word with its first letter, blast through it for a shower of particles, and chain completions for rising combo multipliers as falling speed and word length ramp up.",
+    "tagline": "Type fast. Glow brighter. Don't let it hit the deck.",
+    "tags": ["typing", "reflex", "arcade", "word", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Type letters on your keyboard to spell falling words · Tap the on-screen keyboard on mobile",
+    "folder": "games/2026-08-03",
+    "file": "games/2026-08-03/index.html",
+    "preview": "games/2026-08-03/preview.png",
+    "rating": 4.4
   }
 ]
