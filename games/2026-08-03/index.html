@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Neon Typist</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+    background: #050212;
+    font-family: 'Courier New', monospace;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; position: relative; }
+  canvas { display: block; touch-action: none; }
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 14px 18px; pointer-events: none; z-index: 5;
+  }
+  .hud-block {
+    color: #eaffea;
+    text-shadow: 0 0 8px #39ff14, 0 0 16px #39ff14;
+    font-size: 18px; font-weight: bold; letter-spacing: 1px;
+  }
+  .hud-sub { font-size: 12px; color: #b026ff; text-shadow: 0 0 8px #b026ff; margin-top: 4px; }
+  .lives { font-size: 20px; letter-spacing: 4px; text-shadow: 0 0 10px #ff2fd6; }
+  .combo-badge {
+    position: absolute; top: 56px; left: 50%; transform: translateX(-50%);
+    color: #ffe600; text-shadow: 0 0 10px #ffe600, 0 0 20px #ff8800;
+    font-size: 22px; font-weight: bold; opacity: 0; transition: opacity 0.15s;
+    pointer-events: none; z-index: 5;
+  }
+  .combo-badge.show { opacity: 1; }
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 10;
+    background: radial-gradient(circle at 50% 40%, rgba(20,40,0,0.85), rgba(2,0,10,0.96));
+    text-align: center; padding: 20px;
+  }
+  .title {
+    font-size: clamp(30px, 8vw, 62px); font-weight: 900; letter-spacing: 4px;
+    background: linear-gradient(90deg, #39ff14, #b026ff, #ff2fd6, #39ff14);
+    background-size: 300% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shimmer 3s linear infinite;
+    text-shadow: 0 0 30px rgba(57,255,20,0.4);
+    margin: 0;
+  }
+  @keyframes shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 300% 50%; } }
+  .subtitle { color: #b7ffb0; margin-top: 10px; font-size: clamp(13px, 3vw, 16px); letter-spacing: 1px; max-width: 460px; }
+  .btn {
+    margin-top: 26px; padding: 14px 36px; font-size: 18px; font-weight: bold;
+    background: linear-gradient(135deg, #39ff14, #b026ff);
+    border: none; border-radius: 30px; color: #0a0016; cursor: pointer;
+    box-shadow: 0 0 20px rgba(57,255,20,0.7), 0 0 40px rgba(176, 38, 255, 0.4);
+    letter-spacing: 2px; text-transform: uppercase;
+    transition: transform 0.12s ease;
+  }
+  .btn:active { transform: scale(0.94); }
+  .score-line { color: #fff; font-size: 20px; margin-top: 14px; text-shadow: 0 0 10px #39ff14; }
+  .hi-line { color: #ffe600; font-size: 15px; margin-top: 6px; text-shadow: 0 0 8px #ffe600; }
+  .hint { color: #7ad87a; font-size: 12px; margin-top: 20px; opacity: 0.85; }
+
+  .keyboard {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    padding: 8px 6px 10px; z-index: 6;
+    background: linear-gradient(0deg, rgba(5,2,18,0.9), rgba(5,2,18,0));
+  }
+  .kb-row { display: flex; gap: 4px; justify-content: center; width: 100%; max-width: 620px; }
+  .kb-key {
+    flex: 1; max-width: 46px; height: 40px; min-width: 22px;
+    background: rgba(57,255,20,0.08); border: 1px solid rgba(57,255,20,0.45);
+    color: #cfffc8; font-size: 13px; font-weight: bold; border-radius: 7px; cursor: pointer;
+    box-shadow: 0 0 8px rgba(57,255,20,0.25);
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent; font-family: 'Courier New', monospace;
+  }
+  .kb-key:active, .kb-key.pressed { background: rgba(57,255,20,0.4); transform: scale(0.94); }
+  .danger-line {
+    position: absolute; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(255,47,214,0.7), transparent);
+    box-shadow: 0 0 10px rgba(255,47,214,0.6);
+    z-index: 3; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-type="module">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'neonTypist_highScore';
+const KB_HEIGHT = 160;
+
+const WORDS_SHORT = ['NEON', 'GLOW', 'SYNC', 'WAVE', 'CODE', 'BYTE', 'GRID', 'ECHO', 'NOVA', 'FLUX', 'VOLT', 'ZERO'];
+const WORDS_MED = ['PULSE', 'LASER', 'SPARK', 'ORBIT', 'CYBER', 'QUARK', 'PIXEL', 'STORM', 'BLAZE', 'PHASE', 'RADAR', 'GLITCH'];
+const WORDS_LONG = ['CIRCUIT', 'PHOTON', 'COMET', 'SURGE', 'MATRIX', 'VECTOR', 'PLASMA', 'GALAXY', 'REACTOR', 'BEACON'];
+
+function rand(min, max) { return Math.random() * (max - min) + min; }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, gainVal) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'square';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(gainVal || 0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) {}
+  }, [getCtx]);
+
+  return {
+    type: (progress) => beep(500 + Math.min(progress, 12) * 40, 0.07, 'square', 0.06),
+    complete: (combo) => beep(700 + Math.min(combo, 20) * 20, 0.18, 'sawtooth', 0.09),
+    wrong: () => beep(140, 0.15, 'square', 0.09),
+    miss: () => beep(90, 0.35, 'sawtooth', 0.11),
+    gameover: () => beep(70, 0.6, 'sawtooth', 0.13),
+  };
+}
+
+function Game() {
+  const canvasRef = useRef(null);
+  const rafRef = useRef(null);
+
+  const [hud, setHud] = useState({ score: 0, combo: 0, highScore: 0, lives: 3 });
+  const [phase, setPhase] = useState('start'); // start | playing | gameover
+  const [comboFlash, setComboFlash] = useState(false);
+  const [pressedKey, setPressedKey] = useState(null);
+
+  const audio = useAudio();
+
+  const stateRef = useRef({
+    words: [],
+    particles: [],
+    nextId: 1,
+    activeId: null,
+    score: 0,
+    combo: 0,
+    lives: 3,
+    spawnTimer: 0,
+    spawnInterval: 2300,
+    fallSpeed: 44,
+    elapsed: 0,
+    shake: 0,
+    running: false,
+    dims: { w: window.innerWidth, h: window.innerHeight },
+  });
+
+  const flashCombo = useCallback(() => {
+    setComboFlash(true);
+    setTimeout(() => setComboFlash(false), 300);
+  }, []);
+
+  const flashKey = useCallback((k) => {
+    setPressedKey(k);
+    setTimeout(() => setPressedKey(null), 120);
+  }, []);
+
+  const spawnParticles = useCallback((cx, cy, color, count) => {
+    const s = stateRef.current;
+    for (let i = 0; i < count; i++) {
+      s.particles.push({
+        x: cx, y: cy,
+        vx: rand(-160, 160),
+        vy: rand(-160, 160),
+        life: 1,
+        color,
+        size: rand(2, 4),
+      });
+    }
+  }, []);
+
+  const pickWord = useCallback(() => {
+    const s = stateRef.current;
+    let pool = WORDS_SHORT;
+    if (s.elapsed > 45000) pool = WORDS_SHORT.concat(WORDS_MED, WORDS_LONG);
+    else if (s.elapsed > 15000) pool = WORDS_SHORT.concat(WORDS_MED);
+    return pool[Math.floor(Math.random() * pool.length)];
+  }, []);
+
+  const spawnWord = useCallback(() => {
+    const s = stateRef.current;
+    const text = pickWord();
+    const w = s.dims.w;
+    const margin = 60;
+    const x = rand(margin, Math.max(margin + 1, w - margin));
+    s.words.push({
+      id: s.nextId++,
+      text,
+      progress: 0,
+      x,
+      y: -20,
+      speed: s.fallSpeed + rand(-8, 8),
+      hue: rand(0, 1),
+      wrongFlash: 0,
+    });
+  }, [pickWord]);
+
+  const endGame = useCallback(() => {
+    const s = stateRef.current;
+    s.running = false;
+    audio.gameover();
+    s.shake = 14;
+    const hi = Math.max(s.score, parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+    localStorage.setItem(HS_KEY, String(hi));
+    setHud({ score: s.score, combo: s.combo, highScore: hi, lives: s.lives });
+    setPhase('gameover');
+  }, [audio]);
+
+  const startGame = useCallback(() => {
+    const s = stateRef.current;
+    s.words = [];
+    s.particles = [];
+    s.nextId = 1;
+    s.activeId = null;
+    s.score = 0;
+    s.combo = 0;
+    s.lives = 3;
+    s.spawnTimer = 0;
+    s.spawnInterval = 2300;
+    s.fallSpeed = 44;
+    s.elapsed = 0;
+    s.shake = 0;
+    s.running = true;
+    const hi = parseInt(localStorage.getItem(HS_KEY) || '0', 10);
+    localStorage.setItem(HS_KEY, String(hi));
+    setHud({ score: 0, combo: 0, highScore: hi, lives: 3 });
+    setPhase('playing');
+  }, []);
+
+  const handleLetter = useCallback((letter) => {
+    const s = stateRef.current;
+    if (!s.running) return;
+    flashKey(letter);
+    let word = s.activeId ? s.words.find(w => w.id === s.activeId) : null;
+
+    if (!word) {
+      const danger = s.dims.h - KB_HEIGHT;
+      let best = null;
+      for (const w of s.words) {
+        if (w.progress === 0 && w.text[0] === letter) {
+          if (!best || w.y > best.y) best = w;
+        }
+      }
+      if (best) {
+        best.progress = 1;
+        s.activeId = best.id;
+        audio.type(1);
+        if (best.progress >= best.text.length) {
+          completeWord(best);
+        }
+      } else {
+        audio.wrong();
+        s.combo = 0;
+      }
+      return;
+    }
+
+    const nextChar = word.text[word.progress];
+    if (letter === nextChar) {
+      word.progress += 1;
+      audio.type(word.progress);
+      if (word.progress >= word.text.length) {
+        completeWord(word);
+      }
+    } else {
+      audio.wrong();
+      s.combo = 0;
+      word.wrongFlash = 1;
+      s.shake = Math.max(s.shake, 3);
+    }
+
+    function completeWord(w) {
+      s.combo += 1;
+      const mult = 1 + Math.floor((s.combo - 1) / 4) * 0.5;
+      const gained = Math.round(w.text.length * 12 * mult);
+      s.score += gained;
+      spawnParticles(w.x, w.y, '#39ff14', 20 + w.text.length * 2);
+      audio.complete(s.combo);
+      if (s.combo > 0 && s.combo % 4 === 0) flashCombo();
+      s.words = s.words.filter(x => x.id !== w.id);
+      s.activeId = null;
+      s.spawnInterval = Math.max(750, 2300 - s.score * 1.5);
+      s.fallSpeed = Math.min(190, 44 + s.score * 0.35);
+    }
+  }, [audio, flashCombo, flashKey, spawnParticles]);
+
+  // resize
+  useEffect(() => {
+    function resize() {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = w;
+      canvas.height = h;
+      stateRef.current.dims = { w, h };
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  // main loop
+  useEffect(() => {
+    let last = performance.now();
+
+    function frame(now) {
+      const dt = Math.min(now - last, 60);
+      last = now;
+      const s = stateRef.current;
+      const canvas = canvasRef.current;
+
+      if (s.running) {
+        update(s, dt);
+      }
+      if (canvas) {
+        draw(canvas.getContext('2d'), s);
+      }
+      rafRef.current = requestAnimationFrame(frame);
+    }
+
+    function update(s, dt) {
+      s.elapsed += dt;
+      s.spawnTimer += dt;
+      if (s.spawnTimer >= s.spawnInterval) {
+        s.spawnTimer = 0;
+        spawnWord();
+      }
+
+      const dangerY = s.dims.h - KB_HEIGHT;
+      for (let i = s.words.length - 1; i >= 0; i--) {
+        const w = s.words[i];
+        w.y += (w.speed * dt) / 1000;
+        if (w.wrongFlash > 0) w.wrongFlash = Math.max(0, w.wrongFlash - dt / 200);
+        if (w.y >= dangerY) {
+          s.lives -= 1;
+          s.combo = 0;
+          spawnParticles(w.x, dangerY, '#ff2fd6', 16);
+          audio.miss();
+          s.shake = Math.max(s.shake, 8);
+          if (s.activeId === w.id) s.activeId = null;
+          s.words.splice(i, 1);
+          if (s.lives <= 0) {
+            endGame();
+            return;
+          }
+        }
+      }
+
+      for (let i = s.particles.length - 1; i >= 0; i--) {
+        const p = s.particles[i];
+        p.x += (p.vx * dt) / 1000;
+        p.y += (p.vy * dt) / 1000;
+        p.life -= dt / 600;
+        if (p.life <= 0) s.particles.splice(i, 1);
+      }
+
+      if (s.shake > 0) s.shake = Math.max(0, s.shake - dt / 20);
+
+      setHud(h => (h.score === s.score && h.combo === s.combo && h.lives === s.lives) ? h : { ...h, score: s.score, combo: s.combo, lives: s.lives });
+    }
+
+    function draw(ctx, s) {
+      const { w, h } = s.dims;
+      ctx.save();
+      if (s.shake > 0) {
+        ctx.translate(rand(-s.shake, s.shake), rand(-s.shake, s.shake));
+      }
+
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, '#050212');
+      grad.addColorStop(1, '#100a24');
+      ctx.fillStyle = grad;
+      ctx.fillRect(-20, -20, w + 40, h + 40);
+
+      ctx.strokeStyle = 'rgba(57,255,20,0.05)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += 40) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+
+      const dangerY = h - KB_HEIGHT;
+      ctx.strokeStyle = 'rgba(255,47,214,0.5)';
+      ctx.shadowColor = '#ff2fd6';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(0, dangerY);
+      ctx.lineTo(w, dangerY);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      for (const wd of s.words) {
+        const isActive = wd.id === s.activeId;
+        const size = 26;
+        ctx.font = `bold ${size}px 'Courier New', monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const totalWidth = ctx.measureText(wd.text).width;
+        let cx = wd.x - totalWidth / 2;
+        const flashRed = wd.wrongFlash > 0;
+
+        if (isActive) {
+          ctx.fillStyle = 'rgba(255,255,255,0.06)';
+          ctx.fillRect(wd.x - totalWidth / 2 - 8, wd.y - size / 2 - 6, totalWidth + 16, size + 12);
+        }
+
+        for (let i = 0; i < wd.text.length; i++) {
+          const ch = wd.text[i];
+          const chWidth = ctx.measureText(ch).width;
+          const typed = i < wd.progress;
+          ctx.fillStyle = flashRed ? '#ff2fd6' : (typed ? '#39ff14' : '#e8e8ff');
+          ctx.shadowColor = flashRed ? '#ff2fd6' : (typed ? '#39ff14' : '#b026ff');
+          ctx.shadowBlur = typed || flashRed ? 16 : 6;
+          ctx.textAlign = 'left';
+          ctx.fillText(ch, cx, wd.y);
+          cx += chWidth;
+        }
+      }
+      ctx.shadowBlur = 0;
+
+      for (const p of s.particles) {
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+
+      ctx.restore();
+    }
+
+    rafRef.current = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [spawnWord, spawnParticles, audio, endGame]);
+
+  // physical keyboard
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (phase !== 'playing') {
+        if (e.code === 'Space' || e.key === 'Enter') {
+          e.preventDefault();
+          startGame();
+        }
+        return;
+      }
+      const letter = e.key.length === 1 ? e.key.toUpperCase() : '';
+      if (letter >= 'A' && letter <= 'Z') {
+        e.preventDefault();
+        handleLetter(letter);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [phase, handleLetter, startGame]);
+
+  const onOverlayActivate = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (phase !== 'playing') startGame();
+  }, [phase, startGame]);
+
+  const rows = [
+    'QWERTYUIOP'.split(''),
+    'ASDFGHJKL'.split(''),
+    'ZXCVBNM'.split(''),
+  ];
+
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <canvas data-testid="game-canvas" ref={canvasRef} />
+
+      <div className="hud">
+        <div className="hud-block">
+          SCORE: {hud.score}
+          <div className="hud-sub">HIGH: {hud.highScore}</div>
+        </div>
+        <div className="hud-block" style={{ textAlign: 'right' }}>
+          <div className="lives">{'♥'.repeat(Math.max(0, hud.lives)) + '♡'.repeat(Math.max(0, 3 - hud.lives))}</div>
+          <div className="hud-sub">COMBO x{hud.combo}</div>
+        </div>
+      </div>
+
+      <div className={'combo-badge' + (comboFlash ? ' show' : '')}>
+        COMBO x{hud.combo}!
+      </div>
+
+      {phase === 'playing' && (
+        <div className="keyboard" data-testid="virtual-keyboard">
+          {rows.map((row, ri) => (
+            <div className="kb-row" key={ri}>
+              {row.map(letter => (
+                <button
+                  key={letter}
+                  className={'kb-key' + (pressedKey === letter ? ' pressed' : '')}
+                  data-testid={'vkey-' + letter.toLowerCase()}
+                  onClick={() => handleLetter(letter)}
+                  onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); handleLetter(letter); }}
+                >{letter}</button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {phase !== 'playing' && (
+        <div className="overlay" onMouseDown={onOverlayActivate} onTouchStart={onOverlayActivate}>
+          <h1 className="title">NEON TYPIST</h1>
+          <div className="subtitle">Type the falling words before they hit the deck. Chain words for combo multipliers &mdash; don't let three slip past!</div>
+          {phase === 'gameover' && (
+            <React.Fragment>
+              <div className="score-line">SCORE: {hud.score}</div>
+              <div className="hi-line">HIGH SCORE: {hud.highScore}</div>
+            </React.Fragment>
+          )}
+          <button
+            className="btn"
+            data-testid="start-btn"
+            onClick={(e) => { e.stopPropagation(); startGame(); }}
+            onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); startGame(); }}
+          >
+            {phase === 'gameover' ? 'Retry' : 'Start'}
+          </button>
+          <div className="hint">Keyboard on desktop &middot; Tap the on-screen keys on mobile</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<Game />);
+</script>
+</body>
+</html>
