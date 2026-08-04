@@ -2740,5 +2740,20 @@
     "file": "games/2026-08-03/index.html",
     "preview": "games/2026-08-03/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-08-04",
+    "name": "Neon Echo",
+    "date": "2026-08-04",
+    "description": "A glowing four-pad memory challenge — watch the pulse sequence light up and chime, then echo it back in perfect order. Each round adds one more beat and speeds up the playback, testing how deep your neon recall can go before the chain shatters.",
+    "tagline": "Watch the pulse. Echo the chain. Don't break it.",
+    "tags": ["memory", "puzzle", "reflex", "arcade", "casual"],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / Tap the glowing pads to repeat the sequence shown",
+    "folder": "games/2026-08-04",
+    "file": "games/2026-08-04/index.html",
+    "preview": "games/2026-08-04/preview.png",
+    "rating": 4.4
   }
 ]

@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Neon Echo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030d; font-family: 'Segoe UI', system-ui, sans-serif; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; overflow: hidden;
+    background: radial-gradient(circle at 50% 30%, #170a2e 0%, #0a0518 55%, #030109 100%);
+  }
+
+  .bgAnim {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
+    background: repeating-radial-gradient(circle at 50% 50%, rgba(120,0,255,0.06) 0, rgba(120,0,255,0.06) 2px, transparent 2px, transparent 40px);
+    animation: bgspin 60s linear infinite;
+  }
+  @keyframes bgspin { from { transform: rotate(0deg) scale(1.4); } to { transform: rotate(360deg) scale(1.4); } }
+
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between;
+    padding: 14px 20px; z-index: 10; pointer-events: none;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 11px; letter-spacing: 2px; color: #7d6bd0; text-transform: uppercase; }
+  .hudValue {
+    font-size: 26px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #b967ff, 0 0 20px #b967ff;
+  }
+  .hudValue.combo { color: #ffe45e; text-shadow: 0 0 10px #ffe45e, 0 0 22px #ff9d00; }
+
+  .title {
+    font-size: clamp(32px, 8vw, 56px); font-weight: 900; letter-spacing: 4px;
+    background: linear-gradient(90deg, #ff2bd6, #7c4dff, #2be9ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 40px rgba(180,80,255,0.5);
+    filter: drop-shadow(0 0 12px rgba(190,80,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(190,80,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(190,80,255,0.95)); } }
+
+  .subtitle { color: #a297d6; margin-top: 8px; font-size: 15px; letter-spacing: 1px; text-align: center; }
+
+  .startScreen, .overScreen {
+    z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 18px;
+    padding: 20px;
+  }
+
+  .btn {
+    padding: 16px 42px; font-size: 20px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #b845ff, #4d5bff);
+    border: none; border-radius: 50px; color: #fff; cursor: pointer;
+    box-shadow: 0 0 20px rgba(150,70,255,0.7), 0 0 50px rgba(80,60,255,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(150,70,255,0.9), 0 0 70px rgba(80,60,255,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd35e; font-size: 15px; text-shadow: 0 0 8px rgba(255,200,50,0.6); }
+
+  .board {
+    position: relative; width: min(78vmin, 420px); height: min(78vmin, 420px);
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+    gap: 14px; z-index: 10;
+  }
+  .pad {
+    border-radius: 26px; cursor: pointer; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    transition: filter 0.1s ease, transform 0.08s ease;
+    border: 2px solid rgba(255,255,255,0.08);
+  }
+  .pad:active { transform: scale(0.96); }
+  .pad.p0 { background: radial-gradient(circle at 30% 30%, #ff5ee0, #b3007f); box-shadow: inset 0 0 30px rgba(0,0,0,0.4); }
+  .pad.p1 { background: radial-gradient(circle at 30% 30%, #5ef0ff, #0080b3); box-shadow: inset 0 0 30px rgba(0,0,0,0.4); }
+  .pad.p2 { background: radial-gradient(circle at 30% 30%, #b3ff5e, #4f9900); box-shadow: inset 0 0 30px rgba(0,0,0,0.4); }
+  .pad.p3 { background: radial-gradient(circle at 30% 30%, #ffd15e, #b36f00); box-shadow: inset 0 0 30px rgba(0,0,0,0.4); }
+  .pad.lit { filter: brightness(2.4) saturate(1.4); }
+  .pad.p0.lit { box-shadow: 0 0 40px 10px #ff5ee0, inset 0 0 30px rgba(255,255,255,0.3); }
+  .pad.p1.lit { box-shadow: 0 0 40px 10px #5ef0ff, inset 0 0 30px rgba(255,255,255,0.3); }
+  .pad.p2.lit { box-shadow: 0 0 40px 10px #b3ff5e, inset 0 0 30px rgba(255,255,255,0.3); }
+  .pad.p3.lit { box-shadow: 0 0 40px 10px #ffd15e, inset 0 0 30px rgba(255,255,255,0.3); }
+  .pad.wrong { filter: brightness(0.5) saturate(2) hue-rotate(180deg); }
+
+  .centerCore {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 72px; height: 72px; border-radius: 50%; background: #0a0518;
+    border: 2px solid rgba(180,120,255,0.5);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 900; color: #fff; z-index: 5; pointer-events: none;
+    box-shadow: 0 0 20px rgba(150,80,255,0.6);
+  }
+
+  .particle { position: absolute; border-radius: 50%; pointer-events: none; }
+
+  .status { margin-top: 18px; color: #cfc4ff; font-size: 15px; letter-spacing: 1px; height: 20px; z-index: 10; text-align: center; }
+
+  .gameArea { position: relative; display: flex; flex-direction: column; align-items: center; z-index: 10; }
+
+  .shake { animation: shakeAnim 0.4s ease; }
+  @keyframes shakeAnim {
+    0%,100% { transform: translate(0,0); }
+    20% { transform: translate(-10px, 4px); }
+    40% { transform: translate(10px, -4px); }
+    60% { transform: translate(-8px, -2px); }
+    80% { transform: translate(8px, 2px); }
+  }
+
+  .footer { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: #55488a; font-size: 12px; z-index: 10; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 20px; }
+    .btn { padding: 14px 32px; font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'neonEcho_highScore';
+const PAD_COLORS = ['p0', 'p1', 'p2', 'p3'];
+const PAD_FREQS = [261.63, 329.63, 392.0, 493.88]; // C E G B — pleasant chord tones
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration = 0.28, type = 'sine', gainScale = 0.22) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const buzz = useCallback(() => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(180, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.4);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } catch (e) {}
+  }, []);
+
+  const chime = useCallback(() => {
+    [0, 80, 160].forEach((delay, i) => {
+      setTimeout(() => tone(PAD_FREQS[i % 4] * 2, 0.35, 'triangle', 0.15), delay);
+    });
+  }, [tone]);
+
+  return { tone, buzz, chime };
+}
+
+function Particle({ x, y, color, onDone }) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 40 + Math.random() * 60;
+  const dx = Math.cos(angle) * dist;
+  const dy = Math.sin(angle) * dist;
+  const size = 4 + Math.random() * 6;
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const anim = el.animate([
+      { transform: 'translate(0,0) scale(1)', opacity: 1 },
+      { transform: `translate(${dx}px, ${dy}px) scale(0)`, opacity: 0 }
+    ], { duration: 600 + Math.random() * 300, easing: 'cubic-bezier(.2,.8,.3,1)' });
+    anim.onfinish = onDone;
+  }, []);
+
+  return (
+    <div ref={ref} className="particle" style={{
+      left: x, top: y, width: size, height: size, background: color,
+      boxShadow: `0 0 10px ${color}`
+    }} />
+  );
+}
+
+function App() {
+  const [phase, setPhase] = useState('start'); // start | showing | input | over
+  const [sequence, setSequence] = useState([]);
+  const [playerIdx, setPlayerIdx] = useState(0);
+  const [litPad, setLitPad] = useState(-1);
+  const [wrongPad, setWrongPad] = useState(-1);
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [round, setRound] = useState(0);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [statusMsg, setStatusMsg] = useState('');
+  const [shake, setShake] = useState(false);
+  const [particles, setParticles] = useState([]);
+  const boardRef = useRef(null);
+  const timeoutsRef = useRef([]);
+  const { tone, buzz, chime } = useAudio();
+  const particleIdRef = useRef(0);
+
+  const clearTimers = () => {
+    timeoutsRef.current.forEach(id => clearTimeout(id));
+    timeoutsRef.current = [];
+  };
+  const addTimer = (fn, ms) => {
+    const id = setTimeout(fn, ms);
+    timeoutsRef.current.push(id);
+    return id;
+  };
+
+  useEffect(() => () => clearTimers(), []);
+
+  const spawnParticles = useCallback((padIndex, color) => {
+    const board = boardRef.current;
+    if (!board) return;
+    const rect = board.getBoundingClientRect();
+    const col = padIndex % 2, row = Math.floor(padIndex / 2);
+    const x = rect.width * (col === 0 ? 0.25 : 0.75);
+    const y = rect.height * (row === 0 ? 0.25 : 0.75);
+    const newParticles = Array.from({ length: 10 }).map(() => ({
+      id: particleIdRef.current++, x, y, color
+    }));
+    setParticles(prev => [...prev, ...newParticles]);
+  }, []);
+
+  const removeParticle = (id) => {
+    setParticles(prev => prev.filter(p => p.id !== id));
+  };
+
+  const playSequence = useCallback((seq) => {
+    setPhase('showing');
+    setStatusMsg('Watch closely...');
+    const speed = Math.max(280, 620 - seq.length * 18);
+    seq.forEach((padIdx, i) => {
+      addTimer(() => {
+        setLitPad(padIdx);
+        tone(PAD_FREQS[padIdx], speed / 1000 * 0.8, 'sine', 0.25);
+        addTimer(() => setLitPad(-1), speed * 0.6);
+      }, i * speed + 300);
+    });
+    addTimer(() => {
+      setPhase('input');
+      setPlayerIdx(0);
+      setStatusMsg('Repeat the pattern!');
+    }, seq.length * speed + 500);
+  }, [tone]);
+
+  const startGame = () => {
+    clearTimers();
+    const first = [Math.floor(Math.random() * 4)];
+    setSequence(first);
+    setScore(0);
+    setCombo(0);
+    setRound(1);
+    setWrongPad(-1);
+    setParticles([]);
+    addTimer(() => playSequence(first), 400);
+  };
+
+  const nextRound = (seq) => {
+    const next = [...seq, Math.floor(Math.random() * 4)];
+    setSequence(next);
+    setRound(r => r + 1);
+    addTimer(() => playSequence(next), 700);
+  };
+
+  const handlePadClick = (padIdx) => {
+    if (phase !== 'input') return;
+    tone(PAD_FREQS[padIdx], 0.22, 'sine', 0.22);
+    setLitPad(padIdx);
+    setTimeout(() => setLitPad(-1), 180);
+    spawnParticles(padIdx, `hsl(${padIdx * 90 + 300}, 100%, 65%)`);
+
+    if (sequence[playerIdx] === padIdx) {
+      const nextIdx = playerIdx + 1;
+      if (nextIdx === sequence.length) {
+        const gained = 10 * sequence.length + combo * 5;
+        setScore(s => {
+          const ns = s + gained;
+          if (ns > highScore) {
+            setHighScore(ns);
+            localStorage.setItem(HS_KEY, String(ns));
+          }
+          return ns;
+        });
+        setCombo(c => c + 1);
+        setStatusMsg('Nice! +' + gained);
+        chime();
+        nextRound(sequence);
+      } else {
+        setPlayerIdx(nextIdx);
+      }
+    } else {
+      setWrongPad(padIdx);
+      buzz();
+      setShake(true);
+      setStatusMsg('Wrong pad!');
+      setScore(s => {
+        if (s > highScore) {
+          setHighScore(s);
+          localStorage.setItem(HS_KEY, String(s));
+        }
+        return s;
+      });
+      addTimer(() => {
+        setShake(false);
+        setPhase('over');
+      }, 500);
+    }
+  };
+
+  const padLabel = ['◆', '●', '▲', '■'];
+
+  return (
+    <div className={`app ${shake ? 'shake' : ''}`} data-testid="game-canvas">
+      <div className="bgAnim" />
+
+      {phase !== 'start' && (
+        <div className="hud">
+          <div className="hudBox">
+            <div className="hudLabel">Score</div>
+            <div className="hudValue" data-testid="score">{score}</div>
+          </div>
+          <div className="hudBox">
+            <div className="hudLabel">Round</div>
+            <div className="hudValue">{round}</div>
+          </div>
+          <div className="hudBox">
+            <div className="hudLabel">Combo</div>
+            <div className="hudValue combo">x{combo}</div>
+          </div>
+        </div>
+      )}
+
+      {phase === 'start' && (
+        <div className="startScreen">
+          <div className="title">NEON ECHO</div>
+          <div className="subtitle">Watch the pattern. Repeat the pulse. Don't break the chain.</div>
+          <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+          <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+        </div>
+      )}
+
+      {(phase === 'showing' || phase === 'input') && (
+        <div className="gameArea">
+          <div className="board" ref={boardRef}>
+            {PAD_COLORS.map((cls, i) => (
+              <div
+                key={i}
+                className={`pad ${cls} ${litPad === i ? 'lit' : ''} ${wrongPad === i ? 'wrong' : ''}`}
+                data-testid={`pad-${i}`}
+                onClick={() => handlePadClick(i)}
+              >
+                <span style={{ fontSize: 28, opacity: 0.5, color: '#fff' }}>{padLabel[i]}</span>
+              </div>
+            ))}
+            <div className="centerCore">{sequence.length}</div>
+            {particles.map(p => (
+              <Particle key={p.id} x={p.x} y={p.y} color={p.color} onDone={() => removeParticle(p.id)} />
+            ))}
+          </div>
+          <div className="status">{statusMsg}</div>
+        </div>
+      )}
+
+      {phase === 'over' && (
+        <div className="overScreen">
+          <div className="title" style={{ fontSize: 'clamp(26px, 6vw, 40px)' }}>CHAIN BROKEN</div>
+          <div className="hudValue" data-testid="final-score">Score: {score}</div>
+          <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+          <button className="btn" data-testid="restart-btn" onClick={startGame}>TRY AGAIN</button>
+        </div>
+      )}
+
+      <div className="footer">Neon Echo — click / tap the pads in order</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
