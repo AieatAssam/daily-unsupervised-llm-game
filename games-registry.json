@@ -2432,7 +2432,13 @@
     "date": "2026-07-14",
     "description": "Neon orbs grow on-screen and will supernova if you let them reach full size. Click to pop them — nearby same-color orbs chain-explode in a cascade of shockwaves and particles. Let orbs grow big for massive chain combos, but one supernova ends the run.",
     "tagline": "Pop before they blow — chain the combos!",
-    "tags": ["action", "reflex", "casual", "arcade", "chain"],
+    "tags": [
+      "action",
+      "reflex",
+      "casual",
+      "arcade",
+      "chain"
+    ],
     "difficulty": "easy",
     "avgPlayTime": "3 minutes",
     "controls": "Click / Tap an orb to pop it — same-color orbs nearby chain-explode for combo points",
@@ -2447,7 +2453,13 @@
     "date": "2026-07-15",
     "description": "Stand perfectly still to build a crackling static charge as neon enemy triangles swarm toward you — then DISCHARGE to unleash a massive area blast that destroys everything in radius! Bigger charge means wider devastation. Dodge to survive, stand still to power up, and chain massive discharges for explosive combo multipliers.",
     "tagline": "Stand still. Build charge. Discharge the swarm!",
-    "tags": ["action", "reflex", "strategy", "arcade", "risk-reward"],
+    "tags": [
+      "action",
+      "reflex",
+      "strategy",
+      "arcade",
+      "risk-reward"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "WASD / Arrow Keys to move and dodge · Space / Click to discharge static energy",
@@ -2462,7 +2474,13 @@
     "date": "2026-07-16",
     "description": "Push all neon blocks simultaneously with arrow keys — same-color blocks that slam into each other explode into particles and score points! Plan each directional push carefully to chain adjacency matches for massive combo multipliers as the grid fills faster each level.",
     "tagline": "Push all blocks. Collide the colors. Chain the combos!",
-    "tags": ["puzzle", "strategy", "reflex", "arcade", "casual"],
+    "tags": [
+      "puzzle",
+      "strategy",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "← → ↑ ↓ or WASD to push all blocks in a direction | On-screen D-pad on mobile",
@@ -2477,7 +2495,13 @@
     "date": "2026-07-17",
     "description": "Neon letters rain from the sky — type them before they escape to the bottom! Each correct keystroke triggers a neon particle explosion and builds your combo multiplier. Miss three letters and it's game over — how high can your combo climb before your fingers give out?",
     "tagline": "Type fast. Blitz the glyphs. Build the combo!",
-    "tags": ["typing", "reflex", "action", "arcade", "casual"],
+    "tags": [
+      "typing",
+      "reflex",
+      "action",
+      "arcade",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "2 minutes",
     "controls": "Keyboard: type the letter shown on each falling glyph | Mobile: tap letter buttons at the bottom",
@@ -2492,7 +2516,13 @@
     "date": "2026-07-18",
     "description": "Rotate a glowing neon mirror in the center of the screen to deflect incoming colored laser beams toward their matching crystal targets! Move your mouse left and right to angle the mirror — deflect cyan to cyan, magenta to magenta, and chain consecutive perfect deflections for massive combo multipliers.",
     "tagline": "Rotate the mirror. Deflect the beam. Chain the combos!",
-    "tags": ["reflex", "precision", "action", "arcade", "casual"],
+    "tags": [
+      "reflex",
+      "precision",
+      "action",
+      "arcade",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Move mouse left/right to rotate the central mirror — deflect each colored laser to its matching crystal target",
@@ -2507,7 +2537,13 @@
     "date": "2026-07-19",
     "description": "Tap or click to flip gravity and guide your glowing neon orb through an endless gauntlet of neon walls. Each flip erupts in a burst of particles as you weave through tight gaps — flip too early or too late and it's game over. How far can you survive as the speed relentlessly climbs?",
     "tagline": "One tap. Flip gravity. Survive.",
-    "tags": ["reflex", "action", "arcade", "precision", "casual"],
+    "tags": [
+      "reflex",
+      "action",
+      "arcade",
+      "precision",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "2 minutes",
     "controls": "Click / Tap / Space to flip gravity — navigate through the gaps in the neon walls",
@@ -2522,7 +2558,13 @@
     "date": "2026-07-20",
     "description": "Solve neon nonogram/picross puzzles — numbers on every row and column tell you exactly which cells to fill. Click to light up cells in glowing neon color, right-click to mark empties, and race the countdown clock! Wrong fills cost 5 precious seconds, so deduce carefully. Chain puzzle completions for growing combo multipliers as grids grow from 5×5 to 7×7.",
     "tagline": "Decode the clues. Fill the grid. Chain the combos!",
-    "tags": ["puzzle", "logic", "deduction", "casual", "strategy"],
+    "tags": [
+      "puzzle",
+      "logic",
+      "deduction",
+      "casual",
+      "strategy"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click / Tap a cell to fill it · Right-click / long-press to mark empty · Solve the nonogram before time runs out",
@@ -2537,7 +2579,13 @@
     "date": "2026-07-21",
     "description": "Click cells on a neon grid to add electrons — fill a cell to its capacity and it explodes, sending electrons to every neighbor and triggering a runaway chain reaction! Build massive cascades for exponential scores and chain rapid reactions for combo multipliers as auto-fill pressure ramps up over time.",
     "tagline": "Add electrons. Trigger the cascade. Chain the reactions!",
-    "tags": ["strategy", "chain-reaction", "puzzle", "arcade", "casual"],
+    "tags": [
+      "strategy",
+      "chain-reaction",
+      "puzzle",
+      "arcade",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click / Tap any cell to add an electron — fill to capacity to explode and cascade to neighbors",
@@ -2552,7 +2600,13 @@
     "date": "2026-07-22",
     "description": "Enemy submarines cross the ocean at five glowing neon depths — move your destroyer with the mouse to aim, then drop depth charges and time each shot to intercept the subs before they slip off the edge! Chain consecutive kills for massive combo multipliers as subs grow faster and more numerous each level.",
     "tagline": "Aim the destroyer. Drop the charge. Intercept the sub!",
-    "tags": ["action", "reflex", "precision", "arcade", "prediction"],
+    "tags": [
+      "action",
+      "reflex",
+      "precision",
+      "arcade",
+      "prediction"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Move mouse / drag to aim ship · Click / Tap / Space to drop depth charge",
@@ -2567,7 +2621,13 @@
     "date": "2026-07-23",
     "description": "Your ship orbits a glowing neon star — tap to jump between three concentric orbit rings, collecting star-shaped gems while dodging jagged red asteroids that hurtle along each ring. Master the rotational timing as speed and spawn rate escalate to test your orbital instincts.",
     "tagline": "Orbit. Collect. Survive.",
-    "tags": ["reflex", "action", "arcade", "timing", "casual"],
+    "tags": [
+      "reflex",
+      "action",
+      "arcade",
+      "timing",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "2 minutes",
     "controls": "Click / Tap / Space to jump to next orbit ring",
@@ -2582,7 +2642,13 @@
     "date": "2026-07-24",
     "description": "Click glowing hexagonal anchor pegs to weave a neon thread — return to your starting peg (with 3+ nodes) to close the polygon and capture every enemy inside! Cyan orbs score points, gold stars are worth 200 each, but red bombs cost a life. Plan large triangles for area bonuses and chain captures for massive combo multipliers.",
     "tagline": "Weave the web. Close the polygon. Capture the swarm!",
-    "tags": ["strategy", "reflex", "action", "arcade", "casual"],
+    "tags": [
+      "strategy",
+      "reflex",
+      "action",
+      "arcade",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click / Tap anchor pegs to draw thread · Click starting peg (✓) with 3+ nodes to close & capture · Click empty to cancel",
@@ -2597,7 +2663,13 @@
     "date": "2026-07-25",
     "description": "Five lanes of neon enemies march on your base — click a lane or press 1–5 to fire that cannon and blast them before they breach! Each cannon needs time to reload, so prioritize wisely: ignore a lane and three enemies slip through to end your run. Chain kills across all five lanes for combo multipliers that can hit 10×!",
     "tagline": "Five lanes. Five cannons. One chance to hold the line.",
-    "tags": ["action", "strategy", "reflex", "arcade", "defense"],
+    "tags": [
+      "action",
+      "strategy",
+      "reflex",
+      "arcade",
+      "defense"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click a lane or press 1–5 to fire that cannon · Tap lane buttons on mobile",
@@ -2612,7 +2684,13 @@
     "date": "2026-07-26",
     "description": "Four neon signal packets race across their lanes toward a glowing sync zone — click or tap the lane at the exact moment each packet crosses the center line for Perfect hits and combo chains. Miss too many and it's game over; nail them in sequence and the score multiplier blazes out of control.",
     "tagline": "Hit the sync. Chase the combo.",
-    "tags": ["rhythm", "reflex", "timing", "arcade", "action"],
+    "tags": [
+      "rhythm",
+      "reflex",
+      "timing",
+      "arcade",
+      "action"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click / Tap a lane as the packet crosses the sync zone · Keyboard: A S D F",
@@ -2627,7 +2705,13 @@
     "date": "2026-07-27",
     "description": "One orb briefly glows gold with a sparkling crown — then they all turn identical cyan and drift around the screen. Track yours by eye, then click it before the timer runs out! Chain correct picks for massive combo multipliers as more orbs appear and tracking time shrinks each level.",
     "tagline": "Watch the gold. Track it. Click the one you remember.",
-    "tags": ["reflex", "memory", "tracking", "arcade", "casual"],
+    "tags": [
+      "reflex",
+      "memory",
+      "tracking",
+      "arcade",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click / Tap the orb you tracked — pick it before the timer bar empties",
@@ -2642,7 +2726,13 @@
     "date": "2026-07-28",
     "description": "A glowing ball auto-bounces around a neon arena — click anywhere to plant a deflector paddle and redirect the ball into incoming enemies before they reach the danger zone at the center! Chain enemy kills for massive combo multipliers as waves escalate and enemy speed climbs.",
     "tagline": "Plant paddles. Deflect the ball. Destroy the swarm!",
-    "tags": ["action", "reflex", "physics", "arcade", "strategy"],
+    "tags": [
+      "action",
+      "reflex",
+      "physics",
+      "arcade",
+      "strategy"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click / Tap anywhere to place a deflector paddle — redirect the bouncing ball into neon enemies",
@@ -2657,7 +2747,13 @@
     "date": "2026-07-29",
     "description": "Move your mouse left or right to tilt a glowing neon tightrope, rolling a glowing ball along it to catch sparkling falling gems — chain consecutive catches for massive combo multipliers while dodging pulsing red bombs that cost a life! The rope tilts with buttery smoothness as gems rain faster and bombs grow more frequent each passing second.",
     "tagline": "Tilt the rope. Roll the ball. Catch the gems!",
-    "tags": ["reflex", "physics", "action", "arcade", "casual"],
+    "tags": [
+      "reflex",
+      "physics",
+      "action",
+      "arcade",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Move mouse left/right to tilt the rope — roll ball to catch falling gems, dodge red bombs | Drag finger on mobile",
@@ -2672,7 +2768,13 @@
     "date": "2026-07-30",
     "description": "Colored neon balls drop through a branching circuit network — toggle six binary switches across two rows to route each ball to its matching colored exit before it arrives! Chain correct routes for massive combo multipliers as balls rain faster and more simultaneously each level.",
     "tagline": "Toggle the switches. Route the signal. Don't misfire!",
-    "tags": ["strategy", "reflex", "puzzle", "arcade", "routing"],
+    "tags": [
+      "strategy",
+      "reflex",
+      "puzzle",
+      "arcade",
+      "routing"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click / Tap the ◄► switch nodes to toggle their direction — route each colored ball to the matching exit at the bottom",
@@ -2687,7 +2789,13 @@
     "date": "2026-07-31",
     "description": "Cast a glowing neon line into a bioluminescent deep — watch fish swim past at varying depths, wait for the lure to twitch with a nibble, then CLICK to set the hook the moment BITE! flashes! Cyan Minnows are near the surface, magenta Bass roam mid-water, golden Sunfish lurk in the depths, and legendary white giants haunt the abyss. Avoid the ⚡ ZAPPER at all costs. Chain consecutive catches for massive combo multipliers!",
     "tagline": "Cast deep. Watch the nibble. Click the BITE!",
-    "tags": ["fishing", "timing", "reflex", "arcade", "casual"],
+    "tags": [
+      "fishing",
+      "timing",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click water to CAST · Click / Space when BITE! flashes to set hook · Chain catches for combo multipliers",
@@ -2702,7 +2810,13 @@
     "date": "2026-08-01",
     "description": "Classic pinball reimagined in neon — hold to charge the spring then release to launch a glowing plasma ball into a field of electrified bumpers! Blast five neon bumpers for score, light all three top targets for JACKPOT multipliers, and keep the ball alive with Z and X flippers as combos stack up to 10×. One more ball, one more try.",
     "tagline": "Charge. Launch. Flip. Chase the jackpot!",
-    "tags": ["pinball", "action", "physics", "arcade", "reflex"],
+    "tags": [
+      "pinball",
+      "action",
+      "physics",
+      "arcade",
+      "reflex"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Hold SPACE / click to charge spring · Release to launch · Z/← = left flipper · X/→ = right flipper · Click left/right half of screen on mobile",
@@ -2717,7 +2831,13 @@
     "date": "2026-08-02",
     "description": "Guide a glowing serpent through a neon grid, devouring pulsing orbs to grow longer and rack up score. Chain quick eats for rising combo multipliers, snag rare golden power orbs for bonus points, and watch the pace quicken as your coil grows — one wrong turn into a wall or your own tail ends the run.",
     "tagline": "Grow the glow. Don’t bite yourself.",
-    "tags": ["snake", "arcade", "reflex", "casual", "grid"],
+    "tags": [
+      "snake",
+      "arcade",
+      "reflex",
+      "casual",
+      "grid"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Arrow keys / WASD to steer · Swipe or on-screen D-pad on mobile",
@@ -2732,7 +2852,13 @@
     "date": "2026-08-03",
     "description": "Neon words plummet toward the deck — type them letter by letter before they slip past your three lives. Lock onto a word with its first letter, blast through it for a shower of particles, and chain completions for rising combo multipliers as falling speed and word length ramp up.",
     "tagline": "Type fast. Glow brighter. Don't let it hit the deck.",
-    "tags": ["typing", "reflex", "arcade", "word", "casual"],
+    "tags": [
+      "typing",
+      "reflex",
+      "arcade",
+      "word",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Type letters on your keyboard to spell falling words · Tap the on-screen keyboard on mobile",
@@ -2747,7 +2873,13 @@
     "date": "2026-08-04",
     "description": "A glowing four-pad memory challenge — watch the pulse sequence light up and chime, then echo it back in perfect order. Each round adds one more beat and speeds up the playback, testing how deep your neon recall can go before the chain shatters.",
     "tagline": "Watch the pulse. Echo the chain. Don't break it.",
-    "tags": ["memory", "puzzle", "reflex", "arcade", "casual"],
+    "tags": [
+      "memory",
+      "puzzle",
+      "reflex",
+      "arcade",
+      "casual"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
     "controls": "Click / Tap the glowing pads to repeat the sequence shown",
@@ -2755,5 +2887,26 @@
     "file": "games/2026-08-04/index.html",
     "preview": "games/2026-08-04/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-08-05",
+    "name": "Neon Slash",
+    "date": "2026-08-05",
+    "description": "A fruit-ninja-style reflex slasher where glowing neon orbs arc up from below and you drag a glowing blade trail through them to slice. Spiked red bombs mixed into the arcs end your run instantly if sliced, while missed orbs cost you a life, so every swipe is a split-second read of color and trajectory.",
+    "tagline": "Slash the glow. Dodge the bombs. Chain the combo.",
+    "tags": [
+      "action",
+      "reflex",
+      "slicing",
+      "arcade",
+      "drag"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Drag mouse or finger through orbs to slice them · Avoid red spiked bombs · Don't let orbs fall past you",
+    "folder": "games/2026-08-05",
+    "file": "games/2026-08-05/index.html",
+    "preview": "games/2026-08-05/preview.png",
+    "rating": 4.5
   }
 ]
