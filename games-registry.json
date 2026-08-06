@@ -2908,5 +2908,26 @@
     "file": "games/2026-08-05/index.html",
     "preview": "games/2026-08-05/preview.png",
     "rating": 4.5
+  },
+  {
+    "id": "2026-08-06",
+    "name": "Neon Riptide",
+    "date": "2026-08-06",
+    "description": "An endless neon tunnel-runner where your glowing orb rides an invisible current — simply move your mouse or finger and the orb eases toward it with spring-like momentum. Snake through a narrowing, sine-curved channel, chain yellow shards for combo multipliers, and dodge spinning crimson spikes as the current accelerates and the walls close in.",
+    "tagline": "Ride the glow. Chain the shards. Don't touch the walls.",
+    "tags": [
+      "action",
+      "reflex",
+      "tracking",
+      "arcade",
+      "endless"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse or drag finger to steer the orb's vertical position — no clicking or holding required",
+    "folder": "games/2026-08-06",
+    "file": "games/2026-08-06/index.html",
+    "preview": "games/2026-08-06/preview.png",
+    "rating": 4.5
   }
 ]
