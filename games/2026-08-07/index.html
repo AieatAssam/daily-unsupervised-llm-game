@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Neon Slingshot</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030c; font-family: 'Segoe UI', Arial, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; position: relative; }
+  .hud { position: absolute; top: 0; left: 0; width: 100%; padding: 14px 20px; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; z-index: 5; }
+  .stat { color: #fff; font-weight: 700; }
+  .stat-label { font-size: 10px; letter-spacing: 2px; opacity: 0.6; text-transform: uppercase; }
+  .score-val { font-size: 30px; text-shadow: 0 0 12px #ff2fd8, 0 0 24px #ff2fd8; color: #ff8ef7; }
+  .combo-val { font-size: 22px; text-shadow: 0 0 10px #2fffe0; color: #7dfff0; }
+  .lives { display: flex; gap: 6px; margin-top: 4px; }
+  .life-dot { width: 12px; height: 12px; border-radius: 50%; background: #ff3366; box-shadow: 0 0 8px #ff3366, 0 0 16px #ff3366; }
+  .life-dot.lost { background: #2a1030; box-shadow: none; }
+  .high-score { font-size: 12px; opacity: 0.7; color: #ffe27a; text-shadow: 0 0 8px #ffe27a; text-align: right; }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; background: radial-gradient(circle at 50% 40%, rgba(40,10,60,0.85), rgba(3,2,10,0.96)); text-align: center; padding: 20px; }
+  .title { font-size: clamp(34px, 9vw, 64px); font-weight: 900; letter-spacing: 4px; background: linear-gradient(90deg, #ff2fd8, #7d5fff, #2fffe0); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 0 40px rgba(255,47,216,0.5); margin-bottom: 6px; animation: pulseTitle 2.4s ease-in-out infinite; }
+  @keyframes pulseTitle { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.35); } }
+  .subtitle { color: #b9a8ff; font-size: 14px; letter-spacing: 2px; margin-bottom: 26px; opacity: 0.85; }
+  .btn { pointer-events: all; cursor: pointer; padding: 16px 46px; font-size: 20px; font-weight: 800; letter-spacing: 2px; color: #05030c; background: linear-gradient(90deg, #2fffe0, #ff2fd8); border: none; border-radius: 40px; box-shadow: 0 0 30px rgba(255,47,216,0.6), 0 0 60px rgba(47,255,224,0.3); transition: transform 0.15s ease; }
+  .btn:active { transform: scale(0.94); }
+  .instructions { margin-top: 22px; color: #cfc4ff; font-size: 13px; line-height: 1.7; max-width: 340px; opacity: 0.8; }
+  .final-score { font-size: 46px; font-weight: 900; color: #ff8ef7; text-shadow: 0 0 20px #ff2fd8; margin: 10px 0; }
+  .new-best { color: #ffe27a; font-weight: 700; text-shadow: 0 0 12px #ffe27a; margin-bottom: 14px; letter-spacing: 1px; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .power-bar-wrap { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); width: 220px; height: 10px; background: rgba(255,255,255,0.08); border-radius: 6px; overflow: hidden; z-index: 4; pointer-events: none; border: 1px solid rgba(255,255,255,0.15); }
+  .power-bar-fill { height: 100%; background: linear-gradient(90deg, #2fffe0, #ffe27a, #ff2fd8); box-shadow: 0 0 10px #ff2fd8; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-type="module">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HS_KEY = 'neonSlingshot_highScore';
+const W_BASE = 480, H_BASE = 800;
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const ensure = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+  const tone = (freq, dur, type, gainVal, glideTo) => {
+    try {
+      const ctx = ensure();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, ctx.currentTime + dur);
+      gain.gain.setValueAtTime(gainVal || 0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + dur);
+    } catch (e) {}
+  };
+  return {
+    launch: () => tone(180, 0.28, 'sawtooth', 0.12, 520),
+    hit: (combo) => tone(440 + Math.min(combo, 10) * 60, 0.22, 'square', 0.14, 900 + combo * 40),
+    hazard: () => tone(120, 0.35, 'sawtooth', 0.18, 60),
+    miss: () => tone(200, 0.3, 'triangle', 0.12, 90),
+    lifeLost: () => tone(90, 0.4, 'sawtooth', 0.2, 40),
+    gameOver: () => tone(300, 0.6, 'sawtooth', 0.16, 50),
+    combo: (n) => tone(600 + n * 30, 0.15, 'sine', 0.1, 1200 + n * 30),
+  };
+}
+
+function makeWells(level, W, H) {
+  const count = Math.min(2 + Math.floor(level / 3), 5);
+  const wells = [];
+  for (let i = 0; i < count; i++) {
+    wells.push({
+      x: W * (0.2 + 0.6 * Math.random()),
+      y: H * (0.18 + 0.45 * Math.random()),
+      r: 22 + Math.random() * 10,
+      strength: 2600 + Math.random() * 1400 + level * 120,
+      hazard: Math.random() < Math.min(0.15 + level * 0.03, 0.45),
+      hue: 0,
+      pulse: Math.random() * Math.PI * 2,
+    });
+  }
+  wells.forEach(w => { w.hue = w.hazard ? 350 : 190 + Math.random() * 80; });
+  return wells;
+}
+
+function spawnTarget(W, H, wells, level) {
+  let x, y, tries = 0;
+  do {
+    x = W * (0.15 + 0.7 * Math.random());
+    y = H * (0.1 + 0.35 * Math.random());
+    tries++;
+  } while (wells.some(w => Math.hypot(w.x - x, w.y - y) < 60) && tries < 20);
+  return { x, y, r: Math.max(16, 26 - level * 0.6), vx: (Math.random() - 0.5) * (1 + level * 0.15), vy: 0, born: true, pulse: 0 };
+}
+
+function GravitySlingshot() {
+  const canvasRef = useRef(null);
+  const wrapRef = useRef(null);
+  const [phase, setPhase] = useState('start'); // start | aiming | flying | settling | gameover
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [isNewBest, setIsNewBest] = useState(false);
+  const [power, setPower] = useState(0);
+
+  const audio = useAudio();
+
+  const stateRef = useRef({
+    W: W_BASE, H: H_BASE, scale: 1,
+    launcher: { x: W_BASE / 2, y: H_BASE - 70 },
+    ball: null,
+    wells: [],
+    target: null,
+    particles: [],
+    trail: [],
+    dragging: false,
+    dragStart: null,
+    dragCur: null,
+    level: 1,
+    shotsThisLevel: 0,
+    score: 0,
+    combo: 0,
+    lives: 3,
+    phase: 'start',
+    animId: null,
+    bg: [],
+  });
+
+  // sync react state into ref for game loop reads
+  useEffect(() => { stateRef.current.phase = phase; }, [phase]);
+
+  const resize = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const wrap = wrapRef.current;
+    const rect = wrap.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const s = stateRef.current;
+    s.W = rect.width;
+    s.H = rect.height;
+    s.launcher = { x: s.W / 2, y: s.H - 70 };
+  }, []);
+
+  useEffect(() => {
+    resize();
+    window.addEventListener('resize', resize);
+    // background starfield
+    const s = stateRef.current;
+    s.bg = Array.from({ length: 80 }, () => ({
+      x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + 0.3, tw: Math.random() * Math.PI * 2,
+    }));
+    return () => window.removeEventListener('resize', resize);
+  }, [resize]);
+
+  const spawnBurst = (x, y, color, n) => {
+    const s = stateRef.current;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1.5 + Math.random() * 4;
+      s.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, color, size: 2 + Math.random() * 3 });
+    }
+  };
+
+  const startLevel = (level) => {
+    const s = stateRef.current;
+    s.wells = makeWells(level, s.W, s.H);
+    s.target = spawnTarget(s.W, s.H, s.wells, level);
+    s.ball = null;
+    s.level = level;
+    s.shotsThisLevel = 0;
+  };
+
+  const startGame = () => {
+    const s = stateRef.current;
+    s.score = 0; s.combo = 0; s.lives = 3; s.particles = []; s.trail = [];
+    setScore(0); setCombo(0); setLives(3); setIsNewBest(false);
+    resize();
+    startLevel(1);
+    setPhase('aiming');
+  };
+
+  const endGame = () => {
+    const s = stateRef.current;
+    audio.gameOver();
+    setPhase('gameover');
+    if (s.score > highScore) {
+      setHighScore(s.score);
+      setIsNewBest(true);
+      localStorage.setItem(HS_KEY, String(s.score));
+    } else {
+      localStorage.setItem(HS_KEY, String(Math.max(s.score, highScore)));
+    }
+  };
+
+  const loseLife = () => {
+    const s = stateRef.current;
+    s.lives -= 1;
+    s.combo = 0;
+    setCombo(0);
+    setLives(s.lives);
+    if (s.lives <= 0) {
+      audio.lifeLost();
+      setTimeout(() => endGame(), 250);
+    } else {
+      audio.lifeLost();
+      startLevel(s.level);
+      setPhase('aiming');
+    }
+  };
+
+  const launchBall = (dx, dy) => {
+    const s = stateRef.current;
+    const power = Math.min(Math.hypot(dx, dy), 140);
+    if (power < 12) { setPhase('aiming'); return; }
+    const mag = power / 140;
+    const ang = Math.atan2(dy, dx);
+    const speed = 4 + mag * 11;
+    s.ball = {
+      x: s.launcher.x, y: s.launcher.y,
+      vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+      trail: [],
+    };
+    s.trail = [];
+    audio.launch();
+    s.shotsThisLevel += 1;
+    setPhase('flying');
+  };
+
+  // pointer handlers
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const toLocal = (clientX, clientY) => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: clientX - rect.left, y: clientY - rect.top };
+    };
+
+    const onDown = (e) => {
+      const s = stateRef.current;
+      if (s.phase !== 'aiming') return;
+      const p = e.touches ? toLocal(e.touches[0].clientX, e.touches[0].clientY) : toLocal(e.clientX, e.clientY);
+      s.dragging = true;
+      s.dragStart = { x: s.launcher.x, y: s.launcher.y };
+      s.dragCur = p;
+    };
+    const onMove = (e) => {
+      const s = stateRef.current;
+      if (!s.dragging) return;
+      const p = e.touches ? toLocal(e.touches[0].clientX, e.touches[0].clientY) : toLocal(e.clientX, e.clientY);
+      s.dragCur = p;
+      const dx = s.launcher.x - p.x, dy = s.launcher.y - p.y;
+      setPower(Math.min(Math.hypot(dx, dy) / 140, 1));
+      e.preventDefault && e.preventDefault();
+    };
+    const onUp = () => {
+      const s = stateRef.current;
+      if (!s.dragging) return;
+      s.dragging = false;
+      setPower(0);
+      if (s.dragCur) {
+        const dx = s.launcher.x - s.dragCur.x, dy = s.launcher.y - s.dragCur.y;
+        launchBall(dx, dy);
+      }
+      s.dragCur = null;
+    };
+
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    canvas.addEventListener('touchstart', onDown, { passive: true });
+    canvas.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+    return () => {
+      canvas.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      canvas.removeEventListener('touchstart', onDown);
+      canvas.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highScore]);
+
+  // main loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let raf;
+
+    const step = () => {
+      raf = requestAnimationFrame(step);
+      const s = stateRef.current;
+      const W = s.W, H = s.H;
+
+      // update
+      s.wells.forEach(w => { w.pulse += 0.05; });
+      if (s.target) s.target.pulse += 0.08;
+
+      if (s.target) {
+        s.target.x += s.target.vx;
+        if (s.target.x < 30 || s.target.x > W - 30) s.target.vx *= -1;
+      }
+
+      if (s.phase === 'flying' && s.ball) {
+        const b = s.ball;
+        s.wells.forEach(w => {
+          const dx = w.x - b.x, dy = w.y - b.y;
+          const distSq = Math.max(dx * dx + dy * dy, 400);
+          const dist = Math.sqrt(distSq);
+          const f = w.strength / distSq;
+          b.vx += (dx / dist) * f * 0.016;
+          b.vy += (dy / dist) * f * 0.016;
+          if (dist < w.r && w.hazard) {
+            spawnBurst(b.x, b.y, '#ff3366', 26);
+            s.ball = null;
+            audio.hazard();
+            loseLife();
+          }
+        });
+        if (s.ball) {
+          b.x += b.vx; b.y += b.vy;
+          b.trail.push({ x: b.x, y: b.y });
+          if (b.trail.length > 18) b.trail.shift();
+
+          // wall bounce
+          if (b.x < 8) { b.x = 8; b.vx *= -0.82; }
+          if (b.x > W - 8) { b.x = W - 8; b.vx *= -0.82; }
+          if (b.y < 8) { b.y = 8; b.vy *= -0.82; }
+
+          // target hit
+          if (s.target) {
+            const d = Math.hypot(b.x - s.target.x, b.y - s.target.y);
+            if (d < s.target.r + 8) {
+              s.combo += 1;
+              const gained = 10 * s.combo;
+              s.score += gained;
+              setScore(s.score);
+              setCombo(s.combo);
+              spawnBurst(s.target.x, s.target.y, '#2fffe0', 32);
+              audio.hit(s.combo);
+              if (s.combo > 1) audio.combo(s.combo);
+              s.target = spawnTarget(W, H, s.wells, s.level);
+              if (s.shotsThisLevel >= 3) {
+                s.level += 1;
+                startLevel(s.level);
+              }
+              s.ball = null;
+              setPhase('aiming');
+            }
+          }
+
+          // out of bounds / fell below
+          if (s.ball && (b.y > H + 40)) {
+            s.ball = null;
+            s.combo = 0;
+            setCombo(0);
+            audio.miss();
+            setPhase('aiming');
+          }
+
+          // stalled (very slow, stuck)
+          if (s.ball && Math.hypot(b.vx, b.vy) < 0.15 && s.trail.length > 10) {
+            spawnBurst(b.x, b.y, '#7d5fff', 10);
+            s.ball = null;
+            s.combo = 0;
+            setCombo(0);
+            audio.miss();
+            setPhase('aiming');
+          }
+        }
+      }
+
+      // particles
+      s.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vx *= 0.96; p.vy *= 0.96; p.life -= 0.025; });
+      s.particles = s.particles.filter(p => p.life > 0);
+
+      // ---- draw ----
+      ctx.clearRect(0, 0, W, H);
+      const grad = ctx.createRadialGradient(W / 2, H * 0.3, 20, W / 2, H * 0.3, H);
+      grad.addColorStop(0, '#1a0d33');
+      grad.addColorStop(1, '#05030c');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      s.bg.forEach(st => {
+        st.tw += 0.02;
+        ctx.globalAlpha = 0.4 + Math.sin(st.tw) * 0.3;
+        ctx.fillStyle = '#cfc4ff';
+        ctx.beginPath();
+        ctx.arc(st.x * W, st.y * H, st.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+
+      // wells
+      s.wells.forEach(w => {
+        const pr = w.r + Math.sin(w.pulse) * 4;
+        ctx.save();
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = `hsl(${w.hue}, 100%, 60%)`;
+        const g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, pr * 2.2);
+        g.addColorStop(0, `hsla(${w.hue},100%,70%,0.9)`);
+        g.addColorStop(0.5, `hsla(${w.hue},100%,50%,0.35)`);
+        g.addColorStop(1, 'hsla(0,0%,0%,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(w.x, w.y, pr * 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `hsl(${w.hue}, 100%, ${w.hazard ? 55 : 65}%)`;
+        ctx.beginPath();
+        ctx.arc(w.x, w.y, pr * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      // target
+      if (s.target) {
+        const t = s.target;
+        const pr = t.r + Math.sin(t.pulse) * 3;
+        ctx.save();
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = '#2fffe0';
+        ctx.strokeStyle = '#2fffe0';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, pr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(47,255,224,0.18)';
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, pr * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // ball trail
+      if (s.ball) {
+        s.ball.trail.forEach((pt, i) => {
+          ctx.globalAlpha = (i / s.ball.trail.length) * 0.5;
+          ctx.fillStyle = '#ff2fd8';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 4 * (i / s.ball.trail.length), 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+        ctx.save();
+        ctx.shadowBlur = 22;
+        ctx.shadowColor = '#ff2fd8';
+        ctx.fillStyle = '#ffe0fb';
+        ctx.beginPath();
+        ctx.arc(s.ball.x, s.ball.y, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // particles
+      s.particles.forEach(p => {
+        ctx.globalAlpha = Math.max(p.life, 0);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+
+      // launcher + aim line
+      ctx.save();
+      ctx.shadowBlur = 18;
+      ctx.shadowColor = '#7d5fff';
+      ctx.strokeStyle = '#7d5fff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(s.launcher.x, s.launcher.y, 16, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      if (s.dragging && s.dragCur) {
+        const dx = s.launcher.x - s.dragCur.x, dy = s.launcher.y - s.dragCur.y;
+        const clampedLen = Math.min(Math.hypot(dx, dy), 140);
+        const ang = Math.atan2(dy, dx);
+        const ex = s.launcher.x + Math.cos(ang) * clampedLen * 1.6;
+        const ey = s.launcher.y + Math.sin(ang) * clampedLen * 1.6;
+        ctx.save();
+        ctx.setLineDash([8, 8]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(s.launcher.x, s.launcher.y);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.shadowBlur = 16;
+        ctx.shadowColor = '#ffe27a';
+        ctx.fillStyle = '#ffe27a';
+        ctx.beginPath();
+        ctx.arc(s.dragCur.x, s.dragCur.y, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (s.phase === 'aiming' && !s.dragging) {
+        ctx.save();
+        ctx.globalAlpha = 0.5 + Math.sin(Date.now() / 300) * 0.2;
+        ctx.fillStyle = '#ffe0fb';
+        ctx.beginPath();
+        ctx.arc(s.launcher.x, s.launcher.y, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    };
+
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div ref={wrapRef} style={{ width: '100%', height: '100%', position: 'relative' }} data-testid="game-canvas">
+      <canvas ref={canvasRef} data-testid="slingshot-canvas"></canvas>
+      <div className="hud">
+        <div>
+          <div className="stat-label">Score</div>
+          <div className="stat score-val" data-testid="score">{score}</div>
+          <div className="stat combo-val">{combo > 1 ? `x${combo} combo` : ''}</div>
+          <div className="lives" data-testid="lives">
+            {[0, 1, 2].map(i => (
+              <div key={i} className={`life-dot ${i >= lives ? 'lost' : ''}`}></div>
+            ))}
+          </div>
+        </div>
+        <div className="high-score" data-testid="high-score">BEST<br />{highScore}</div>
+      </div>
+
+      {phase === 'aiming' && power > 0 && (
+        <div className="power-bar-wrap">
+          <div className="power-bar-fill" style={{ width: `${power * 100}%` }}></div>
+        </div>
+      )}
+
+      {(phase === 'start') && (
+        <div className="overlay">
+          <div className="title">NEON SLINGSHOT</div>
+          <div className="subtitle">GRAVITY. MOMENTUM. PRECISION.</div>
+          <button className="btn" data-testid="start-btn" onClick={startGame}>LAUNCH</button>
+          <div className="instructions">
+            Drag back from the glowing launcher and release to fling your orb.<br />
+            Slingshot around gravity wells to strike the teal target rings.<br />
+            Avoid the red hazard wells — they'll cost you a life.<br />
+            Chain hits without missing for combo multipliers!
+          </div>
+        </div>
+      )}
+
+      {phase === 'gameover' && (
+        <div className="overlay">
+          <div className="title" style={{ fontSize: 'clamp(28px, 7vw, 46px)' }}>GAME OVER</div>
+          {isNewBest && <div className="new-best">NEW BEST SCORE!</div>}
+          <div className="final-score" data-testid="final-score">{score}</div>
+          <div className="high-score" style={{ marginBottom: 20 }}>BEST: {highScore}</div>
+          <button className="btn" data-testid="restart-btn" onClick={startGame}>RETRY</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<GravitySlingshot />);
+</script>
+</body>
+</html>

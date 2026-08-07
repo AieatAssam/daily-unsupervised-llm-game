@@ -2929,5 +2929,26 @@
     "file": "games/2026-08-06/index.html",
     "preview": "games/2026-08-06/preview.png",
     "rating": 4.5
+  },
+  {
+    "id": "2026-08-07",
+    "name": "Neon Slingshot",
+    "date": "2026-08-07",
+    "description": "A gravity-powered slingshot game: drag back from the glowing launcher and release to fling your orb through a field of swirling gravity wells. Slingshot around blue wells to curve your shot into teal target rings, chain hits without missing for rising combo multipliers, and steer clear of the crimson hazard wells that cost you a life.",
+    "tagline": "Pull back. Let gravity do the aiming.",
+    "tags": [
+      "action",
+      "puzzle",
+      "physics",
+      "arcade",
+      "drag"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Drag back from the launcher and release to fling the orb — gravity wells curve its path toward the target",
+    "folder": "games/2026-08-07",
+    "file": "games/2026-08-07/index.html",
+    "preview": "games/2026-08-07/preview.png",
+    "rating": 4.6
   }
 ]
