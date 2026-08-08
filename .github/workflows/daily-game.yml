@@ -99,8 +99,12 @@ jobs:
             1. Read games-registry.json; new game must be mechanically unique vs last 7.
             2. Create games/YYYY-MM-DD/index.html (single standalone HTML,
                React 18 + Babel from unpkg CDN, <script type="text/babel">).
-            3. Create games/YYYY-MM-DD/game.test.js with all 6 required tests
-               loading /games/YYYY-MM-DD/index.html.
+            3. Create games/YYYY-MM-DD/game.test.js with all 7 required tests
+               loading /games/YYYY-MM-DD/index.html, using the playability
+               harness in scripts/playability-harness.js (controls produce
+               observable change, mobile playable at 375px, performance >=
+               30fps). Copy the structure of example-game.test.js or the most
+               recent game's test file.
             4. Verify with agent-browser: open the game, wait 3000, screenshot,
                snapshot, interact, confirm response. Fix and re-verify if broken.
             5. Screenshot mid-action gameplay to games/YYYY-MM-DD/preview.png.

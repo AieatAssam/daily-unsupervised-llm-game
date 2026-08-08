@@ -1,4 +1,9 @@
 import { test, expect } from '@playwright/test';
+import {
+  assertInputResponds,
+  assertMobilePlayable,
+  assertPerformanceTuned,
+} from '../../scripts/playability-harness.js';
 
 test.describe('2026-08-08 Neon Cluster', () => {
   test.beforeEach(async ({ page }) => {
@@ -26,26 +31,23 @@ test.describe('2026-08-08 Neon Cluster', () => {
     expect(await page.locator('[data-testid^="tile-"]').count()).toBe(64);
   });
 
-  test('game responds to user input - popping clusters', async ({ page }) => {
+  test('controls produce observable game-state change', async ({ page }) => {
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
 
     await page.locator('[data-testid="start-btn"]').click();
     await page.waitForTimeout(300);
 
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 8; c++) {
-        await page.locator(`[data-testid="tile-${r}-${c}"]`).click({ force: true, timeout: 1000 }).catch(() => {});
-        await page.waitForTimeout(15);
-      }
-    }
+    await assertInputResponds(page, {
+      controls: 'click/tap',
+      target: '[data-testid="tile-3-3"]',
+    });
 
-    await page.waitForTimeout(500);
     await expect(page.locator('[data-testid="score"]')).toBeVisible();
     expect(errors).toHaveLength(0);
   });
 
-  test('game survives rapid input without errors', async ({ page }) => {
+  test('game survives rapid input and stays responsive', async ({ page }) => {
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
 
@@ -58,12 +60,17 @@ test.describe('2026-08-08 Neon Cluster', () => {
       await page.locator(`[data-testid="tile-${r}-${c}"]`).click({ force: true, timeout: 1000 }).catch(() => {});
       await page.waitForTimeout(20);
     }
-
     await page.waitForTimeout(500);
+
+    // Still alive and responsive after the burst
+    await assertInputResponds(page, {
+      controls: 'click/tap',
+      target: '[data-testid="tile-5-5"]',
+    });
     expect(errors).toHaveLength(0);
   });
 
-  test('game works at 375px mobile viewport with tap', async ({ browser }) => {
+  test('game is mobile playable at 375px', async ({ browser }) => {
     const context = await browser.newContext({
       viewport: { width: 375, height: 667 },
       hasTouch: true,
@@ -76,18 +83,17 @@ test.describe('2026-08-08 Neon Cluster', () => {
     const errors = [];
     page.on('pageerror', err => errors.push(err.message));
 
-    const startBtn = page.locator('[data-testid="start-btn"]');
-    await startBtn.tap();
-    await page.waitForTimeout(500);
+    // No overflow, >=40px tap targets, start tap produces observable change
+    await assertMobilePlayable(page, {
+      controls: 'tap',
+      buttonSelector: '[data-testid="start-btn"]',
+    });
 
-    const canvas = page.locator('[data-testid="game-canvas"]');
-    const box = await canvas.boundingBox();
-    expect(box).not.toBeNull();
-
+    // In-game tile tap also responds
     const tile = page.locator('[data-testid="tile-3-3"]');
     await tile.tap();
+    await expect(page.locator('[data-testid="game-canvas"]')).toBeVisible();
 
-    await expect(canvas).toBeVisible();
     expect(errors).toHaveLength(0);
     await context.close();
   });
@@ -112,5 +118,18 @@ test.describe('2026-08-08 Neon Cluster', () => {
     const val = await page.evaluate(() => localStorage.getItem('neonCluster_highScore'));
     expect(val).not.toBeNull();
     expect(parseInt(val)).toBeGreaterThanOrEqual(0);
+  });
+
+  test('game is performance tuned during play', async ({ page }) => {
+    await page.locator('[data-testid="start-btn"]').click();
+    await page.waitForTimeout(300);
+
+    // Pop some clusters so particles/effects are active while sampling
+    for (let i = 0; i < 8; i++) {
+      await page.locator(`[data-testid="tile-${i}-${i}"]`).click({ force: true, timeout: 1000 }).catch(() => {});
+      await page.waitForTimeout(30);
+    }
+
+    await assertPerformanceTuned(page, { minFps: 30 });
   });
 });

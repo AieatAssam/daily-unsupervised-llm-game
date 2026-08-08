@@ -1,21 +1,10 @@
-name: Fix and Polish Games
+name: Weekly Sanitise
 
 on:
+  schedule:
+    # Sunday 04:23 UTC — off the :00 herd, clear of the daily 03:00 run
+    - cron: '23 4 * * 0'
   workflow_dispatch:
-    inputs:
-      issue_description:
-        description: 'Describe the issue to fix (e.g. broken previews, unplayable games)'
-        required: false
-        default: 'General fix and polish pass'
-        type: string
-      test_scope:
-        description: 'Regression test scope'
-        required: false
-        default: 'changed'
-        type: choice
-        options:
-          - changed
-          - full
 
 permissions:
   contents: write
@@ -24,14 +13,14 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: "fix-and-polish"
+  group: "weekly-sanitise"
   cancel-in-progress: false
 
 jobs:
-  fix-and-polish:
+  sanitise:
     runs-on: ubuntu-latest
     outputs:
-      fixes-applied: ${{ steps.check-changes.outputs.fixes-applied }}
+      changes-applied: ${{ steps.check-changes.outputs.changes-applied }}
       branch-name: ${{ steps.create-branch.outputs.branch-name }}
 
     steps:
@@ -44,12 +33,12 @@ jobs:
       - name: Configure Git
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "Game Fix Bot"
+          git config --local user.name "Game Sanitise Bot"
 
-      - name: Create fix branch off main
+      - name: Create sanitise branch off main
         id: create-branch
         run: |
-          BRANCH_NAME="fix/games-$(date +'%Y-%m-%d-%H%M')"
+          BRANCH_NAME="sanitise/$(date +'%Y-%m-%d')"
           echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           git checkout -b "$BRANCH_NAME"
           git push origin "$BRANCH_NAME"
@@ -84,7 +73,7 @@ jobs:
           sleep 2
           curl -sf http://localhost:8080/ > /dev/null && echo "HTTP server up"
 
-      - name: Run Fix and Polish pass with Claude Code
+      - name: Run weekly sanitise with Claude Code
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -99,36 +88,45 @@ jobs:
             Spend tokens on files and tool calls, not prose. Code and committed
             files must remain normal, high-quality, and complete.
 
-            TASK: Fix and polish pass on this games codebase.
-            ISSUE REPORTED: ${{ github.event.inputs.issue_description }}
-
-            Environment: full codebase in cwd, HTTP server at
+            TASK: Weekly sanitisation pass on this games codebase. Read CLAUDE.md
+            first. Environment: full codebase in cwd, HTTP server at
             http://localhost:8080, agent-browser CLI via bash
             (open <url> | snapshot | screenshot <path> | wait <ms>).
-            Read CLAUDE.md first. Relative paths only.
+            Relative paths only.
 
             Steps:
-            1. TRIAGE FAST: run `node scripts/validate-registry.mjs` for schema
-               and missing-file problems. Then audit games with agent-browser —
-               prioritize any games named in the issue; sample others only as
-               time allows. A game is broken if it fails to render (blank
-               screenshot), throws JS errors, ignores its controls (interact
-               with agent-browser and nothing observable changes — score,
-               canvas, or DOM must react), or is mobile-unplayable (horizontal
-               overflow or tap targets < 40px at 375px viewport). Games with
-               tests get the stricter playability harness from
-               scripts/playability-harness.js via their game.test.js.
-            2. FIX broken games only — do NOT rewrite working games. Re-verify
-               each fix with agent-browser before moving on.
-            3. Generate missing previews via agent-browser screenshot into the
-               game's folder; update registry paths.
-            4. Remove placeholder/example/template entries from
-               games-registry.json (registry only, keep files on disk).
-            5. Verify gallery renders: open http://localhost:8080/, screenshot.
-            6. Commit fixes with descriptive messages (one commit per logical
-               fix). Mark unfixable games with "broken": true in the registry.
-               NEVER commit runtime artifacts (playwright-report/, test-results/,
+            1. CLEANUP: run `node scripts/validate-registry.mjs`. Fix any schema
+               or missing-file problems it reports. Remove any committed runtime
+               artifacts (playwright-report/, test-results/, stray screenshots
+               or logs outside game folders). Ensure every registry entry's
+               preview.png exists and is non-trivial (>10KB); regenerate missing
+               or placeholder previews via agent-browser screenshot into the
+               game's folder.
+            2. DUPLICATE CHECK: read games-registry.json in full. Find true
+               duplicates — same core mechanic with no mechanical innovation,
+               or same input method + near-identical gameplay. For each
+               duplicate pair, keep the higher-rated entry; mark the other
+               "broken": true in the registry (hides from gallery, files stay
+               on disk). If unsure whether a pair is a true duplicate, leave
+               both alone — false positives are worse than none.
+            3. RE-RATE: only adjust a game's "rating" when CONFIDENT it is
+               misrated. Spot-check suspects with agent-browser (open, wait
+               3000, screenshot, interact). Confident cases: rating 4.8+ but
+               the game is bland/broken/unresponsive; rating <= 3.8 but the
+               game is clearly polished and fun. New rating must stay in
+               3.5-5.0. Never churn ratings by ±0.2 for taste. If nothing is
+               confidently misrated, change nothing.
+            4. DEAD-GAME SWEEP (bounded): sample up to 15 games — prioritize
+               the oldest and any already suspicious. For each, use
+               agent-browser: open, wait 3000, screenshot (must not be blank),
+               interact, confirm the game visibly responds. Mark non-responders
+               "broken": true in the registry. Do not attempt fixes — that is
+               the fix workflow's job.
+            5. Commit per logical change with descriptive messages. NEVER
+               commit runtime artifacts (playwright-report/, test-results/,
                screenshots outside game folders, logs, .claude/skills).
+            6. Finish by running `node scripts/validate-registry.mjs` — it
+               must pass.
 
       - name: Stop HTTP server
         if: always()
@@ -145,35 +143,35 @@ jobs:
           COMMITS_AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
 
           if [ "$STAGED_COUNT" -gt 0 ]; then
-            git commit -m "🔧 Fix and polish pass - $(date +'%Y-%m-%d %H:%M')"
-            echo "fixes-applied=true" >> $GITHUB_OUTPUT
+            git commit -m "🧹 Weekly sanitise pass - $(date +'%Y-%m-%d')"
+            echo "changes-applied=true" >> $GITHUB_OUTPUT
           elif [ "$COMMITS_AHEAD" -gt 0 ]; then
-            echo "fixes-applied=true" >> $GITHUB_OUTPUT
+            echo "changes-applied=true" >> $GITHUB_OUTPUT
           else
-            echo "No changes — all games healthy"
-            echo "fixes-applied=false" >> $GITHUB_OUTPUT
+            echo "No changes — arcade is clean"
+            echo "changes-applied=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Push fix branch
-        if: steps.check-changes.outputs.fixes-applied == 'true'
+      - name: Push sanitise branch
+        if: steps.check-changes.outputs.changes-applied == 'true'
         run: git push origin "${{ steps.create-branch.outputs.branch-name }}"
 
       - name: Delete branch if no changes
-        if: steps.check-changes.outputs.fixes-applied == 'false'
+        if: steps.check-changes.outputs.changes-applied == 'false'
         run: git push origin --delete "${{ steps.create-branch.outputs.branch-name }}" || true
 
   regression-tests:
-    needs: fix-and-polish
-    if: needs.fix-and-polish.outputs.fixes-applied == 'true'
+    needs: sanitise
+    if: needs.sanitise.outputs.changes-applied == 'true'
     runs-on: ubuntu-latest
     outputs:
       tests-passed: ${{ steps.run-tests.outputs.tests-passed }}
 
     steps:
-      - name: Checkout fix branch
+      - name: Checkout sanitise branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.fix-and-polish.outputs.branch-name }}
+          ref: ${{ needs.sanitise.outputs.branch-name }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -200,19 +198,15 @@ jobs:
         id: run-tests
         run: |
           git fetch origin main
-          if [ "${{ github.event.inputs.test_scope }}" = "full" ]; then
-            TEST_FILES=$(find games -name "game.test.js" | sort)
-          else
-            # Default: test only games touched by the fix branch — full suite
-            # is slow and flaky under CDN load, and unchanged games already
-            # passed on their own merge day.
-            TEST_FILES=$(git diff --name-only origin/main...HEAD -- 'games/**' \
-              | cut -d/ -f1-2 | sort -u \
-              | while read -r d; do [ -f "$d/game.test.js" ] && echo "$d/game.test.js"; done)
-          fi
+          # Sanitise usually touches registry only; test any games it changed.
+          # Full suite is slow and CDN-flaky — unchanged games were gated on
+          # their own merge day.
+          TEST_FILES=$(git diff --name-only origin/main...HEAD -- 'games/**' \
+            | cut -d/ -f1-2 | sort -u \
+            | while read -r d; do [ -f "$d/game.test.js" ] && echo "$d/game.test.js"; done)
 
           if [ -z "$TEST_FILES" ]; then
-            echo "No game files changed — registry/gallery-only fix, validator already passed"
+            echo "No game files changed — registry-only sanitise, validator already passed"
             echo "tests-passed=true" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -229,14 +223,14 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: fix-test-results
+          name: sanitise-test-results
           path: |
             playwright-report/
             test-results/
           retention-days: 7
 
   merge-to-main:
-    needs: [fix-and-polish, regression-tests]
+    needs: [sanitise, regression-tests]
     if: needs.regression-tests.outputs.tests-passed == 'true'
     runs-on: ubuntu-latest
 
@@ -249,18 +243,18 @@ jobs:
       - name: Configure Git
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "Game Fix Bot"
+          git config --local user.name "Game Sanitise Bot"
 
-      - name: Merge fix branch to main
+      - name: Merge sanitise branch to main
         run: |
           git fetch origin
           git checkout main
-          git merge --no-ff origin/${{ needs.fix-and-polish.outputs.branch-name }} \
-            -m "🔧 Merge fix/polish pass from ${{ needs.fix-and-polish.outputs.branch-name }}"
+          git merge --no-ff origin/${{ needs.sanitise.outputs.branch-name }} \
+            -m "🧹 Merge weekly sanitise from ${{ needs.sanitise.outputs.branch-name }}"
           git push origin main
 
-      - name: Delete fix branch
-        run: git push origin --delete ${{ needs.fix-and-polish.outputs.branch-name }}
+      - name: Delete sanitise branch
+        run: git push origin --delete ${{ needs.sanitise.outputs.branch-name }}
 
   deploy:
     needs: merge-to-main
