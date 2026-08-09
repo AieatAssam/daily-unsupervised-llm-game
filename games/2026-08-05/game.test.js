@@ -135,4 +135,20 @@ test.describe('2026-08-05 Neon Slash', () => {
     expect(val).not.toBeNull();
     expect(parseInt(val)).toBeGreaterThanOrEqual(0);
   });
+
+  test('a legal drag through a live orb produces score', async ({ page }) => {
+    await page.locator('[data-testid="start-btn"]').click();
+    const canvas = page.locator('[data-testid="slash-canvas"]');
+    const box = await canvas.boundingBox();
+    const orb = page.locator('[data-testid="balance-orb"]');
+    await expect.poll(async () => await orb.getAttribute('data-x'), { timeout: 4000 }).not.toBeNull();
+
+    const x = box.x + Number(await orb.getAttribute('data-x'));
+    const y = box.y + Number(await orb.getAttribute('data-y'));
+    await page.mouse.move(x, y + 90);
+    await page.mouse.down();
+    await page.mouse.move(x, y - 90, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(async () => Number(await page.locator('[data-testid="score"]').textContent()), { timeout: 2000 }).toBeGreaterThan(0);
+  });
 });

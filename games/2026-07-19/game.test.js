@@ -1,109 +1,13 @@
 import { test, expect } from '@playwright/test';
-
-test.describe('2026-07-19 Gravity Flip', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/games/2026-07-19/index.html');
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForTimeout(1500);
-  });
-
-  test('game loads without page errors', async ({ page }) => {
-    const errors = [];
-    page.on('pageerror', err => errors.push(err.message));
-    await page.waitForTimeout(2000);
-    expect(errors).toHaveLength(0);
-  });
-
-  test('game renders core elements', async ({ page }) => {
-    const bodyText = await page.textContent('body');
-    expect(bodyText).toContain('GRAVITY');
-    expect(bodyText).toContain('FLIP');
-    const playBtn = page.locator('button', { hasText: 'PLAY' });
-    await expect(playBtn).toBeVisible();
-  });
-
-  test('game responds to user input - start and click to flip', async ({ page }) => {
-    const errors = [];
-    page.on('pageerror', err => errors.push(err.message));
-    await page.locator('button', { hasText: 'PLAY' }).click();
-    await page.waitForTimeout(800);
-    const bodyText = await page.textContent('body');
-    expect(bodyText).toContain('SCORE');
-    // Click canvas to flip gravity
-    const canvas = page.locator('canvas');
-    const box = await canvas.boundingBox();
-    for (let i = 0; i < 5; i++) {
-      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-      await page.waitForTimeout(200);
-    }
-    expect(errors).toHaveLength(0);
-  });
-
-  test('game survives rapid input without errors', async ({ page }) => {
-    const errors = [];
-    page.on('pageerror', err => errors.push(err.message));
-    await page.locator('button', { hasText: 'PLAY' }).click();
-    await page.waitForTimeout(500);
-    const canvas = page.locator('canvas');
-    const box = await canvas.boundingBox();
-    // Rapid clicks and key presses
-    for (let i = 0; i < 15; i++) {
-      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-      await page.waitForTimeout(50);
-    }
-    for (let i = 0; i < 10; i++) {
-      await page.keyboard.press('Space');
-      await page.waitForTimeout(40);
-    }
-    await page.waitForTimeout(1500);
-    expect(errors).toHaveLength(0);
-  });
-
-  test('game works at 375px mobile viewport with tap', async ({ browser }) => {
-    const context = await browser.newContext({
-      viewport: { width: 375, height: 667 },
-      hasTouch: true,
-    });
-    const page = await context.newPage();
-    await page.goto('/games/2026-07-19/index.html');
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForTimeout(1500);
-    const errors = [];
-    page.on('pageerror', err => errors.push(err.message));
-    // Tap start
-    await page.tap('#start-btn');
-    await page.waitForTimeout(800);
-    // Tap canvas to flip gravity
-    const canvas = page.locator('canvas');
-    const box = await canvas.boundingBox();
-    for (let i = 0; i < 4; i++) {
-      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-      await page.waitForTimeout(250);
-    }
-    const bodyText = await page.textContent('body');
-    expect(bodyText).toContain('GRAVITY');
-    expect(errors).toHaveLength(0);
-    await context.close();
-  });
-
-  test('game writes score/high-score key to localStorage', async ({ page }) => {
-    await page.locator('button', { hasText: 'PLAY' }).click();
-    await page.waitForTimeout(500);
-    // Force localStorage entry
-    await page.evaluate(() => {
-      if (!localStorage.getItem('gravityfliip-highscore')) {
-        localStorage.setItem('gravityfliip-highscore', '5');
-      }
-    });
-    const canvas = page.locator('canvas');
-    const box = await canvas.boundingBox();
-    // Click a few times to interact
-    for (let i = 0; i < 6; i++) {
-      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-      await page.waitForTimeout(200);
-    }
-    const hs = await page.evaluate(() => localStorage.getItem('gravityfliip-highscore'));
-    expect(hs).not.toBeNull();
-    expect(parseInt(hs)).toBeGreaterThan(0);
-  });
+import { assertInputResponds, assertMobilePlayable, assertPerformanceTuned } from '../../scripts/playability-harness.js';
+test.describe('2026-07-19 Gridlock Glow', () => {
+  test.beforeEach(async ({ page }) => { await page.goto('/games/2026-07-19/index.html'); await page.waitForLoadState('domcontentloaded'); await page.waitForTimeout(500); });
+  test('game loads without page errors', async ({ page }) => { const e=[]; page.on('pageerror',x=>e.push(x)); await page.waitForTimeout(500); expect(e).toHaveLength(0); });
+  test('game renders core elements', async ({ page }) => { await expect(page.locator('.grid')).toBeVisible(); await expect(page.locator('[data-testid="start-btn"]')).toBeVisible(); expect(await page.locator('body').textContent()).toContain('GRIDLOCK GLOW'); });
+  test('controls produce observable game-state change', async ({ page }) => { await page.locator('[data-testid="start-btn"]').click(); await assertInputResponds(page,{controls:'arrows',target:'.cell.player'}); });
+  test('a cell click cannot teleport the courier across the grid', async ({ page }) => { await page.locator('[data-testid="start-btn"]').click(); const before=await page.locator('.cell.player').evaluate(el=>[...el.parentElement.children].indexOf(el)); await page.locator('.cell').nth(0).click(); await expect(page.locator('.cell.player')).toHaveCount(1); const after=await page.locator('.cell.player').evaluate(el=>[...el.parentElement.children].indexOf(el)); expect(after).toBe(before); });
+  test('game survives rapid input and stays responsive', async ({ page }) => { await page.locator('[data-testid="start-btn"]').click(); for(let i=0;i<30;i++){await page.keyboard.press(['ArrowUp','ArrowRight','ArrowDown','ArrowLeft'][i%4]);await page.waitForTimeout(20)} await assertInputResponds(page,{controls:'arrows',target:'.cell.player'}); });
+  test('game is mobile playable at 375px', async ({ browser }) => { const c=await browser.newContext({viewport:{width:375,height:667},hasTouch:true}),p=await c.newPage(); await p.goto('/games/2026-07-19/index.html'); await p.waitForLoadState('domcontentloaded'); await p.locator('[data-testid="start-btn"]').tap(); await assertMobilePlayable(p,{controls:'tap',buttonSelector:'.pad button'}); await c.close(); });
+  test('game writes score/high-score key to localStorage', async ({ page }) => { await page.locator('[data-testid="start-btn"]').click(); expect(await page.evaluate(()=>localStorage.getItem('gridlockGlowHighScore'))).not.toBeNull(); });
+  test('game is performance tuned during play', async ({ page }) => { await page.locator('[data-testid="start-btn"]').click(); await assertPerformanceTuned(page,{minFps:30}); });
 });

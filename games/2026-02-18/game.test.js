@@ -1,113 +1,12 @@
 import { test, expect } from '@playwright/test';
-
-test.describe('2026-02-18 Neon Slicer', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/games/2026-02-18/index.html');
-    await page.waitForLoadState('networkidle');
-  });
-
-  test('game loads without errors', async ({ page }) => {
-    const errors = [];
-    page.on('pageerror', error => errors.push(error));
-    await page.waitForTimeout(2000);
-    expect(errors).toHaveLength(0);
-  });
-
-  test('game renders core elements', async ({ page }) => {
-    // Title and play button should be visible on menu
-    const gameContent = await page.textContent('body');
-    expect(gameContent).toBeTruthy();
-    expect(gameContent.length).toBeGreaterThan(0);
-    // Check for the game title
-    expect(gameContent).toContain('NEON SLICER');
-    // Check for start button
-    expect(gameContent).toContain('SLICE IT!');
-  });
-
-  test('game responds to user input', async ({ page }) => {
-    // Click on game area to start via button
-    await page.click('body');
-    await page.waitForTimeout(500);
-
-    // Verify game container or canvas is present
-    const hasCanvas = await page.locator('canvas').count();
-    const hasReactRoot = await page.locator('[id="game-container"], [id="root"]').count();
-    expect(hasCanvas + hasReactRoot).toBeGreaterThan(0);
-  });
-
-  test('game handles rapid interactions', async ({ page }) => {
-    // Click the start button to begin playing
-    const startBtn = page.locator('button').filter({ hasText: 'SLICE IT!' });
-    await startBtn.click();
-    await page.waitForTimeout(500);
-
-    const errors = [];
-    page.on('pageerror', error => errors.push(error));
-
-    // Perform rapid swipe gestures across the game
-    const W = 800;
-    const H = 600;
-    for (let i = 0; i < 8; i++) {
-      const y = H * 0.3 + (i % 3) * 80;
-      await page.mouse.move(W * 0.1, y);
-      await page.mouse.down();
-      await page.mouse.move(W * 0.5, y + 30, { steps: 10 });
-      await page.mouse.move(W * 0.9, y, { steps: 10 });
-      await page.mouse.up();
-      await page.waitForTimeout(60);
-    }
-
-    await page.waitForTimeout(500);
-    expect(errors).toHaveLength(0);
-  });
-
-  test('game works on mobile viewport', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
-    await page.reload();
-    await page.waitForLoadState('networkidle');
-
-    const errors = [];
-    page.on('pageerror', error => errors.push(error));
-
-    // Start the game via click (works for both desktop and mobile viewports)
-    await page.click('button');
-    await page.waitForTimeout(500);
-
-    // Perform swipe gesture using mouse events
-    await page.mouse.move(50, 300);
-    await page.mouse.down();
-    await page.mouse.move(320, 300, { steps: 15 });
-    await page.mouse.up();
-    await page.waitForTimeout(300);
-
-    expect(errors).toHaveLength(0);
-  });
-
-  test('localStorage high score works', async ({ page }) => {
-    // Start the game - this initializes the localStorage key
-    const startBtn = page.locator('button').filter({ hasText: 'SLICE IT!' });
-    await startBtn.click();
-    await page.waitForTimeout(800);
-
-    // Simulate slicing by dragging across the game area multiple times
-    for (let i = 0; i < 5; i++) {
-      const y = 200 + i * 60;
-      await page.mouse.move(50, y);
-      await page.mouse.down();
-      await page.mouse.move(750, y, { steps: 20 });
-      await page.mouse.up();
-      await page.waitForTimeout(200);
-    }
-    await page.waitForTimeout(500);
-
-    // Check localStorage for score-related keys
-    const storage = await page.evaluate(() => {
-      return Object.keys(localStorage).filter(k =>
-        k.includes('highScore') || k.includes('score') || k.includes('best') || k.includes('neon')
-      );
-    });
-
-    // Should have at least one score-related key
-    expect(storage.length).toBeGreaterThan(0);
-  });
+import { assertInputResponds, assertMobilePlayable, assertPerformanceTuned } from '../../scripts/playability-harness.js';
+test.describe('2026-02-18 Neon Orbit',()=>{
+ test.beforeEach(async({page})=>{await page.goto('/games/2026-02-18/index.html');await page.waitForLoadState('domcontentloaded');await page.waitForTimeout(800)});
+ test('game loads without page errors',async({page})=>{const e=[];page.on('pageerror',x=>e.push(x));await page.waitForTimeout(500);expect(e).toHaveLength(0)});
+ test('game renders core elements',async({page})=>{await expect(page.locator('canvas')).toBeVisible();await expect(page.locator('[data-testid="start-btn"]')).toBeVisible();expect(await page.locator('body').textContent()).toContain('NEON ORBIT')});
+ test('controls produce observable game-state change',async({page})=>{await page.locator('[data-testid="start-btn"]').click();await assertInputResponds(page,{controls:'click/tap',target:'canvas'})});
+ test('game survives rapid input and stays responsive',async({page})=>{await page.locator('[data-testid="start-btn"]').click();for(let i=0;i<25;i++){await page.locator('canvas').click({position:{x:100+(i*17)%300,y:150+(i*23)%250}});await page.waitForTimeout(20)}await assertInputResponds(page,{controls:'click/tap',target:'canvas'});});
+ test('game is mobile playable at 375px',async({browser})=>{const c=await browser.newContext({viewport:{width:375,height:667},hasTouch:true}),p=await c.newPage();await p.goto('/games/2026-02-18/index.html');await p.waitForLoadState('domcontentloaded');await p.locator('[data-testid="start-btn"]').tap();await assertMobilePlayable(p,{controls:'tap',buttonSelector:'[data-testid="start-btn"],canvas'});await c.close()});
+ test('game writes score/high-score key to localStorage',async({page})=>{expect(await page.evaluate(()=>localStorage.getItem('neonOrbitHighScore'))).not.toBeNull()});
+ test('game is performance tuned during play',async({page})=>{await page.locator('[data-testid="start-btn"]').click();await assertPerformanceTuned(page,{minFps:30})});
 });

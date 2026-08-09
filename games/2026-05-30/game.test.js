@@ -103,4 +103,20 @@ test.describe('2026-05-30 Neon Strike', () => {
     );
     expect(storage.length).toBeGreaterThan(0);
   });
+
+  test('a centered full-power bowl can reach the head pin', async ({ page }) => {
+    await page.evaluate(() => localStorage.removeItem('neonStrike_hi'));
+    const canvas = page.locator('canvas');
+    const box = await canvas.boundingBox();
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height * 0.88;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.waitForTimeout(700);
+    await page.mouse.up();
+    await page.waitForTimeout(1800);
+
+    const score = await page.evaluate(() => Number(localStorage.getItem('neonStrike_hi') || 0));
+    expect(score, 'a full-power centered bowl never reached the head pin').toBeGreaterThan(0);
+  });
 });

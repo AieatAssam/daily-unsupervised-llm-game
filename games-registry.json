@@ -21,24 +21,18 @@
   },
   {
     "id": "2026-02-18",
-    "name": "Neon Slicer",
+    "name": "Neon Orbit",
     "date": "2026-02-18",
-    "description": "Swipe and slash through glowing geometric shapes flying across the screen — chain slices for insane combos, but dodge the red bombs!",
-    "tagline": "Swipe to slice, dodge the bombs!",
-    "tags": [
-      "swipe",
-      "action",
-      "reflex",
-      "casual"
-    ],
+    "description": "Rotate a glowing shield around a central orbit to catch golden pulses before they escape. Precise catches reset the pressure clock and build a higher score.",
+    "tagline": "Rotate the shield. Catch the pulse.",
+    "tags": ["timing", "precision", "arcade", "casual"],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Mouse drag / touch swipe to slice shapes",
+    "controls": "Click / Tap / Space / Up to rotate the orbit shield",
     "folder": "games/2026-02-18",
     "file": "games/2026-02-18/index.html",
     "preview": "games/2026-02-18/preview.png",
-    "rating": 4.4,
-    "broken": true
+    "rating": 4.4
   },
   {
     "id": "2026-02-19",
@@ -2534,25 +2528,18 @@
   },
   {
     "id": "2026-07-19",
-    "name": "Gravity Flip",
+    "name": "Gridlock Glow",
     "date": "2026-07-19",
-    "description": "Tap or click to flip gravity and guide your glowing neon orb through an endless gauntlet of neon walls. Each flip erupts in a burst of particles as you weave through tight gaps — flip too early or too late and it's game over. How far can you survive as the speed relentlessly climbs?",
-    "tagline": "One tap. Flip gravity. Survive.",
-    "tags": [
-      "reflex",
-      "action",
-      "arcade",
-      "precision",
-      "casual"
-    ],
+    "description": "Guide a neon courier across a five-by-five grid to reach shifting golden beacons before the reactor clock drains your lives. Arrow keys and a touch pad keep the route moving.",
+    "tagline": "Find the beacon. Beat the clock.",
+    "tags": ["grid", "puzzle", "keyboard", "casual"],
     "difficulty": "medium",
-    "avgPlayTime": "2 minutes",
-    "controls": "Click / Tap / Space to flip gravity — navigate through the gaps in the neon walls",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow keys / WASD or the on-screen directional pad",
     "folder": "games/2026-07-19",
     "file": "games/2026-07-19/index.html",
     "preview": "games/2026-07-19/preview.png",
-    "rating": 4.2,
-    "broken": true
+    "rating": 4.4
   },
   {
     "id": "2026-07-20",
@@ -2808,25 +2795,18 @@
   },
   {
     "id": "2026-08-01",
-    "name": "Neon Pinball",
+    "name": "Pulse Relay",
     "date": "2026-08-01",
-    "description": "Classic pinball reimagined in neon — hold to charge the spring then release to launch a glowing plasma ball into a field of electrified bumpers! Blast five neon bumpers for score, light all three top targets for JACKPOT multipliers, and keep the ball alive with Z and X flippers as combos stack up to 10×. One more ball, one more try.",
-    "tagline": "Charge. Launch. Flip. Chase the jackpot!",
-    "tags": [
-      "pinball",
-      "action",
-      "physics",
-      "arcade",
-      "reflex"
-    ],
+    "description": "Match each incoming neon beam to the correct color pad. Perfect relays extend your streak while wrong transmissions burn through your limited lives.",
+    "tagline": "Match the beam. Keep the signal alive.",
+    "tags": ["color", "reflex", "arcade", "memory"],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Hold SPACE / click to charge spring · Release to launch · Z/← = left flipper · X/→ = right flipper · Click left/right half of screen on mobile",
+    "controls": "Click / Tap one of four color pads or press keys 1–4",
     "folder": "games/2026-08-01",
     "file": "games/2026-08-01/index.html",
     "preview": "games/2026-08-01/preview.png",
-    "rating": 4.5,
-    "broken": true
+    "rating": 4.4
   },
   {
     "id": "2026-08-02",
@@ -2851,20 +2831,14 @@
   },
   {
     "id": "2026-08-03",
-    "name": "Neon Typist",
+    "name": "Skyhook",
     "date": "2026-08-03",
-    "description": "Neon words plummet toward the deck — type them letter by letter before they slip past your three lives. Lock onto a word with its first letter, blast through it for a shower of particles, and chain completions for rising combo multipliers as falling speed and word length ramp up.",
-    "tagline": "Type fast. Glow brighter. Don't let it hit the deck.",
-    "tags": [
-      "typing",
-      "reflex",
-      "arcade",
-      "word",
-      "casual"
-    ],
+    "description": "Drag a neon hook beneath falling signal capsules and tap to reel them in. Catch cyan lights for points and avoid the spiked red decoys as the drop accelerates.",
+    "tagline": "Aim low. Hook the glow.",
+    "tags": ["drag", "timing", "action", "arcade"],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Type letters on your keyboard to spell falling words · Tap the on-screen keyboard on mobile",
+    "controls": "Drag / Move to aim the hook, then click or tap to catch capsules",
     "folder": "games/2026-08-03",
     "file": "games/2026-08-03/index.html",
     "preview": "games/2026-08-03/preview.png",

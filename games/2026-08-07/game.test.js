@@ -121,22 +121,29 @@ test.describe('2026-08-07 Neon Slingshot', () => {
     const canvas = page.locator('[data-testid="slingshot-canvas"]');
     const box = await canvas.boundingBox();
 
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 3; i++) {
+      const target = page.locator('[data-testid="balance-target"]');
+      const tx = Number(await target.getAttribute('data-x'));
+      const ty = Number(await target.getAttribute('data-y'));
       const launcherX = box.x + box.width / 2;
       const launcherY = box.y + box.height - 70;
-      const dx = (Math.sin(i) ) * 90;
-      const dy = 70 + Math.random() * 50;
+      const targetX = box.x + tx;
+      const targetY = box.y + ty;
+      const len = Math.hypot(targetX - launcherX, targetY - launcherY) || 1;
+      const dx = (targetX - launcherX) / len * 140;
+      const dy = (targetY - launcherY) / len * 140;
       await page.mouse.move(launcherX, launcherY);
       await page.mouse.down();
-      await page.mouse.move(launcherX + dx, launcherY + dy, { steps: 4 });
+      await page.mouse.move(launcherX - dx, launcherY - dy, { steps: 4 });
       await page.mouse.up();
-      await page.waitForTimeout(120);
+      await page.waitForTimeout(1600);
 
       const restart = page.locator('[data-testid="restart-btn"]');
       if (await restart.count() > 0) {
         await restart.click({ force: true, timeout: 1000 }).catch(() => {});
         await page.waitForTimeout(200);
       }
+      if (Number(await page.locator('[data-testid="score"]').textContent()) > 0) break;
     }
 
     await page.waitForTimeout(500);
@@ -144,5 +151,8 @@ test.describe('2026-08-07 Neon Slingshot', () => {
     const val = await page.evaluate(() => localStorage.getItem('neonSlingshot_highScore'));
     expect(val).not.toBeNull();
     expect(parseInt(val)).toBeGreaterThanOrEqual(0);
+
+    const scoreText = await page.locator('[data-testid="score"]').textContent();
+    expect(Number(scoreText), 'the standard launch sweep never reached a target').toBeGreaterThan(0);
   });
 });

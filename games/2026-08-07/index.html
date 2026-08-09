@@ -317,6 +317,12 @@ function GravitySlingshot() {
       if (s.target) {
         s.target.x += s.target.vx;
         if (s.target.x < 30 || s.target.x > W - 30) s.target.vx *= -1;
+        const probe = document.querySelector('[data-testid="balance-target"]');
+        if (probe) {
+          probe.dataset.x = String(s.target.x);
+          probe.dataset.y = String(s.target.y);
+          probe.dataset.radius = String(s.target.r);
+        }
       }
 
       if (s.phase === 'flying' && s.ball) {
@@ -536,6 +542,7 @@ function GravitySlingshot() {
   return (
     <div ref={wrapRef} style={{ width: '100%', height: '100%', position: 'relative' }} data-testid="game-canvas">
       <canvas ref={canvasRef} data-testid="slingshot-canvas"></canvas>
+      <div data-testid="balance-target" aria-label="Current target position" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}></div>
       <div className="hud">
         <div>
           <div className="stat-label">Score</div>

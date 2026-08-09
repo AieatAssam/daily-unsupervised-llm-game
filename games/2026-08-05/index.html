@@ -368,6 +368,14 @@ function App() {
       const ctx = canvas.getContext('2d');
       const w = st.w, h = st.h;
 
+      const balanceOrb = st.orbs.find((orb) => !orb.isBomb && !orb.sliced);
+      const probe = document.querySelector('[data-testid="balance-orb"]');
+      if (probe && balanceOrb) {
+        probe.dataset.x = String(balanceOrb.x);
+        probe.dataset.y = String(balanceOrb.y);
+        probe.dataset.radius = String(balanceOrb.radius);
+      }
+
       st.elapsed += dt;
       st.lastSpawn += dt;
       const spawnInterval = Math.max(420, 950 - st.elapsed / 90);
@@ -507,6 +515,7 @@ function App() {
 
   return (
     <div className={`app ${shake ? 'shake' : ''}`} data-testid="game-canvas">
+      <div data-testid="balance-orb" aria-label="Current target orb position" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}></div>
       <canvas
         ref={canvasRef}
         id="gameCanvas"

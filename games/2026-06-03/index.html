@@ -50,7 +50,8 @@ const CW = 800, CH = 500;
 const SX = 118, SY = 388;   // slingshot pivot
 const GY = 450;              // ground y
 const BR = 13;               // ball radius
-const DRAG_MAX = 76;
+const DRAG_MAX = 90;
+const LAUNCH_SPEED = 0.18;
 const GRAV = 0.39;
 const BW = 38, BH = 28;
 
@@ -126,7 +127,7 @@ function drawBands(ctx, bx, by) {
   ctx.restore();
 }
 function drawArc(ctx, bx, by) {
-  const vx=(SX-bx)*0.148, vy=(SY-by)*0.148;
+  const vx=(SX-bx)*LAUNCH_SPEED, vy=(SY-by)*LAUNCH_SPEED;
   ctx.save(); ctx.setLineDash([4,9]); ctx.strokeStyle='#ffffff30'; ctx.lineWidth=1.5;
   ctx.beginPath(); let px=bx, py=by, pvx=vx, pvy=vy; ctx.moveTo(px,py);
   for (let i=0; i<38; i++) { pvy+=GRAV; px+=pvx; py+=pvy; ctx.lineTo(px,py); if(py>GY)break; }
@@ -187,6 +188,7 @@ function SlingSmash() {
   const canvasRef = useRef(null);
   const [screen, setScreen] = useState('start');
   const [finalScore, setFinalScore] = useState(0);
+  const [liveStatus, setLiveStatus] = useState('');
   const [bestScore, setBestScore] = useState(() => parseInt(localStorage.getItem('slingSmashBest') || '0'));
 
   // Always ensure localStorage key exists
@@ -356,6 +358,7 @@ function SlingSmash() {
               g.combo++;
               const pts = b.maxHp * 100 * g.combo;
               g.score += pts;
+              setLiveStatus('TARGET HIT');
               g.floats.push(mkFloat(b.x+b.w/2, b.y-4, `+${pts}`, col));
               SFX.destroy(b.maxHp);
               if (g.combo >= 2) SFX.combo(g.combo);
@@ -398,8 +401,8 @@ function SlingSmash() {
       if (g.phase !== 'dragging') return;
       const bp = clampDrag(g.dragX-SX, g.dragY-SY);
       g.ball.x=bp.x; g.ball.y=bp.y;
-      g.ball.vx=(SX-bp.x)*0.148; g.ball.vy=(SY-bp.y)*0.148;
-      g.ball.trail=[]; g.phase='flying';
+      g.ball.vx=(SX-bp.x)*LAUNCH_SPEED; g.ball.vy=(SY-bp.y)*LAUNCH_SPEED;
+      g.ball.trail=[]; g.phase='flying'; setLiveStatus('SHOT FIRED');
       SFX.launch();
     }
 
@@ -437,6 +440,7 @@ function SlingSmash() {
 
   return (
     <div style={{ position:'relative', width:'100vw', height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#060010' }}>
+      <div data-testid="game-status" aria-live="polite" style={{ position:'absolute', width:1, height:1, overflow:'hidden' }}>{liveStatus}</div>
       <canvas ref={canvasRef} width={CW} height={CH}
         style={{ maxWidth:'100vw', maxHeight:'100vh', display:'block' }} />
 

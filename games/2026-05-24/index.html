@@ -614,7 +614,7 @@
           {/* HUD */}
           <div style={{
             display:'flex', justifyContent:'space-between', alignItems:'center',
-            width: Math.min(window.innerWidth, COLS * CELL + 40),
+            width: Math.min(window.innerWidth - 8, COLS * CELL + 40),
             padding:'8px 16px', color:'#00ffee',
             fontFamily:'Courier New', fontSize:'14px', letterSpacing:'1px',
           }}>
@@ -638,7 +638,7 @@
               ref={canvasRef}
               width={COLS * CELL}
               height={ROWS * CELL}
-              style={{ display:'block', border:'1px solid #2a0a5a', boxShadow:'0 0 30px #4400aa55' }}
+              style={{ display:'block', maxWidth:'calc(100vw - 8px)', height:'auto', border:'1px solid #2a0a5a', boxShadow:'0 0 30px #4400aa55' }}
             />
 
             {/* Overlays */}
