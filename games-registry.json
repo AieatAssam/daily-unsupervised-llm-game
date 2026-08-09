@@ -37,7 +37,8 @@
     "folder": "games/2026-02-18",
     "file": "games/2026-02-18/index.html",
     "preview": "games/2026-02-18/preview.png",
-    "rating": 4.4
+    "rating": 4.4,
+    "broken": true
   },
   {
     "id": "2026-02-19",
@@ -2550,7 +2551,8 @@
     "folder": "games/2026-07-19",
     "file": "games/2026-07-19/index.html",
     "preview": "games/2026-07-19/preview.png",
-    "rating": 4.2
+    "rating": 4.2,
+    "broken": true
   },
   {
     "id": "2026-07-20",
@@ -2823,7 +2825,8 @@
     "folder": "games/2026-08-01",
     "file": "games/2026-08-01/index.html",
     "preview": "games/2026-08-01/preview.png",
-    "rating": 4.5
+    "rating": 4.5,
+    "broken": true
   },
   {
     "id": "2026-08-02",
