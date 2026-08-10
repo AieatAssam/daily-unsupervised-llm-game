@@ -2969,5 +2969,26 @@
     "file": "games/2026-08-09/index.html",
     "preview": "games/2026-08-09/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-08-10",
+    "name": "Calc Storm",
+    "date": "2026-08-10",
+    "description": "A neon arithmetic defense game: equations rain from the top of the screen and you type the answer with number keys or the on-screen keypad, pressing Enter to blast the matching equation before it crosses the danger line. Chain correct answers for a rising combo multiplier as addition gives way to subtraction and multiplication and the storm accelerates, but every equation you miss costs a life.",
+    "tagline": "Type fast. Solve faster. Don't let the numbers fall.",
+    "tags": [
+      "math",
+      "typing",
+      "puzzle",
+      "arcade",
+      "reflex"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Number keys to type the answer, Enter to submit, Backspace to correct | On-screen neon keypad on mobile",
+    "folder": "games/2026-08-10",
+    "file": "games/2026-08-10/index.html",
+    "preview": "games/2026-08-10/preview.png",
+    "rating": 4.3
   }
 ]
