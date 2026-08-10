@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Calc Storm — Neon Arithmetic Defense</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: #05010f;
+    font-family: 'Courier New', Consolas, monospace;
+    touch-action: none;
+  }
+  #root { width: 100vw; height: 100vh; position: relative; }
+  .app-root { width: 100%; height: 100%; position: relative; overflow: hidden; }
+
+  .arena {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    justify-content: space-between; align-items: center;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 50% 0%, #1a0033 0%, #05010f 60%, #000 100%);
+  }
+
+  canvas.game-canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0;
+  }
+
+  .hud-top {
+    position: relative; z-index: 2;
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+    padding: 10px 8px 4px; width: 100%;
+  }
+  .hud-item {
+    color: #0ff; text-shadow: 0 0 8px currentColor;
+    font-weight: bold; font-size: clamp(11px, 3vw, 14px);
+    background: rgba(10, 0, 25, 0.55); padding: 4px 10px; border-radius: 8px;
+    border: 1px solid rgba(0, 255, 255, 0.35); white-space: nowrap;
+  }
+  .hud-item.lives { color: #ff4d6d; }
+  .hud-item.combo { color: #ffe600; }
+  .hud-item.level { color: #b98bff; }
+  .hud-item.best { color: #7fffd4; }
+
+  .bottom-panel {
+    position: relative; z-index: 2;
+    display: flex; flex-direction: column; align-items: center;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    width: 100%;
+  }
+
+  .buffer-display {
+    font-size: clamp(24px, 8vw, 34px); letter-spacing: 8px;
+    color: #fff; text-shadow: 0 0 12px #0ff, 0 0 26px #0ff;
+    min-height: 44px; margin-bottom: 6px; transition: color 0.15s, text-shadow 0.15s;
+  }
+  .buffer-display.correct { color: #39ff88; text-shadow: 0 0 16px #39ff88, 0 0 34px #39ff88; }
+  .buffer-display.wrong { color: #ff3366; text-shadow: 0 0 16px #ff3366, 0 0 34px #ff3366; }
+
+  .numpad {
+    display: grid; grid-template-columns: repeat(3, 58px);
+    gap: 6px; justify-content: center; padding-bottom: 10px;
+  }
+  .num-btn {
+    width: 58px; height: 44px; font-size: 19px; font-weight: bold;
+    border-radius: 10px; border: 1px solid rgba(0, 255, 255, 0.4);
+    background: rgba(15, 0, 35, 0.65); color: #fff; text-shadow: 0 0 8px #0ff;
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.25) inset;
+    cursor: pointer;
+  }
+  .num-btn:active { background: rgba(0, 255, 255, 0.3); transform: scale(0.95); }
+  .num-btn.enter-btn { border-color: rgba(57, 255, 136, 0.6); color: #39ff88; text-shadow: 0 0 8px #39ff88; }
+  .num-btn.back-btn { border-color: rgba(255, 51, 102, 0.6); color: #ff3366; text-shadow: 0 0 8px #ff3366; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 5;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(2, 0, 10, 0.82); text-align: center; padding: 20px;
+  }
+  .title {
+    font-size: clamp(30px, 9vw, 52px); font-weight: bold; color: #0ff;
+    text-shadow: 0 0 10px #0ff, 0 0 26px #0ff, 0 0 46px #b400ff;
+    letter-spacing: 4px; margin-bottom: 6px;
+  }
+  .tagline { color: #d8b6ff; font-size: clamp(12px, 3vw, 16px); margin-bottom: 20px; opacity: 0.9; }
+  .instructions { color: #9fefff; font-size: clamp(11px, 2.6vw, 14px); max-width: 420px; line-height: 1.6; margin-bottom: 22px; }
+  .final-score { color: #fff; font-size: clamp(16px, 4vw, 22px); margin-bottom: 4px; }
+  .final-best { color: #7fffd4; font-size: clamp(13px, 3vw, 16px); margin-bottom: 22px; }
+  .start-btn {
+    padding: 16px 40px; font-size: clamp(16px, 4vw, 20px); font-weight: bold;
+    border-radius: 14px; border: 2px solid #0ff; background: rgba(0, 255, 255, 0.12);
+    color: #0ff; text-shadow: 0 0 10px #0ff; box-shadow: 0 0 24px rgba(0, 255, 255, 0.5);
+    cursor: pointer; min-width: 160px; min-height: 52px;
+  }
+  .start-btn:active { transform: scale(0.96); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-type="module">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HS_KEY = 'calcStormHighScore';
+const OPS = {
+  '+': { color: '#00fff7', glow: 'rgba(0,255,247,0.9)' },
+  '-': { color: '#ff5df0', glow: 'rgba(255,93,240,0.9)' },
+  '×': { color: '#ffe600', glow: 'rgba(255,230,0,0.9)' },
+};
+
+function genEquation(level) {
+  const ops = ['+'];
+  if (level >= 2) ops.push('-');
+  if (level >= 4) ops.push('×');
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  const maxNum = Math.min(9 + level * 2, 30);
+  let a, b, answer, text;
+  if (op === '+') {
+    a = 1 + Math.floor(Math.random() * maxNum);
+    b = 1 + Math.floor(Math.random() * maxNum);
+    answer = a + b;
+    text = `${a} + ${b}`;
+  } else if (op === '-') {
+    a = 1 + Math.floor(Math.random() * maxNum);
+    b = 1 + Math.floor(Math.random() * a);
+    answer = a - b;
+    text = `${a} - ${b}`;
+  } else {
+    const m = Math.min(4 + Math.floor(level / 2), 12);
+    a = 1 + Math.floor(Math.random() * m);
+    b = 1 + Math.floor(Math.random() * m);
+    answer = a * b;
+    text = `${a} × ${b}`;
+  }
+  return { id: Math.random().toString(36).slice(2), text, answer, op, color: OPS[op].color, glow: OPS[op].glow };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const get = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const tone = useCallback((freq, dur, type = 'sine', vol = 0.18, delay = 0) => {
+    try {
+      const ctx = get();
+      const t0 = ctx.currentTime + delay;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(vol, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }, [get]);
+
+  return {
+    init: get,
+    correct: (combo) => {
+      const pitch = 480 + Math.min(combo, 20) * 22;
+      tone(pitch, 0.12, 'triangle', 0.2);
+      tone(pitch * 1.5, 0.1, 'sine', 0.1, 0.04);
+    },
+    wrong: () => { tone(160, 0.18, 'sawtooth', 0.16); },
+    miss: () => { tone(110, 0.3, 'square', 0.14); },
+    gameover: () => {
+      tone(300, 0.4, 'sawtooth', 0.15);
+      tone(200, 0.5, 'sawtooth', 0.15, 0.12);
+      tone(120, 0.6, 'sawtooth', 0.15, 0.24);
+    },
+  };
+}
+
+function App() {
+  const canvasRef = useRef(null);
+  const bottomPanelRef = useRef(null);
+  const audio = useAudio();
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+
+  const g = useRef({
+    state: 'idle', score: 0, lives: 3, combo: 0, level: 1, buffer: '',
+    equations: [], particles: [], elapsed: 0, spawnTimer: 0, sizeW: 0, sizeH: 0,
+  }).current;
+
+  const [display, setDisplay] = useState({
+    state: 'idle', score: 0, lives: 3, combo: 0, level: 1, buffer: '',
+  });
+  const [flash, setFlash] = useState('');
+  const flashTimeout = useRef(null);
+
+  const sync = useCallback(() => {
+    setDisplay({
+      state: g.state, score: g.score, lives: g.lives, combo: g.combo,
+      level: g.level, buffer: g.buffer,
+    });
+  }, [g]);
+
+  const doFlash = (kind) => {
+    setFlash(kind);
+    clearTimeout(flashTimeout.current);
+    flashTimeout.current = setTimeout(() => setFlash(''), 220);
+  };
+
+  const addParticles = (x, y, color, count = 16) => {
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+      const speed = 60 + Math.random() * 140;
+      g.particles.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 0.5 + Math.random() * 0.3, maxLife: 0.8, color, size: 2 + Math.random() * 3,
+      });
+    }
+  };
+
+  const startGame = useCallback(() => {
+    audio.init();
+    g.state = 'playing';
+    g.score = 0; g.lives = 3; g.combo = 0; g.level = 1; g.buffer = '';
+    g.equations = []; g.particles = []; g.elapsed = 0; g.spawnTimer = 300;
+    sync();
+  }, [audio, g, sync]);
+
+  const submit = useCallback(() => {
+    if (g.state !== 'playing' || !g.buffer) return;
+    const num = parseInt(g.buffer, 10);
+    let best = -1, bestY = -Infinity;
+    for (let i = 0; i < g.equations.length; i++) {
+      if (g.equations[i].answer === num && g.equations[i].y > bestY) {
+        best = i; bestY = g.equations[i].y;
+      }
+    }
+    if (best >= 0) {
+      const eq = g.equations[best];
+      g.equations.splice(best, 1);
+      addParticles(eq.x, eq.y, eq.color, 20);
+      const points = (10 + g.level * 3) * (1 + Math.floor(g.combo / 5));
+      g.score += points;
+      g.combo += 1;
+      audio.correct(g.combo);
+      doFlash('correct');
+    } else {
+      audio.wrong();
+      g.combo = 0;
+      doFlash('wrong');
+    }
+    g.buffer = '';
+    sync();
+  }, [audio, g, sync]);
+
+  const pressDigit = useCallback((d) => {
+    if (g.state !== 'playing') return;
+    if (g.buffer.length >= 4) return;
+    g.buffer += String(d);
+    sync();
+  }, [g, sync]);
+
+  const backspace = useCallback(() => {
+    if (g.state !== 'playing') return;
+    g.buffer = g.buffer.slice(0, -1);
+    sync();
+  }, [g, sync]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (/^[0-9]$/.test(e.key)) { pressDigit(e.key); e.preventDefault(); }
+      else if (e.key === 'Backspace') { backspace(); e.preventDefault(); }
+      else if (e.key === 'Enter') {
+        if (g.state === 'playing') submit();
+        else startGame();
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pressDigit, backspace, submit, startGame, g]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let raf;
+    let last = performance.now();
+
+    const resize = () => {
+      const parent = canvas.parentElement;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = parent.clientWidth, h = parent.clientHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.sizeW = w; g.sizeH = h;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const loop = (now) => {
+      const dt = Math.min(now - last, 50);
+      last = now;
+      const w = g.sizeW, h = g.sizeH;
+
+      ctx.clearRect(0, 0, w, h);
+      const hue = (now * 0.01) % 360;
+      const bg = ctx.createRadialGradient(w / 2, h * 0.15, 10, w / 2, h * 0.15, Math.max(w, h) * 0.9);
+      bg.addColorStop(0, `hsla(${hue}, 80%, 18%, 0.55)`);
+      bg.addColorStop(1, 'rgba(2,0,10,0)');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+
+      const panelH = bottomPanelRef.current ? bottomPanelRef.current.offsetHeight : 46;
+      const dangerY = h - panelH - 14;
+      ctx.setLineDash([8, 8]);
+      ctx.strokeStyle = 'rgba(255,60,90,0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, dangerY);
+      ctx.lineTo(w, dangerY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (g.state === 'playing') {
+        g.elapsed += dt / 1000;
+        const newLevel = Math.min(1 + Math.floor(g.elapsed / 18), 9);
+        if (newLevel !== g.level) { g.level = newLevel; sync(); }
+
+        g.spawnTimer -= dt;
+        if (g.spawnTimer <= 0) {
+          const eq = genEquation(g.level);
+          eq.x = 50 + Math.random() * Math.max(1, w - 100);
+          eq.y = -20;
+          eq.vy = 24 + g.level * 4 + Math.random() * 8;
+          g.equations.push(eq);
+          g.spawnTimer = Math.max(650, 2200 - g.level * 150) + Math.random() * 300;
+        }
+
+        for (let i = g.equations.length - 1; i >= 0; i--) {
+          const eq = g.equations[i];
+          eq.y += eq.vy * (dt / 1000);
+          if (eq.y > dangerY) {
+            g.equations.splice(i, 1);
+            addParticles(eq.x, dangerY, '#ff3366', 14);
+            g.lives -= 1;
+            g.combo = 0;
+            audio.miss();
+            if (g.lives <= 0) {
+              g.state = 'gameover';
+              if (g.score > highScore) {
+                setHighScore(g.score);
+                localStorage.setItem(HS_KEY, String(g.score));
+              } else {
+                localStorage.setItem(HS_KEY, String(Math.max(g.score, highScore)));
+              }
+              audio.gameover();
+            }
+            sync();
+          }
+        }
+      }
+
+      for (const eq of g.equations) {
+        ctx.font = 'bold 26px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = eq.glow;
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = eq.color;
+        ctx.fillText(eq.text, eq.x, eq.y);
+      }
+      ctx.shadowBlur = 0;
+
+      for (let i = g.particles.length - 1; i >= 0; i--) {
+        const p = g.particles[i];
+        p.life -= dt / 1000;
+        if (p.life <= 0) { g.particles.splice(i, 1); continue; }
+        p.x += p.vx * (dt / 1000);
+        p.y += p.vy * (dt / 1000);
+        p.vy += 40 * (dt / 1000);
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const comboMult = 1 + Math.floor(display.combo / 5);
+
+  return (
+    <div className="app-root">
+      <div className="arena" data-testid="arena">
+        <canvas ref={canvasRef} className="game-canvas" data-testid="game-canvas" />
+
+        <div className="hud-top">
+          <div className="hud-item" data-testid="score">Score {display.score}</div>
+          <div className="hud-item lives" data-testid="lives">{'❤'.repeat(Math.max(0, display.lives))}</div>
+          <div className="hud-item combo" data-testid="combo">Combo x{comboMult}</div>
+          <div className="hud-item level" data-testid="level">Lv {display.level}</div>
+          <div className="hud-item best" data-testid="best-score">Best {highScore}</div>
+        </div>
+
+        <div className="bottom-panel" ref={bottomPanelRef}>
+          <div className={`buffer-display ${flash}`} data-testid="buffer">{display.buffer || '_'}</div>
+          {display.state === 'playing' && (
+            <div className="numpad" data-testid="numpad">
+              {[1,2,3,4,5,6,7,8,9].map(n => (
+                <button key={n} className="num-btn" data-testid={`digit-${n}-btn`}
+                  onClick={() => pressDigit(n)}>{n}</button>
+              ))}
+              <button className="num-btn back-btn" data-testid="backspace-btn" onClick={backspace}>⌫</button>
+              <button className="num-btn" data-testid="digit-0-btn" onClick={() => pressDigit(0)}>0</button>
+              <button className="num-btn enter-btn" data-testid="enter-btn" onClick={submit}>⏎</button>
+            </div>
+          )}
+        </div>
+
+        {display.state !== 'playing' && (
+          <div className="overlay" data-testid="start-overlay">
+            <div className="title">CALC STORM</div>
+            <div className="tagline">Type fast. Solve faster. Don't let the numbers fall.</div>
+            {display.state === 'gameover' && (
+              <React.Fragment>
+                <div className="final-score">Score: {display.score}</div>
+                <div className="final-best">Best: {highScore}</div>
+              </React.Fragment>
+            )}
+            <div className="instructions">
+              Equations rain from above — type the answer with number keys (or the neon
+              keypad) and press Enter to blast the matching equation. Miss the danger line
+              and lose a life. Chain correct answers for a rising combo multiplier as the
+              storm accelerates.
+            </div>
+            <button className="start-btn" data-testid="start-btn" onClick={startGame}>
+              {display.state === 'gameover' ? 'PLAY AGAIN' : 'START'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
