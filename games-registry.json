@@ -2990,5 +2990,26 @@
     "file": "games/2026-08-10/index.html",
     "preview": "games/2026-08-10/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-08-11",
+    "name": "Lane Surge",
+    "date": "2026-08-11",
+    "description": "A three-lane neon dodge-and-collect runner: switch between glowing lanes to scoop teal gems for a rising combo while crimson spikes rain down from above. Trigger a Surge to turn your runner invincible and smash through spikes fearlessly for a few seconds while the ability recharges, all as the fall speed and spawn rate climb the longer you survive.",
+    "tagline": "Switch lanes. Chain gems. Surge through the spikes.",
+    "tags": [
+      "endless",
+      "reflex",
+      "arcade",
+      "dodge",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys / A-D to switch lanes, Up or Space to Surge | On-screen arrow and diamond buttons on mobile",
+    "folder": "games/2026-08-11",
+    "file": "games/2026-08-11/index.html",
+    "preview": "games/2026-08-11/preview.png",
+    "rating": 4.2
   }
 ]

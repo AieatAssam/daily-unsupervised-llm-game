@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Lane Surge — Neon Lane Runner</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: #04000c;
+    font-family: 'Courier New', Consolas, monospace;
+    touch-action: none;
+  }
+  #root { width: 100vw; height: 100vh; position: relative; }
+  .app-root { width: 100%; height: 100%; position: relative; overflow: hidden; }
+
+  .arena {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    justify-content: space-between; align-items: center;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 50% 0%, #1a0038 0%, #04000c 60%, #000 100%);
+  }
+
+  canvas.game-canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0;
+  }
+
+  .hud-top {
+    position: relative; z-index: 2;
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+    padding: 10px 8px 4px; width: 100%;
+  }
+  .hud-item {
+    color: #0ff; text-shadow: 0 0 8px currentColor;
+    font-weight: bold; font-size: clamp(11px, 3vw, 14px);
+    background: rgba(10, 0, 25, 0.55); padding: 4px 10px; border-radius: 8px;
+    border: 1px solid rgba(0, 255, 255, 0.35); white-space: nowrap;
+  }
+  .hud-item.lives { color: #ff4d6d; }
+  .hud-item.combo { color: #ffe600; }
+  .hud-item.boost { color: #39ff88; }
+  .hud-item.best { color: #7fffd4; }
+
+  .bottom-panel {
+    position: relative; z-index: 2;
+    display: flex; flex-direction: column; align-items: center;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    width: 100%;
+  }
+
+  .controls-row {
+    display: flex; gap: 10px; justify-content: center; padding: 6px 10px 10px;
+  }
+  .ctrl-btn {
+    min-width: 74px; min-height: 52px; font-size: 22px; font-weight: bold;
+    border-radius: 14px; border: 1px solid rgba(0, 255, 255, 0.4);
+    background: rgba(15, 0, 35, 0.65); color: #fff; text-shadow: 0 0 8px #0ff;
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.25) inset;
+    cursor: pointer;
+  }
+  .ctrl-btn:active { background: rgba(0, 255, 255, 0.3); transform: scale(0.95); }
+  .ctrl-btn.boost-btn { border-color: rgba(57, 255, 136, 0.6); color: #39ff88; text-shadow: 0 0 8px #39ff88; }
+  .ctrl-btn.boost-btn:disabled { opacity: 0.35; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 5;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(2, 0, 10, 0.82); text-align: center; padding: 20px;
+  }
+  .title {
+    font-size: clamp(30px, 9vw, 52px); font-weight: bold; color: #0ff;
+    text-shadow: 0 0 10px #0ff, 0 0 26px #0ff, 0 0 46px #b400ff;
+    letter-spacing: 4px; margin-bottom: 6px;
+  }
+  .tagline { color: #d8b6ff; font-size: clamp(12px, 3vw, 16px); margin-bottom: 20px; opacity: 0.9; }
+  .instructions { color: #9fefff; font-size: clamp(11px, 2.6vw, 14px); max-width: 420px; line-height: 1.6; margin-bottom: 22px; }
+  .final-score { color: #fff; font-size: clamp(16px, 4vw, 22px); margin-bottom: 4px; }
+  .final-best { color: #7fffd4; font-size: clamp(13px, 3vw, 16px); margin-bottom: 22px; }
+  .start-btn {
+    padding: 16px 40px; font-size: clamp(16px, 4vw, 20px); font-weight: bold;
+    border-radius: 14px; border: 2px solid #0ff; background: rgba(0, 255, 255, 0.12);
+    color: #0ff; text-shadow: 0 0 10px #0ff; box-shadow: 0 0 24px rgba(0, 255, 255, 0.5);
+    cursor: pointer; min-width: 160px; min-height: 52px;
+  }
+  .start-btn:active { transform: scale(0.96); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-type="module">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HS_KEY = 'laneSurgeHighScore';
+const LANES = 3;
+const BOOST_COOLDOWN = 6000;
+const BOOST_DURATION = 1800;
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const get = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const tone = useCallback((freq, dur, type = 'sine', vol = 0.18, delay = 0) => {
+    try {
+      const ctx = get();
+      const t0 = ctx.currentTime + delay;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(vol, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }, [get]);
+
+  return {
+    init: get,
+    swap: () => { tone(520, 0.06, 'square', 0.1); },
+    gem: (combo) => {
+      const pitch = 500 + Math.min(combo, 24) * 20;
+      tone(pitch, 0.1, 'triangle', 0.2);
+      tone(pitch * 1.5, 0.08, 'sine', 0.1, 0.03);
+    },
+    boost: () => {
+      tone(220, 0.15, 'sawtooth', 0.16);
+      tone(440, 0.2, 'sine', 0.14, 0.05);
+    },
+    hit: () => { tone(140, 0.28, 'sawtooth', 0.18); },
+    shatter: () => { tone(760, 0.12, 'square', 0.16); tone(300, 0.15, 'square', 0.1, 0.04); },
+    gameover: () => {
+      tone(300, 0.4, 'sawtooth', 0.15);
+      tone(200, 0.5, 'sawtooth', 0.15, 0.12);
+      tone(120, 0.6, 'sawtooth', 0.15, 0.24);
+    },
+  };
+}
+
+function laneX(lane, w) {
+  return (w / LANES) * (lane + 0.5);
+}
+
+function App() {
+  const canvasRef = useRef(null);
+  const bottomPanelRef = useRef(null);
+  const audio = useAudio();
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+
+  const g = useRef({
+    state: 'idle', score: 0, lives: 3, combo: 0, elapsed: 0,
+    lane: 1, targetLane: 1, playerX: 0, playerY: 0,
+    obstacles: [], gems: [], particles: [], trail: [],
+    spawnTimer: 0, boostReady: true, boosting: false, boostUntil: 0, boostCdUntil: 0,
+    sizeW: 0, sizeH: 0,
+  }).current;
+
+  const [display, setDisplay] = useState({
+    state: 'idle', score: 0, lives: 3, combo: 0, boostReady: true, boosting: false,
+  });
+
+  const sync = useCallback(() => {
+    setDisplay({
+      state: g.state, score: g.score, lives: g.lives, combo: g.combo,
+      boostReady: g.boostReady, boosting: g.boosting,
+    });
+  }, [g]);
+
+  const addParticles = (x, y, color, count = 16) => {
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+      const speed = 60 + Math.random() * 140;
+      g.particles.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 0.5 + Math.random() * 0.3, maxLife: 0.8, color, size: 2 + Math.random() * 3,
+      });
+    }
+  };
+
+  const startGame = useCallback(() => {
+    audio.init();
+    g.state = 'playing';
+    g.score = 0; g.lives = 3; g.combo = 0; g.elapsed = 0;
+    g.lane = 1; g.targetLane = 1;
+    g.obstacles = []; g.gems = []; g.particles = []; g.trail = [];
+    g.spawnTimer = 400; g.boostReady = true; g.boosting = false; g.boostUntil = 0; g.boostCdUntil = 0;
+    sync();
+  }, [audio, g, sync]);
+
+  const moveLane = useCallback((dir) => {
+    if (g.state !== 'playing') return;
+    const next = Math.max(0, Math.min(LANES - 1, g.targetLane + dir));
+    if (next !== g.targetLane) {
+      g.targetLane = next;
+      audio.swap();
+    }
+  }, [audio, g]);
+
+  const fireBoost = useCallback(() => {
+    if (g.state !== 'playing' || !g.boostReady) return;
+    g.boosting = true;
+    g.boostReady = false;
+    g.boostUntil = performance.now() + BOOST_DURATION;
+    g.boostCdUntil = performance.now() + BOOST_COOLDOWN;
+    audio.boost();
+    sync();
+  }, [audio, g, sync]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { moveLane(-1); e.preventDefault(); }
+      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { moveLane(1); e.preventDefault(); }
+      else if (e.key === 'ArrowUp' || e.key === ' ' || e.code === 'Space' || e.key === 'w' || e.key === 'W') {
+        if (g.state === 'playing') fireBoost(); else startGame();
+        e.preventDefault();
+      } else if (e.key === 'Enter') {
+        if (g.state !== 'playing') startGame();
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [moveLane, fireBoost, startGame, g]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let raf;
+    let last = performance.now();
+
+    const resize = () => {
+      const parent = canvas.parentElement;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = parent.clientWidth, h = parent.clientHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.sizeW = w; g.sizeH = h;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const loop = (now) => {
+      const dt = Math.min(now - last, 50);
+      last = now;
+      const w = g.sizeW, h = g.sizeH;
+
+      ctx.clearRect(0, 0, w, h);
+      const hue = (now * 0.012) % 360;
+      const bg = ctx.createRadialGradient(w / 2, h * 0.1, 10, w / 2, h * 0.1, Math.max(w, h) * 0.9);
+      bg.addColorStop(0, `hsla(${hue}, 80%, 18%, 0.5)`);
+      bg.addColorStop(1, 'rgba(2,0,10,0)');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+
+      const panelH = bottomPanelRef.current ? bottomPanelRef.current.offsetHeight : 46;
+      const playerY = h - panelH - 46;
+
+      // lane dividers
+      ctx.setLineDash([6, 10]);
+      ctx.strokeStyle = 'rgba(0,255,255,0.25)';
+      ctx.lineWidth = 2;
+      for (let i = 1; i < LANES; i++) {
+        const x = (w / LANES) * i;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      // smooth lane interpolation
+      g.lane += (g.targetLane - g.lane) * Math.min(1, dt * 0.014);
+      g.playerX = laneX(g.lane, w);
+      g.playerY = playerY;
+
+      if (g.state === 'playing') {
+        g.elapsed += dt / 1000;
+        const speedLevel = Math.min(g.elapsed / 12, 9);
+        const fallSpeed = 130 + speedLevel * 32;
+
+        if (now > g.boostUntil) g.boosting = false;
+        if (!g.boostReady && now > g.boostCdUntil) { g.boostReady = true; sync(); }
+
+        g.spawnTimer -= dt;
+        if (g.spawnTimer <= 0) {
+          const isGem = Math.random() < 0.42;
+          const lane = Math.floor(Math.random() * LANES);
+          if (isGem) {
+            g.gems.push({ lane, y: -20, vy: fallSpeed * (0.9 + Math.random() * 0.2) });
+          } else {
+            g.obstacles.push({ lane, y: -20, vy: fallSpeed * (0.9 + Math.random() * 0.3) });
+          }
+          g.spawnTimer = Math.max(340, 900 - speedLevel * 60) + Math.random() * 200;
+        }
+
+        for (let i = g.gems.length - 1; i >= 0; i--) {
+          const gem = g.gems[i];
+          gem.y += gem.vy * (dt / 1000);
+          const dx = Math.abs(laneX(gem.lane, w) - g.playerX);
+          if (gem.y > playerY - 26 && gem.y < playerY + 26 && dx < (w / LANES) * 0.4) {
+            g.gems.splice(i, 1);
+            g.combo += 1;
+            const mult = 1 + Math.floor(g.combo / 6);
+            g.score += 10 * mult;
+            addParticles(laneX(gem.lane, w), playerY, '#7fffd4', 16);
+            audio.gem(g.combo);
+            sync();
+          } else if (gem.y > h + 20) {
+            g.gems.splice(i, 1);
+          }
+        }
+
+        for (let i = g.obstacles.length - 1; i >= 0; i--) {
+          const ob = g.obstacles[i];
+          ob.y += ob.vy * (dt / 1000);
+          const dx = Math.abs(laneX(ob.lane, w) - g.playerX);
+          if (ob.y > playerY - 26 && ob.y < playerY + 26 && dx < (w / LANES) * 0.4) {
+            g.obstacles.splice(i, 1);
+            if (g.boosting) {
+              g.score += 15;
+              addParticles(laneX(ob.lane, w), playerY, '#39ff88', 18);
+              audio.shatter();
+            } else {
+              g.lives -= 1;
+              g.combo = 0;
+              addParticles(laneX(ob.lane, w), playerY, '#ff3366', 20);
+              audio.hit();
+              if (g.lives <= 0) {
+                g.state = 'gameover';
+                if (g.score > highScore) {
+                  setHighScore(g.score);
+                  localStorage.setItem(HS_KEY, String(g.score));
+                } else {
+                  localStorage.setItem(HS_KEY, String(Math.max(g.score, highScore)));
+                }
+                audio.gameover();
+              }
+            }
+            sync();
+          } else if (ob.y > h + 20) {
+            g.obstacles.splice(i, 1);
+          }
+        }
+      }
+
+      // trail
+      g.trail.push({ x: g.playerX, y: playerY, life: 0.35 });
+      if (g.trail.length > 14) g.trail.shift();
+      for (const t of g.trail) {
+        t.life -= dt / 1000;
+      }
+      g.trail = g.trail.filter(t => t.life > 0);
+      for (const t of g.trail) {
+        const alpha = Math.max(0, t.life / 0.35) * 0.4;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = g.boosting ? '#39ff88' : '#0ff';
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // gems
+      for (const gem of g.gems) {
+        const x = laneX(gem.lane, w);
+        ctx.save();
+        ctx.translate(x, gem.y);
+        ctx.rotate(now * 0.003);
+        ctx.shadowColor = '#7fffd4';
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = '#7fffd4';
+        ctx.beginPath();
+        ctx.moveTo(0, -10); ctx.lineTo(10, 0); ctx.lineTo(0, 10); ctx.lineTo(-10, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // obstacles
+      for (const ob of g.obstacles) {
+        const x = laneX(ob.lane, w);
+        ctx.save();
+        ctx.translate(x, ob.y);
+        ctx.shadowColor = '#ff3366';
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = '#ff3366';
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const a = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+          const r = i % 2 === 0 ? 14 : 6;
+          const px = Math.cos(a) * r, py = Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // player
+      ctx.save();
+      ctx.shadowColor = g.boosting ? '#39ff88' : '#0ff';
+      ctx.shadowBlur = g.boosting ? 30 : 20;
+      ctx.fillStyle = g.boosting ? '#39ff88' : '#0ff';
+      ctx.beginPath();
+      ctx.arc(g.playerX, playerY, g.boosting ? 15 : 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // particles
+      for (let i = g.particles.length - 1; i >= 0; i--) {
+        const p = g.particles[i];
+        p.life -= dt / 1000;
+        if (p.life <= 0) { g.particles.splice(i, 1); continue; }
+        p.x += p.vx * (dt / 1000);
+        p.y += p.vy * (dt / 1000);
+        p.vy += 40 * (dt / 1000);
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const comboMult = 1 + Math.floor(display.combo / 6);
+
+  return (
+    <div className="app-root">
+      <div className="arena" data-testid="arena">
+        <canvas ref={canvasRef} className="game-canvas" data-testid="game-canvas" />
+
+        <div className="hud-top">
+          <div className="hud-item" data-testid="score">Score {display.score}</div>
+          <div className="hud-item lives" data-testid="lives">{'❤'.repeat(Math.max(0, display.lives))}</div>
+          <div className="hud-item combo" data-testid="combo">Combo x{comboMult}</div>
+          <div className="hud-item boost" data-testid="boost-status">{display.boosting ? 'SURGE!' : display.boostReady ? 'Surge Ready' : 'Surge Charging'}</div>
+          <div className="hud-item best" data-testid="best-score">Best {highScore}</div>
+        </div>
+
+        <div className="bottom-panel" ref={bottomPanelRef}>
+          {display.state === 'playing' && (
+            <div className="controls-row" data-testid="controls-row">
+              <button className="ctrl-btn" data-testid="left-btn" onClick={() => moveLane(-1)}>◀</button>
+              <button className="ctrl-btn boost-btn" data-testid="boost-btn" onClick={fireBoost} disabled={!display.boostReady}>◆</button>
+              <button className="ctrl-btn" data-testid="right-btn" onClick={() => moveLane(1)}>▶</button>
+            </div>
+          )}
+        </div>
+
+        {display.state !== 'playing' && (
+          <div className="overlay" data-testid="start-overlay">
+            <div className="title">LANE SURGE</div>
+            <div className="tagline">Switch lanes. Chain gems. Surge through the spikes.</div>
+            {display.state === 'gameover' && (
+              <React.Fragment>
+                <div className="final-score">Score: {display.score}</div>
+                <div className="final-best">Best: {highScore}</div>
+              </React.Fragment>
+            )}
+            <div className="instructions">
+              Three neon lanes, one glowing runner. Switch lanes with arrow keys / A-D
+              (or the on-screen arrows) to dodge crimson spikes and scoop teal gems for a
+              rising combo. Trigger a Surge with Up / Space (or the diamond button) to
+              smash through spikes fearlessly for a few seconds while it recharges.
+            </div>
+            <button className="start-btn" data-testid="start-btn" onClick={startGame}>
+              {display.state === 'gameover' ? 'PLAY AGAIN' : 'START'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
