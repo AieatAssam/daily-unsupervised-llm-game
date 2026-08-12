@@ -3011,5 +3011,25 @@
     "file": "games/2026-08-11/index.html",
     "preview": "games/2026-08-11/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-08-12",
+    "name": "Orbit Vanguard",
+    "date": "2026-08-12",
+    "description": "A radial defense shooter: rotate your gunship around a glowing core's orbit and fire outward to intercept polygon enemies drifting in from the void before they breach the core. Chain kills for a rising combo multiplier, catch drifting gold gems to unlock a temporary triple-shot spread, and hold the line as tankier weavers with erratic drift join the swarm each sector.",
+    "tagline": "Rotate. Fire. Defend the core.",
+    "tags": [
+      "shooter",
+      "arcade",
+      "reflex",
+      "survival"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Left/Right or A/D to rotate around the core, Space or click to fire | On-screen rotate and FIRE buttons on mobile",
+    "folder": "games/2026-08-12",
+    "file": "games/2026-08-12/index.html",
+    "preview": "games/2026-08-12/preview.png",
+    "rating": 4.3
   }
 ]

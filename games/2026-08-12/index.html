@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Orbit Vanguard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030d; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; overflow: hidden; gap: 6px;
+    background: radial-gradient(circle at 50% 30%, #1a1030 0%, #0a0a18 55%, #030109 100%);
+  }
+
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-around;
+    padding: 10px 12px; z-index: 15; pointer-events: none;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 10px; letter-spacing: 2px; color: #c98cff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 22px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #b96bff, 0 0 20px #b96bff;
+  }
+  .hudValue.combo { color: #ffe45e; text-shadow: 0 0 10px #ffe45e, 0 0 22px #ff9d00; }
+  .hudValue.lives { color: #ff5e7d; text-shadow: 0 0 10px #ff5e7d, 0 0 22px #ff0033; }
+  .hudValue.hurt { animation: hurtPulse 0.4s ease; }
+  @keyframes hurtPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.4; transform: scale(1.25);} }
+
+  .title {
+    font-size: clamp(22px, 6vw, 34px); font-weight: 900; letter-spacing: 3px;
+    background: linear-gradient(90deg, #b96bff, #6be8ff, #ffe45e);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(180,110,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(180,110,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(180,110,255,0.95)); } }
+
+  .subtitle { color: #cbb6e8; font-size: 14px; letter-spacing: 0.5px; text-align: center; max-width: 360px; line-height: 1.5; }
+
+  .btn {
+    padding: 15px 40px; font-size: 19px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #a63bff, #2a6bff);
+    border: none; border-radius: 50px; color: #fff; cursor: pointer;
+    box-shadow: 0 0 20px rgba(170,60,255,0.7), 0 0 50px rgba(40,100,255,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(170,60,255,0.9), 0 0 70px rgba(40,100,255,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd35e; font-size: 14px; text-shadow: 0 0 8px rgba(255,200,50,0.6); }
+
+  .arenaOuter {
+    position: relative; width: min(94vw, 560px); height: min(58vh, 480px); z-index: 5;
+    border-radius: 20px; overflow: hidden; border: 2px solid rgba(180,110,255,0.25);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 0 30px rgba(150,80,255,0.15);
+    background: #08040f;
+  }
+
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 20px;
+    background: rgba(5, 4, 13, 0.88); backdrop-filter: blur(4px);
+  }
+
+  .status { color: #d4c2f0; font-size: 13px; letter-spacing: 0.5px; height: 16px; z-index: 10; text-align: center; }
+
+  .controls {
+    display: flex; align-items: center; justify-content: center; gap: 14px; z-index: 15;
+    padding: 4px 0;
+  }
+  .ctrlBtn {
+    width: 62px; height: 52px; border-radius: 14px; border: none; cursor: pointer;
+    background: linear-gradient(135deg, rgba(170,60,255,0.35), rgba(40,100,255,0.25));
+    border: 1.5px solid rgba(190,110,255,0.5); color: #fff; font-size: 22px; font-weight: 900;
+    box-shadow: 0 0 14px rgba(170,60,255,0.35);
+    touch-action: manipulation;
+  }
+  .ctrlBtn:active { background: linear-gradient(135deg, rgba(170,60,255,0.6), rgba(40,100,255,0.45)); transform: scale(0.94); }
+  .fireBtn {
+    width: 84px; height: 52px; border-radius: 14px; border: none; cursor: pointer;
+    background: linear-gradient(135deg, #ff5e7d, #ff9d3a);
+    color: #fff; font-size: 15px; font-weight: 900; letter-spacing: 1px;
+    box-shadow: 0 0 18px rgba(255,90,110,0.5);
+    touch-action: manipulation;
+  }
+  .fireBtn:active { transform: scale(0.94); }
+
+  .footer { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center; color: #5a4a6a; font-size: 11px; z-index: 10; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 17px; }
+    .btn { padding: 13px 30px; font-size: 16px; }
+    .subtitle { font-size: 13px; }
+    .arenaOuter { height: min(50vh, 480px); }
+    .ctrlBtn { width: 54px; height: 46px; font-size: 19px; }
+    .fireBtn { width: 74px; height: 46px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'orbitVanguard_highScore';
+const CORE_RADIUS = 20;
+const ANG_MAX_SPEED = 3.6;
+const ANG_ACCEL = 14;
+const BOLT_SPEED = 340;
+const BOLT_RADIUS = 5;
+const ENEMY_BASE_RADIUS = 13;
+const LIVES_START = 3;
+const FIRE_COOLDOWN = 190;
+const PICKUP_SPEED = 34;
+const CATCH_ANGLE_TOL = 0.34;
+
+function angDiff(a, b) {
+  let d = (a - b) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return Math.abs(d);
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration, type, gainScale, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const fireSound = useCallback(() => tone(680, 0.09, 'square', 0.06, 340), [tone]);
+  const killSound = useCallback(() => tone(320, 0.16, 'sawtooth', 0.16, 100), [tone]);
+  const breachSound = useCallback(() => tone(130, 0.32, 'sawtooth', 0.22, 50), [tone]);
+  const catchSound = useCallback(() => tone(520, 0.14, 'triangle', 0.18, 940), [tone]);
+  const overSound = useCallback(() => {
+    tone(320, 0.25, 'sawtooth', 0.2, 220);
+    setTimeout(() => tone(200, 0.35, 'sawtooth', 0.2, 90), 150);
+  }, [tone]);
+
+  return { fireSound, killSound, breachSound, catchSound, overSound };
+}
+
+function makeGameState() {
+  return {
+    bounds: { w: 560, h: 480 },
+    center: { x: 280, y: 240 },
+    ringRadius: 150,
+    ship: { angle: -Math.PI / 2, angVel: 0 },
+    bolts: [],
+    enemies: [],
+    particles: [],
+    pickups: [],
+    keys: {},
+    fireHeld: false,
+    lastFire: 0,
+    spawnTimer: 900,
+    pickupTimer: 7000,
+    elapsed: 0,
+    spreadUntil: 0,
+    shake: 0,
+    level: 1,
+    running: false,
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start'); // start | playing | over
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(LIVES_START);
+  const [combo, setCombo] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [hurt, setHurt] = useState(false);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [statusMsg, setStatusMsg] = useState('Rotate to aim. Fire to intercept the swarm.');
+
+  const canvasRef = useRef(null);
+  const arenaRef = useRef(null);
+  const gs = useRef(makeGameState());
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(0);
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const livesRef = useRef(LIVES_START);
+  const highScoreRef = useRef(highScore);
+  const phaseRef = useRef('start');
+  const { fireSound, killSound, breachSound, catchSound, overSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const arena = arenaRef.current;
+    if (!canvas || !arena) return;
+    const rect = arena.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gs.current.bounds = { w: rect.width, h: rect.height };
+    gs.current.center = { x: rect.width / 2, y: rect.height / 2 };
+    gs.current.ringRadius = Math.min(rect.width, rect.height) * 0.36;
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const fireBolt = useCallback((ts) => {
+    const state = gs.current;
+    if (ts - state.lastFire < FIRE_COOLDOWN) return;
+    state.lastFire = ts;
+    const spread = ts < state.spreadUntil;
+    const angles = spread ? [state.ship.angle - 0.22, state.ship.angle, state.ship.angle + 0.22] : [state.ship.angle];
+    for (const a of angles) {
+      state.bolts.push({ angle: a, radius: state.ringRadius + 6 });
+    }
+    fireSound();
+  }, [fireSound]);
+
+  // Keyboard input
+  useEffect(() => {
+    const down = (e) => {
+      if (['ArrowLeft','ArrowRight','Space','KeyA','KeyD'].includes(e.code)) e.preventDefault();
+      gs.current.keys[e.code] = true;
+      if (e.code === 'Space' && phaseRef.current === 'playing') fireBolt(performance.now());
+    };
+    const up = (e) => { gs.current.keys[e.code] = false; };
+    window.addEventListener('keydown', down, { passive: false });
+    window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }, [fireBolt]);
+
+  // Click / tap on arena fires
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onDown = (e) => {
+      if (phaseRef.current === 'playing') fireBolt(performance.now());
+    };
+    canvas.addEventListener('pointerdown', onDown);
+    return () => canvas.removeEventListener('pointerdown', onDown);
+  }, [fireBolt]);
+
+  const spawnBurst = (arr, x, y, color, count, speedMin, speedMax, sizeMin, sizeMax, lifeMs) => {
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = speedMin + Math.random() * (speedMax - speedMin);
+      arr.push({
+        x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: lifeMs, maxLife: lifeMs, color,
+        size: sizeMin + Math.random() * (sizeMax - sizeMin),
+      });
+    }
+  };
+
+  const spawnEnemy = (state) => {
+    const maxR = Math.max(state.bounds.w, state.bounds.h) * 0.62;
+    const elapsedSec = state.elapsed / 1000;
+    const speed = 34 + Math.min(70, elapsedSec * 1.4) + Math.random() * 14;
+    const tank = state.level >= 3 && Math.random() < 0.22;
+    const weaver = state.level >= 2 && Math.random() < 0.3;
+    state.enemies.push({
+      angle: Math.random() * Math.PI * 2,
+      radius: maxR,
+      speed,
+      angularSpeed: weaver ? (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.6) : 0,
+      hue: tank ? 200 + Math.random() * 30 : 320 + Math.random() * 60,
+      hp: tank ? 2 : 1,
+      maxHp: tank ? 2 : 1,
+    });
+  };
+
+  const spawnPickup = (state) => {
+    const maxR = Math.max(state.bounds.w, state.bounds.h) * 0.6;
+    state.pickups.push({ angle: Math.random() * Math.PI * 2, radius: maxR, pulse: 0 });
+  };
+
+  const endGame = useCallback(() => {
+    gs.current.running = false;
+    phaseRef.current = 'over';
+    setPhase('over');
+    overSound();
+    setStatusMsg('Core breached.');
+  }, [overSound]);
+
+  const tick = useCallback((ts) => {
+    const state = gs.current;
+    if (!state.running) return;
+    if (!lastTsRef.current) lastTsRef.current = ts;
+    let dt = (ts - lastTsRef.current) / 1000;
+    dt = Math.min(dt, 0.05);
+    lastTsRef.current = ts;
+    state.elapsed += dt * 1000;
+
+    const ship = state.ship;
+    const k = state.keys;
+    let dir = 0;
+    if (k['ArrowLeft'] || k['KeyA']) dir -= 1;
+    if (k['ArrowRight'] || k['KeyD']) dir += 1;
+    ship.angVel += dir * ANG_ACCEL * dt;
+    if (dir === 0) ship.angVel *= Math.exp(-8 * dt);
+    ship.angVel = clamp(ship.angVel, -ANG_MAX_SPEED, ANG_MAX_SPEED);
+    ship.angle += ship.angVel * dt;
+
+    if (state.fireHeld) fireBolt(ts);
+
+    // level / difficulty
+    const levelNum = Math.floor(state.elapsed / 14000) + 1;
+    if (levelNum !== state.level) { state.level = levelNum; setLevel(levelNum); setStatusMsg(`Sector ${levelNum} — threat rising`); }
+
+    // spawn enemies
+    state.spawnTimer -= dt * 1000;
+    if (state.spawnTimer <= 0 && state.enemies.length < 60) {
+      spawnEnemy(state);
+      const interval = Math.max(340, 1150 - (state.elapsed / 1000) * 8);
+      state.spawnTimer = interval * (0.7 + Math.random() * 0.6);
+    }
+
+    // spawn pickups
+    state.pickupTimer -= dt * 1000;
+    if (state.pickupTimer <= 0 && state.pickups.length < 1) {
+      spawnPickup(state);
+      state.pickupTimer = 9000 + Math.random() * 5000;
+    }
+
+    const { x: cx, y: cy } = state.center;
+
+    // bolts
+    for (let i = state.bolts.length - 1; i >= 0; i--) {
+      const b = state.bolts[i];
+      b.radius += BOLT_SPEED * dt;
+      if (b.radius > Math.max(state.bounds.w, state.bounds.h)) { state.bolts.splice(i, 1); }
+    }
+    if (state.bolts.length > 60) state.bolts.splice(0, state.bolts.length - 60);
+
+    // enemies
+    let scoreDelta = 0;
+    for (let i = state.enemies.length - 1; i >= 0; i--) {
+      const en = state.enemies[i];
+      en.radius -= en.speed * dt;
+      en.angle += en.angularSpeed * dt;
+      const ex = cx + Math.cos(en.angle) * en.radius;
+      const ey = cy + Math.sin(en.angle) * en.radius;
+
+      let hit = false;
+      for (let j = state.bolts.length - 1; j >= 0; j--) {
+        const b = state.bolts[j];
+        const bx = cx + Math.cos(b.angle) * b.radius;
+        const by = cy + Math.sin(b.angle) * b.radius;
+        const dx = bx - ex, dy = by - ey;
+        if (Math.sqrt(dx * dx + dy * dy) < ENEMY_BASE_RADIUS + BOLT_RADIUS + 4) {
+          state.bolts.splice(j, 1);
+          hit = true;
+          break;
+        }
+      }
+      if (hit) {
+        en.hp -= 1;
+        if (en.hp <= 0) {
+          spawnBurst(state.particles, ex, ey, `hsl(${en.hue},100%,65%)`, 12, 40, 180, 2, 5, 500);
+          state.enemies.splice(i, 1);
+          comboRef.current += 1;
+          setCombo(comboRef.current);
+          const gained = Math.round((12 + comboRef.current * 3) * (1 + (state.level - 1) * 0.08)) * en.maxHp;
+          scoreDelta += gained;
+          killSound();
+        } else {
+          spawnBurst(state.particles, ex, ey, `hsl(${en.hue},100%,70%)`, 5, 30, 100, 2, 4, 260);
+        }
+        continue;
+      }
+
+      if (en.radius <= CORE_RADIUS) {
+        state.enemies.splice(i, 1);
+        state.shake = 12;
+        comboRef.current = 0;
+        setCombo(0);
+        livesRef.current -= 1;
+        setLives(livesRef.current);
+        setHurt(true);
+        setTimeout(() => setHurt(false), 400);
+        breachSound();
+        spawnBurst(state.particles, cx, cy, '#ff4d6d', 20, 60, 220, 2, 6, 550);
+        if (livesRef.current <= 0) {
+          if (scoreDelta) { scoreRef.current += scoreDelta; scoreDelta = 0; setScore(scoreRef.current); }
+          endGame();
+          return;
+        }
+      }
+    }
+    if (scoreDelta) {
+      scoreRef.current += scoreDelta;
+      if (scoreRef.current > highScoreRef.current) {
+        highScoreRef.current = scoreRef.current;
+        localStorage.setItem(HS_KEY, String(scoreRef.current));
+        setHighScore(scoreRef.current);
+      }
+      setScore(scoreRef.current);
+    }
+
+    // pickups
+    for (let i = state.pickups.length - 1; i >= 0; i--) {
+      const p = state.pickups[i];
+      p.radius -= PICKUP_SPEED * dt;
+      p.pulse += dt;
+      const nearRing = Math.abs(p.radius - state.ringRadius) < 14;
+      if (nearRing && angDiff(p.angle, ship.angle) < CATCH_ANGLE_TOL) {
+        state.pickups.splice(i, 1);
+        state.spreadUntil = ts + 5000;
+        scoreRef.current += 40;
+        setScore(scoreRef.current);
+        catchSound();
+        setStatusMsg('Spread shot online!');
+        const px = cx + Math.cos(p.angle) * p.radius, py = cy + Math.sin(p.angle) * p.radius;
+        spawnBurst(state.particles, px, py, '#ffe45e', 16, 40, 160, 2, 5, 600);
+        continue;
+      }
+      if (p.radius <= CORE_RADIUS) state.pickups.splice(i, 1);
+    }
+
+    // particles
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const pt = state.particles[i];
+      pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+      pt.vx *= 0.94; pt.vy *= 0.94;
+      pt.life -= dt * 1000;
+      if (pt.life <= 0) state.particles.splice(i, 1);
+    }
+    if (state.particles.length > 400) state.particles.splice(0, state.particles.length - 400);
+
+    if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 40);
+
+    draw(state, ts);
+    rafRef.current = requestAnimationFrame(tick);
+  }, [endGame, fireBolt, killSound, breachSound, catchSound]);
+
+  const draw = (state, ts) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const { w, h } = state.bounds;
+    const { x: cx, y: cy } = state.center;
+    const R = state.ringRadius;
+
+    ctx.save();
+    if (state.shake > 0) {
+      ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake);
+    }
+
+    ctx.fillStyle = 'rgba(8,4,16,0.32)';
+    ctx.fillRect(-20, -20, w + 40, h + 40);
+
+    // concentric depth rings
+    ctx.strokeStyle = 'rgba(180,110,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let r = 40; r < Math.max(w, h); r += 44) {
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // orbit ring
+    ctx.strokeStyle = 'rgba(190,110,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // core
+    const corePulse = 1 + Math.sin(ts / 260) * 0.08;
+    ctx.fillStyle = '#7c3bff';
+    ctx.shadowColor = '#b96bff';
+    ctx.shadowBlur = 24;
+    ctx.beginPath(); ctx.arc(cx, cy, CORE_RADIUS * corePulse, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, CORE_RADIUS * corePulse + 6, 0, Math.PI * 2); ctx.stroke();
+
+    // pickups
+    for (const p of state.pickups) {
+      const px = cx + Math.cos(p.angle) * p.radius, py = cy + Math.sin(p.angle) * p.radius;
+      const pulse = 1 + Math.sin(p.pulse * 6) * 0.2;
+      ctx.fillStyle = '#ffe45e';
+      ctx.shadowColor = '#ffe45e';
+      ctx.shadowBlur = 16;
+      ctx.beginPath(); ctx.arc(px, py, 8 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // particles
+    for (const pt of state.particles) {
+      ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+      ctx.fillStyle = pt.color;
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // bolts
+    ctx.strokeStyle = '#7cf9ff';
+    ctx.shadowColor = '#7cf9ff';
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 3;
+    for (const b of state.bolts) {
+      const bx = cx + Math.cos(b.angle) * b.radius, by = cy + Math.sin(b.angle) * b.radius;
+      const ix = cx + Math.cos(b.angle) * (b.radius - 14), iy = cy + Math.sin(b.angle) * (b.radius - 14);
+      ctx.beginPath(); ctx.moveTo(ix, iy); ctx.lineTo(bx, by); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // enemies
+    for (const en of state.enemies) {
+      const ex = cx + Math.cos(en.angle) * en.radius, ey = cy + Math.sin(en.angle) * en.radius;
+      const ang = Math.atan2(cy - ey, cx - ex);
+      ctx.save();
+      ctx.translate(ex, ey);
+      ctx.rotate(ang);
+      ctx.fillStyle = `hsl(${en.hue},100%,${en.hp < en.maxHp ? 75 : 60}%)`;
+      ctx.shadowColor = `hsl(${en.hue},100%,60%)`;
+      ctx.shadowBlur = 12;
+      const size = ENEMY_BASE_RADIUS * (en.maxHp > 1 ? 1.25 : 1);
+      ctx.beginPath();
+      ctx.moveTo(size, 0);
+      ctx.lineTo(-size * 0.8, size * 0.8);
+      ctx.lineTo(-size * 0.4, 0);
+      ctx.lineTo(-size * 0.8, -size * 0.8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.shadowBlur = 0;
+
+    // ship
+    const shipX = cx + Math.cos(state.ship.angle) * R, shipY = cy + Math.sin(state.ship.angle) * R;
+    ctx.save();
+    ctx.translate(shipX, shipY);
+    ctx.rotate(state.ship.angle);
+    ctx.fillStyle = ts < state.spreadUntil ? '#ffe45e' : '#4dffe0';
+    ctx.shadowColor = ts < state.spreadUntil ? '#ffe45e' : '#4dffe0';
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.moveTo(15, 0);
+    ctx.lineTo(-11, 10);
+    ctx.lineTo(-5, 0);
+    ctx.lineTo(-11, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+
+    // fixed-position aim readout — always reflects live rotate/fire input
+    ctx.save();
+    ctx.translate(16, 16);
+    ctx.strokeStyle = 'rgba(180,110,255,0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.stroke();
+    ctx.rotate(state.ship.angle);
+    ctx.fillStyle = ts < state.spreadUntil ? '#ffe45e' : '#4dffe0';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.arc(10, 0, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    if (ts - state.lastFire < 120) {
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  };
+
+  const startGame = () => {
+    resizeCanvas();
+    const state = makeGameState();
+    state.bounds = gs.current.bounds;
+    state.center = gs.current.center;
+    state.ringRadius = gs.current.ringRadius;
+    state.running = true;
+    gs.current = state;
+    scoreRef.current = 0;
+    comboRef.current = 0;
+    livesRef.current = LIVES_START;
+    lastTsRef.current = 0;
+    setScore(0);
+    setCombo(0);
+    setLives(LIVES_START);
+    setLevel(1);
+    setStatusMsg('Rotate to aim. Fire to intercept the swarm.');
+    setPhase('playing');
+    phaseRef.current = 'playing';
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+  };
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+
+  const pressRotate = (dir, on) => (e) => {
+    e.preventDefault();
+    gs.current.keys[dir === -1 ? 'ArrowLeft' : 'ArrowRight'] = on;
+  };
+  const pressFire = (on) => (e) => {
+    e.preventDefault();
+    gs.current.fireHeld = on;
+    if (on && phaseRef.current === 'playing') fireBolt(performance.now());
+  };
+
+  return (
+    <div className="app" data-testid="game-canvas">
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Sector</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Core</div>
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'❤'.repeat(Math.max(0, lives))}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+      </div>
+
+      <div className="title" style={{ marginTop: 34 }}>ORBIT VANGUARD</div>
+
+      <div className="arenaOuter" ref={arenaRef}>
+        <canvas ref={canvasRef} data-testid="arena" />
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="subtitle">Left / Right (or A / D) to orbit the core. Space or tap FIRE to shoot outward and intercept incoming enemies before they breach the core. Catch gold gems for spread shot!</div>
+            <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ fontSize: 'clamp(20px, 6vw, 30px)' }}>CORE BREACHED</div>
+            <div className="hudValue" data-testid="final-score">Score: {score}</div>
+            <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+            <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <div className="controls">
+          <button
+            className="ctrlBtn"
+            data-testid="rotate-left-btn"
+            onPointerDown={pressRotate(-1, true)}
+            onPointerUp={pressRotate(-1, false)}
+            onPointerLeave={pressRotate(-1, false)}
+          >&#9664;</button>
+          <button
+            className="fireBtn"
+            data-testid="fire-btn"
+            onPointerDown={pressFire(true)}
+            onPointerUp={pressFire(false)}
+            onPointerLeave={pressFire(false)}
+          >FIRE</button>
+          <button
+            className="ctrlBtn"
+            data-testid="rotate-right-btn"
+            onPointerDown={pressRotate(1, true)}
+            onPointerUp={pressRotate(1, false)}
+            onPointerLeave={pressRotate(1, false)}
+          >&#9654;</button>
+        </div>
+      )}
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">Orbit Vanguard — rotate to aim, fire to defend the core</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
