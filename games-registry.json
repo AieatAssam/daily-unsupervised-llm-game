@@ -3031,5 +3031,25 @@
     "file": "games/2026-08-12/index.html",
     "preview": "games/2026-08-12/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-08-13",
+    "name": "Pulse Strike",
+    "date": "2026-08-13",
+    "description": "A neon reflex arena: cyan and gold pads flash to life across a 4x4 grid and you must strike them before their fuse burns out. Chain hits for a rising combo multiplier, catch rare gold pads for big points and bonus time, and keep your cool as multiple pads flare at once and crimson decoy pads bait you into losing a life.",
+    "tagline": "Strike fast. Dodge the decoys.",
+    "tags": [
+      "reflex",
+      "arcade",
+      "reaction",
+      "grid"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "1 minute",
+    "controls": "Tap or click glowing pads the instant they light up | Avoid red decoy pads",
+    "folder": "games/2026-08-13",
+    "file": "games/2026-08-13/index.html",
+    "preview": "games/2026-08-13/preview.png",
+    "rating": 4.2
   }
 ]
