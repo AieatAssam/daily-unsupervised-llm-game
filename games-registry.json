@@ -3051,5 +3051,26 @@
     "file": "games/2026-08-13/index.html",
     "preview": "games/2026-08-13/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-08-14",
+    "name": "Signal Sort",
+    "date": "2026-08-14",
+    "description": "A neon conveyor-panic sorting game: glowing signal packets drop from above and you grab each one to drag it into the chute matching its color and icon before it hits bottom. Chain correct sorts for a rising combo multiplier, catch bright bonus signals for extra points, and race a falling speed that climbs the longer you survive as a fourth chute color unlocks at higher scores.",
+    "tagline": "Grab the signal. Drag it home. Don't drop three.",
+    "tags": [
+      "puzzle",
+      "arcade",
+      "reflex",
+      "drag",
+      "sorting"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap and drag a falling signal into the chute with its matching color and icon | Drag with a finger on mobile",
+    "folder": "games/2026-08-14",
+    "file": "games/2026-08-14/index.html",
+    "preview": "games/2026-08-14/preview.png",
+    "rating": 4.3
   }
 ]
