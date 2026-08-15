@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Neon Recall</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030d; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; overflow: hidden;
+    background: radial-gradient(circle at 50% 20%, #171030 0%, #0a0a1c 55%, #030308 100%);
+  }
+
+  .bgAnim {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0.4;
+    background: repeating-radial-gradient(circle at 50% 40%, rgba(140,80,255,0.06) 0, rgba(140,80,255,0.06) 2px, transparent 2px, transparent 60px);
+    animation: bgpulse 6s ease-in-out infinite;
+  }
+  @keyframes bgpulse { 0%,100% { opacity: 0.3; } 50% { opacity: 0.55; } }
+
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-around;
+    padding: 10px 12px; z-index: 20; pointer-events: none;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 10px; letter-spacing: 2px; color: #b090e0; text-transform: uppercase; }
+  .hudValue {
+    font-size: 21px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #b06bff, 0 0 20px #b06bff;
+  }
+  .hudValue.combo { color: #ffe45e; text-shadow: 0 0 10px #ffe45e, 0 0 22px #ff9d00; }
+  .hudValue.lives { color: #ff5e7d; text-shadow: 0 0 10px #ff5e7d, 0 0 22px #ff0033; }
+  .hudValue.hurt { animation: hurtPulse 0.4s ease; }
+  @keyframes hurtPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.4; transform: scale(1.25);} }
+
+  .title {
+    font-size: clamp(22px, 6vw, 34px); font-weight: 900; letter-spacing: 3px;
+    background: linear-gradient(90deg, #b06bff, #7c4dff, #ff2bd6);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(160,110,255,0.6));
+    text-align: center; margin-top: 40px; z-index: 5;
+  }
+
+  .subtitle { color: #b3a6d6; font-size: 13.5px; letter-spacing: 0.4px; text-align: center; max-width: 360px; line-height: 1.5; }
+
+  .btn {
+    padding: 15px 40px; font-size: 19px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #b06bff, #ff2bd6);
+    border: none; border-radius: 50px; color: #fff; cursor: pointer;
+    box-shadow: 0 0 20px rgba(176,107,255,0.7), 0 0 50px rgba(255,43,214,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd35e; font-size: 14px; text-shadow: 0 0 8px rgba(255,200,50,0.6); }
+
+  .boardOuter {
+    position: relative; width: min(92vw, 420px); flex: 1; margin: 6px 0 10px; z-index: 4;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .board {
+    position: relative; width: 100%; max-width: 420px; aspect-ratio: 1 / 1;
+    display: grid; gap: 8px;
+    padding: 10px; border-radius: 18px;
+    background: rgba(10, 8, 24, 0.5); border: 2px solid rgba(160,110,255,0.18);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.5);
+  }
+
+  .tile {
+    position: relative; border-radius: 12px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid rgba(255,255,255,0.12);
+    transition: transform 0.1s ease, filter 0.12s ease, box-shadow 0.12s ease;
+    will-change: transform;
+  }
+  .tile.lit { transform: scale(0.94); filter: brightness(1.9); box-shadow: 0 0 26px currentColor, 0 0 50px currentColor; }
+  .tile.correct { filter: brightness(1.6) saturate(1.3); box-shadow: 0 0 20px #5effa3; }
+  .tile.wrong { filter: brightness(0.7) saturate(0.4); box-shadow: 0 0 20px #ff5e7d; }
+  .tile:active { transform: scale(0.92); }
+
+  .particle { position: absolute; border-radius: 50%; pointer-events: none; z-index: 12; will-change: transform, opacity; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 25; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 20px;
+    background: rgba(4, 6, 14, 0.9); backdrop-filter: blur(4px); border-radius: 18px;
+  }
+
+  .status { color: #c4b4e8; font-size: 13px; letter-spacing: 0.4px; height: 17px; z-index: 10; text-align: center; margin-bottom: 6px; }
+  .footer { color: #55458a; font-size: 11px; padding-bottom: 6px; z-index: 10; text-align: center; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 17px; }
+    .btn { padding: 13px 30px; font-size: 16px; }
+    .subtitle { font-size: 12.5px; }
+    .title { margin-top: 32px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'neonRecall_highScore';
+const LIVES_START = 3;
+const GRID_SMALL = 3;
+const GRID_LARGE = 4;
+const EXPAND_ROUND = 8;
+
+function tileColor(i, gridSize) {
+  const total = gridSize * gridSize;
+  const hue = Math.round((i * 137.508) % 360);
+  return {
+    hex: `hsl(${hue}, 85%, 60%)`,
+    bg: `hsl(${hue}, 60%, 22%)`,
+  };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration = 0.2, type = 'triangle', gainScale = 0.16, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const playbackTone = useCallback((idx) => tone(220 + idx * 34, 0.22, 'sine', 0.15), [tone]);
+  const correctSound = useCallback((combo) => tone(440 + Math.min(combo, 14) * 24, 0.12, 'triangle', 0.14, 760), [tone]);
+  const wrongSound = useCallback(() => tone(180, 0.28, 'sawtooth', 0.18, 60), [tone]);
+  const roundSound = useCallback(() => { tone(600, 0.1, 'sine', 0.12, 1000); setTimeout(() => tone(900, 0.14, 'sine', 0.1), 70); }, [tone]);
+  const overSound = useCallback(() => { tone(320, 0.25, 'sawtooth', 0.2, 220); setTimeout(() => tone(200, 0.35, 'sawtooth', 0.2, 90), 150); }, [tone]);
+
+  return { playbackTone, correctSound, wrongSound, roundSound, overSound };
+}
+
+function Particle({ x, y, color, onDone }) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 25 + Math.random() * 50;
+  const dx = Math.cos(angle) * dist;
+  const dy = Math.sin(angle) * dist;
+  const size = 3 + Math.random() * 5;
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const anim = el.animate([
+      { transform: 'translate(0,0) scale(1)', opacity: 1 },
+      { transform: `translate(${dx}px, ${dy}px) scale(0)`, opacity: 0 }
+    ], { duration: 420 + Math.random() * 280, easing: 'cubic-bezier(.2,.8,.3,1)' });
+    anim.onfinish = onDone;
+  }, []);
+  return <div ref={ref} className="particle" style={{ left: x, top: y, width: size, height: size, background: color }} />;
+}
+
+function playbackGapForRound(round) { return Math.max(220, 520 - round * 20); }
+function playbackLitForRound(round) { return Math.max(180, 420 - round * 16); }
+
+function App() {
+  const [phase, setPhase] = useState('start'); // start | playing | over
+  const [roundPhase, setRoundPhase] = useState('idle'); // idle | playback | input
+  const [round, setRound] = useState(1);
+  const [gridSize, setGridSize] = useState(GRID_SMALL);
+  const [litTile, setLitTile] = useState(-1);
+  const [flashTile, setFlashTile] = useState({ idx: -1, kind: '' });
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [lives, setLives] = useState(LIVES_START);
+  const [hurt, setHurt] = useState(false);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [statusMsg, setStatusMsg] = useState('Watch the pattern, then repeat it.');
+  const [particles, setParticles] = useState([]);
+  const [expectedIdx, setExpectedIdx] = useState(-1);
+
+  const boardRef = useRef(null);
+  const tileNodeRefs = useRef(new Map());
+  const sequenceRef = useRef([]);
+  const playerStepRef = useRef(0);
+  const roundRef = useRef(1);
+  const gridSizeRef = useRef(GRID_SMALL);
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const livesRef = useRef(LIVES_START);
+  const highScoreRef = useRef(highScore);
+  const phaseRef = useRef('start');
+  const roundPhaseRef = useRef('idle');
+  const particleId = useRef(0);
+  const timeoutsRef = useRef([]);
+
+  const { playbackTone, correctSound, wrongSound, roundSound, overSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { roundPhaseRef.current = roundPhase; }, [roundPhase]);
+
+  const addTimer = (fn, ms) => {
+    const id = setTimeout(fn, ms);
+    timeoutsRef.current.push(id);
+    return id;
+  };
+  const clearAllTimers = () => {
+    timeoutsRef.current.forEach(clearTimeout);
+    timeoutsRef.current = [];
+  };
+  useEffect(() => () => clearAllTimers(), []);
+
+  const spawnParticles = useCallback((x, y, color, count) => {
+    const newParticles = [];
+    for (let i = 0; i < count; i++) newParticles.push({ id: particleId.current++, x, y, color });
+    setParticles(prev => [...prev, ...newParticles]);
+  }, []);
+  const removeParticle = (id) => setParticles(prev => prev.filter(p => p.id !== id));
+
+  const saveHighScore = () => {
+    if (scoreRef.current > highScoreRef.current) {
+      highScoreRef.current = scoreRef.current;
+      localStorage.setItem(HS_KEY, String(scoreRef.current));
+      setHighScore(scoreRef.current);
+    }
+  };
+
+  const endGame = useCallback((msg) => {
+    clearAllTimers();
+    phaseRef.current = 'over';
+    roundPhaseRef.current = 'idle';
+    setPhase('over');
+    setRoundPhase('idle');
+    setExpectedIdx(-1);
+    setStatusMsg(msg || 'Game over!');
+    saveHighScore();
+    overSound();
+  }, [overSound]);
+
+  const playSequence = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    roundPhaseRef.current = 'playback';
+    setRoundPhase('playback');
+    setExpectedIdx(-1);
+    playerStepRef.current = 0;
+    const seq = sequenceRef.current;
+    const gap = playbackGapForRound(roundRef.current);
+    const lit = playbackLitForRound(roundRef.current);
+    seq.forEach((tileIdx, i) => {
+      addTimer(() => {
+        if (phaseRef.current !== 'playing') return;
+        setLitTile(tileIdx);
+        playbackTone(tileIdx);
+      }, i * gap);
+      addTimer(() => {
+        if (phaseRef.current !== 'playing') return;
+        setLitTile(-1);
+      }, i * gap + lit);
+    });
+    addTimer(() => {
+      if (phaseRef.current !== 'playing') return;
+      roundPhaseRef.current = 'input';
+      setRoundPhase('input');
+      setExpectedIdx(seq[0]);
+      setStatusMsg(`Round ${roundRef.current} — repeat the pattern.`);
+    }, seq.length * gap + 150);
+  }, [playbackTone]);
+
+  const nextRound = useCallback((expand) => {
+    const size = gridSizeRef.current;
+    const nextTile = Math.floor(Math.random() * size * size);
+    sequenceRef.current = [...sequenceRef.current, nextTile];
+    roundRef.current += 1;
+    setRound(roundRef.current);
+    if (expand) {
+      gridSizeRef.current = GRID_LARGE;
+      setGridSize(GRID_LARGE);
+      setStatusMsg('Grid expanded! More tiles to track.');
+    }
+    addTimer(() => playSequence(), expand ? 900 : 500);
+  }, [playSequence]);
+
+  const flashAndClear = (idx, kind, ms) => {
+    setFlashTile({ idx, kind });
+    addTimer(() => setFlashTile({ idx: -1, kind: '' }), ms);
+  };
+
+  const handleTileClick = (idx) => {
+    if (phaseRef.current !== 'playing' || roundPhaseRef.current !== 'input') return;
+    const seq = sequenceRef.current;
+    const expected = seq[playerStepRef.current];
+    const node = tileNodeRefs.current.get(idx);
+    const boardEl = boardRef.current;
+
+    if (idx === expected) {
+      const gained = 10 * roundRef.current;
+      scoreRef.current += gained;
+      setScore(scoreRef.current);
+      saveHighScore();
+      correctSound(comboRef.current);
+      flashAndClear(idx, 'correct', 160);
+      if (node && boardEl) {
+        const r = node.getBoundingClientRect();
+        const b = boardEl.getBoundingClientRect();
+        spawnParticles(r.left - b.left + r.width / 2, r.top - b.top + r.height / 2, tileColor(idx, gridSizeRef.current).hex, 6);
+      }
+      playerStepRef.current += 1;
+
+      if (playerStepRef.current >= seq.length) {
+        comboRef.current += 1;
+        setCombo(comboRef.current);
+        const bonus = comboRef.current * 5;
+        scoreRef.current += bonus;
+        setScore(scoreRef.current);
+        saveHighScore();
+        roundSound();
+        roundPhaseRef.current = 'idle';
+        setRoundPhase('idle');
+        setExpectedIdx(-1);
+        setStatusMsg(`Pattern complete! Combo x${comboRef.current}`);
+        const expand = gridSizeRef.current === GRID_SMALL && roundRef.current + 1 >= EXPAND_ROUND;
+        nextRound(expand);
+      } else {
+        setExpectedIdx(seq[playerStepRef.current]);
+      }
+    } else {
+      comboRef.current = 0;
+      setCombo(0);
+      livesRef.current -= 1;
+      setLives(livesRef.current);
+      setHurt(true);
+      addTimer(() => setHurt(false), 350);
+      wrongSound();
+      flashAndClear(idx, 'wrong', 260);
+      setStatusMsg('Wrong tile! Watch again.');
+      roundPhaseRef.current = 'idle';
+      setRoundPhase('idle');
+      setExpectedIdx(-1);
+      if (livesRef.current <= 0) {
+        endGame('Pattern lost!');
+        return;
+      }
+      addTimer(() => playSequence(), 900);
+    }
+  };
+
+  const startGame = () => {
+    clearAllTimers();
+    sequenceRef.current = [Math.floor(Math.random() * GRID_SMALL * GRID_SMALL)];
+    playerStepRef.current = 0;
+    roundRef.current = 1;
+    gridSizeRef.current = GRID_SMALL;
+    scoreRef.current = 0;
+    comboRef.current = 0;
+    livesRef.current = LIVES_START;
+    setGridSize(GRID_SMALL);
+    setScore(0);
+    setCombo(0);
+    setLives(LIVES_START);
+    setRound(1);
+    setParticles([]);
+    setLitTile(-1);
+    setFlashTile({ idx: -1, kind: '' });
+    setStatusMsg('Watch the pattern, then repeat it.');
+    setPhase('playing');
+    phaseRef.current = 'playing';
+    addTimer(() => playSequence(), 500);
+  };
+
+  const tiles = Array.from({ length: gridSize * gridSize }, (_, i) => i);
+
+  return (
+    <div className="app" data-testid="game-canvas">
+      <div className="bgAnim" />
+
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Round</div>
+          <div className="hudValue" data-testid="round">{round}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'❤'.repeat(Math.max(0, lives))}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+      </div>
+
+      <div className="title">NEON RECALL</div>
+      <div className="status">{statusMsg}</div>
+
+      <div className="boardOuter">
+        <div
+          className="board"
+          ref={boardRef}
+          data-testid="tile-grid"
+          style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}
+        >
+          <div
+            data-testid="expected-tile"
+            data-index={roundPhase === 'input' && expectedIdx >= 0 ? expectedIdx : ''}
+            style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }}
+          />
+
+          {tiles.map(i => {
+            const c = tileColor(i, gridSize);
+            const isLit = litTile === i;
+            const flash = flashTile.idx === i ? flashTile.kind : '';
+            return (
+              <div
+                key={i}
+                data-testid={`tile-${i}`}
+                className={`tile ${isLit ? 'lit' : ''} ${flash}`}
+                ref={el => { if (el) tileNodeRefs.current.set(i, el); }}
+                style={{ background: c.bg, color: c.hex, borderColor: isLit ? c.hex : 'rgba(255,255,255,0.12)' }}
+                onPointerDown={() => handleTileClick(i)}
+              />
+            );
+          })}
+
+          {particles.map(p => (
+            <Particle key={p.id} x={p.x} y={p.y} color={p.color} onDone={() => removeParticle(p.id)} />
+          ))}
+
+          {phase === 'start' && (
+            <div className="overlay">
+              <div className="subtitle">A pattern of glowing tiles will flash in sequence. Repeat it back in the same order before you run out of lives. Every completed pattern grows by one step — and the grid expands as you climb the rounds.</div>
+              <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+              <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+            </div>
+          )}
+
+          {phase === 'over' && (
+            <div className="overlay">
+              <div className="title" style={{ fontSize: 'clamp(20px, 6vw, 30px)', marginTop: 0 }}>RECALL FAILED</div>
+              <div className="hudValue" data-testid="final-score">Score: {score}</div>
+              <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+              <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="footer">Neon Recall — watch the pattern, then tap it back in order</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

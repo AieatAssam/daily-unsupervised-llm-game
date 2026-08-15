@@ -3072,5 +3072,25 @@
     "file": "games/2026-08-14/index.html",
     "preview": "games/2026-08-14/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-08-15",
+    "name": "Neon Recall",
+    "date": "2026-08-15",
+    "description": "A neon memory game: a pattern of glowing tiles flashes across a 3x3 grid and you must tap them back in the exact same order. Every completed pattern grows by one more step, tapping the full sequence correctly builds a rising combo multiplier, a wrong tap costs a life and replays the round, and the grid expands to 4x4 once you climb past round eight.",
+    "tagline": "Watch the pattern. Recall it exactly. Don't blink.",
+    "tags": [
+      "puzzle",
+      "memory",
+      "reflex",
+      "tap"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Watch the tiles flash in sequence, then tap them back in the same order | Tap on mobile",
+    "folder": "games/2026-08-15",
+    "file": "games/2026-08-15/index.html",
+    "preview": "games/2026-08-15/preview.png",
+    "rating": 4.2
   }
 ]
