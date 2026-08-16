@@ -3092,5 +3092,25 @@
     "file": "games/2026-08-15/index.html",
     "preview": "games/2026-08-15/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-08-16",
+    "name": "Polarity Dash",
+    "date": "2026-08-16",
+    "description": "A single-button gravity-flip runner: your glowing orb auto-runs forward while clinging to either the floor or ceiling rail, and a tap, click, or Space press instantly flips gravity to swap rails. Crimson and cyan spikes jut from both rails as the tunnel scrolls past, yellow shards on your current rail build a rising combo when chained, and a hit on the wrong rail costs a life and resets your combo while speed climbs the longer you survive.",
+    "tagline": "Flip gravity. Dodge the spikes. Chain the shards.",
+    "tags": [
+      "runner",
+      "reflex",
+      "one-button",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap, click, or press Space to flip gravity | Tap anywhere on the play field on mobile",
+    "folder": "games/2026-08-16",
+    "file": "games/2026-08-16/index.html",
+    "preview": "games/2026-08-16/preview.png",
+    "rating": 4.3
   }
 ]
