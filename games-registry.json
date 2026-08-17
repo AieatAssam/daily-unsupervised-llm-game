@@ -3117,5 +3117,20 @@
     "file": "games/2026-08-16/index.html",
     "preview": "games/2026-08-16/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-08-17",
+    "name": "Photon Drift",
+    "date": "2026-08-17",
+    "description": "A neon avoider with analog drift control: your sled glides smoothly toward wherever your mouse or finger goes, using inertia rather than snapping instantly like a lane-switcher. Weave through falling crimson comet shards to catch cyan photons and rare gold bonuses raining from above, chaining catches for a rising combo multiplier while a hit resets your combo and costs a life as the fall speed climbs the longer you survive.",
+    "tagline": "Drift with your cursor. Catch the light. Dodge the shards.",
+    "tags": ["avoider", "arcade", "reflex", "analog-control"],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Move mouse or drag finger to drift the sled | Arrow keys / A-D as fallback",
+    "folder": "games/2026-08-17",
+    "file": "games/2026-08-17/index.html",
+    "preview": "games/2026-08-17/preview.png",
+    "rating": 4.3
   }
 ]
