@@ -3177,5 +3177,25 @@
     "file": "games/2026-08-18/index.html",
     "preview": "games/2026-08-18/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-08-19",
+    "name": "Cipher Cascade",
+    "date": "2026-08-19",
+    "description": "A neon typing-defense game: glowing hexagon glyphs fall from above, each stamped with a letter, and you must type the matching key on your keyboard (or tap it on the on-screen keypad) before the glyph crosses the red danger line. Chain correct hits for a rising combo multiplier, catch rare gold glyphs worth triple points, and hold the line as spawn rate and fall speed climb the longer you survive.",
+    "tagline": "Type the glyph. Beat the fall. Don't let the cascade breach.",
+    "tags": [
+      "typing",
+      "reflex",
+      "arcade",
+      "survival"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Type the matching letter key on your keyboard before the glyph reaches the red line | Tap the on-screen letter pad on mobile",
+    "folder": "games/2026-08-19",
+    "file": "games/2026-08-19/index.html",
+    "preview": "games/2026-08-19/preview.png",
+    "rating": 4.3
   }
 ]
