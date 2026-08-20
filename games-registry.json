@@ -3197,5 +3197,25 @@
     "file": "games/2026-08-19/index.html",
     "preview": "games/2026-08-19/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-08-20",
+    "name": "Skyline Stacker",
+    "date": "2026-08-20",
+    "description": "A precision block-stacking tower climber: a neon block swings back and forth above your growing skyline, and you tap, click, or press Space to drop it onto the block below. Perfect landings keep full width and build a rising combo, imperfect drops trim the block down to the overlap, and a total miss costs one of three lives while the camera pans upward as your tower climbs and the swing speed creeps up.",
+    "tagline": "Time the drop. Stack the skyline. Keep it perfect.",
+    "tags": [
+      "stacking",
+      "precision",
+      "arcade",
+      "timing"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap, click, or press Space to drop the block | Tap the tower on mobile",
+    "folder": "games/2026-08-20",
+    "file": "games/2026-08-20/index.html",
+    "preview": "games/2026-08-20/preview.png",
+    "rating": 4.3
   }
 ]

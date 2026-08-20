@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Skyline Stacker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030d; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; overflow: hidden; gap: 8px;
+    background: radial-gradient(circle at 50% 15%, #12132e 0%, #0a0a18 55%, #030109 100%);
+  }
+
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-around;
+    padding: 10px 12px; z-index: 15; pointer-events: none;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 10px; letter-spacing: 2px; color: #6ce0ff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 22px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #5ef0ff, 0 0 20px #5ef0ff;
+  }
+  .hudValue.combo { color: #ffe45e; text-shadow: 0 0 10px #ffe45e, 0 0 22px #ff9d00; }
+  .hudValue.lives { color: #ff5ee0; text-shadow: 0 0 10px #ff5ee0, 0 0 22px #c020ff; }
+  .hudValue.hurt { animation: hurtPulse 0.4s ease; }
+  @keyframes hurtPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.4; transform: scale(1.25);} }
+
+  .title {
+    font-size: clamp(20px, 5.6vw, 32px); font-weight: 900; letter-spacing: 3px;
+    background: linear-gradient(90deg, #5ef0ff, #7c6bff, #ff5ee0);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(110,180,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(110,180,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(150,200,255,0.95)); } }
+
+  .subtitle { color: #b8cbe8; font-size: 14px; letter-spacing: 0.5px; text-align: center; max-width: 360px; line-height: 1.5; }
+
+  .btn {
+    padding: 15px 40px; font-size: 19px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #2fa8ff, #ff4ecb);
+    border: none; border-radius: 50px; color: #fff; cursor: pointer;
+    box-shadow: 0 0 20px rgba(60,160,255,0.7), 0 0 50px rgba(255,80,200,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(60,160,255,0.9), 0 0 70px rgba(255,80,200,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd35e; font-size: 14px; text-shadow: 0 0 8px rgba(255,200,50,0.6); }
+
+  .arenaOuter {
+    position: relative; width: min(94vw, 520px); height: min(66vh, 480px); z-index: 5;
+    border-radius: 20px; overflow: hidden; border: 2px solid rgba(100,180,255,0.25);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 0 30px rgba(80,160,255,0.15);
+    background: #08061a; cursor: pointer;
+  }
+
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 20px;
+    background: rgba(6, 4, 15, 0.85); backdrop-filter: blur(4px);
+  }
+
+  .status { color: #a8bee8; font-size: 13px; letter-spacing: 0.5px; height: 16px; z-index: 10; text-align: center; }
+
+  .footer { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center; color: #5a4a6a; font-size: 11px; z-index: 10; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 17px; }
+    .btn { padding: 13px 30px; font-size: 16px; }
+    .subtitle { font-size: 13px; }
+    .arenaOuter { height: min(60vh, 480px); }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'skylineStacker_highScore';
+const BLOCK_H = 30;
+const LIVES_START = 3;
+const MIN_OVERLAP = 6;
+const MIN_WIDTH = 16;
+const PERFECT_RATIO = 0.94;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration, type, gainScale, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const placeSound = useCallback(() => tone(420, 0.09, 'square', 0.08, 620), [tone]);
+  const perfectSound = useCallback(() => tone(720, 0.14, 'triangle', 0.18, 1200), [tone]);
+  const missSound = useCallback(() => tone(150, 0.3, 'sawtooth', 0.22, 60), [tone]);
+  const overSound = useCallback(() => {
+    tone(320, 0.25, 'sawtooth', 0.2, 220);
+    setTimeout(() => tone(200, 0.35, 'sawtooth', 0.2, 90), 150);
+  }, [tone]);
+
+  return { placeSound, perfectSound, missSound, overSound };
+}
+
+function makeGameState() {
+  return {
+    bounds: { w: 520, h: 480 },
+    stack: [{ x: 0, width: 160, hue: 190 }],
+    current: null,
+    particles: [],
+    camera: { offset: 0, target: 0 },
+    elapsed: 0,
+    shake: 0,
+    running: false,
+  };
+}
+
+const MAX_SWING_AMP = 130;
+
+function spawnCurrent(state, fromTop) {
+  const { w } = state.bounds;
+  const width = fromTop.width;
+  const dir = Math.random() < 0.5 ? -1 : 1;
+  const half = width / 2;
+  const leftLimit = 6 + half;
+  const rightLimit = Math.max(leftLimit, w - 6 - half);
+  const center = clamp(fromTop.x + half, leftLimit, rightLimit);
+  const roomLeft = center - leftLimit;
+  const roomRight = rightLimit - center;
+  // amplitude is capped and bounded by available room so the block can
+  // never swing off-canvas or past a reachable range, however thin it gets
+  const amp = clamp(Math.min(roomLeft, roomRight, MAX_SWING_AMP), 20, MAX_SWING_AMP);
+  state.current = {
+    x: center - half, width, phase: 0,
+    baseX: center,
+    amp, dir,
+    speed: 0.9 + Math.min(1.4, state.stack.length * 0.03),
+    hue: (fromTop.hue + 26) % 360,
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start'); // start | playing | over
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(LIVES_START);
+  const [combo, setCombo] = useState(0);
+  const [hurt, setHurt] = useState(false);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [statusMsg, setStatusMsg] = useState('Tap, click, or press Space to drop the block.');
+
+  const canvasRef = useRef(null);
+  const arenaRef = useRef(null);
+  const gs = useRef(makeGameState());
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(0);
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const livesRef = useRef(LIVES_START);
+  const highScoreRef = useRef(highScore);
+  const phaseRef = useRef('start');
+  const lastDropRef = useRef(0);
+  const { placeSound, perfectSound, missSound, overSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const arena = arenaRef.current;
+    if (!canvas || !arena) return;
+    const rect = arena.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gs.current.bounds = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const spawnBurst = (arr, x, y, color, count, speedMin, speedMax, sizeMin, sizeMax, lifeMs) => {
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = speedMin + Math.random() * (speedMax - speedMin);
+      arr.push({
+        x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 40,
+        life: lifeMs, maxLife: lifeMs, color,
+        size: sizeMin + Math.random() * (sizeMax - sizeMin), grav: 260,
+      });
+    }
+  };
+
+  const endGame = useCallback(() => {
+    gs.current.running = false;
+    phaseRef.current = 'over';
+    setPhase('over');
+    overSound();
+    setStatusMsg('Tower collapsed.');
+  }, [overSound]);
+
+  const DROP_COOLDOWN_MS = 90;
+
+  const doDrop = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    const now = performance.now();
+    if (now - lastDropRef.current < DROP_COOLDOWN_MS) return;
+    lastDropRef.current = now;
+    const state = gs.current;
+    const cur = state.current;
+    if (!cur) return;
+    const top = state.stack[state.stack.length - 1];
+    const curLeft = cur.x, curRight = cur.x + cur.width;
+    const topLeft = top.x, topRight = top.x + top.width;
+    const overlapLeft = Math.max(curLeft, topLeft);
+    const overlapRight = Math.min(curRight, topRight);
+    const overlapWidth = overlapRight - overlapLeft;
+    const topY = -(state.stack.length) * BLOCK_H;
+
+    if (overlapWidth <= MIN_OVERLAP) {
+      // miss — lose a life, retry with same width
+      livesRef.current -= 1;
+      setLives(livesRef.current);
+      comboRef.current = 0;
+      setCombo(0);
+      state.shake = 10;
+      setHurt(true);
+      setTimeout(() => setHurt(false), 400);
+      missSound();
+      spawnBurst(state.particles, cur.baseX, topY, '#ff4d6d', 10, 60, 200, 2, 5, 450);
+      if (livesRef.current <= 0) { endGame(); return; }
+      spawnCurrent(state, top);
+      setStatusMsg('Missed! Try again.');
+      return;
+    }
+
+    const perfect = overlapWidth >= cur.width * PERFECT_RATIO;
+    let newWidth = perfect ? cur.width : overlapWidth;
+    let newX = perfect ? topLeft + (topRight - topLeft - newWidth) / 2 : overlapLeft;
+    newX = clamp(newX, topLeft - 4, topRight + 4 - newWidth);
+
+    // debris for the trimmed-off portion
+    if (!perfect) {
+      if (curLeft < overlapLeft) spawnBurst(state.particles, curLeft, topY, `hsl(${cur.hue},100%,60%)`, 5, 30, 120, 2, 4, 400);
+      if (curRight > overlapRight) spawnBurst(state.particles, curRight, topY, `hsl(${cur.hue},100%,60%)`, 5, 30, 120, 2, 4, 400);
+    }
+
+    const newBlock = { x: newX, width: newWidth, hue: cur.hue };
+    state.stack.push(newBlock);
+
+    let gained = 10;
+    if (perfect) {
+      comboRef.current += 1;
+      setCombo(comboRef.current);
+      gained += comboRef.current * 5;
+      perfectSound();
+      spawnBurst(state.particles, newX + newWidth / 2, topY, '#ffe45e', 9, 40, 160, 2, 5, 400);
+      setStatusMsg('Perfect!');
+    } else {
+      comboRef.current = 0;
+      setCombo(0);
+      placeSound();
+      setStatusMsg('Placed.');
+    }
+
+    scoreRef.current += gained;
+    if (scoreRef.current > highScoreRef.current) {
+      highScoreRef.current = scoreRef.current;
+      localStorage.setItem(HS_KEY, String(scoreRef.current));
+      setHighScore(scoreRef.current);
+    }
+    setScore(scoreRef.current);
+
+    if (newWidth < MIN_WIDTH) {
+      endGame();
+      return;
+    }
+
+    const visibleRows = Math.max(4, Math.floor((state.bounds.h - 150) / BLOCK_H));
+    state.camera.target = Math.max(0, (state.stack.length - visibleRows) * BLOCK_H);
+
+    spawnCurrent(state, newBlock);
+  }, [endGame, perfectSound, placeSound, missSound]);
+
+  // Keyboard input
+  useEffect(() => {
+    const down = (e) => {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'KeyW', 'KeyS'].includes(e.code)) e.preventDefault();
+      if (['Space', 'ArrowUp', 'ArrowDown', 'KeyW', 'KeyS'].includes(e.code) && !e.repeat) doDrop();
+    };
+    window.addEventListener('keydown', down, { passive: false });
+    return () => window.removeEventListener('keydown', down);
+  }, [doDrop]);
+
+  // Pointer (mouse+touch) drop
+  useEffect(() => {
+    const arena = arenaRef.current;
+    if (!arena) return;
+    const onDown = (e) => { e.preventDefault(); doDrop(); };
+    arena.addEventListener('pointerdown', onDown);
+    return () => arena.removeEventListener('pointerdown', onDown);
+  }, [doDrop]);
+
+  const tick = useCallback((ts) => {
+    const state = gs.current;
+    if (!state.running) return;
+    if (!lastTsRef.current) lastTsRef.current = ts;
+    let dt = (ts - lastTsRef.current) / 1000;
+    dt = Math.min(dt, 0.05);
+    lastTsRef.current = ts;
+    state.elapsed += dt * 1000;
+
+    const cur = state.current;
+    if (cur) {
+      cur.phase += dt * cur.speed * cur.dir;
+      cur.x = cur.baseX + Math.sin(cur.phase) * cur.amp - cur.width / 2;
+    }
+
+    state.camera.offset += (state.camera.target - state.camera.offset) * Math.min(1, dt * 6);
+
+    // particles
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const pt = state.particles[i];
+      pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+      pt.vy += (pt.grav || 0) * dt;
+      pt.vx *= 0.96;
+      pt.life -= dt * 1000;
+      if (pt.life <= 0) state.particles.splice(i, 1);
+    }
+    if (state.particles.length > 90) state.particles.splice(0, state.particles.length - 90);
+
+    if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 40);
+
+    draw(state, ts);
+    rafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const draw = (state, ts) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const { w, h } = state.bounds;
+    const baseY = h - 50;
+
+    const screenY = (worldY) => baseY + worldY + state.camera.offset;
+
+    ctx.save();
+    if (state.shake > 0) {
+      ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake);
+    }
+
+    ctx.fillStyle = 'rgba(8,6,26,0.4)';
+    ctx.fillRect(-20, -20, w + 40, h + 40);
+
+    // scrolling grid
+    ctx.strokeStyle = 'rgba(120,150,255,0.05)';
+    ctx.lineWidth = 1;
+    const gridSize = 40;
+    const offset = state.camera.offset % gridSize;
+    for (let y = -offset; y < h; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+    // stack blocks — no canvas shadow (costly under CPU contention across many blocks);
+    // glow is faked with a bright top edge + translucent stroke instead.
+    for (let i = 0; i < state.stack.length; i++) {
+      const b = state.stack[i];
+      const sy = screenY(-i * BLOCK_H);
+      if (sy < -BLOCK_H || sy > h + BLOCK_H) continue;
+      ctx.fillStyle = `hsl(${b.hue},85%,58%)`;
+      ctx.fillRect(b.x, sy - BLOCK_H, b.width, BLOCK_H - 2);
+      ctx.fillStyle = `hsl(${b.hue},95%,78%)`;
+      ctx.fillRect(b.x, sy - BLOCK_H, b.width, 3);
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(b.x, sy - BLOCK_H, b.width, BLOCK_H - 2);
+    }
+
+    // current moving block
+    const cur = state.current;
+    if (cur) {
+      const sy = screenY(-(state.stack.length) * BLOCK_H);
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = `hsl(${cur.hue},90%,65%)`;
+      ctx.shadowColor = `hsl(${cur.hue},95%,65%)`;
+      ctx.fillRect(cur.x, sy - BLOCK_H, cur.width, BLOCK_H - 2);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(cur.x, sy - BLOCK_H, cur.width, BLOCK_H - 2);
+    }
+    ctx.shadowBlur = 0;
+
+    // particles — plain squares (no arc/path construction) for cheap high-volume bursts
+    for (const pt of state.particles) {
+      ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+      ctx.fillStyle = pt.color;
+      const s = pt.size * 2;
+      ctx.fillRect(pt.x - pt.size, screenY(pt.y) - pt.size, s, s);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  };
+
+  const startGame = () => {
+    resizeCanvas();
+    const state = makeGameState();
+    state.bounds = gs.current.bounds;
+    state.stack = [{ x: state.bounds.w / 2 - 80, width: 160, hue: 190 }];
+    spawnCurrent(state, state.stack[0]);
+    state.running = true;
+    gs.current = state;
+    scoreRef.current = 0;
+    comboRef.current = 0;
+    livesRef.current = LIVES_START;
+    lastTsRef.current = 0;
+    lastDropRef.current = 0;
+    setScore(0);
+    setCombo(0);
+    setLives(LIVES_START);
+    setStatusMsg('Tap, click, or press Space to drop the block.');
+    setPhase('playing');
+    phaseRef.current = 'playing';
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+  };
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+
+  return (
+    <div className="app" data-testid="game-canvas">
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'♦'.repeat(Math.max(0, lives))}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+      </div>
+
+      <div className="title" style={{ marginTop: 36 }}>SKYLINE STACKER</div>
+
+      <div className="arenaOuter" ref={arenaRef} data-testid="drop-zone">
+        <canvas ref={canvasRef} data-testid="arena" />
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="subtitle">A neon block swings back and forth above your tower.<br />Tap, click, or press Space to drop it and land it on the block below.<br />Perfect landings keep full width and build a rising combo!</div>
+            <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ fontSize: 'clamp(20px, 6vw, 30px)' }}>TOWER COLLAPSED</div>
+            <div className="hudValue" data-testid="final-score">Score: {score}</div>
+            <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+            <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">Skyline Stacker — time the drop, chain perfects for combo</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
