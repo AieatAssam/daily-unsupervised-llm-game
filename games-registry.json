@@ -3217,5 +3217,25 @@
     "file": "games/2026-08-20/index.html",
     "preview": "games/2026-08-20/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-08-21",
+    "name": "Circuit Breaker",
+    "date": "2026-08-21",
+    "description": "A real-time pipe-routing puzzle: a glowing energy pulse races down a grid of rotatable pipe tiles from the cyan entry arrow toward the gold target below. Tap any tile to rotate its pipe 90 degrees, and you must keep the path connected before the pulse reaches each cell or the circuit breaks and costs a life. Successful routes chain into a rising combo, reshuffle the grid with a fresh target, and speed up the pulse for escalating tension.",
+    "tagline": "Rotate the pipes. Route the pulse. Don't let it break.",
+    "tags": [
+      "puzzle",
+      "reflex",
+      "arcade",
+      "routing"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap or click a grid tile to rotate its pipe 90 degrees",
+    "folder": "games/2026-08-21",
+    "file": "games/2026-08-21/index.html",
+    "preview": "games/2026-08-21/preview.png",
+    "rating": 4.4
   }
 ]
