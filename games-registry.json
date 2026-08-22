@@ -3237,5 +3237,25 @@
     "file": "games/2026-08-21/index.html",
     "preview": "games/2026-08-21/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-08-22",
+    "name": "Neon Devourer",
+    "date": "2026-08-22",
+    "description": "A free-roaming absorption survival game: steer a glowing orb through an open arena of drifting neon motes, devouring anything smaller than you to grow while dodging orbs large enough to devour YOU. Chain fast eats within a tight window to build a rising combo multiplier, but growth comes at a cost — a bigger orb moves slower, and getting caught by a hazard mote costs a life and shrinks you back down. Motes spawn faster and hazards grow bolder the longer you survive.",
+    "tagline": "Grow by eating small. Get eaten by big.",
+    "tags": [
+      "survival",
+      "arcade",
+      "action",
+      "growth"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys / WASD to nudge your orb, or click-and-drag / touch-and-drag to steer",
+    "folder": "games/2026-08-22",
+    "file": "games/2026-08-22/index.html",
+    "preview": "games/2026-08-22/preview.png",
+    "rating": 4.3
   }
 ]

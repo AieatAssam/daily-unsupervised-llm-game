@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Neon Devourer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030d; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; overflow: hidden; gap: 8px;
+    background: radial-gradient(circle at 50% 15%, #17102c 0%, #0a0a18 55%, #030109 100%);
+  }
+
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-around;
+    padding: 10px 12px; z-index: 15; pointer-events: none;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 10px; letter-spacing: 2px; color: #9d6bff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 22px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #9d6bff, 0 0 20px #9d6bff;
+  }
+  .hudValue.combo { color: #ffe45e; text-shadow: 0 0 10px #ffe45e, 0 0 22px #ff9d00; }
+  .hudValue.lives { color: #ff5ee0; text-shadow: 0 0 10px #ff5ee0, 0 0 22px #c300a0; }
+  .hudValue.hurt { animation: hurtPulse 0.4s ease; }
+  @keyframes hurtPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.4; transform: scale(1.25);} }
+
+  .title {
+    font-size: clamp(20px, 6vw, 32px); font-weight: 900; letter-spacing: 3px;
+    background: linear-gradient(90deg, #9d6bff, #5ecfff, #ff5ee0);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(157,107,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(157,107,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(157,107,255,0.95)); } }
+
+  .subtitle { color: #cabde8; font-size: 14px; letter-spacing: 0.5px; text-align: center; max-width: 380px; line-height: 1.5; }
+
+  .btn {
+    padding: 15px 40px; font-size: 19px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #7a3cff, #ff4ecb);
+    border: none; border-radius: 50px; color: #fff; cursor: pointer;
+    box-shadow: 0 0 20px rgba(130,60,255,0.7), 0 0 50px rgba(255,80,200,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(130,60,255,0.9), 0 0 70px rgba(255,80,200,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd35e; font-size: 14px; text-shadow: 0 0 8px rgba(255,200,50,0.6); }
+
+  .arenaOuter {
+    position: relative; width: min(94vw, 640px); height: min(64vh, 440px); z-index: 5;
+    border-radius: 20px; overflow: hidden; border: 2px solid rgba(157,107,255,0.25);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 0 30px rgba(157,107,255,0.15);
+    background: #08061a; cursor: pointer;
+  }
+
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 20px;
+    background: rgba(4, 6, 15, 0.85); backdrop-filter: blur(4px);
+  }
+
+  .status { color: #beb0e0; font-size: 13px; letter-spacing: 0.5px; height: 16px; z-index: 10; text-align: center; }
+
+  .footer { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center; color: #4a5a6a; font-size: 11px; z-index: 10; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 17px; }
+    .btn { padding: 13px 30px; font-size: 16px; }
+    .subtitle { font-size: 13px; }
+    .arenaOuter { height: min(58vh, 440px); }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'neonDevourer_highScore';
+const START_RADIUS = 15;
+const MAX_RADIUS = 46;
+const BASE_SPEED = 210;
+const LIVES_START = 3;
+const INVULN_MS = 900;
+const COMBO_WINDOW_MS = 1400;
+const MOTE_HUES = ['#5ecfff', '#5eff9d', '#ffe45e', '#ff9d5e', '#5e9dff'];
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist2(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration, type, gainScale, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const eatSound = useCallback((big) => tone(big ? 520 : 700, 0.09, 'triangle', 0.13, big ? 900 : 1100), [tone]);
+  const hitSound = useCallback(() => tone(140, 0.3, 'sawtooth', 0.22, 55), [tone]);
+  const overSound = useCallback(() => {
+    tone(320, 0.25, 'sawtooth', 0.2, 220);
+    setTimeout(() => tone(200, 0.35, 'sawtooth', 0.2, 90), 150);
+  }, [tone]);
+
+  return { eatSound, hitSound, overSound };
+}
+
+function makeGameState() {
+  return {
+    bounds: { w: 640, h: 440 },
+    player: { x: 320, y: 220, vx: 0, vy: 0, radius: START_RADIUS },
+    motes: [],
+    particles: [],
+    moteTimer: 300,
+    elapsed: 0,
+    invulnUntil: 0,
+    shake: 0,
+    running: false,
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start'); // start | playing | over
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(LIVES_START);
+  const [combo, setCombo] = useState(0);
+  const [hurt, setHurt] = useState(false);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [statusMsg, setStatusMsg] = useState('Steer with arrows/WASD or drag — devour smaller orbs, dodge bigger ones.');
+
+  const canvasRef = useRef(null);
+  const arenaRef = useRef(null);
+  const gs = useRef(makeGameState());
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(0);
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const comboExpireRef = useRef(0);
+  const livesRef = useRef(LIVES_START);
+  const highScoreRef = useRef(highScore);
+  const phaseRef = useRef('start');
+  const pointerRef = useRef({ down: false, x: 0, y: 0 });
+  const { eatSound, hitSound, overSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const arena = arenaRef.current;
+    if (!canvas || !arena) return;
+    const rect = arena.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gs.current.bounds = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  // Pointer (mouse + touch): chase toward pointer while held
+  useEffect(() => {
+    const arena = arenaRef.current;
+    if (!arena) return;
+    const setFromClient = (clientX, clientY) => {
+      const rect = arena.getBoundingClientRect();
+      pointerRef.current.x = clamp(clientX - rect.left, 0, rect.width);
+      pointerRef.current.y = clamp(clientY - rect.top, 0, rect.height);
+    };
+    const onDown = (e) => { pointerRef.current.down = true; setFromClient(e.clientX, e.clientY); };
+    const onMove = (e) => { if (pointerRef.current.down) setFromClient(e.clientX, e.clientY); };
+    const onUp = () => { pointerRef.current.down = false; };
+    arena.addEventListener('pointerdown', onDown);
+    arena.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      arena.removeEventListener('pointerdown', onDown);
+      arena.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, []);
+
+  // Keyboard: arrows / WASD apply an instant directional impulse, so even a
+  // single tap gives a visible nudge (not just continuous holds).
+  useEffect(() => {
+    const down = (e) => {
+      if (phaseRef.current !== 'playing') return;
+      const state = gs.current;
+      const player = state.player;
+      const maxSpeed = Math.max(80, BASE_SPEED - player.radius * 2.4);
+      const impulse = maxSpeed * 0.55;
+      let applied = true;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') player.vx = clamp(player.vx - impulse, -maxSpeed, maxSpeed);
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') player.vx = clamp(player.vx + impulse, -maxSpeed, maxSpeed);
+      else if (e.code === 'ArrowUp' || e.code === 'KeyW') player.vy = clamp(player.vy - impulse, -maxSpeed, maxSpeed);
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') player.vy = clamp(player.vy + impulse, -maxSpeed, maxSpeed);
+      else applied = false;
+      if (applied) e.preventDefault();
+    };
+    window.addEventListener('keydown', down, { passive: false });
+    return () => window.removeEventListener('keydown', down);
+  }, []);
+
+  const spawnBurst = (arr, x, y, color, count, speedMin, speedMax, sizeMin, sizeMax, lifeMs) => {
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = speedMin + Math.random() * (speedMax - speedMin);
+      arr.push({
+        x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: lifeMs, maxLife: lifeMs, color,
+        size: sizeMin + Math.random() * (sizeMax - sizeMin),
+      });
+    }
+  };
+
+  const spawnMote = (state) => {
+    const { w, h } = state.bounds;
+    const elapsedSec = state.elapsed / 1000;
+    const isHazard = Math.random() < clamp(0.22 + elapsedSec * 0.004, 0.22, 0.5);
+    const radius = isHazard
+      ? state.player.radius + 6 + Math.random() * 22
+      : 4 + Math.random() * 10;
+    const edge = Math.floor(Math.random() * 4);
+    let x, y;
+    if (edge === 0) { x = -radius; y = Math.random() * h; }
+    else if (edge === 1) { x = w + radius; y = Math.random() * h; }
+    else if (edge === 2) { x = Math.random() * w; y = -radius; }
+    else { x = Math.random() * w; y = h + radius; }
+    const ang = Math.atan2(h / 2 - y, w / 2 - x) + (Math.random() - 0.5) * 1.4;
+    const spd = 24 + Math.random() * 34;
+    state.motes.push({
+      x, y, radius, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      hue: MOTE_HUES[Math.floor(Math.random() * MOTE_HUES.length)],
+      hazard: isHazard, wob: Math.random() * Math.PI * 2,
+    });
+  };
+
+  const endGame = useCallback(() => {
+    gs.current.running = false;
+    phaseRef.current = 'over';
+    setPhase('over');
+    overSound();
+    setStatusMsg('Your orb was devoured.');
+  }, [overSound]);
+
+  const tick = useCallback((ts) => {
+    const state = gs.current;
+    if (!state.running) return;
+    if (!lastTsRef.current) lastTsRef.current = ts;
+    let dt = (ts - lastTsRef.current) / 1000;
+    dt = Math.min(dt, 0.05);
+    lastTsRef.current = ts;
+    state.elapsed += dt * 1000;
+
+    const { w, h } = state.bounds;
+    const player = state.player;
+
+    // combo decay
+    if (comboRef.current > 0 && ts > comboExpireRef.current) {
+      comboRef.current = 0;
+      setCombo(0);
+    }
+
+    // pointer-drag chases the cursor/finger; keyboard impulses (applied in the
+    // keydown handler) just decay via friction here so taps leave a lasting nudge
+    const maxSpeed = Math.max(80, BASE_SPEED - player.radius * 2.4);
+    const ptr = pointerRef.current;
+    if (ptr.down) {
+      let dx = ptr.x - player.x, dy = ptr.y - player.y;
+      const mag = Math.hypot(dx, dy) || 1;
+      const ease = clamp(mag / 30, 0, 1);
+      dx /= mag; dy /= mag;
+      const desiredVx = dx * maxSpeed * ease;
+      const desiredVy = dy * maxSpeed * ease;
+      player.vx += (desiredVx - player.vx) * Math.min(1, dt * 9);
+      player.vy += (desiredVy - player.vy) * Math.min(1, dt * 9);
+    } else {
+      const decay = Math.max(0, 1 - dt * 3.2);
+      player.vx *= decay;
+      player.vy *= decay;
+      const speed = Math.hypot(player.vx, player.vy);
+      if (speed > maxSpeed) { player.vx = (player.vx / speed) * maxSpeed; player.vy = (player.vy / speed) * maxSpeed; }
+    }
+    player.x = clamp(player.x + player.vx * dt, player.radius, w - player.radius);
+    player.y = clamp(player.y + player.vy * dt, player.radius, h - player.radius);
+
+    // spawn motes, ramps up over time
+    state.moteTimer -= dt * 1000;
+    if (state.moteTimer <= 0) {
+      spawnMote(state);
+      const interval = Math.max(220, 620 - (state.elapsed / 1000) * 6);
+      state.moteTimer = interval * (0.7 + Math.random() * 0.6);
+    }
+
+    let scoreDelta = 0;
+
+    for (let i = state.motes.length - 1; i >= 0; i--) {
+      const m = state.motes[i];
+      m.wob += dt * 2;
+      m.x += m.vx * dt + Math.sin(m.wob) * 4 * dt;
+      m.y += m.vy * dt + Math.cos(m.wob * 0.8) * 4 * dt;
+      if (m.x < -80 || m.x > w + 80 || m.y < -80 || m.y > h + 80) { state.motes.splice(i, 1); continue; }
+
+      const rr = player.radius + m.radius;
+      if (dist2(m.x, m.y, player.x, player.y) < rr * rr) {
+        if (player.radius > m.radius * 1.02) {
+          // devour
+          state.motes.splice(i, 1);
+          comboRef.current += 1;
+          comboExpireRef.current = ts + COMBO_WINDOW_MS;
+          setCombo(comboRef.current);
+          const gained = Math.round(m.radius * 4 * (1 + comboRef.current * 0.12));
+          scoreDelta += gained;
+          player.radius = clamp(player.radius + m.radius * 0.1, START_RADIUS, MAX_RADIUS);
+          eatSound(m.radius > 14);
+          spawnBurst(state.particles, m.x, m.y, m.hue, 12, 40, 160, 2, 5, 480);
+        } else if (ts >= state.invulnUntil) {
+          // hit by a bigger orb
+          state.motes.splice(i, 1);
+          state.invulnUntil = ts + INVULN_MS;
+          state.shake = 12;
+          comboRef.current = 0;
+          setCombo(0);
+          livesRef.current -= 1;
+          setLives(livesRef.current);
+          setHurt(true);
+          setTimeout(() => setHurt(false), 400);
+          hitSound();
+          player.radius = Math.max(START_RADIUS, player.radius - 5);
+          spawnBurst(state.particles, player.x, player.y, '#ff4d6d', 18, 60, 220, 2, 6, 550);
+          if (livesRef.current <= 0) {
+            if (scoreDelta) { scoreRef.current += scoreDelta; scoreDelta = 0; setScore(scoreRef.current); }
+            endGame();
+            return;
+          }
+        }
+      }
+    }
+
+    if (scoreDelta) {
+      scoreRef.current += scoreDelta;
+      if (scoreRef.current > highScoreRef.current) {
+        highScoreRef.current = scoreRef.current;
+        localStorage.setItem(HS_KEY, String(scoreRef.current));
+        setHighScore(scoreRef.current);
+      }
+      setScore(scoreRef.current);
+    }
+
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const pt = state.particles[i];
+      pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+      pt.vx *= 0.94; pt.vy *= 0.94;
+      pt.life -= dt * 1000;
+      if (pt.life <= 0) state.particles.splice(i, 1);
+    }
+    if (state.particles.length > 300) state.particles.splice(0, state.particles.length - 300);
+    if (state.motes.length > 60) state.motes.splice(0, state.motes.length - 60);
+
+    if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 40);
+
+    draw(state, ts);
+    rafRef.current = requestAnimationFrame(tick);
+  }, [endGame, eatSound, hitSound]);
+
+  const draw = (state, ts) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const { w, h } = state.bounds;
+    const player = state.player;
+
+    ctx.save();
+    if (state.shake > 0) {
+      ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake);
+    }
+
+    ctx.fillStyle = 'rgba(8,6,26,0.4)';
+    ctx.fillRect(-20, -20, w + 40, h + 40);
+
+    // grid pulses continuously so the arena always reads as "alive", even in corners
+    // untouched by motes — a static grid would let the canvas appear frozen there.
+    const gridAlpha = 0.045 + Math.sin(state.elapsed / 480) * 0.025;
+    ctx.strokeStyle = `rgba(157,107,255,${Math.max(0.015, gridAlpha)})`;
+    ctx.lineWidth = 1;
+    const gridSize = 44;
+    for (let x = 0; x < w; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y < h; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+    for (const m of state.motes) {
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      const grad = ctx.createRadialGradient(0, 0, 1, 0, 0, m.radius);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.5, m.hue);
+      grad.addColorStop(1, m.hazard ? '#4a0030' : m.hue);
+      ctx.fillStyle = grad;
+      ctx.shadowColor = m.hue;
+      ctx.shadowBlur = m.hazard ? 18 : 10;
+      ctx.beginPath();
+      ctx.arc(0, 0, m.radius, 0, Math.PI * 2);
+      ctx.fill();
+      if (m.hazard) {
+        ctx.strokeStyle = 'rgba(255,80,110,0.8)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.shadowBlur = 0;
+
+    for (const pt of state.particles) {
+      ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+      ctx.fillStyle = pt.color;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    const invuln = ts < state.invulnUntil;
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    if (invuln && Math.floor(ts / 90) % 2 === 0) ctx.globalAlpha = 0.4;
+    const pgrad = ctx.createRadialGradient(0, 0, 2, 0, 0, player.radius + 8);
+    pgrad.addColorStop(0, '#ffffff');
+    pgrad.addColorStop(0.45, '#c39dff');
+    pgrad.addColorStop(1, '#7a3cff');
+    ctx.fillStyle = pgrad;
+    ctx.shadowColor = '#9d6bff';
+    ctx.shadowBlur = 22;
+    ctx.beginPath();
+    ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+  };
+
+  const startGame = () => {
+    resizeCanvas();
+    const state = makeGameState();
+    state.bounds = gs.current.bounds;
+    state.player.x = state.bounds.w / 2;
+    state.player.y = state.bounds.h / 2;
+    state.running = true;
+    gs.current = state;
+    scoreRef.current = 0;
+    comboRef.current = 0;
+    comboExpireRef.current = 0;
+    livesRef.current = LIVES_START;
+    lastTsRef.current = 0;
+    pointerRef.current.down = false;
+    setScore(0);
+    setCombo(0);
+    setLives(LIVES_START);
+    setStatusMsg('Steer with arrows/WASD or drag — devour smaller orbs, dodge bigger ones.');
+    setPhase('playing');
+    phaseRef.current = 'playing';
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+  };
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+
+  return (
+    <div className="app" data-testid="game-canvas">
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'❤'.repeat(Math.max(0, lives))}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+      </div>
+
+      <div className="title" style={{ marginTop: 36 }}>NEON DEVOURER</div>
+
+      <div className="arenaOuter" ref={arenaRef} data-testid="play-field">
+        <canvas ref={canvasRef} data-testid="arena" />
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="subtitle">Steer your glowing orb with arrow keys / WASD, or click-and-drag / touch-and-drag.<br />Devour orbs smaller than you to grow — but bigger orbs will devour YOU.<br />Chain eats fast for a rising combo multiplier!</div>
+            <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ fontSize: 'clamp(20px, 6vw, 30px)' }}>DEVOURED</div>
+            <div className="hudValue" data-testid="final-score">Score: {score}</div>
+            <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+            <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">Neon Devourer — grow by absorbing smaller orbs, dodge the bigger ones</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
