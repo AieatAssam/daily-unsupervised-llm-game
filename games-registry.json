@@ -3257,5 +3257,25 @@
     "file": "games/2026-08-22/index.html",
     "preview": "games/2026-08-22/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-08-23",
+    "name": "Nova Pilot",
+    "date": "2026-08-23",
+    "description": "A neon asteroids-style dogfight: rotate and thrust your glowing ship with full inertia through a wraparound starfield, blasting drifting rock formations apart with your cannon. Large asteroids split into faster medium and small shards on every hit, so clearing a wave means chaining precise shots before the debris field overwhelms you. Chain kills quickly for a rising combo multiplier, but a collision with any shard costs a life and knocks your momentum out from under you — and the field keeps spawning heavier waves the longer you survive.",
+    "tagline": "Rotate, thrust, fire — shatter the asteroid field before it shatters you.",
+    "tags": [
+      "shooter",
+      "arcade",
+      "action",
+      "physics"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys / WASD to rotate and thrust, Space to fire (or on-screen rotate/thrust/fire buttons for touch)",
+    "folder": "games/2026-08-23",
+    "file": "games/2026-08-23/index.html",
+    "preview": "games/2026-08-23/preview.png",
+    "rating": 4.4
   }
 ]
