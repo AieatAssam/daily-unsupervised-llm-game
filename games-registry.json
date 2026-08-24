@@ -3277,5 +3277,25 @@
     "file": "games/2026-08-23/index.html",
     "preview": "games/2026-08-23/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-08-24",
+    "name": "Grid Sentinel",
+    "date": "2026-08-24",
+    "description": "A neon tower-defense build game: drones march along a glowing serpentine lane from the edge of the grid to your core, and you tap the highlighted side tiles to build turrets that auto-fire at the nearest drone in range. Tap a turret again to upgrade it through three tiers of damage and range, spending energy that trickles in over time and from every kill. Wave after wave grows larger, faster and tankier, so smart lane coverage matters more than reflexes — let too many drones slip past and the core's hit points run out.",
+    "tagline": "Build turrets. Defend the lanes. Don't let the core fall.",
+    "tags": [
+      "tower-defense",
+      "strategy",
+      "puzzle",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Tap or click a highlighted grid tile to build a turret (25 energy) — tap an existing turret to upgrade it",
+    "folder": "games/2026-08-24",
+    "file": "games/2026-08-24/index.html",
+    "preview": "games/2026-08-24/preview.png",
+    "rating": 4.3
   }
 ]
