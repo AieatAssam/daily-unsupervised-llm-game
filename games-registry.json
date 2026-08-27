@@ -3317,5 +3317,25 @@
     "file": "games/2026-08-26/index.html",
     "preview": "games/2026-08-26/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-08-27",
+    "name": "Flow Grid",
+    "date": "2026-08-27",
+    "description": "A neon pipe-flow connection puzzle: drag from a glowing node to its matching color anywhere on the grid, threading an unbroken line through empty cells to link every pair before the countdown bar drains. Lines can't cross other colors, so tight boards demand real route planning under pressure. Clear every pair for a time bonus and an instant level-up into a bigger, busier grid — let the clock hit zero with pairs still unlinked and you lose one of three lives.",
+    "tagline": "Drag the flow. Link every node before time runs dry.",
+    "tags": [
+      "puzzle",
+      "connection",
+      "drag",
+      "strategy"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click and drag / touch and drag from a glowing node to its matching color across the grid",
+    "folder": "games/2026-08-27",
+    "file": "games/2026-08-27/index.html",
+    "preview": "games/2026-08-27/preview.png",
+    "rating": 4.3
   }
 ]
