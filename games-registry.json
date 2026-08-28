@@ -3322,7 +3322,7 @@
     "id": "2026-08-27",
     "name": "Flow Grid",
     "date": "2026-08-27",
-    "description": "A neon pipe-flow connection puzzle: drag from a glowing node to its matching color anywhere on the grid, threading an unbroken line through empty cells to link every pair before the countdown bar drains. Lines can't cross other colors, so tight boards demand real route planning under pressure. Clear every pair for a time bonus and an instant level-up into a bigger, busier grid — let the clock hit zero with pairs still unlinked and you lose one of three lives.",
+    "description": "A neon pipe-flow connection puzzle: drag from a glowing node to its matching color anywhere on the grid, threading an unbroken line through empty cells to link every pair before the countdown bar drains. Lines can't cross other colors, so tight boards demand real route planning under pressure. Clear every pair for a time bonus and an instant level-up into a bigger, busier grid \u2014 let the clock hit zero with pairs still unlinked and you lose one of three lives.",
     "tagline": "Drag the flow. Link every node before time runs dry.",
     "tags": [
       "puzzle",
@@ -3337,5 +3337,26 @@
     "file": "games/2026-08-27/index.html",
     "preview": "games/2026-08-27/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-08-28",
+    "name": "Color Clash",
+    "date": "2026-08-28",
+    "description": "A neon Stroop-effect reflex game: a color word flashes on screen painted in a mismatched ink color, and you must tap the swatch matching what it's PAINTED in, not what it spells. Every correct tap builds a rising combo and speeds up the countdown bar, every wrong tap or timeout costs one of three lives, and the color palette grows from four swatches to six as your level climbs, making the mental interference harder to shake.",
+    "tagline": "Ignore the word. Trust your eyes. Tap the true color.",
+    "tags": [
+      "reflex",
+      "cognitive",
+      "color",
+      "reaction",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap / click the color swatch matching the ink color of the word (not the word itself)",
+    "folder": "games/2026-08-28",
+    "file": "games/2026-08-28/index.html",
+    "preview": "games/2026-08-28/preview.png",
+    "rating": 4.4
   }
 ]
