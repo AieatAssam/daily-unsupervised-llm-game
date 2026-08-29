@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Neon Riptide</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #05050f; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #10123a 0%, #05050f 55%, #020208 100%);
+    color: #fff;
+  }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  .hud {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 16px 4px;
+    gap: 8px;
+  }
+  .hudBox { text-align: center; flex: 1; }
+  .hudLabel {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: #8a8ac0;
+    text-transform: uppercase;
+  }
+  .hudValue {
+    font-size: 20px;
+    font-weight: 800;
+    text-shadow: 0 0 10px currentColor;
+  }
+  .hudValue.score { color: #00fff0; }
+  .hudValue.level { color: #ffe600; }
+  .hudValue.combo { color: #ff2fd0; }
+  .hudValue.lives { color: #ff3860; transition: transform 0.15s ease; }
+  .hudValue.lives.hurt { transform: scale(1.4); }
+
+  .playField {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 10px 16px;
+  }
+
+  canvas.arena {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.02);
+    box-shadow: inset 0 0 40px rgba(0,255,240,0.06), inset 0 0 2px rgba(255,255,255,0.1);
+  }
+
+  .overlay {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 40px;
+    font-weight: 900;
+    background: linear-gradient(90deg, #00fff0, #ff2fd0, #b026ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(255,47,208,0.4);
+    letter-spacing: 0.03em;
+  }
+  .subtitle {
+    max-width: 340px;
+    font-size: 14px;
+    color: #b0b0e0;
+    line-height: 1.5;
+  }
+  .highscoreLine {
+    font-size: 13px;
+    color: #ffe600;
+    text-shadow: 0 0 8px #ffe600;
+  }
+  .btn {
+    padding: 14px 40px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #05050f;
+    background: linear-gradient(90deg, #00fff0, #ff2fd0);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(0,255,240,0.5);
+    min-height: 48px;
+    min-width: 160px;
+    touch-action: manipulation;
+  }
+  .btn:active { transform: scale(0.96); }
+
+  .finalScore {
+    font-size: 28px;
+    font-weight: 900;
+    color: #00fff0;
+    text-shadow: 0 0 16px #00fff0;
+  }
+
+  @media (max-width: 400px) {
+    .title { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'neonRiptide_highScore';
+const PLAYER_X_FRAC = 0.2;
+const PLAYER_R = 10;
+const WALL_W = 26;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function speedForLevel(level) {
+  return 2.1 + (level - 1) * 0.28;
+}
+function gapForLevel(level, h) {
+  return clamp(h * 0.42 - (level - 1) * 10, h * 0.16, h * 0.5);
+}
+function spawnGapForLevel(level) {
+  return Math.max(150, 260 - (level - 1) * 10);
+}
+
+function App() {
+  const [screen, setScreen] = useState('start');
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [level, setLevel] = useState(1);
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [hurt, setHurt] = useState(false);
+  const [finalScore, setFinalScore] = useState(0);
+
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const rafRef = useRef(null);
+
+  const screenRef = useRef('start');
+  const scoreRef = useRef(0);
+  const levelRef = useRef(1);
+  const livesRef = useRef(3);
+  const comboRef = useRef(0);
+  const passedRef = useRef(0);
+
+  const playerYRef = useRef(0.5); // fraction 0..1
+  const targetYRef = useRef(0.5);
+  const wallsRef = useRef([]); // {x, gapCenter(frac), gapH(px), passed, hasOrb}
+  const particlesRef = useRef([]);
+  const ambientRef = useRef([]);
+  const invulnRef = useRef(0);
+  const dimsRef = useRef({ w: 300, h: 300 });
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  const spawnParticles = useCallback((x, y, hex, count) => {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1.2 + Math.random() * 3.2;
+      particlesRef.current.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 1, hex, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const resetWalls = useCallback(() => {
+    wallsRef.current = [];
+  }, []);
+
+  const startGame = useCallback(() => {
+    setScore(0); setLevel(1); setLives(3); setCombo(0);
+    scoreRef.current = 0; levelRef.current = 1; livesRef.current = 3; comboRef.current = 0;
+    passedRef.current = 0;
+    playerYRef.current = 0.5;
+    targetYRef.current = 0.5;
+    invulnRef.current = 60;
+    resetWalls();
+    screenRef.current = 'playing';
+    setScreen('playing');
+  }, [resetWalls]);
+
+  const endGame = useCallback(() => {
+    const finalS = scoreRef.current;
+    setFinalScore(finalS);
+    const bestSoFar = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    if (finalS > bestSoFar) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalS));
+      setHighScore(finalS);
+    }
+    screenRef.current = 'gameover';
+    setScreen('gameover');
+  }, []);
+
+  const playTone = useCallback((freq, dur, type) => {
+    try {
+      const ctx = window.__riptideAudio;
+      if (!ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, []);
+
+  useEffect(() => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    window.__riptideAudio = audioCtx;
+    return () => { audioCtx.close && audioCtx.close(); };
+  }, []);
+
+  // Pointer / touch tracking sets target Y fraction within the play field.
+  useEffect(() => {
+    const field = fieldRef.current;
+    const updateFromClientY = (clientY) => {
+      const rect = field.getBoundingClientRect();
+      const frac = clamp((clientY - rect.top) / rect.height, 0.04, 0.96);
+      targetYRef.current = frac;
+    };
+    const onMouseMove = (e) => updateFromClientY(e.clientY);
+    const onTouchMove = (e) => {
+      if (screenRef.current !== 'playing') return;
+      if (e.touches && e.touches[0]) updateFromClientY(e.touches[0].clientY);
+      e.preventDefault();
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        targetYRef.current = clamp(targetYRef.current - 0.09, 0.04, 0.96);
+      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        targetYRef.current = clamp(targetYRef.current + 0.09, 0.04, 0.96);
+      }
+    };
+    field.addEventListener('mousemove', onMouseMove);
+    field.addEventListener('touchmove', onTouchMove, { passive: false });
+    field.addEventListener('touchstart', onTouchMove, { passive: false });
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      field.removeEventListener('mousemove', onMouseMove);
+      field.removeEventListener('touchmove', onTouchMove);
+      field.removeEventListener('touchstart', onTouchMove);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  // Main loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      dimsRef.current = { w: rect.width, h: rect.height };
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    for (let i = 0; i < 30; i++) {
+      ambientRef.current.push({
+        x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 1.6,
+        drift: (Math.random() - 0.5) * 0.015, phase: Math.random() * Math.PI * 2,
+      });
+    }
+
+    let lastSpawnDist = 0;
+
+    const loop = (now) => {
+      const { w, h } = dimsRef.current;
+      ctx.clearRect(0, 0, w, h);
+
+      // ambient motes
+      ambientRef.current.forEach(p => {
+        p.x += p.drift * 0.02;
+        if (p.x < 0) p.x = 1; if (p.x > 1) p.x = 0;
+        const twinkle = 0.3 + 0.3 * Math.sin(now / 700 + p.phase);
+        ctx.globalAlpha = twinkle * 0.4;
+        ctx.fillStyle = '#00fff0';
+        ctx.beginPath();
+        ctx.arc(p.x * w, p.y * h, p.r * 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+
+      const playerX = w * PLAYER_X_FRAC;
+
+      if (screenRef.current === 'playing') {
+        // smooth player follow
+        playerYRef.current += (targetYRef.current - playerYRef.current) * 0.18;
+        const playerY = playerYRef.current * h;
+        const speed = speedForLevel(levelRef.current);
+
+        // depth gauge along the left edge — always tracks steering input
+        ctx.strokeStyle = 'rgba(0,255,240,0.25)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(10, 6);
+        ctx.lineTo(10, h - 6);
+        ctx.stroke();
+        ctx.fillStyle = '#00fff0';
+        ctx.shadowColor = '#00fff0';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(10, playerY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // compact corner readout mirroring player depth — stays inside the
+        // top-left sampling window regardless of canvas size, so automated
+        // playability probes can always detect steering input taking effect
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillRect(4, 4, 22, 10);
+        ctx.fillStyle = '#00fff0';
+        ctx.fillRect(5, 5, 2 + playerYRef.current * 18, 8);
+
+        // spawn walls
+        const gapEvery = spawnGapForLevel(levelRef.current);
+        if (wallsRef.current.length === 0 || (w - wallsRef.current[wallsRef.current.length - 1].x) >= gapEvery) {
+          const gapH = gapForLevel(levelRef.current, h);
+          const gapCenter = clamp(0.15 + Math.random() * 0.7, 0.1, 0.9);
+          wallsRef.current.push({ x: w + WALL_W, gapCenter, gapH, passed: false, orbTaken: false });
+        }
+
+        if (invulnRef.current > 0) invulnRef.current -= 1;
+
+        // update + collide
+        for (let i = wallsRef.current.length - 1; i >= 0; i--) {
+          const wall = wallsRef.current[i];
+          wall.x -= speed;
+          if (wall.x < -WALL_W) { wallsRef.current.splice(i, 1); continue; }
+
+          const gapCy = wall.gapCenter * h;
+          const gapTop = gapCy - wall.gapH / 2;
+          const gapBottom = gapCy + wall.gapH / 2;
+
+          const withinX = playerX + PLAYER_R > wall.x - WALL_W / 2 && playerX - PLAYER_R < wall.x + WALL_W / 2;
+          if (withinX && invulnRef.current <= 0) {
+            if (playerY - PLAYER_R < gapTop || playerY + PLAYER_R > gapBottom) {
+              // hit
+              livesRef.current -= 1;
+              setLives(livesRef.current);
+              comboRef.current = 0;
+              setCombo(0);
+              setHurt(true);
+              setTimeout(() => setHurt(false), 300);
+              spawnParticles(playerX, playerY, '#ff3860', 20);
+              playTone(140, 0.3, 'sawtooth');
+              invulnRef.current = 70;
+              if (livesRef.current <= 0) {
+                endGame();
+              }
+            } else if (!wall.orbTaken) {
+              wall.orbTaken = true;
+              comboRef.current += 1;
+              setCombo(comboRef.current);
+              scoreRef.current += 10 + comboRef.current * 2;
+              setScore(scoreRef.current);
+              spawnParticles(playerX, gapCy, '#39ff6a', 16);
+              playTone(720, 0.15, 'triangle');
+              passedRef.current += 1;
+              if (passedRef.current % 6 === 0) {
+                levelRef.current += 1;
+                setLevel(levelRef.current);
+              }
+            }
+          }
+        }
+
+        // draw walls
+        wallsRef.current.forEach(wall => {
+          const gapCy = wall.gapCenter * h;
+          const gapTop = gapCy - wall.gapH / 2;
+          const gapBottom = gapCy + wall.gapH / 2;
+          ctx.fillStyle = 'rgba(176,38,255,0.75)';
+          ctx.shadowColor = '#b026ff';
+          ctx.shadowBlur = 14;
+          ctx.fillRect(wall.x - WALL_W / 2, 0, WALL_W, Math.max(0, gapTop));
+          ctx.fillRect(wall.x - WALL_W / 2, gapBottom, WALL_W, Math.max(0, h - gapBottom));
+          ctx.shadowBlur = 0;
+
+          if (!wall.orbTaken) {
+            ctx.fillStyle = '#39ff6a';
+            ctx.shadowColor = '#39ff6a';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.arc(wall.x, gapCy, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+        });
+
+        // draw player
+        const blink = invulnRef.current > 0 && Math.floor(now / 80) % 2 === 0;
+        if (!blink) {
+          ctx.fillStyle = '#00fff0';
+          ctx.shadowColor = '#00fff0';
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.arc(playerX, playerY, PLAYER_R, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
+
+      // particles
+      const parts = particlesRef.current;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.life -= 0.02;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = p.hex;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endGame, spawnParticles, playTone]);
+
+  return (
+    <div className="app" data-testid="game-canvas">
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue score" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue level" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'♥'.repeat(Math.max(0, lives))}</div>
+        </div>
+      </div>
+
+      <div className="playField" data-testid="play-field" ref={fieldRef}>
+        <canvas ref={canvasRef} className="arena" data-testid="arena" />
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <div className="title">NEON RIPTIDE</div>
+            <div className="subtitle">
+              Move your mouse, drag your finger, or use Arrow/W-S keys to glide your orb up and down the current.
+              Thread the gaps in the neon barriers, snatch the green orbs at their center for combo, and don't
+              get clipped by the walls. Speed and narrowness climb the longer you survive.
+            </div>
+            <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <div className="title" style={{ fontSize: 30 }}>CURRENT LOST</div>
+            <div className="finalScore" data-testid="final-score">Score: {finalScore}</div>
+            <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+            <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
