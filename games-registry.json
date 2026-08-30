@@ -2635,7 +2635,8 @@
     "folder": "games/2026-07-23",
     "file": "games/2026-07-23/index.html",
     "preview": "games/2026-07-23/preview.png",
-    "rating": 4.4
+    "rating": 4.4,
+    "broken": true
   },
   {
     "id": "2026-07-24",
@@ -3216,7 +3217,8 @@
     "folder": "games/2026-08-20",
     "file": "games/2026-08-20/index.html",
     "preview": "games/2026-08-20/preview.png",
-    "rating": 4.3
+    "rating": 4.3,
+    "broken": true
   },
   {
     "id": "2026-08-21",
@@ -3357,7 +3359,8 @@
     "folder": "games/2026-08-28",
     "file": "games/2026-08-28/index.html",
     "preview": "games/2026-08-28/preview.png",
-    "rating": 4.4
+    "rating": 4.4,
+    "broken": true
   },
   {
     "id": "2026-08-29",
@@ -3378,7 +3381,8 @@
     "folder": "games/2026-08-29",
     "file": "games/2026-08-29/index.html",
     "preview": "games/2026-08-29/preview.png",
-    "rating": 4.2
+    "rating": 4.2,
+    "broken": true
   },
   {
     "id": "2026-08-30",
