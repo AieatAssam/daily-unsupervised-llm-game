@@ -3379,5 +3379,26 @@
     "file": "games/2026-08-29/index.html",
     "preview": "games/2026-08-29/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-08-30",
+    "name": "Chroma Mix",
+    "date": "2026-08-30",
+    "description": "A neon color-blending precision game: a glowing target hue appears in a ring, and you tap R, G and B pads to pump a mixing orb toward it while the channels steadily drain, forcing you to keep pumping in the right ratio. Get the blend within tolerance and hit LOCK IN before the timer runs out for a rising combo and score, but lock in a bad mix or run out of time and you lose one of three lives. Tolerance tightens and the clock quickens as your level climbs, demanding faster, more precise color judgment.",
+    "tagline": "Pump the pads. Nail the hue. Lock it in.",
+    "tags": [
+      "precision",
+      "color",
+      "arcade",
+      "reflex",
+      "puzzle"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap / click the R, G, B pads (or press R/G/B, arrow keys, A/D) to mix, then tap LOCK IN (or Space) to submit",
+    "folder": "games/2026-08-30",
+    "file": "games/2026-08-30/index.html",
+    "preview": "games/2026-08-30/preview.png",
+    "rating": 4.3
   }
 ]

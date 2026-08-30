@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Chroma Mix</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #06050f; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #1a0f3a 0%, #06050f 55%, #030308 100%);
+    color: #fff;
+  }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .bgGlow {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 20%, rgba(255, 47, 208, 0.12), transparent 40%),
+      radial-gradient(circle at 80% 30%, rgba(0, 255, 240, 0.10), transparent 40%),
+      radial-gradient(circle at 50% 90%, rgba(176, 38, 255, 0.12), transparent 45%);
+    pointer-events: none;
+  }
+
+  .hud {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 16px 4px;
+    gap: 8px;
+  }
+  .hudBox { text-align: center; flex: 1; }
+  .hudLabel {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: #8a8ac0;
+    text-transform: uppercase;
+  }
+  .hudValue {
+    font-size: 20px;
+    font-weight: 800;
+    text-shadow: 0 0 10px currentColor;
+  }
+  .hudValue.score { color: #00fff0; }
+  .hudValue.level { color: #ffe600; }
+  .hudValue.combo { color: #ff2fd0; }
+  .hudValue.lives { color: #ff3860; transition: transform 0.15s ease; }
+  .hudValue.lives.hurt { transform: scale(1.4); }
+
+  .playField {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 16px 14px;
+    gap: 10px;
+  }
+
+  canvas.arena {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .timerBarTrack {
+    width: 90%;
+    max-width: 360px;
+    height: 8px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden;
+    box-shadow: inset 0 0 6px rgba(0,0,0,0.6);
+  }
+  .timerBarFill {
+    width: 100%;
+    height: 100%;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #00fff0, #ff2fd0);
+    box-shadow: 0 0 12px #00fff0;
+    transform-origin: left;
+    will-change: transform;
+  }
+
+  .prompt {
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    color: #8a8ac0;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  .ringSlot {
+    width: 100%;
+    max-width: 360px;
+    height: 190px;
+  }
+
+  .swatchRow {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+  }
+  .swatchBox { text-align: center; }
+  .swatchLabel {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: #8a8ac0;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .swatch {
+    width: 46px;
+    height: 46px;
+    border-radius: 10px;
+    border: 2px solid rgba(255,255,255,0.25);
+    box-shadow: 0 0 16px rgba(255,255,255,0.15);
+  }
+  .swatch[data-testid="mix-swatch"] { background: #000; }
+
+  .padsRow {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    max-width: 360px;
+  }
+  .padBtn {
+    position: relative;
+    flex: 1;
+    height: 74px;
+    border-radius: 14px;
+    border: 2px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.04);
+    overflow: hidden;
+    cursor: pointer;
+    touch-action: manipulation;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    transition: transform 0.08s ease;
+  }
+  .padBtn:active { transform: scale(0.94); }
+  .padFill {
+    position: absolute;
+    left: 0; right: 0; top: 0; bottom: 0;
+    transform: scaleY(0);
+    transform-origin: bottom;
+    will-change: transform;
+  }
+  .padR .padFill { background: linear-gradient(180deg, rgba(255,56,96,0.85), rgba(255,56,96,0.35)); }
+  .padG .padFill { background: linear-gradient(180deg, rgba(57,255,106,0.85), rgba(57,255,106,0.35)); }
+  .padB .padFill { background: linear-gradient(180deg, rgba(59,140,255,0.85), rgba(59,140,255,0.35)); }
+  .padLabel {
+    position: relative;
+    z-index: 1;
+    font-size: 15px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    padding-bottom: 8px;
+    text-shadow: 0 0 8px rgba(0,0,0,0.8);
+  }
+
+  .lockBtn {
+    width: 100%;
+    max-width: 360px;
+    min-height: 52px;
+    border-radius: 14px;
+    border: none;
+    font-size: 15px;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    color: #06050f;
+    background: linear-gradient(90deg, #ffe600, #ff9d00);
+    box-shadow: 0 0 20px rgba(255,230,0,0.45);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.08s ease, box-shadow 0.2s ease;
+  }
+  .lockBtn:active { transform: scale(0.97); }
+  .lockBtn.flashOk { background: linear-gradient(90deg, #39ff6a, #00fff0); box-shadow: 0 0 30px #39ff6a; }
+  .lockBtn.flashBad { background: linear-gradient(90deg, #ff3860, #b026ff); box-shadow: 0 0 30px #ff3860; color: #fff; }
+
+  .overlay {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 38px;
+    font-weight: 900;
+    background: linear-gradient(90deg, #ff3860, #39ff6a, #3b8cff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(255,47,208,0.4);
+    letter-spacing: 0.03em;
+  }
+  .subtitle {
+    max-width: 320px;
+    font-size: 14px;
+    color: #b0b0e0;
+    line-height: 1.5;
+  }
+  .highscoreLine {
+    font-size: 13px;
+    color: #ffe600;
+    text-shadow: 0 0 8px #ffe600;
+  }
+  .btn {
+    padding: 14px 40px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #06050f;
+    background: linear-gradient(90deg, #00fff0, #ff2fd0);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(0,255,240,0.5);
+    min-height: 48px;
+    min-width: 160px;
+    touch-action: manipulation;
+  }
+  .btn:active { transform: scale(0.96); }
+
+  .finalScore {
+    font-size: 28px;
+    font-weight: 900;
+    color: #00fff0;
+    text-shadow: 0 0 16px #00fff0;
+  }
+
+  @media (max-width: 400px) {
+    .title { font-size: 28px; }
+    .padBtn { height: 64px; }
+    .swatch { width: 38px; height: 38px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'chromaMix_highScore';
+const LEVEL_UP_EVERY = 5;
+const PAD_ADD = 42;
+const DECAY_PER_SEC = 62;
+const MAX_DIST = Math.sqrt(3 * 255 * 255);
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function timerForLevel(level) {
+  return Math.max(2600, 6000 - (level - 1) * 300);
+}
+function toleranceForLevel(level) {
+  return Math.max(28, 72 - (level - 1) * 3);
+}
+function randTarget() {
+  let r, g, b, tries = 0;
+  do {
+    r = 20 + Math.floor(Math.random() * 236);
+    g = 20 + Math.floor(Math.random() * 236);
+    b = 20 + Math.floor(Math.random() * 236);
+    tries++;
+  } while (Math.max(r, g, b) - Math.min(r, g, b) < 60 && tries < 12);
+  return { r, g, b };
+}
+function rgbCss(r, g, b) { return `rgb(${r | 0}, ${g | 0}, ${b | 0})`; }
+
+function App() {
+  const [screen, setScreen] = useState('start');
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [level, setLevel] = useState(1);
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [hurt, setHurt] = useState(false);
+  const [target, setTarget] = useState({ r: 200, g: 80, b: 160 });
+  const [lockFlash, setLockFlash] = useState(null);
+  const [finalScore, setFinalScore] = useState(0);
+
+  const canvasRef = useRef(null);
+  const ringSlotRef = useRef(null);
+  const ringGeomRef = useRef({ cx: 0, cy: 0, radius: 40 });
+  const particlesRef = useRef([]);
+  const ambientRef = useRef([]);
+  const channelsRef = useRef([0, 0, 0]);
+  // Pumped ~60x/sec while playing — written straight to the DOM in the
+  // render loop (see below) instead of through React state, so mixing
+  // input never triggers a re-render.
+  const padFillRefs = useRef([null, null, null]);
+  const mixSwatchRef = useRef(null);
+  const timerBarFillRef = useRef(null);
+  const targetRef = useRef({ r: 200, g: 80, b: 160 });
+  const roundExpireRef = useRef(0);
+  const roundDurRef = useRef(6000);
+  const toleranceRef = useRef(72);
+  const levelRef = useRef(1);
+  const streakRef = useRef(0);
+  const livesRef = useRef(3);
+  const scoreRef = useRef(0);
+  const screenRef = useRef('start');
+  const lockingRef = useRef(false);
+  const lastTsRef = useRef(0);
+  const rafRef = useRef(null);
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  const spawnParticles = useCallback((x, y, hex, count) => {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1.4 + Math.random() * 3.4;
+      particlesRef.current.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 1, hex, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const spawnRound = useCallback(() => {
+    const lvl = levelRef.current;
+    const t = randTarget();
+    targetRef.current = t;
+    toleranceRef.current = toleranceForLevel(lvl);
+    roundDurRef.current = timerForLevel(lvl);
+    roundExpireRef.current = performance.now() + roundDurRef.current;
+    lockingRef.current = false;
+    channelsRef.current = [0, 0, 0];
+    padFillRefs.current.forEach(el => { if (el) el.style.transform = 'scaleY(0)'; });
+    if (mixSwatchRef.current) mixSwatchRef.current.style.background = 'rgb(0, 0, 0)';
+    if (timerBarFillRef.current) timerBarFillRef.current.style.transform = 'scaleX(1)';
+    setTarget(t);
+    setLockFlash(null);
+  }, []);
+
+  const endGame = useCallback(() => {
+    const finalS = scoreRef.current;
+    setFinalScore(finalS);
+    const bestSoFar = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    if (finalS > bestSoFar) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalS));
+      setHighScore(finalS);
+    }
+    screenRef.current = 'gameover';
+    setScreen('gameover');
+  }, []);
+
+  const startGame = useCallback(() => {
+    setScore(0); setLevel(1); setLives(3); setCombo(0);
+    scoreRef.current = 0; levelRef.current = 1; livesRef.current = 3; streakRef.current = 0;
+    screenRef.current = 'playing';
+    setScreen('playing');
+    spawnRound();
+  }, [spawnRound]);
+
+  useEffect(() => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    window.__chromaMixAudio = audioCtx;
+    return () => { audioCtx.close && audioCtx.close(); };
+  }, []);
+
+  const playTone = useCallback((freq, dur, type) => {
+    try {
+      const ctx = window.__chromaMixAudio;
+      if (!ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, []);
+
+  const addChannel = useCallback((idx, amt) => {
+    if (screenRef.current !== 'playing' || lockingRef.current) return;
+    channelsRef.current[idx] = clamp(channelsRef.current[idx] + amt, 0, 255);
+    playTone([200, 300, 400][idx], 0.08, 'sine');
+  }, [playTone]);
+
+  const handleLock = useCallback((forced) => {
+    if (screenRef.current !== 'playing' || lockingRef.current) return;
+    lockingRef.current = true;
+    const [r, g, b] = channelsRef.current;
+    const t = targetRef.current;
+    const d = Math.sqrt((r - t.r) ** 2 + (g - t.g) ** 2 + (b - t.b) ** 2);
+    const ok = !forced && d <= toleranceRef.current;
+
+    const { cx, cy } = ringGeomRef.current;
+
+    if (ok) {
+      streakRef.current += 1;
+      const nc = streakRef.current;
+      setCombo(nc);
+      scoreRef.current += 15 + nc * 3;
+      setScore(scoreRef.current);
+      spawnParticles(cx, cy, rgbCss(t.r, t.g, t.b), 26);
+      playTone(760, 0.18, 'triangle');
+      setLockFlash('success');
+      if (nc % LEVEL_UP_EVERY === 0) {
+        levelRef.current += 1;
+        setLevel(levelRef.current);
+      }
+    } else {
+      livesRef.current -= 1;
+      setLives(livesRef.current);
+      streakRef.current = 0;
+      setCombo(0);
+      setHurt(true);
+      setTimeout(() => setHurt(false), 300);
+      spawnParticles(cx, cy, '#ff3860', 18);
+      playTone(140, 0.3, 'sawtooth');
+      setLockFlash('fail');
+    }
+
+    setTimeout(() => {
+      if (!ok && livesRef.current <= 0) {
+        endGame();
+      } else {
+        spawnRound();
+      }
+    }, 340);
+  }, [spawnParticles, playTone, spawnRound, endGame]);
+
+  // Keyboard controls: R/G/B (or Arrow Left/Up/Right, A/D) pump channels,
+  // Space/Enter/ArrowDown attempts the lock.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.repeat) return;
+      const k = e.key.toLowerCase();
+      if (k === 'r' || k === 'arrowleft' || k === 'a') addChannel(0, PAD_ADD);
+      else if (k === 'g' || k === 'arrowup') addChannel(1, PAD_ADD);
+      else if (k === 'b' || k === 'arrowright' || k === 'd') addChannel(2, PAD_ADD);
+      else if (k === ' ' || k === 'enter' || k === 'arrowdown') handleLock(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [addChannel, handleLock]);
+
+  // The ring/orb are drawn on the full-bleed background canvas, but must
+  // stay confined to the reserved ringSlot area so they never overlap the
+  // swatches or pads rendered below it. Measure that slot whenever it
+  // mounts (entering "playing") or the layout resizes.
+  useEffect(() => {
+    if (screen !== 'playing') return undefined;
+    const computeGeom = () => {
+      const canvas = canvasRef.current;
+      const slot = ringSlotRef.current;
+      if (!canvas || !slot) return;
+      const slotRect = slot.getBoundingClientRect();
+      const canvasRect = canvas.getBoundingClientRect();
+      ringGeomRef.current = {
+        cx: slotRect.left - canvasRect.left + slotRect.width / 2,
+        cy: slotRect.top - canvasRect.top + slotRect.height / 2,
+        radius: Math.min(slotRect.width, slotRect.height) * 0.34,
+      };
+    };
+    computeGeom();
+    window.addEventListener('resize', computeGeom);
+    return () => window.removeEventListener('resize', computeGeom);
+  }, [screen]);
+
+  // Main animation loop: ambient particles, channel decay, timer, canvas render.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    for (let i = 0; i < 12; i++) {
+      ambientRef.current.push({
+        x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 1.8,
+        hex: `hsl(${Math.floor(Math.random() * 360)}, 90%, 65%)`,
+        drift: (Math.random() - 0.5) * 0.02, phase: Math.random() * Math.PI * 2,
+      });
+    }
+
+    lastTsRef.current = performance.now();
+
+    const loop = (now) => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = canvas.width / dpr;
+      const h = canvas.height / dpr;
+      const dt = Math.min(64, now - lastTsRef.current);
+      lastTsRef.current = now;
+      ctx.clearRect(0, 0, w, h);
+
+      ambientRef.current.forEach(p => {
+        p.x += p.drift * 0.02;
+        if (p.x < 0) p.x = 1; if (p.x > 1) p.x = 0;
+        const twinkle = 0.35 + 0.35 * Math.sin(now / 650 + p.phase);
+        ctx.globalAlpha = twinkle * 0.4;
+        ctx.fillStyle = p.hex;
+        ctx.beginPath();
+        ctx.arc(p.x * w, p.y * h, p.r * 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+
+      if (screenRef.current === 'playing') {
+        if (!lockingRef.current) {
+          const dtSec = dt / 1000;
+          for (let i = 0; i < 3; i++) {
+            channelsRef.current[i] = Math.max(0, channelsRef.current[i] - DECAY_PER_SEC * dtSec);
+          }
+        }
+
+        const t = targetRef.current;
+        const [r, g, b] = channelsRef.current;
+        const dist = Math.sqrt((r - t.r) ** 2 + (g - t.g) ** 2 + (b - t.b) ** 2);
+        const matchPct = clamp(100 - (dist / MAX_DIST) * 100, 0, 100);
+        const ready = dist <= toleranceRef.current;
+
+        const { cx, cy, radius } = ringGeomRef.current;
+
+        // Soft glow via a wider, translucent halo stroke/fill underneath —
+        // ctx.shadowBlur produces the same look but is far costlier per
+        // frame, so it's avoided here to keep this game-loop cheap.
+        ctx.strokeStyle = rgbCss(t.r, t.g, t.b);
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        if (ready) {
+          const pulse = 0.5 + 0.5 * Math.sin(now / 130);
+          ctx.strokeStyle = `rgba(255,230,0,${0.4 + pulse * 0.5})`;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius + 8, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = rgbCss(r, g, b);
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.62 + 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.62, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = '700 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = ready ? '#ffe600' : 'rgba(255,255,255,0.7)';
+        ctx.fillText(`MATCH ${matchPct.toFixed(0)}%`, cx, cy + radius + 26);
+
+        const remaining = roundExpireRef.current - now;
+        const pct = clamp((remaining / roundDurRef.current) * 100, 0, 100);
+
+        // Write straight to the DOM instead of through React state — this
+        // runs every frame while playing, and going through setState here
+        // was costly enough to drop frames under load.
+        padFillRefs.current.forEach((el, i) => {
+          if (el) el.style.transform = `scaleY(${channelsRef.current[i] / 255})`;
+        });
+        if (mixSwatchRef.current) mixSwatchRef.current.style.background = rgbCss(r, g, b);
+        if (timerBarFillRef.current) timerBarFillRef.current.style.transform = `scaleX(${pct / 100})`;
+
+        if (remaining <= 0 && !lockingRef.current) {
+          handleLock(true);
+        }
+      }
+
+      const parts = particlesRef.current;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.x += p.vx; p.y += p.vy; p.vy += 0.06; p.life -= 0.02;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = p.hex;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleLock]);
+
+  return (
+    <div className="app" data-testid="game-canvas">
+      <div className="bgGlow" />
+
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue score" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue level" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'♥'.repeat(Math.max(0, lives))}</div>
+        </div>
+      </div>
+
+      <div className="playField" data-testid="play-field">
+        <canvas ref={canvasRef} className="arena" data-testid="arena" />
+
+        {screen === 'playing' && (
+          <React.Fragment>
+            <div className="timerBarTrack">
+              <div className="timerBarFill" ref={timerBarFillRef} />
+            </div>
+            <div className="ringSlot" ref={ringSlotRef} />
+            <div className="prompt">Pump R / G / B to match the target hue, then lock it in</div>
+            <div className="swatchRow">
+              <div className="swatchBox">
+                <div className="swatchLabel">Target</div>
+                <div className="swatch" data-testid="target-swatch" style={{ background: rgbCss(target.r, target.g, target.b) }} />
+              </div>
+              <div className="swatchBox">
+                <div className="swatchLabel">Your Mix</div>
+                <div className="swatch" data-testid="mix-swatch" ref={mixSwatchRef} />
+              </div>
+            </div>
+            <div className="padsRow">
+              <button className="padBtn padR" data-testid="pad-btn" data-channel="r" onClick={() => addChannel(0, PAD_ADD)}>
+                <div className="padFill" ref={el => { padFillRefs.current[0] = el; }} />
+                <span className="padLabel">R</span>
+              </button>
+              <button className="padBtn padG" data-testid="pad-btn" data-channel="g" onClick={() => addChannel(1, PAD_ADD)}>
+                <div className="padFill" ref={el => { padFillRefs.current[1] = el; }} />
+                <span className="padLabel">G</span>
+              </button>
+              <button className="padBtn padB" data-testid="pad-btn" data-channel="b" onClick={() => addChannel(2, PAD_ADD)}>
+                <div className="padFill" ref={el => { padFillRefs.current[2] = el; }} />
+                <span className="padLabel">B</span>
+              </button>
+            </div>
+            <button
+              className={`lockBtn ${lockFlash === 'success' ? 'flashOk' : ''} ${lockFlash === 'fail' ? 'flashBad' : ''}`}
+              data-testid="lock-btn"
+              onClick={() => handleLock(false)}
+            >
+              LOCK IN
+            </button>
+          </React.Fragment>
+        )}
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <div className="title">CHROMA MIX</div>
+            <div className="subtitle">
+              A glowing target hue appears — tap the R, G and B pads (or press R/G/B, arrow keys) to pump your
+              mixing orb toward it. Channels drain fast, so keep pumping. Get close and hit LOCK IN (or Space)
+              before the timer runs out. Lock in a bad blend or run out of time and you lose a life — tolerance
+              shrinks and the clock tightens as your level climbs.
+            </div>
+            <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <div className="title" style={{ fontSize: 30 }}>MIX FAILED</div>
+            <div className="finalScore" data-testid="final-score">Score: {finalScore}</div>
+            <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+            <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
