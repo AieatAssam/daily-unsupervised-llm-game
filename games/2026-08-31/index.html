@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Neon Bulwark</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #06050f; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #1a0f3a 0%, #06050f 55%, #030308 100%);
+    color: #fff;
+  }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+    transition: box-shadow 0.12s ease;
+  }
+  .app.hurtL { box-shadow: inset 60px 0 60px -40px rgba(255,56,96,0.7); }
+  .app.hurtR { box-shadow: inset -60px 0 60px -40px rgba(255,56,96,0.7); }
+  .app.hurtT { box-shadow: inset 0 60px 60px -40px rgba(255,56,96,0.7); }
+  .app.hurtB { box-shadow: inset 0 -60px 60px -40px rgba(255,56,96,0.7); }
+
+  .bgGlow {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 20%, rgba(255, 47, 208, 0.12), transparent 40%),
+      radial-gradient(circle at 80% 30%, rgba(0, 255, 240, 0.10), transparent 40%),
+      radial-gradient(circle at 50% 90%, rgba(176, 38, 255, 0.12), transparent 45%);
+    pointer-events: none;
+  }
+
+  .hud {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 16px 4px;
+    gap: 8px;
+  }
+  .hudBox { text-align: center; flex: 1; }
+  .hudLabel {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: #8a8ac0;
+    text-transform: uppercase;
+  }
+  .hudValue {
+    font-size: 20px;
+    font-weight: 800;
+    text-shadow: 0 0 10px currentColor;
+  }
+  .hudValue.score { color: #00fff0; }
+  .hudValue.level { color: #ffe600; }
+  .hudValue.combo { color: #ff2fd0; }
+  .hudValue.lives { color: #ff3860; transition: transform 0.15s ease; }
+  .hudValue.lives.hurt { transform: scale(1.4); }
+
+  .playField {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 16px 14px;
+    gap: 14px;
+  }
+
+  canvas.arena {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .arenaSlot {
+    width: 100%;
+    max-width: 300px;
+    height: 260px;
+  }
+
+  .prompt {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: #8a8ac0;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  .dpad {
+    position: relative;
+    z-index: 2;
+    width: 190px;
+    height: 190px;
+    display: grid;
+    grid-template-columns: 58px 58px 58px;
+    grid-template-rows: 58px 58px 58px;
+    gap: 8px;
+    justify-content: center;
+    align-content: center;
+  }
+  .dirBtn {
+    border-radius: 14px;
+    border: 2px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+    font-size: 22px;
+    font-weight: 900;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.08s ease, background 0.15s ease, box-shadow 0.15s ease;
+  }
+  .dirBtn:active { transform: scale(0.92); }
+  .dirBtn.up { grid-column: 2; grid-row: 1; }
+  .dirBtn.left { grid-column: 1; grid-row: 2; }
+  .dirBtn.center { grid-column: 2; grid-row: 2; background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.08); pointer-events: none; }
+  .dirBtn.right { grid-column: 3; grid-row: 2; }
+  .dirBtn.down { grid-column: 2; grid-row: 3; }
+  .dirBtn.flashOk { background: rgba(57,255,106,0.4); box-shadow: 0 0 20px #39ff6a; border-color: #39ff6a; }
+  .dirBtn.flashMiss { background: rgba(255,56,96,0.3); box-shadow: 0 0 16px #ff3860; border-color: #ff3860; }
+
+  .overlay {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 38px;
+    font-weight: 900;
+    background: linear-gradient(90deg, #ff3860, #39ff6a, #3b8cff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(255,47,208,0.4);
+    letter-spacing: 0.03em;
+  }
+  .subtitle {
+    max-width: 320px;
+    font-size: 14px;
+    color: #b0b0e0;
+    line-height: 1.5;
+  }
+  .highscoreLine {
+    font-size: 13px;
+    color: #ffe600;
+    text-shadow: 0 0 8px #ffe600;
+  }
+  .btn {
+    padding: 14px 40px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #06050f;
+    background: linear-gradient(90deg, #00fff0, #ff2fd0);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(0,255,240,0.5);
+    min-height: 48px;
+    min-width: 160px;
+    touch-action: manipulation;
+  }
+  .btn:active { transform: scale(0.96); }
+
+  .finalScore {
+    font-size: 28px;
+    font-weight: 900;
+    color: #00fff0;
+    text-shadow: 0 0 16px #00fff0;
+  }
+
+  @media (max-width: 400px) {
+    .title { font-size: 28px; }
+    .dpad { width: 170px; height: 170px; grid-template-columns: 52px 52px 52px; grid-template-rows: 52px 52px 52px; }
+    .arenaSlot { height: 220px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'neonBulwark_highScore';
+const LEVEL_UP_EVERY = 6;
+const DIRS = ['up', 'right', 'down', 'left'];
+const DIR_ARROW = { up: '▲', right: '▶', down: '▼', left: '◀' };
+const PARRY_WIN_LO = 0.68;
+const PARRY_WIN_HI = 0.97;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function spawnIntervalForLevel(level) {
+  return Math.max(520, 1400 - (level - 1) * 90);
+}
+function speedForLevel(level) {
+  return Math.min(1.9, 0.62 + (level - 1) * 0.09);
+}
+function doubleChanceForLevel(level) {
+  return Math.min(0.55, (level - 1) * 0.06);
+}
+
+function App() {
+  const [screen, setScreen] = useState('start');
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [level, setLevel] = useState(1);
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [hurt, setHurt] = useState(false);
+  const [hurtSide, setHurtSide] = useState(null);
+  const [flashDirs, setFlashDirs] = useState({});
+  const [finalScore, setFinalScore] = useState(0);
+
+  const canvasRef = useRef(null);
+  const arenaSlotRef = useRef(null);
+  const arenaGeomRef = useRef({ cx: 0, cy: 0, radius: 100 });
+  const particlesRef = useRef([]);
+  const ambientRef = useRef([]);
+  const boltsRef = useRef([]);
+  const boltIdRef = useRef(0);
+  const nextSpawnRef = useRef(0);
+  const levelRef = useRef(1);
+  const streakRef = useRef(0);
+  const livesRef = useRef(3);
+  const scoreRef = useRef(0);
+  const screenRef = useRef('start');
+  const lastTsRef = useRef(0);
+  const rafRef = useRef(null);
+  const flashTimersRef = useRef({});
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  const spawnParticles = useCallback((x, y, hex, count) => {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1.4 + Math.random() * 3.6;
+      particlesRef.current.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 1, hex, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    window.__neonBulwarkAudio = audioCtx;
+    return () => { audioCtx.close && audioCtx.close(); };
+  }, []);
+
+  const playTone = useCallback((freq, dur, type) => {
+    try {
+      const ctx = window.__neonBulwarkAudio;
+      if (!ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, []);
+
+  const flashDir = useCallback((dir, kind) => {
+    setFlashDirs(prev => ({ ...prev, [dir]: kind }));
+    clearTimeout(flashTimersRef.current[dir]);
+    flashTimersRef.current[dir] = setTimeout(() => {
+      setFlashDirs(prev => {
+        const next = { ...prev };
+        delete next[dir];
+        return next;
+      });
+    }, 220);
+  }, []);
+
+  const endGame = useCallback(() => {
+    const finalS = scoreRef.current;
+    setFinalScore(finalS);
+    const bestSoFar = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    if (finalS > bestSoFar) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalS));
+      setHighScore(finalS);
+    }
+    screenRef.current = 'gameover';
+    setScreen('gameover');
+  }, []);
+
+  const takeHit = useCallback((dir) => {
+    livesRef.current -= 1;
+    setLives(livesRef.current);
+    streakRef.current = 0;
+    setCombo(0);
+    const sideMap = { up: 'hurtT', down: 'hurtB', left: 'hurtL', right: 'hurtR' };
+    setHurtSide(sideMap[dir] || null);
+    setHurt(true);
+    setTimeout(() => { setHurt(false); setHurtSide(null); }, 260);
+    playTone(120, 0.32, 'sawtooth');
+    const { cx, cy } = arenaGeomRef.current;
+    spawnParticles(cx, cy, '#ff3860', 20);
+    if (livesRef.current <= 0) endGame();
+  }, [playTone, spawnParticles, endGame]);
+
+  const attemptParry = useCallback((dir) => {
+    if (screenRef.current !== 'playing') return;
+    const bolts = boltsRef.current;
+    let best = null;
+    for (let i = 0; i < bolts.length; i++) {
+      const b = bolts[i];
+      if (b.dir !== dir) continue;
+      if (b.progress < PARRY_WIN_LO || b.progress > PARRY_WIN_HI) continue;
+      if (!best || b.progress > best.progress) best = b;
+    }
+    if (best) {
+      boltsRef.current = bolts.filter(b => b !== best);
+      streakRef.current += 1;
+      const nc = streakRef.current;
+      setCombo(nc);
+      scoreRef.current += 10 + nc * 2;
+      setScore(scoreRef.current);
+      playTone(560 + DIRS.indexOf(dir) * 80, 0.14, 'triangle');
+      const { cx, cy } = arenaGeomRef.current;
+      spawnParticles(cx, cy, '#39ff6a', 18);
+      flashDir(dir, 'ok');
+      if (nc % LEVEL_UP_EVERY === 0) {
+        levelRef.current += 1;
+        setLevel(levelRef.current);
+      }
+    } else {
+      flashDir(dir, 'miss');
+    }
+  }, [playTone, spawnParticles, flashDir]);
+
+  const startGame = useCallback(() => {
+    setScore(0); setLevel(1); setLives(3); setCombo(0);
+    scoreRef.current = 0; levelRef.current = 1; livesRef.current = 3; streakRef.current = 0;
+    boltsRef.current = [];
+    nextSpawnRef.current = performance.now() + 600;
+    screenRef.current = 'playing';
+    setScreen('playing');
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.repeat) return;
+      const k = e.key.toLowerCase();
+      if (k === 'arrowup' || k === 'w') attemptParry('up');
+      else if (k === 'arrowdown' || k === 's') attemptParry('down');
+      else if (k === 'arrowleft' || k === 'a') attemptParry('left');
+      else if (k === 'arrowright' || k === 'd') attemptParry('right');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [attemptParry]);
+
+  useEffect(() => {
+    if (screen !== 'playing') return undefined;
+    const computeGeom = () => {
+      const canvas = canvasRef.current;
+      const slot = arenaSlotRef.current;
+      if (!canvas || !slot) return;
+      const slotRect = slot.getBoundingClientRect();
+      const canvasRect = canvas.getBoundingClientRect();
+      arenaGeomRef.current = {
+        cx: slotRect.left - canvasRect.left + slotRect.width / 2,
+        cy: slotRect.top - canvasRect.top + slotRect.height / 2,
+        radius: Math.min(slotRect.width, slotRect.height) * 0.46,
+      };
+    };
+    computeGeom();
+    window.addEventListener('resize', computeGeom);
+    return () => window.removeEventListener('resize', computeGeom);
+  }, [screen]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    for (let i = 0; i < 12; i++) {
+      ambientRef.current.push({
+        x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 1.8,
+        hex: `hsl(${Math.floor(Math.random() * 360)}, 90%, 65%)`,
+        drift: (Math.random() - 0.5) * 0.02, phase: Math.random() * Math.PI * 2,
+      });
+    }
+
+    lastTsRef.current = performance.now();
+
+    const loop = (now) => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = canvas.width / dpr;
+      const h = canvas.height / dpr;
+      const dt = Math.min(64, now - lastTsRef.current);
+      lastTsRef.current = now;
+      ctx.clearRect(0, 0, w, h);
+
+      ambientRef.current.forEach(p => {
+        p.x += p.drift * 0.02;
+        if (p.x < 0) p.x = 1; if (p.x > 1) p.x = 0;
+        const twinkle = 0.35 + 0.35 * Math.sin(now / 650 + p.phase);
+        ctx.globalAlpha = twinkle * 0.4;
+        ctx.fillStyle = p.hex;
+        ctx.beginPath();
+        ctx.arc(p.x * w, p.y * h, p.r * 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+
+      if (screenRef.current === 'playing') {
+        const { cx, cy, radius } = arenaGeomRef.current;
+        const dtSec = dt / 1000;
+        const speed = speedForLevel(levelRef.current);
+
+        if (now >= nextSpawnRef.current) {
+          const usedDirs = new Set(boltsRef.current.map(b => b.dir));
+          const avail = DIRS.filter(d => !usedDirs.has(d));
+          if (avail.length) {
+            const dir = avail[Math.floor(Math.random() * avail.length)];
+            boltsRef.current.push({ id: boltIdRef.current++, dir, progress: 0 });
+            if (avail.length > 1 && Math.random() < doubleChanceForLevel(levelRef.current)) {
+              const avail2 = avail.filter(d => d !== dir);
+              const dir2 = avail2[Math.floor(Math.random() * avail2.length)];
+              boltsRef.current.push({ id: boltIdRef.current++, dir: dir2, progress: 0 });
+            }
+          }
+          nextSpawnRef.current = now + spawnIntervalForLevel(levelRef.current);
+        }
+
+        const survivors = [];
+        for (const b of boltsRef.current) {
+          b.progress += speed * dtSec;
+          if (b.progress >= 1) {
+            takeHit(b.dir);
+          } else {
+            survivors.push(b);
+          }
+        }
+        boltsRef.current = survivors;
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+        ctx.lineWidth = 2;
+        DIRS.forEach(dir => {
+          const [ex, ey] = dir === 'up' ? [cx, cy - radius * 2.1]
+            : dir === 'down' ? [cx, cy + radius * 2.1]
+            : dir === 'left' ? [cx - radius * 2.1, cy]
+            : [cx + radius * 2.1, cy];
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+        });
+
+        ctx.strokeStyle = 'rgba(0,255,240,0.5)';
+        ctx.setLineDash([6, 6]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * PARRY_WIN_LO, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+        ctx.fillStyle = `rgba(0,255,240,${0.22 + pulse * 0.12})`;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.34, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#00fff0';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.34, 0, Math.PI * 2);
+        ctx.stroke();
+
+        for (const b of boltsRef.current) {
+          const dirVec = b.dir === 'up' ? [0, -1] : b.dir === 'down' ? [0, 1] : b.dir === 'left' ? [-1, 0] : [1, 0];
+          const dist = radius * 2.1 * (1 - b.progress);
+          const bx = cx + dirVec[0] * dist;
+          const by = cy + dirVec[1] * dist;
+          const inWindow = b.progress >= PARRY_WIN_LO && b.progress <= PARRY_WIN_HI;
+          ctx.fillStyle = inWindow ? '#ffe600' : '#ff2fd0';
+          ctx.shadowColor = inWindow ? '#ffe600' : '#ff2fd0';
+          ctx.shadowBlur = inWindow ? 14 : 8;
+          ctx.beginPath();
+          ctx.arc(bx, by, 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          for (let t = 1; t <= 3; t++) {
+            const tx = cx + dirVec[0] * (dist + t * 9);
+            const ty = cy + dirVec[1] * (dist + t * 9);
+            ctx.globalAlpha = 0.28 / t;
+            ctx.beginPath();
+            ctx.arc(tx, ty, 5 - t, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      const parts = particlesRef.current;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.x += p.vx; p.y += p.vy; p.vy += 0.06; p.life -= 0.02;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = p.hex;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [takeHit]);
+
+  return (
+    <div className={`app ${hurt && hurtSide ? hurtSide : ''}`} data-testid="game-canvas">
+      <div className="bgGlow" />
+
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue score" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue level" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'♥'.repeat(Math.max(0, lives))}</div>
+        </div>
+      </div>
+
+      <div className="playField" data-testid="play-field">
+        <canvas ref={canvasRef} className="arena" data-testid="arena" />
+
+        {screen === 'playing' && (
+          <React.Fragment>
+            <div className="arenaSlot" ref={arenaSlotRef} />
+            <div className="prompt">Parry bolts the instant they hit the gold ring</div>
+            <div className="dpad">
+              <button
+                className={`dirBtn up ${flashDirs.up === 'ok' ? 'flashOk' : ''} ${flashDirs.up === 'miss' ? 'flashMiss' : ''}`}
+                data-testid="dir-btn" data-dir="up" onClick={() => attemptParry('up')}
+              >{DIR_ARROW.up}</button>
+              <button
+                className={`dirBtn left ${flashDirs.left === 'ok' ? 'flashOk' : ''} ${flashDirs.left === 'miss' ? 'flashMiss' : ''}`}
+                data-testid="dir-btn" data-dir="left" onClick={() => attemptParry('left')}
+              >{DIR_ARROW.left}</button>
+              <div className="dirBtn center" />
+              <button
+                className={`dirBtn right ${flashDirs.right === 'ok' ? 'flashOk' : ''} ${flashDirs.right === 'miss' ? 'flashMiss' : ''}`}
+                data-testid="dir-btn" data-dir="right" onClick={() => attemptParry('right')}
+              >{DIR_ARROW.right}</button>
+              <button
+                className={`dirBtn down ${flashDirs.down === 'ok' ? 'flashOk' : ''} ${flashDirs.down === 'miss' ? 'flashMiss' : ''}`}
+                data-testid="dir-btn" data-dir="down" onClick={() => attemptParry('down')}
+              >{DIR_ARROW.down}</button>
+            </div>
+          </React.Fragment>
+        )}
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <div className="title">NEON BULWARK</div>
+            <div className="subtitle">
+              Energy bolts streak in from all four sides toward your core. Press the matching arrow key /
+              WASD (or tap the D-pad) the instant a bolt crosses the glowing gold ring to parry it. Let one
+              slam into the core and you lose a life. Chain parries for a rising combo — the barrage speeds
+              up and doubles up the longer you hold the line.
+            </div>
+            <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <div className="title" style={{ fontSize: 30 }}>CORE BREACHED</div>
+            <div className="finalScore" data-testid="final-score">Score: {finalScore}</div>
+            <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+            <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

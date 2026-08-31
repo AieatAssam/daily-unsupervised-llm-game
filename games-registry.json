@@ -3404,5 +3404,26 @@
     "file": "games/2026-08-30/index.html",
     "preview": "games/2026-08-30/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-08-31",
+    "name": "Neon Bulwark",
+    "date": "2026-08-31",
+    "description": "A neon core-defense reflex game: energy bolts streak in from all four sides of the arena toward your glowing core, and you press the matching arrow key or WASD (or tap the D-pad) the instant a bolt crosses the dashed gold parry ring around it. A clean parry deflects the bolt in a burst of particles and builds a rising combo multiplier; let one slam into the core and you lose one of three lives while the screen edge flashes red on that side. The barrage speeds up, spawns more often, and starts throwing bolts from two directions at once as your level climbs, forcing split-second direction reads under pressure.",
+    "tagline": "Bolts converge from every side. Parry true or lose the core.",
+    "tags": [
+      "reflex",
+      "timing",
+      "arcade",
+      "defense",
+      "precision"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys / WASD, or tap the D-pad, to parry bolts approaching from that direction the instant they cross the gold ring",
+    "folder": "games/2026-08-31",
+    "file": "games/2026-08-31/index.html",
+    "preview": "games/2026-08-31/preview.png",
+    "rating": 4.3
   }
 ]
