@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Pulse Match</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #06050f; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #1a0f3a 0%, #06050f 55%, #030308 100%);
+    color: #fff;
+  }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .bgGlow {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 20%, rgba(255, 47, 208, 0.12), transparent 40%),
+      radial-gradient(circle at 80% 30%, rgba(0, 255, 240, 0.10), transparent 40%),
+      radial-gradient(circle at 50% 90%, rgba(176, 38, 255, 0.12), transparent 45%);
+    pointer-events: none;
+  }
+
+  .hud {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 16px 4px;
+    gap: 8px;
+  }
+  .hudBox { text-align: center; flex: 1; }
+  .hudLabel {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: #8a8ac0;
+    text-transform: uppercase;
+  }
+  .hudValue {
+    font-size: 20px;
+    font-weight: 800;
+    text-shadow: 0 0 10px currentColor;
+  }
+  .hudValue.score { color: #00fff0; }
+  .hudValue.level { color: #ffe600; }
+  .hudValue.combo { color: #ff2fd0; }
+  .hudValue.lives { color: #ff3860; transition: transform 0.15s ease; }
+  .hudValue.lives.hurt { transform: scale(1.4); }
+  .hudValue.timer { color: #39ff6a; }
+  .hudValue.timer.low { color: #ff3860; }
+
+  .playField {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 16px 14px;
+    gap: 12px;
+  }
+
+  .timerTrack {
+    width: 100%;
+    max-width: 320px;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .timerFill {
+    height: 100%;
+    background: linear-gradient(90deg, #39ff6a, #00fff0);
+    transition: width 0.1s linear, background 0.3s ease;
+  }
+  .timerFill.low { background: linear-gradient(90deg, #ff3860, #ff2fd0); }
+
+  .board {
+    display: grid;
+    gap: 8px;
+    width: 100%;
+    max-width: 340px;
+    touch-action: manipulation;
+  }
+
+  .card {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 10px;
+    cursor: pointer;
+    perspective: 600px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .cardInner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.32s cubic-bezier(.4,.2,.2,1);
+    transform-style: preserve-3d;
+  }
+  .card.flipped .cardInner, .card.solved .cardInner, .card.peek .cardInner {
+    transform: rotateY(180deg);
+  }
+  .cardFace {
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    backface-visibility: hidden;
+  }
+  .cardBack {
+    background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    border: 2px solid rgba(255,255,255,0.16);
+  }
+  .cardBack::after {
+    content: '';
+    width: 40%;
+    height: 40%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,255,240,0.35), transparent 70%);
+  }
+  .cardFront {
+    background: linear-gradient(135deg, #1a1440, #0d0a24);
+    border: 2px solid rgba(0,255,240,0.4);
+    transform: rotateY(180deg);
+    text-shadow: 0 0 10px currentColor;
+  }
+  .card.solved .cardFront {
+    border-color: #39ff6a;
+    box-shadow: 0 0 16px rgba(57,255,106,0.5);
+  }
+  .card.mismatch .cardFront {
+    border-color: #ff3860;
+    box-shadow: 0 0 16px rgba(255,56,96,0.5);
+  }
+  .card.peek .cardFront {
+    border-color: #ffe600;
+    box-shadow: 0 0 14px rgba(255,230,0,0.5);
+  }
+  .card.solved { opacity: 0.55; cursor: default; }
+
+  .overlay {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 38px;
+    font-weight: 900;
+    background: linear-gradient(90deg, #ff3860, #39ff6a, #3b8cff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(255,47,208,0.4);
+    letter-spacing: 0.03em;
+  }
+  .subtitle {
+    max-width: 320px;
+    font-size: 14px;
+    color: #b0b0e0;
+    line-height: 1.5;
+  }
+  .highscoreLine {
+    font-size: 13px;
+    color: #ffe600;
+    text-shadow: 0 0 8px #ffe600;
+  }
+  .btn {
+    padding: 14px 40px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #06050f;
+    background: linear-gradient(90deg, #00fff0, #ff2fd0);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(0,255,240,0.5);
+    min-height: 48px;
+    min-width: 160px;
+    touch-action: manipulation;
+  }
+  .btn:active { transform: scale(0.96); }
+
+  .finalScore {
+    font-size: 28px;
+    font-weight: 900;
+    color: #00fff0;
+    text-shadow: 0 0 16px #00fff0;
+  }
+
+  .particleLayer {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+  }
+
+  @media (max-width: 400px) {
+    .title { font-size: 28px; }
+    .board { max-width: 300px; gap: 6px; }
+    .cardFace { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'pulseMatch_highScore';
+const SYMBOLS = ['◆','●','▲','■','★','✦','⬡','✚','☾','◈','⬢','✶'];
+const LEVEL_TIME_MS = [45000, 42000, 40000, 38000, 36000, 34000, 32000, 30000];
+const PEEK_INTERVAL_MIN = 2600;
+const PEEK_INTERVAL_MAX = 4200;
+const PEEK_DURATION = 480;
+
+function gridForLevel(level) {
+  if (level <= 1) return { rows: 4, cols: 4 };
+  if (level === 2) return { rows: 4, cols: 4 };
+  if (level === 3) return { rows: 4, cols: 5 };
+  if (level === 4) return { rows: 4, cols: 5 };
+  return { rows: 4, cols: 6 };
+}
+
+function timeForLevel(level) {
+  const idx = Math.min(LEVEL_TIME_MS.length - 1, level - 1);
+  return LEVEL_TIME_MS[idx];
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildDeck(level) {
+  const { rows, cols } = gridForLevel(level);
+  const total = rows * cols;
+  const pairCount = total / 2;
+  const symbols = shuffle(SYMBOLS).slice(0, pairCount);
+  const deck = shuffle([...symbols, ...symbols]).map((sym, i) => ({
+    id: i,
+    sym,
+    state: 'down', // down | up | solved | peek
+  }));
+  return { deck, rows, cols };
+}
+
+function App() {
+  const [screen, setScreen] = useState('start');
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [level, setLevel] = useState(1);
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [hurt, setHurt] = useState(false);
+  const [finalScore, setFinalScore] = useState(0);
+  const [cards, setCards] = useState([]);
+  const [grid, setGrid] = useState({ rows: 4, cols: 4 });
+  const [timeLeft, setTimeLeft] = useState(LEVEL_TIME_MS[0]);
+  const [timeTotal, setTimeTotal] = useState(LEVEL_TIME_MS[0]);
+  const [particles, setParticles] = useState([]);
+
+  const screenRef = useRef('start');
+  const cardsRef = useRef([]);
+  const flippedRef = useRef([]);
+  const lockRef = useRef(false);
+  const scoreRef = useRef(0);
+  const livesRef = useRef(3);
+  const levelRef = useRef(1);
+  const comboRef = useRef(0);
+  const deadlineRef = useRef(0);
+  const rafRef = useRef(null);
+  const peekTimeoutRef = useRef(null);
+  const particleIdRef = useRef(0);
+  const boardRef = useRef(null);
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  useEffect(() => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    window.__pulseMatchAudio = audioCtx;
+    return () => { audioCtx.close && audioCtx.close(); };
+  }, []);
+
+  const playTone = useCallback((freq, dur, type) => {
+    try {
+      const ctx = window.__pulseMatchAudio;
+      if (!ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, []);
+
+  const spawnBurst = useCallback((cardId, hex) => {
+    const el = document.querySelector(`[data-card-id="${cardId}"]`);
+    const boardEl = boardRef.current;
+    if (!el || !boardEl) return;
+    const cardRect = el.getBoundingClientRect();
+    const boardRect = boardEl.getBoundingClientRect();
+    const cx = cardRect.left - boardRect.left + cardRect.width / 2;
+    const cy = cardRect.top - boardRect.top + cardRect.height / 2;
+    const burst = [];
+    for (let i = 0; i < 10; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 20 + Math.random() * 30;
+      burst.push({
+        id: particleIdRef.current++,
+        x: cx, y: cy,
+        dx: Math.cos(angle) * dist,
+        dy: Math.sin(angle) * dist,
+        hex,
+      });
+    }
+    setParticles(prev => [...prev, ...burst]);
+    setTimeout(() => {
+      setParticles(prev => prev.filter(p => !burst.some(b => b.id === p.id)));
+    }, 650);
+  }, []);
+
+  const endGame = useCallback(() => {
+    clearTimeout(peekTimeoutRef.current);
+    const finalS = scoreRef.current;
+    setFinalScore(finalS);
+    const bestSoFar = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    if (finalS > bestSoFar) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalS));
+      setHighScore(finalS);
+    }
+    screenRef.current = 'gameover';
+    setScreen('gameover');
+    playTone(140, 0.5, 'sawtooth');
+  }, [playTone]);
+
+  const setupLevel = useCallback((lvl) => {
+    const { deck, rows, cols } = buildDeck(lvl);
+    cardsRef.current = deck;
+    flippedRef.current = [];
+    lockRef.current = false;
+    setCards(deck);
+    setGrid({ rows, cols });
+    const t = timeForLevel(lvl);
+    deadlineRef.current = performance.now() + t;
+    setTimeTotal(t);
+    setTimeLeft(t);
+  }, []);
+
+  const schedulePeek = useCallback(() => {
+    clearTimeout(peekTimeoutRef.current);
+    const delay = PEEK_INTERVAL_MIN + Math.random() * (PEEK_INTERVAL_MAX - PEEK_INTERVAL_MIN);
+    peekTimeoutRef.current = setTimeout(() => {
+      if (screenRef.current !== 'playing') return;
+      const candidates = cardsRef.current.filter(c => c.state === 'down');
+      if (candidates.length) {
+        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        cardsRef.current = cardsRef.current.map(c => c.id === target.id ? { ...c, state: 'peek' } : c);
+        setCards(cardsRef.current);
+        setTimeout(() => {
+          cardsRef.current = cardsRef.current.map(c =>
+            c.id === target.id && c.state === 'peek' ? { ...c, state: 'down' } : c
+          );
+          setCards(cardsRef.current);
+        }, PEEK_DURATION);
+      }
+      schedulePeek();
+    }, delay);
+  }, []);
+
+  const advanceLevel = useCallback(() => {
+    levelRef.current += 1;
+    setLevel(levelRef.current);
+    scoreRef.current += 40;
+    setScore(scoreRef.current);
+    playTone(720, 0.28, 'triangle');
+    setupLevel(levelRef.current);
+    schedulePeek();
+  }, [setupLevel, schedulePeek, playTone]);
+
+  const flipCard = useCallback((id) => {
+    if (screenRef.current !== 'playing') return;
+    if (lockRef.current) return;
+    const card = cardsRef.current.find(c => c.id === id);
+    if (!card || card.state === 'up' || card.state === 'solved') return;
+    if (flippedRef.current.includes(id)) return;
+
+    cardsRef.current = cardsRef.current.map(c => c.id === id ? { ...c, state: 'up' } : c);
+    setCards(cardsRef.current);
+    flippedRef.current = [...flippedRef.current, id];
+    playTone(480, 0.08, 'triangle');
+
+    if (flippedRef.current.length === 2) {
+      lockRef.current = true;
+      const [aId, bId] = flippedRef.current;
+      const a = cardsRef.current.find(c => c.id === aId);
+      const b = cardsRef.current.find(c => c.id === bId);
+      if (a.sym === b.sym) {
+        setTimeout(() => {
+          cardsRef.current = cardsRef.current.map(c =>
+            (c.id === aId || c.id === bId) ? { ...c, state: 'solved' } : c
+          );
+          setCards(cardsRef.current);
+          comboRef.current += 1;
+          setCombo(comboRef.current);
+          const gained = 20 + comboRef.current * 5;
+          scoreRef.current += gained;
+          setScore(scoreRef.current);
+          playTone(880, 0.18, 'sine');
+          spawnBurst(aId, '#39ff6a');
+          spawnBurst(bId, '#39ff6a');
+          flippedRef.current = [];
+          lockRef.current = false;
+
+          const allSolved = cardsRef.current.every(c => c.state === 'solved');
+          if (allSolved) {
+            advanceLevel();
+          }
+        }, 260);
+      } else {
+        setTimeout(() => {
+          cardsRef.current = cardsRef.current.map(c =>
+            (c.id === aId || c.id === bId) ? { ...c, state: 'mismatch' } : c
+          );
+          setCards(cardsRef.current);
+        }, 200);
+        setTimeout(() => {
+          cardsRef.current = cardsRef.current.map(c =>
+            (c.id === aId || c.id === bId) ? { ...c, state: 'down' } : c
+          );
+          setCards(cardsRef.current);
+          flippedRef.current = [];
+          lockRef.current = false;
+          comboRef.current = 0;
+          setCombo(0);
+          livesRef.current -= 1;
+          setLives(livesRef.current);
+          setHurt(true);
+          setTimeout(() => setHurt(false), 260);
+          playTone(150, 0.28, 'sawtooth');
+          if (livesRef.current <= 0) endGame();
+        }, 700);
+      }
+    }
+  }, [playTone, spawnBurst, advanceLevel, endGame]);
+
+  const startGame = useCallback(() => {
+    setScore(0); setLevel(1); setLives(3); setCombo(0); setFinalScore(0);
+    scoreRef.current = 0; levelRef.current = 1; livesRef.current = 3; comboRef.current = 0;
+    setupLevel(1);
+    screenRef.current = 'playing';
+    setScreen('playing');
+    schedulePeek();
+  }, [setupLevel, schedulePeek]);
+
+  // Timer loop
+  useEffect(() => {
+    const loop = () => {
+      if (screenRef.current === 'playing') {
+        const remaining = Math.max(0, deadlineRef.current - performance.now());
+        setTimeLeft(remaining);
+        if (remaining <= 0) {
+          livesRef.current -= 1;
+          setLives(livesRef.current);
+          comboRef.current = 0;
+          setCombo(0);
+          setHurt(true);
+          setTimeout(() => setHurt(false), 260);
+          playTone(150, 0.3, 'sawtooth');
+          if (livesRef.current <= 0) {
+            endGame();
+          } else {
+            setupLevel(levelRef.current);
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endGame, setupLevel, playTone]);
+
+  const timerPct = timeTotal > 0 ? Math.max(0, Math.min(100, (timeLeft / timeTotal) * 100)) : 0;
+  const timerLow = timerPct < 25;
+
+  return (
+    <div className="app" data-testid="game-canvas">
+      <div className="bgGlow" />
+
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue score" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue level" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'♥'.repeat(Math.max(0, lives))}</div>
+        </div>
+      </div>
+
+      <div className="playField" data-testid="play-field">
+        {screen === 'playing' && (
+          <React.Fragment>
+            <div className="timerTrack">
+              <div className={`timerFill ${timerLow ? 'low' : ''}`} data-testid="timer-fill" style={{ width: `${timerPct}%` }} />
+            </div>
+            <div
+              className="board"
+              ref={boardRef}
+              data-testid="board"
+              style={{ gridTemplateColumns: `repeat(${grid.cols}, 1fr)`, position: 'relative' }}
+            >
+              {cards.map(c => (
+                <div
+                  key={c.id}
+                  data-testid="card"
+                  data-card-id={c.id}
+                  className={`card ${c.state === 'up' ? 'flipped' : ''} ${c.state === 'solved' ? 'solved' : ''} ${c.state === 'mismatch' ? 'flipped mismatch' : ''} ${c.state === 'peek' ? 'peek' : ''}`}
+                  onClick={() => flipCard(c.id)}
+                >
+                  <div className="cardInner">
+                    <div className="cardFace cardBack" />
+                    <div className="cardFace cardFront" style={{ color: c.state === 'solved' ? '#39ff6a' : c.state === 'mismatch' ? '#ff3860' : c.state === 'peek' ? '#ffe600' : '#00fff0' }}>
+                      {c.sym}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div className="particleLayer">
+                {particles.map(p => (
+                  <div key={p.id} style={{
+                    position: 'absolute',
+                    left: p.x, top: p.y,
+                    width: 6, height: 6,
+                    borderRadius: '50%',
+                    background: p.hex,
+                    boxShadow: `0 0 8px ${p.hex}`,
+                    transform: `translate(${p.dx}px, ${p.dy}px)`,
+                    opacity: 0,
+                    transition: 'transform 0.6s ease-out, opacity 0.6s ease-out',
+                  }} ref={el => { if (el) requestAnimationFrame(() => { el.style.opacity = '0'; }); }} />
+                ))}
+              </div>
+            </div>
+            <div className="subtitle" style={{ fontSize: 12 }}>Flip two cards to find matching pairs. Watch for the gold pulse — it's a free peek.</div>
+          </React.Fragment>
+        )}
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <div className="title">PULSE MATCH</div>
+            <div className="subtitle">
+              Flip neon cards to find matching symbol pairs before the clock drains. Chain consecutive
+              matches for a rising combo multiplier, but a wrong pair costs a life and resets your streak.
+              Watch closely — cards randomly pulse gold with a split-second peek at their symbol. Clear
+              every pair to advance to a bigger board with less time on the clock.
+            </div>
+            <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <div className="title" style={{ fontSize: 30 }}>OUT OF SYNC</div>
+            <div className="finalScore" data-testid="final-score">Score: {finalScore}</div>
+            <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+            <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
