@@ -3425,5 +3425,26 @@
     "file": "games/2026-08-31/index.html",
     "preview": "games/2026-08-31/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-09-01",
+    "name": "Pulse Match",
+    "date": "2026-09-01",
+    "description": "A neon memory-matching game: flip glowing cards to find matching symbol pairs before the countdown bar drains, chaining consecutive matches into a rising combo multiplier while a wrong pair costs one of three lives and resets your streak. Random cards pulse gold for a split-second free peek at their symbol, rewarding sharp attention over pure memorization. Clear every pair to advance into a bigger board with a tighter clock, testing your recall against an ever-growing grid.",
+    "tagline": "Flip. Match. Catch the pulse before it fades.",
+    "tags": [
+      "memory",
+      "puzzle",
+      "matching",
+      "casual",
+      "combo"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click / tap a face-down card to flip it, then click / tap another to find its matching pair",
+    "folder": "games/2026-09-01",
+    "file": "games/2026-09-01/index.html",
+    "preview": "games/2026-09-01/preview.png",
+    "rating": 4.2
   }
 ]
