@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Orbit Slingshot</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #06050f; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #1a0f3a 0%, #06050f 55%, #030308 100%);
+    color: #fff;
+  }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .bgGlow {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 15%, rgba(0, 255, 240, 0.10), transparent 40%),
+      radial-gradient(circle at 80% 25%, rgba(176, 38, 255, 0.12), transparent 40%),
+      radial-gradient(circle at 50% 95%, rgba(255, 47, 208, 0.10), transparent 45%);
+    pointer-events: none;
+  }
+
+  .hud {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 16px 4px;
+    gap: 8px;
+  }
+  .hudBox { text-align: center; flex: 1; }
+  .hudLabel {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: #8a8ac0;
+    text-transform: uppercase;
+  }
+  .hudValue {
+    font-size: 20px;
+    font-weight: 800;
+    text-shadow: 0 0 10px currentColor;
+  }
+  .hudValue.score { color: #00fff0; }
+  .hudValue.level { color: #ffe600; }
+  .hudValue.combo { color: #ff2fd0; }
+  .hudValue.lives { color: #ff3860; transition: transform 0.15s ease; }
+  .hudValue.lives.hurt { transform: scale(1.4); }
+
+  .playField {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    width: 100%;
+    max-width: 360px;
+    aspect-ratio: 320 / 480;
+    margin: 8px auto 14px;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 0 30px rgba(120,60,255,0.15);
+  }
+
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    background: #08061a;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    text-align: center;
+    padding: 20px;
+    background: rgba(6, 5, 15, 0.78);
+  }
+  .title {
+    font-size: 32px;
+    font-weight: 900;
+    background: linear-gradient(90deg, #00fff0, #b026ff, #ff2fd0);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(176,38,255,0.4);
+    letter-spacing: 0.03em;
+  }
+  .subtitle {
+    max-width: 280px;
+    font-size: 13px;
+    color: #b0b0e0;
+    line-height: 1.5;
+  }
+  .highscoreLine {
+    font-size: 13px;
+    color: #ffe600;
+    text-shadow: 0 0 8px #ffe600;
+  }
+  .btn {
+    padding: 14px 36px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #06050f;
+    background: linear-gradient(90deg, #00fff0, #ff2fd0);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(0,255,240,0.5);
+    min-height: 48px;
+    min-width: 160px;
+    touch-action: manipulation;
+  }
+  .btn:active { transform: scale(0.96); }
+
+  .finalScore {
+    font-size: 26px;
+    font-weight: 900;
+    color: #00fff0;
+    text-shadow: 0 0 16px #00fff0;
+  }
+
+  @media (max-width: 400px) {
+    .title { font-size: 24px; }
+    .subtitle { font-size: 12px; max-width: 240px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'orbitSlingshot_highScore';
+const LOGICAL_W = 320;
+const LOGICAL_H = 480;
+const PAD = { x: 160, y: 452 };
+const PORTAL = { x: 160, y: 36, r: 15 };
+const BALL_R = 7;
+const NODE_R = 6;
+const HAZARD_R = 9;
+const WELL_R = 16;
+const MIN_DIST = 26;
+const MAX_DRAG = 110;
+const MIN_LAUNCH_SPEED = 3.1;
+const MAX_LAUNCH_SPEED = 6.6;
+const MAX_BALL_SPEED = 9;
+
+function rand(min, max) { return min + Math.random() * (max - min); }
+
+function generateLevel(level) {
+  const wellCount = Math.min(1 + Math.floor((level - 1) / 2), 4);
+  const nodeCount = Math.min(3 + (level - 1), 8);
+  const hazardCount = Math.min(Math.floor(level / 2), 4);
+  const placed = [
+    { x: PAD.x, y: PAD.y, r: 46 },
+    { x: PORTAL.x, y: PORTAL.y, r: 40 },
+  ];
+
+  function tryPlace(minSep) {
+    for (let i = 0; i < 40; i++) {
+      const x = rand(28, LOGICAL_W - 28);
+      const y = rand(78, LOGICAL_H - 100);
+      if (placed.every(p => {
+        const dx = p.x - x, dy = p.y - y;
+        return dx * dx + dy * dy > minSep * minSep;
+      })) {
+        placed.push({ x, y, r: minSep });
+        return { x, y };
+      }
+    }
+    const x = rand(28, LOGICAL_W - 28), y = rand(78, LOGICAL_H - 100);
+    placed.push({ x, y, r: minSep });
+    return { x, y };
+  }
+
+  const wells = [];
+  for (let i = 0; i < wellCount; i++) {
+    const p = tryPlace(58);
+    wells.push({ x: p.x, y: p.y, r: WELL_R, strength: 3000 + level * 200 });
+  }
+  const nodes = [];
+  for (let i = 0; i < nodeCount; i++) {
+    const p = tryPlace(32);
+    nodes.push({ x: p.x, y: p.y, r: NODE_R, collected: false, id: i });
+  }
+  const hazards = [];
+  for (let i = 0; i < hazardCount; i++) {
+    const p = tryPlace(46);
+    hazards.push({
+      cx: p.x, cy: p.y,
+      x: p.x, y: p.y,
+      orbitR: rand(16, 30),
+      angle: rand(0, Math.PI * 2),
+      angularSpeed: (0.020 + level * 0.0018) * (Math.random() < 0.5 ? 1 : -1),
+      r: HAZARD_R,
+    });
+  }
+  return { wells, nodes, hazards };
+}
+
+function makeStars() {
+  const stars = [];
+  for (let i = 0; i < 46; i++) {
+    stars.push({
+      x: rand(0, LOGICAL_W), y: rand(0, LOGICAL_H),
+      r: rand(0.4, 1.6), phase: rand(0, Math.PI * 2),
+    });
+  }
+  return stars;
+}
+
+function App() {
+  const [screen, setScreen] = useState('start');
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [level, setLevel] = useState(1);
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [hurt, setHurt] = useState(false);
+  const [finalScore, setFinalScore] = useState(0);
+
+  const canvasRef = useRef(null);
+  const playFieldRef = useRef(null);
+  const screenRef = useRef('start');
+  const scoreRef = useRef(0);
+  const livesRef = useRef(3);
+  const levelRef = useRef(1);
+  const comboRef = useRef(0);
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(0);
+
+  const ballRef = useRef({ x: PAD.x, y: PAD.y, vx: 0, vy: 0, flying: false });
+  const wellsRef = useRef([]);
+  const nodesRef = useRef([]);
+  const hazardsRef = useRef([]);
+  const portalActiveRef = useRef(false);
+  const trailRef = useRef([]);
+  const particlesRef = useRef([]);
+  const dragRef = useRef({ active: false, x: PAD.x, y: PAD.y });
+  const shakeRef = useRef(0);
+  const starsRef = useRef(makeStars());
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  useEffect(() => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    window.__orbitAudio = audioCtx;
+    return () => { audioCtx.close && audioCtx.close(); };
+  }, []);
+
+  const playTone = useCallback((freq, dur, type, glide) => {
+    try {
+      const ctx = window.__orbitAudio;
+      if (!ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      if (glide) osc.frequency.exponentialRampToValueAtTime(glide, ctx.currentTime + dur);
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, []);
+
+  const spawnParticles = useCallback((x, y, hex, count) => {
+    const n = count || 12;
+    for (let i = 0; i < n; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = rand(0.6, 2.4);
+      particlesRef.current.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 1, hex,
+      });
+    }
+  }, []);
+
+  const setupLevel = useCallback((lvl) => {
+    const { wells, nodes, hazards } = generateLevel(lvl);
+    wellsRef.current = wells;
+    nodesRef.current = nodes;
+    hazardsRef.current = hazards;
+    portalActiveRef.current = false;
+    ballRef.current = { x: PAD.x, y: PAD.y, vx: 0, vy: 0, flying: false };
+    trailRef.current = [];
+  }, []);
+
+  const endGame = useCallback(() => {
+    const finalS = scoreRef.current;
+    setFinalScore(finalS);
+    const bestSoFar = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    if (finalS > bestSoFar) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalS));
+      setHighScore(finalS);
+    }
+    screenRef.current = 'gameover';
+    setScreen('gameover');
+    playTone(160, 0.5, 'sawtooth', 60);
+  }, [playTone]);
+
+  const failFlight = useCallback((hex) => {
+    livesRef.current -= 1;
+    setLives(livesRef.current);
+    comboRef.current = 0;
+    setCombo(0);
+    setHurt(true);
+    setTimeout(() => setHurt(false), 260);
+    shakeRef.current = 8;
+    const b = ballRef.current;
+    spawnParticles(b.x, b.y, hex, 16);
+    playTone(140, 0.3, 'sawtooth');
+    ballRef.current = { x: PAD.x, y: PAD.y, vx: 0, vy: 0, flying: false };
+    trailRef.current = [];
+    if (livesRef.current <= 0) endGame();
+  }, [endGame, playTone, spawnParticles]);
+
+  const launchBall = useCallback((px, py) => {
+    if (screenRef.current !== 'playing' || ballRef.current.flying) return;
+    const dx = PAD.x - px, dy = PAD.y - py;
+    const dist = Math.hypot(dx, dy);
+    let dirx, diry, power;
+    if (dist < 4) {
+      dirx = 0; diry = -1; power = MIN_LAUNCH_SPEED;
+    } else {
+      dirx = dx / dist; diry = dy / dist;
+      power = MIN_LAUNCH_SPEED + Math.min(dist, MAX_DRAG) / MAX_DRAG * (MAX_LAUNCH_SPEED - MIN_LAUNCH_SPEED);
+    }
+    ballRef.current = { x: PAD.x, y: PAD.y, vx: dirx * power, vy: diry * power, flying: true };
+    trailRef.current = [];
+    comboRef.current = 0;
+    setCombo(0);
+    playTone(360, 0.14, 'triangle', 620);
+  }, [playTone]);
+
+  const startGame = useCallback(() => {
+    setScore(0); setLevel(1); setLives(3); setCombo(0); setFinalScore(0);
+    scoreRef.current = 0; levelRef.current = 1; livesRef.current = 3; comboRef.current = 0;
+    setupLevel(1);
+    screenRef.current = 'playing';
+    setScreen('playing');
+  }, [setupLevel]);
+
+  const toLogical = useCallback((clientX, clientY) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) / rect.width * LOGICAL_W,
+      y: (clientY - rect.top) / rect.height * LOGICAL_H,
+    };
+  }, []);
+
+  const onPointerDown = useCallback((e) => {
+    if (screenRef.current !== 'playing' || ballRef.current.flying) return;
+    e.preventDefault();
+    const p = toLogical(e.clientX, e.clientY);
+    dragRef.current = { active: true, x: p.x, y: p.y };
+  }, [toLogical]);
+
+  const onPointerMove = useCallback((e) => {
+    if (!dragRef.current.active) return;
+    const p = toLogical(e.clientX, e.clientY);
+    dragRef.current.x = p.x; dragRef.current.y = p.y;
+  }, [toLogical]);
+
+  const onPointerUp = useCallback((e) => {
+    if (!dragRef.current.active) return;
+    const p = toLogical(e.clientX, e.clientY);
+    dragRef.current.active = false;
+    launchBall(p.x, p.y);
+  }, [toLogical, launchBall]);
+
+  // Canvas sizing
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const field = playFieldRef.current;
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = LOGICAL_W * dpr;
+      canvas.height = LOGICAL_H * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  // Main loop
+  useEffect(() => {
+    const loop = (ts) => {
+      const dtMs = lastTsRef.current ? ts - lastTsRef.current : 16.67;
+      lastTsRef.current = ts;
+      const dt = Math.min(Math.max(dtMs / 16.67, 0.3), 2);
+
+      // update hazards
+      hazardsRef.current.forEach(h => {
+        h.angle += h.angularSpeed * dt;
+        h.x = h.cx + Math.cos(h.angle) * h.orbitR;
+        h.y = h.cy + Math.sin(h.angle) * h.orbitR;
+      });
+
+      if (screenRef.current === 'playing') {
+        const b = ballRef.current;
+        if (b.flying) {
+          let ax = 0, ay = 0;
+          wellsRef.current.forEach(w => {
+            let dx = w.x - b.x, dy = w.y - b.y;
+            let distSq = dx * dx + dy * dy;
+            let dist = Math.sqrt(distSq);
+            if (dist < MIN_DIST) { dist = MIN_DIST; distSq = MIN_DIST * MIN_DIST; }
+            const a = w.strength / distSq;
+            ax += a * dx / dist;
+            ay += a * dy / dist;
+          });
+          b.vx += ax * dt;
+          b.vy += ay * dt;
+          const speed = Math.hypot(b.vx, b.vy);
+          if (speed > MAX_BALL_SPEED) {
+            b.vx = b.vx / speed * MAX_BALL_SPEED;
+            b.vy = b.vy / speed * MAX_BALL_SPEED;
+          }
+          b.x += b.vx * dt;
+          b.y += b.vy * dt;
+
+          trailRef.current.push({ x: b.x, y: b.y });
+          if (trailRef.current.length > 20) trailRef.current.shift();
+
+          // node collisions
+          nodesRef.current.forEach(node => {
+            if (node.collected) return;
+            const dx = node.x - b.x, dy = node.y - b.y;
+            if (Math.hypot(dx, dy) < BALL_R + node.r) {
+              node.collected = true;
+              comboRef.current += 1;
+              setCombo(comboRef.current);
+              const gained = 15 + comboRef.current * 5;
+              scoreRef.current += gained;
+              setScore(scoreRef.current);
+              spawnParticles(node.x, node.y, '#39ff6a', 10);
+              playTone(720 + comboRef.current * 40, 0.16, 'sine');
+              if (nodesRef.current.every(n => n.collected)) {
+                portalActiveRef.current = true;
+              }
+            }
+          });
+
+          // hazard collisions
+          if (b.flying) {
+            for (const hz of hazardsRef.current) {
+              const dx = hz.x - b.x, dy = hz.y - b.y;
+              if (Math.hypot(dx, dy) < BALL_R + hz.r) {
+                failFlight('#ff3860');
+                break;
+              }
+            }
+          }
+
+          // well-core collisions (prevents the ball getting trapped in a stable close orbit
+          // inside the force-clamp radius, which would otherwise loop forever)
+          if (b.flying) {
+            for (const w of wellsRef.current) {
+              const dx = w.x - b.x, dy = w.y - b.y;
+              if (Math.hypot(dx, dy) < MIN_DIST + BALL_R) {
+                failFlight('#b026ff');
+                break;
+              }
+            }
+          }
+
+          // portal collision
+          if (b.flying && portalActiveRef.current) {
+            const dx = PORTAL.x - b.x, dy = PORTAL.y - b.y;
+            if (Math.hypot(dx, dy) < BALL_R + PORTAL.r) {
+              const bonus = 60 * levelRef.current + comboRef.current * 10;
+              scoreRef.current += bonus;
+              setScore(scoreRef.current);
+              spawnParticles(PORTAL.x, PORTAL.y, '#00fff0', 24);
+              playTone(500, 0.25, 'triangle', 1100);
+              levelRef.current += 1;
+              setLevel(levelRef.current);
+              setupLevel(levelRef.current);
+            }
+          }
+
+          // bounds check
+          if (b.flying && (b.x < -24 || b.x > LOGICAL_W + 24 || b.y < -24 || b.y > LOGICAL_H + 24)) {
+            failFlight('#8a8ac0');
+          }
+        }
+      }
+
+      // particles
+      particlesRef.current = particlesRef.current.filter(p => p.life > 0.02);
+      particlesRef.current.forEach(p => {
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vx *= 0.96; p.vy *= 0.96;
+        p.life -= 0.03 * dt;
+      });
+
+      if (shakeRef.current > 0) shakeRef.current = Math.max(0, shakeRef.current - dt * 0.6);
+
+      draw(ts);
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    function draw(ts) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.save();
+      ctx.clearRect(0, 0, LOGICAL_W, LOGICAL_H);
+
+      if (shakeRef.current > 0) {
+        ctx.translate((Math.random() - 0.5) * shakeRef.current, (Math.random() - 0.5) * shakeRef.current);
+      }
+
+      // stars
+      starsRef.current.forEach(s => {
+        const a = 0.3 + 0.3 * Math.sin(ts / 900 + s.phase);
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(180,180,255,${a})`;
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // portal
+      const portalPulse = 1 + 0.15 * Math.sin(ts / 250);
+      ctx.beginPath();
+      ctx.arc(PORTAL.x, PORTAL.y, PORTAL.r * (portalActiveRef.current ? portalPulse : 1), 0, Math.PI * 2);
+      ctx.strokeStyle = portalActiveRef.current ? '#39ff6a' : 'rgba(138,138,192,0.5)';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = portalActiveRef.current ? '#39ff6a' : 'transparent';
+      ctx.shadowBlur = portalActiveRef.current ? 18 : 0;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // wells
+      wellsRef.current.forEach(w => {
+        const pulse = 1 + 0.08 * Math.sin(ts / 400 + w.x);
+        const grad = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, w.r * 2.4 * pulse);
+        grad.addColorStop(0, 'rgba(176,38,255,0.55)');
+        grad.addColorStop(1, 'rgba(176,38,255,0)');
+        ctx.beginPath();
+        ctx.fillStyle = grad;
+        ctx.arc(w.x, w.y, w.r * 2.4 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.fillStyle = '#b026ff';
+        ctx.shadowColor = '#b026ff';
+        ctx.shadowBlur = 10;
+        ctx.arc(w.x, w.y, w.r * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      });
+
+      // hazards
+      hazardsRef.current.forEach(hz => {
+        ctx.save();
+        ctx.translate(hz.x, hz.y);
+        ctx.rotate(hz.angle * 3);
+        ctx.beginPath();
+        ctx.fillStyle = '#ff3860';
+        ctx.shadowColor = '#ff3860';
+        ctx.shadowBlur = 12;
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * Math.PI * 2;
+          const r = hz.r * (i % 2 === 0 ? 1 : 0.5);
+          const x = Math.cos(a) * hz.r, y = Math.sin(a) * hz.r;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        ctx.shadowBlur = 0;
+      });
+
+      // nodes
+      nodesRef.current.forEach(node => {
+        if (node.collected) return;
+        const pulse = 1 + 0.2 * Math.sin(ts / 260 + node.id);
+        ctx.beginPath();
+        ctx.fillStyle = '#00fff0';
+        ctx.shadowColor = '#00fff0';
+        ctx.shadowBlur = 10;
+        ctx.arc(node.x, node.y, node.r * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      });
+
+      // pad
+      if (!ballRef.current.flying) {
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 2;
+        ctx.arc(PAD.x, PAD.y, 12, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // trail
+      trailRef.current.forEach((p, i) => {
+        const alpha = (i / trailRef.current.length) * 0.5;
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(0,255,240,${alpha})`;
+        ctx.arc(p.x, p.y, BALL_R * (0.3 + 0.5 * (i / trailRef.current.length)), 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // aim line
+      if (dragRef.current.active) {
+        const dx = PAD.x - dragRef.current.x, dy = PAD.y - dragRef.current.y;
+        const dist = Math.min(Math.hypot(dx, dy), MAX_DRAG);
+        const pct = dist / MAX_DRAG;
+        ctx.beginPath();
+        ctx.setLineDash([6, 5]);
+        ctx.strokeStyle = `rgb(${Math.round(255 * pct)},${Math.round(255 * (1 - pct * 0.5))},240)`;
+        ctx.lineWidth = 2.5;
+        ctx.moveTo(PAD.x, PAD.y);
+        ctx.lineTo(dragRef.current.x, dragRef.current.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // ball
+      const b = ballRef.current;
+      ctx.beginPath();
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = '#00fff0';
+      ctx.shadowBlur = 14;
+      ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // particles
+      particlesRef.current.forEach(p => {
+        ctx.beginPath();
+        ctx.fillStyle = p.hex;
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+
+      ctx.restore();
+    }
+
+    rafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [failFlight, playTone, setupLevel, spawnParticles]);
+
+  const nodesLeft = screen === 'playing' ? 0 : 0;
+
+  return (
+    <div className="app" data-testid="app-root">
+      <div className="bgGlow" />
+
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue score" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue level" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'♥'.repeat(Math.max(0, lives))}</div>
+        </div>
+      </div>
+
+      <div className="playField" ref={playFieldRef} data-testid="play-field">
+        <canvas
+          ref={canvasRef}
+          data-testid="game-canvas"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        />
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <div className="title">ORBIT SLINGSHOT</div>
+            <div className="subtitle">
+              Drag back from the launch pad and release to fling your comet through gravity wells.
+              Collect every glowing node in one flight to chain a combo, then curve into the portal
+              to advance. Clip a hazard, dive into a well's core, or drift off the field and you lose a life.
+            </div>
+            <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>LAUNCH</button>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <div className="title" style={{ fontSize: 26 }}>LOST IN THE VOID</div>
+            <div className="finalScore" data-testid="final-score">Score: {finalScore}</div>
+            <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+            <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
