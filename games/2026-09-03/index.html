@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Glow Breaker</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #06050f; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #1a0f3a 0%, #06050f 55%, #030308 100%);
+    color: #fff;
+  }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .bgGlow {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 15%, rgba(0, 255, 240, 0.10), transparent 40%),
+      radial-gradient(circle at 80% 25%, rgba(176, 38, 255, 0.12), transparent 40%),
+      radial-gradient(circle at 50% 95%, rgba(255, 47, 208, 0.10), transparent 45%);
+    pointer-events: none;
+  }
+
+  .hud {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 16px 4px;
+    gap: 8px;
+  }
+  .hudBox { text-align: center; flex: 1; }
+  .hudLabel {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: #8a8ac0;
+    text-transform: uppercase;
+  }
+  .hudValue {
+    font-size: 20px;
+    font-weight: 800;
+    text-shadow: 0 0 10px currentColor;
+  }
+  .hudValue.score { color: #00fff0; }
+  .hudValue.level { color: #ffe600; }
+  .hudValue.combo { color: #ff2fd0; }
+  .hudValue.lives { color: #ff3860; transition: transform 0.15s ease; }
+  .hudValue.lives.hurt { transform: scale(1.4); }
+
+  .playField {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    width: 100%;
+    max-width: 360px;
+    aspect-ratio: 320 / 480;
+    margin: 8px auto 14px;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 0 30px rgba(120,60,255,0.15);
+  }
+
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    background: #08061a;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    text-align: center;
+    padding: 20px;
+    background: rgba(6, 5, 15, 0.78);
+  }
+  .title {
+    font-size: 32px;
+    font-weight: 900;
+    background: linear-gradient(90deg, #00fff0, #b026ff, #ff2fd0);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(176,38,255,0.4);
+    letter-spacing: 0.03em;
+  }
+  .subtitle {
+    max-width: 280px;
+    font-size: 13px;
+    color: #b0b0e0;
+    line-height: 1.5;
+  }
+  .highscoreLine {
+    font-size: 13px;
+    color: #ffe600;
+    text-shadow: 0 0 8px #ffe600;
+  }
+  .btn {
+    padding: 14px 36px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #06050f;
+    background: linear-gradient(90deg, #00fff0, #ff2fd0);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(0,255,240,0.5);
+    min-height: 48px;
+    min-width: 160px;
+    touch-action: manipulation;
+  }
+  .btn:active { transform: scale(0.96); }
+
+  .finalScore {
+    font-size: 26px;
+    font-weight: 900;
+    color: #00fff0;
+    text-shadow: 0 0 16px #00fff0;
+  }
+
+  .hint {
+    position: absolute;
+    bottom: 6px;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    text-align: center;
+    font-size: 11px;
+    color: rgba(255,255,255,0.45);
+    letter-spacing: 0.04em;
+    pointer-events: none;
+  }
+
+  @media (max-width: 400px) {
+    .title { font-size: 24px; }
+    .subtitle { font-size: 12px; max-width: 240px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'glowBreaker_highScore';
+const LOGICAL_W = 320;
+const LOGICAL_H = 480;
+const BALL_R = 6;
+const PADDLE_Y = 452;
+const PADDLE_H = 10;
+const PADDLE_W_BASE = 64;
+const PADDLE_W_MIN = 40;
+const BASE_BALL_SPEED = 3.1;
+const SPEED_PER_LEVEL = 0.16;
+const MAX_BALL_SPEED = 6.6;
+const MARGIN = 14;
+const GAP = 4;
+const BRICK_H = 14;
+const BRICK_TOP = 44;
+const COLS = 7;
+const PALETTE = ['#00fff0', '#ff2fd0', '#b026ff', '#ffe600', '#39ff6a', '#ff3860', '#3aa0ff'];
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function rand(min, max) { return min + Math.random() * (max - min); }
+
+function paddleWidthForLevel(level) {
+  return Math.max(PADDLE_W_MIN, PADDLE_W_BASE - (level - 1) * 3);
+}
+
+function ballSpeedForLevel(level) {
+  return Math.min(BASE_BALL_SPEED + SPEED_PER_LEVEL * (level - 1), MAX_BALL_SPEED);
+}
+
+function generateBricks(level) {
+  const rows = Math.min(4 + Math.floor((level - 1) / 2), 7);
+  const brickW = (LOGICAL_W - MARGIN * 2 - (COLS - 1) * GAP) / COLS;
+  const hp2Chance = Math.min(0.06 * level, 0.4);
+  const bricks = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const hp = Math.random() < hp2Chance ? 2 : 1;
+      bricks.push({
+        x: MARGIN + c * (brickW + GAP),
+        y: BRICK_TOP + r * (BRICK_H + GAP),
+        w: brickW, h: BRICK_H,
+        hp, maxHp: hp,
+        alive: true,
+        color: PALETTE[r % PALETTE.length],
+      });
+    }
+  }
+  return bricks;
+}
+
+function makeStars() {
+  const stars = [];
+  for (let i = 0; i < 40; i++) {
+    stars.push({ x: rand(0, LOGICAL_W), y: rand(0, LOGICAL_H), r: rand(0.4, 1.5), phase: rand(0, Math.PI * 2) });
+  }
+  return stars;
+}
+
+function App() {
+  const [screen, setScreen] = useState('start');
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [level, setLevel] = useState(1);
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [hurt, setHurt] = useState(false);
+  const [finalScore, setFinalScore] = useState(0);
+
+  const canvasRef = useRef(null);
+  const playFieldRef = useRef(null);
+  const screenRef = useRef('start');
+  const scoreRef = useRef(0);
+  const livesRef = useRef(3);
+  const levelRef = useRef(1);
+  const comboRef = useRef(0);
+  const comboTimerRef = useRef(0);
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(0);
+
+  const paddleXRef = useRef(LOGICAL_W / 2);
+  const paddleWRef = useRef(PADDLE_W_BASE);
+  const ballRef = useRef({ x: LOGICAL_W / 2, y: PADDLE_Y - BALL_R - PADDLE_H / 2, vx: 0, vy: 0, speed: BASE_BALL_SPEED, attached: true });
+  const bricksRef = useRef([]);
+  const particlesRef = useRef([]);
+  const keysRef = useRef({ left: false, right: false });
+  const shakeRef = useRef(0);
+  const starsRef = useRef(makeStars());
+  const flashRef = useRef(0);
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  useEffect(() => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    window.__breakerAudio = audioCtx;
+    return () => { audioCtx.close && audioCtx.close(); };
+  }, []);
+
+  const playTone = useCallback((freq, dur, type, glide) => {
+    try {
+      const ctx = window.__breakerAudio;
+      if (!ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      if (glide) osc.frequency.exponentialRampToValueAtTime(glide, ctx.currentTime + dur);
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, []);
+
+  const spawnParticles = useCallback((x, y, hex, count) => {
+    const n = count || 10;
+    for (let i = 0; i < n; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = rand(0.6, 2.6);
+      particlesRef.current.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1, hex });
+    }
+  }, []);
+
+  const attachBall = useCallback(() => {
+    ballRef.current = {
+      x: paddleXRef.current, y: PADDLE_Y - BALL_R - PADDLE_H / 2,
+      vx: 0, vy: 0, speed: ballSpeedForLevel(levelRef.current), attached: true,
+    };
+  }, []);
+
+  const setupLevel = useCallback((lvl) => {
+    bricksRef.current = generateBricks(lvl);
+    paddleWRef.current = paddleWidthForLevel(lvl);
+    attachBall();
+  }, [attachBall]);
+
+  const endGame = useCallback(() => {
+    const finalS = scoreRef.current;
+    setFinalScore(finalS);
+    const bestSoFar = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    if (finalS > bestSoFar) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalS));
+      setHighScore(finalS);
+    }
+    screenRef.current = 'gameover';
+    setScreen('gameover');
+    playTone(150, 0.5, 'sawtooth', 55);
+  }, [playTone]);
+
+  const loseLife = useCallback(() => {
+    livesRef.current -= 1;
+    setLives(livesRef.current);
+    comboRef.current = 0;
+    comboTimerRef.current = 0;
+    setCombo(0);
+    setHurt(true);
+    setTimeout(() => setHurt(false), 260);
+    shakeRef.current = 8;
+    playTone(130, 0.3, 'sawtooth');
+    if (livesRef.current <= 0) {
+      endGame();
+    } else {
+      attachBall();
+    }
+  }, [attachBall, endGame, playTone]);
+
+  const launchBall = useCallback(() => {
+    if (screenRef.current !== 'playing' || !ballRef.current.attached) return;
+    const b = ballRef.current;
+    const angle = rand(-0.35, 0.35);
+    b.vx = Math.sin(angle) * b.speed;
+    b.vy = -Math.cos(angle) * b.speed;
+    b.attached = false;
+    playTone(420, 0.12, 'triangle', 700);
+  }, [playTone]);
+
+  const startGame = useCallback(() => {
+    setScore(0); setLevel(1); setLives(3); setCombo(0); setFinalScore(0);
+    scoreRef.current = 0; levelRef.current = 1; livesRef.current = 3; comboRef.current = 0;
+    paddleXRef.current = LOGICAL_W / 2;
+    setupLevel(1);
+    screenRef.current = 'playing';
+    setScreen('playing');
+  }, [setupLevel]);
+
+  const toLogicalX = useCallback((clientX) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    return (clientX - rect.left) / rect.width * LOGICAL_W;
+  }, []);
+
+  const onPointerMove = useCallback((e) => {
+    if (screenRef.current !== 'playing') return;
+    const x = toLogicalX(e.clientX);
+    paddleXRef.current = clamp(x, paddleWRef.current / 2, LOGICAL_W - paddleWRef.current / 2);
+  }, [toLogicalX]);
+
+  const onPointerDown = useCallback((e) => {
+    if (screenRef.current !== 'playing') return;
+    e.preventDefault();
+    const x = toLogicalX(e.clientX);
+    paddleXRef.current = clamp(x, paddleWRef.current / 2, LOGICAL_W - paddleWRef.current / 2);
+    launchBall();
+  }, [toLogicalX, launchBall]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') keysRef.current.left = true;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') keysRef.current.right = true;
+      if (e.code === 'Space') { e.preventDefault(); launchBall(); }
+    };
+    const onKeyUp = (e) => {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') keysRef.current.left = false;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') keysRef.current.right = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [launchBall]);
+
+  // Canvas sizing
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = LOGICAL_W * dpr;
+      canvas.height = LOGICAL_H * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  // Main loop
+  useEffect(() => {
+    const loop = (ts) => {
+      const dtMs = lastTsRef.current ? ts - lastTsRef.current : 16.67;
+      lastTsRef.current = ts;
+      const dt = Math.min(Math.max(dtMs / 16.67, 0.3), 2);
+
+      if (screenRef.current === 'playing') {
+        const pw = paddleWRef.current;
+        if (keysRef.current.left) paddleXRef.current -= 4.2 * dt;
+        if (keysRef.current.right) paddleXRef.current += 4.2 * dt;
+        paddleXRef.current = clamp(paddleXRef.current, pw / 2, LOGICAL_W - pw / 2);
+
+        const b = ballRef.current;
+        if (b.attached) {
+          b.x = paddleXRef.current;
+          b.y = PADDLE_Y - BALL_R - PADDLE_H / 2;
+        } else {
+          b.x += b.vx * dt;
+          b.y += b.vy * dt;
+
+          // walls
+          if (b.x - BALL_R < 0) { b.x = BALL_R; b.vx = Math.abs(b.vx); }
+          if (b.x + BALL_R > LOGICAL_W) { b.x = LOGICAL_W - BALL_R; b.vx = -Math.abs(b.vx); }
+          if (b.y - BALL_R < 0) { b.y = BALL_R; b.vy = Math.abs(b.vy); }
+
+          // bricks
+          const bricks = bricksRef.current;
+          for (let i = 0; i < bricks.length; i++) {
+            const br = bricks[i];
+            if (!br.alive) continue;
+            const cx = br.x + br.w / 2, cy = br.y + br.h / 2;
+            const dx = b.x - cx, dy = b.y - cy;
+            const combinedHalfW = br.w / 2 + BALL_R, combinedHalfH = br.h / 2 + BALL_R;
+            const overlapX = combinedHalfW - Math.abs(dx);
+            const overlapY = combinedHalfH - Math.abs(dy);
+            if (overlapX > 0 && overlapY > 0) {
+              if (overlapX < overlapY) {
+                b.vx = dx > 0 ? Math.abs(b.vx) : -Math.abs(b.vx);
+              } else {
+                b.vy = dy > 0 ? Math.abs(b.vy) : -Math.abs(b.vy);
+              }
+              br.hp -= 1;
+              comboRef.current += 1;
+              comboTimerRef.current = 1400;
+              setCombo(comboRef.current);
+              if (br.hp <= 0) {
+                br.alive = false;
+                const gained = 15 + comboRef.current * 4;
+                scoreRef.current += gained;
+                spawnParticles(cx, cy, br.color, 12);
+                playTone(560 + comboRef.current * 30, 0.14, 'sine');
+              } else {
+                const gained = 5 + comboRef.current * 2;
+                scoreRef.current += gained;
+                spawnParticles(cx, cy, br.color, 5);
+                playTone(340, 0.08, 'square');
+              }
+              setScore(scoreRef.current);
+              break;
+            }
+          }
+
+          // paddle
+          const pTop = PADDLE_Y - PADDLE_H / 2, pBot = PADDLE_Y + PADDLE_H / 2;
+          const pLeft = paddleXRef.current - pw / 2, pRight = paddleXRef.current + pw / 2;
+          if (b.vy > 0 && b.y + BALL_R >= pTop && b.y - BALL_R <= pBot && b.x >= pLeft - BALL_R && b.x <= pRight + BALL_R) {
+            const hitPos = clamp((b.x - paddleXRef.current) / (pw / 2), -1, 1);
+            const maxAngle = 1.15;
+            const angle = hitPos * maxAngle;
+            b.speed = Math.min(b.speed + 0.06, MAX_BALL_SPEED);
+            b.vx = Math.sin(angle) * b.speed;
+            b.vy = -Math.cos(angle) * b.speed;
+            b.y = pTop - BALL_R;
+            comboRef.current = 0;
+            comboTimerRef.current = 0;
+            setCombo(0);
+            spawnParticles(b.x, pTop, '#ffffff', 6);
+            playTone(240, 0.09, 'triangle');
+          }
+
+          // normalize velocity to keep min vertical component and correct magnitude
+          const spd = Math.hypot(b.vx, b.vy);
+          if (spd > 0.001) {
+            const minVy = spd * 0.22;
+            if (Math.abs(b.vy) < minVy) b.vy = minVy * (b.vy < 0 ? -1 : 1 || -1);
+            const rescale = b.speed / Math.hypot(b.vx, b.vy);
+            b.vx *= rescale; b.vy *= rescale;
+          }
+
+          // fell below paddle
+          if (b.y - BALL_R > LOGICAL_H) {
+            loseLife();
+          }
+
+          // level clear
+          if (bricksRef.current.length && bricksRef.current.every(br => !br.alive)) {
+            const bonus = 60 * levelRef.current;
+            scoreRef.current += bonus;
+            setScore(scoreRef.current);
+            flashRef.current = 1;
+            playTone(500, 0.25, 'triangle', 1000);
+            levelRef.current += 1;
+            setLevel(levelRef.current);
+            setupLevel(levelRef.current);
+          }
+        }
+
+        if (comboTimerRef.current > 0) {
+          comboTimerRef.current -= dtMs;
+          if (comboTimerRef.current <= 0) {
+            comboTimerRef.current = 0;
+            comboRef.current = 0;
+            setCombo(0);
+          }
+        }
+      }
+
+      particlesRef.current = particlesRef.current.filter(p => p.life > 0.02);
+      particlesRef.current.forEach(p => {
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vx *= 0.96; p.vy *= 0.96;
+        p.life -= 0.03 * dt;
+      });
+
+      if (shakeRef.current > 0) shakeRef.current = Math.max(0, shakeRef.current - dt * 0.6);
+      if (flashRef.current > 0) flashRef.current = Math.max(0, flashRef.current - dt * 0.05);
+
+      draw(ts);
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    function draw(ts) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.save();
+      ctx.clearRect(0, 0, LOGICAL_W, LOGICAL_H);
+
+      if (shakeRef.current > 0) {
+        ctx.translate((Math.random() - 0.5) * shakeRef.current, (Math.random() - 0.5) * shakeRef.current);
+      }
+
+      starsRef.current.forEach(s => {
+        const a = 0.25 + 0.3 * Math.sin(ts / 900 + s.phase);
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(180,180,255,${a})`;
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (flashRef.current > 0) {
+        ctx.fillStyle = `rgba(0,255,240,${flashRef.current * 0.25})`;
+        ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+      }
+
+      // bricks
+      bricksRef.current.forEach(br => {
+        if (!br.alive) return;
+        const dmg = br.hp < br.maxHp;
+        ctx.beginPath();
+        ctx.fillStyle = dmg ? hexAlpha(br.color, 0.45) : br.color;
+        ctx.shadowColor = br.color;
+        ctx.shadowBlur = dmg ? 4 : 9;
+        roundRect(ctx, br.x, br.y, br.w, br.h, 3);
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+
+      // paddle
+      const pw = paddleWRef.current;
+      ctx.beginPath();
+      ctx.fillStyle = '#00fff0';
+      ctx.shadowColor = '#00fff0';
+      ctx.shadowBlur = 12;
+      roundRect(ctx, paddleXRef.current - pw / 2, PADDLE_Y - PADDLE_H / 2, pw, PADDLE_H, 5);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // ball
+      const b = ballRef.current;
+      ctx.beginPath();
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = '#ff2fd0';
+      ctx.shadowBlur = 14;
+      ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // particles
+      particlesRef.current.forEach(p => {
+        ctx.beginPath();
+        ctx.fillStyle = p.hex;
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.arc(p.x, p.y, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+
+      ctx.restore();
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function hexAlpha(hex, alpha) {
+      const n = parseInt(hex.slice(1), 16);
+      const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    rafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loseLife, playTone, setupLevel, spawnParticles]);
+
+  return (
+    <div className="app" data-testid="app-root">
+      <div className="bgGlow" />
+
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue score" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue level" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className={`hudValue lives ${hurt ? 'hurt' : ''}`} data-testid="lives">{'♥'.repeat(Math.max(0, lives))}</div>
+        </div>
+      </div>
+
+      <div className="playField" ref={playFieldRef} data-testid="play-field">
+        <canvas
+          ref={canvasRef}
+          data-testid="game-canvas"
+          onPointerMove={onPointerMove}
+          onPointerDown={onPointerDown}
+        />
+
+        {screen === 'playing' && (
+          <div className="hint">Move to slide · tap / space to launch</div>
+        )}
+
+        {screen === 'start' && (
+          <div className="overlay">
+            <div className="title">GLOW BREAKER</div>
+            <div className="subtitle">
+              Slide the paddle with your mouse, finger, or arrow keys to keep the ball alive.
+              Tap or press Space to launch it into the glowing brick wall above. Chain hits without
+              touching the paddle for a rising combo, but let the ball fall and you lose a life.
+            </div>
+            <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>LAUNCH</button>
+          </div>
+        )}
+
+        {screen === 'gameover' && (
+          <div className="overlay">
+            <div className="title" style={{ fontSize: 26 }}>WALL BROKEN</div>
+            <div className="finalScore" data-testid="final-score">Score: {finalScore}</div>
+            <div className="highscoreLine" data-testid="high-score-final">Best: {highScore}</div>
+            <button className="btn" data-testid="restart-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

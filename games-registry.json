@@ -3467,5 +3467,26 @@
     "file": "games/2026-09-02/index.html",
     "preview": "games/2026-09-02/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-03",
+    "name": "Glow Breaker",
+    "date": "2026-09-03",
+    "description": "A neon breakout with continuous paddle control: slide your glowing paddle with mouse, finger, or arrow keys to keep the ball alive, then tap or press Space to launch it into a wall of glowing bricks. Angle your return off the paddle edge to aim, chain brick hits without touching the paddle for a rising combo multiplier, and clear every brick to advance into a bigger wall with a faster ball and a narrower paddle. Some bricks take two hits to crack, and letting the ball fall past the paddle costs one of three lives.",
+    "tagline": "Slide, launch, and smash the wall before it smashes back.",
+    "tags": [
+      "arcade",
+      "breakout",
+      "reflex",
+      "precision",
+      "classic"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move mouse/finger or Arrow keys / A-D to slide the paddle; click/tap or Space to launch the ball",
+    "folder": "games/2026-09-03",
+    "file": "games/2026-09-03/index.html",
+    "preview": "games/2026-09-03/preview.png",
+    "rating": 4.3
   }
 ]
