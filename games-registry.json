@@ -3509,5 +3509,26 @@
     "file": "games/2026-09-04/index.html",
     "preview": "games/2026-09-04/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-05",
+    "name": "Twin Guard",
+    "date": "2026-09-05",
+    "description": "A neon dual-shield defense game: two independent glowing arcs orbit a central core, one confined to the left half and one to the right, and you steer both at once to intercept shards streaking in from every angle. Drag either half of the field or use A/D for the cyan shield and the arrow keys for the magenta one, chaining consecutive blocks into a rising combo and score. Let a shard slip past either shield into the core and you lose one of three lives and your combo resets, while shards spawn faster, move quicker, and demand a narrower shield arc as your level climbs.",
+    "tagline": "Two shields, one core, both hands.",
+    "tags": [
+      "defense",
+      "reflex",
+      "dual-control",
+      "arcade",
+      "precision"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Drag left/right half of the field, or A/D for the cyan shield and Arrow keys for the magenta shield",
+    "folder": "games/2026-09-05",
+    "file": "games/2026-09-05/index.html",
+    "preview": "games/2026-09-05/preview.png",
+    "rating": 4.3
   }
 ]
