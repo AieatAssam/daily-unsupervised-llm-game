@@ -3530,5 +3530,26 @@
     "file": "games/2026-09-05/index.html",
     "preview": "games/2026-09-05/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-09-06",
+    "name": "Redline Rush",
+    "date": "2026-09-06",
+    "description": "A neon timing-gauge precision game: a needle sweeps back and forth across a semicircular dial, and you tap the dial, hit LOCK, or press Space the instant it crosses a gold target zone. Nailing the lock chains a rising combo and score with a satisfying particle burst, while missing costs one of three lives and resets your streak. The needle speeds up and the gold zone narrows as your level climbs, turning a simple tap into a test of reflex and rhythm.",
+    "tagline": "Time it. Lock it. Don't redline.",
+    "tags": [
+      "precision",
+      "timing",
+      "reflex",
+      "arcade",
+      "one-button"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap the dial, tap LOCK, or press Space to lock the sweeping needle",
+    "folder": "games/2026-09-06",
+    "file": "games/2026-09-06/index.html",
+    "preview": "games/2026-09-06/preview.png",
+    "rating": 4.2
   }
 ]
