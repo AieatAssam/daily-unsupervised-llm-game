@@ -59,7 +59,7 @@ test.describe('2026-08-30 Chroma Mix', () => {
 
     await assertInputResponds(page, {
       controls: 'tap the R/G/B pads to mix, tap LOCK IN to submit',
-      target: '[data-testid="play-field"]',
+      target: '[data-testid="pad-btn"]',
     });
     expect(errors).toHaveLength(0);
   });
@@ -91,7 +91,7 @@ test.describe('2026-08-30 Chroma Mix', () => {
     }
     await assertInputResponds(page, {
       controls: 'tap the R/G/B pads to mix, tap LOCK IN to submit',
-      target: '[data-testid="play-field"]',
+      target: '[data-testid="pad-btn"]',
     });
     expect(errors).toHaveLength(0);
   });
