@@ -89,25 +89,6 @@
     pointer-events: none;
   }
 
-  .timerBarTrack {
-    width: 90%;
-    max-width: 360px;
-    height: 8px;
-    border-radius: 6px;
-    background: rgba(255,255,255,0.08);
-    overflow: hidden;
-    box-shadow: inset 0 0 6px rgba(0,0,0,0.6);
-  }
-  .timerBarFill {
-    width: 100%;
-    height: 100%;
-    border-radius: 6px;
-    background: linear-gradient(90deg, #00fff0, #ff2fd0);
-    box-shadow: 0 0 12px #00fff0;
-    transform-origin: left;
-    will-change: transform;
-  }
-
   .prompt {
     font-size: 12px;
     letter-spacing: 0.15em;
@@ -204,6 +185,7 @@
   }
   .lockBtn:active { transform: scale(0.97); }
   .lockBtn.flashOk { background: linear-gradient(90deg, #39ff6a, #00fff0); box-shadow: 0 0 30px #39ff6a; }
+  .lockBtn.flashMeh { background: linear-gradient(90deg, #ffe600, #ff9d00); box-shadow: 0 0 30px #ffe600; }
   .lockBtn.flashBad { background: linear-gradient(90deg, #ff3860, #b026ff); box-shadow: 0 0 30px #ff3860; color: #fff; }
 
   .overlay {
@@ -276,14 +258,14 @@ const { useState, useRef, useEffect, useCallback } = React;
 const HIGH_SCORE_KEY = 'chromaMix_highScore';
 const LEVEL_UP_EVERY = 5;
 const PAD_ADD = 48;
-const DECAY_PER_SEC = 26;
 const MAX_DIST = Math.sqrt(3 * 255 * 255);
+// Beyond tolerance * FAIL_DIST_MULT, locking in costs a life instead of
+// just scoring low — gives players a safe "close enough" margin to bank
+// partial credit in without punishing every imperfect mix.
+const FAIL_DIST_MULT = 2.4;
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-function timerForLevel(level) {
-  return Math.max(4200, 9000 - (level - 1) * 260);
-}
 function toleranceForLevel(level) {
   return Math.max(32, 80 - (level - 1) * 3);
 }
@@ -325,10 +307,7 @@ function App() {
   // input never triggers a re-render.
   const padFillRefs = useRef([null, null, null]);
   const mixSwatchRef = useRef(null);
-  const timerBarFillRef = useRef(null);
   const targetRef = useRef({ r: 200, g: 80, b: 160 });
-  const roundExpireRef = useRef(0);
-  const roundDurRef = useRef(6000);
   const toleranceRef = useRef(72);
   const levelRef = useRef(1);
   const streakRef = useRef(0);
@@ -336,7 +315,6 @@ function App() {
   const scoreRef = useRef(0);
   const screenRef = useRef('start');
   const lockingRef = useRef(false);
-  const lastTsRef = useRef(0);
   const rafRef = useRef(null);
 
   useEffect(() => { screenRef.current = screen; }, [screen]);
@@ -357,13 +335,10 @@ function App() {
     const t = randTarget();
     targetRef.current = t;
     toleranceRef.current = toleranceForLevel(lvl);
-    roundDurRef.current = timerForLevel(lvl);
-    roundExpireRef.current = performance.now() + roundDurRef.current;
     lockingRef.current = false;
     channelsRef.current = [0, 0, 0];
     padFillRefs.current.forEach(el => { if (el) el.style.transform = 'scaleY(0)'; });
     if (mixSwatchRef.current) mixSwatchRef.current.style.background = 'rgb(0, 0, 0)';
-    if (timerBarFillRef.current) timerBarFillRef.current.style.transform = 'scaleX(1)';
     setTarget(t);
     setLockFlash(null);
   }, []);
@@ -417,30 +392,24 @@ function App() {
     playTone([200, 300, 400][idx], 0.08, 'sine');
   }, [playTone]);
 
-  const handleLock = useCallback((forced) => {
+  // No countdown — players mix at their own pace. Locking in scores on a
+  // continuous curve based on how close the mix is to the target; only
+  // locking in a mix that's way off (beyond the fail gate) costs a life.
+  const handleLock = useCallback(() => {
     if (screenRef.current !== 'playing' || lockingRef.current) return;
     lockingRef.current = true;
     const [r, g, b] = channelsRef.current;
     const t = targetRef.current;
-    const d = Math.sqrt((r - t.r) ** 2 + (g - t.g) ** 2 + (b - t.b) ** 2);
-    const ok = !forced && d <= toleranceRef.current;
+    const dist = Math.sqrt((r - t.r) ** 2 + (g - t.g) ** 2 + (b - t.b) ** 2);
+    const tol = toleranceRef.current;
+    const failDist = tol * FAIL_DIST_MULT;
+    const matchPct = clamp(100 - (dist / MAX_DIST) * 100, 0, 100);
 
     const { cx, cy } = ringGeomRef.current;
+    let lostLife = false;
 
-    if (ok) {
-      streakRef.current += 1;
-      const nc = streakRef.current;
-      setCombo(nc);
-      scoreRef.current += 15 + nc * 3;
-      setScore(scoreRef.current);
-      spawnParticles(cx, cy, rgbCss(t.r, t.g, t.b), 26);
-      playTone(760, 0.18, 'triangle');
-      setLockFlash('success');
-      if (nc % LEVEL_UP_EVERY === 0) {
-        levelRef.current += 1;
-        setLevel(levelRef.current);
-      }
-    } else {
+    if (dist > failDist) {
+      lostLife = true;
       livesRef.current -= 1;
       setLives(livesRef.current);
       streakRef.current = 0;
@@ -450,10 +419,25 @@ function App() {
       spawnParticles(cx, cy, '#ff3860', 18);
       playTone(140, 0.3, 'sawtooth');
       setLockFlash('fail');
+    } else {
+      const perfect = dist <= tol;
+      streakRef.current = perfect ? streakRef.current + 1 : 0;
+      const nc = streakRef.current;
+      setCombo(nc);
+      const gained = Math.round(matchPct) + (perfect ? 15 + nc * 3 : 0);
+      scoreRef.current += gained;
+      setScore(scoreRef.current);
+      spawnParticles(cx, cy, rgbCss(t.r, t.g, t.b), perfect ? 26 : 14);
+      playTone(perfect ? 760 : 480, perfect ? 0.18 : 0.14, 'triangle');
+      setLockFlash(perfect ? 'success' : 'ok');
+      if (perfect && nc % LEVEL_UP_EVERY === 0) {
+        levelRef.current += 1;
+        setLevel(levelRef.current);
+      }
     }
 
     setTimeout(() => {
-      if (!ok && livesRef.current <= 0) {
+      if (lostLife && livesRef.current <= 0) {
         endGame();
       } else {
         spawnRound();
@@ -462,7 +446,7 @@ function App() {
   }, [spawnParticles, playTone, spawnRound, endGame]);
 
   // Keyboard controls: R/G/B (or Arrow Left/Up/Right, A/D) pump channels,
-  // Space/Enter/ArrowDown attempts the lock.
+  // Space/Enter/ArrowDown locks in the current mix.
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.repeat) return;
@@ -470,7 +454,7 @@ function App() {
       if (k === 'r' || k === 'arrowleft' || k === 'a') addChannel(0, PAD_ADD);
       else if (k === 'g' || k === 'arrowup') addChannel(1, PAD_ADD);
       else if (k === 'b' || k === 'arrowright' || k === 'd') addChannel(2, PAD_ADD);
-      else if (k === ' ' || k === 'enter' || k === 'arrowdown') handleLock(false);
+      else if (k === ' ' || k === 'enter' || k === 'arrowdown') handleLock();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -522,14 +506,10 @@ function App() {
       });
     }
 
-    lastTsRef.current = performance.now();
-
     const loop = (now) => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const w = canvas.width / dpr;
       const h = canvas.height / dpr;
-      const dt = Math.min(64, now - lastTsRef.current);
-      lastTsRef.current = now;
       ctx.clearRect(0, 0, w, h);
 
       ambientRef.current.forEach(p => {
@@ -545,18 +525,12 @@ function App() {
       ctx.globalAlpha = 1;
 
       if (screenRef.current === 'playing') {
-        if (!lockingRef.current) {
-          const dtSec = dt / 1000;
-          for (let i = 0; i < 3; i++) {
-            channelsRef.current[i] = Math.max(0, channelsRef.current[i] - DECAY_PER_SEC * dtSec);
-          }
-        }
-
         const t = targetRef.current;
         const [r, g, b] = channelsRef.current;
         const dist = Math.sqrt((r - t.r) ** 2 + (g - t.g) ** 2 + (b - t.b) ** 2);
         const matchPct = clamp(100 - (dist / MAX_DIST) * 100, 0, 100);
         const ready = dist <= toleranceRef.current;
+        const danger = dist > toleranceRef.current * FAIL_DIST_MULT;
 
         const { cx, cy, radius } = ringGeomRef.current;
 
@@ -596,11 +570,8 @@ function App() {
 
         ctx.font = '700 12px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillStyle = ready ? '#ffe600' : 'rgba(255,255,255,0.7)';
+        ctx.fillStyle = ready ? '#ffe600' : (danger ? '#ff3860' : 'rgba(255,255,255,0.7)');
         ctx.fillText(`MATCH ${matchPct.toFixed(0)}%`, cx, cy + radius + 26);
-
-        const remaining = roundExpireRef.current - now;
-        const pct = clamp((remaining / roundDurRef.current) * 100, 0, 100);
 
         // Write straight to the DOM instead of through React state — this
         // runs every frame while playing, and going through setState here
@@ -609,11 +580,6 @@ function App() {
           if (el) el.style.transform = `scaleY(${channelsRef.current[i] / 255})`;
         });
         if (mixSwatchRef.current) mixSwatchRef.current.style.background = rgbCss(r, g, b);
-        if (timerBarFillRef.current) timerBarFillRef.current.style.transform = `scaleX(${pct / 100})`;
-
-        if (remaining <= 0 && !lockingRef.current) {
-          handleLock(true);
-        }
       }
 
       const parts = particlesRef.current;
@@ -668,11 +634,8 @@ function App() {
 
         {screen === 'playing' && (
           <React.Fragment>
-            <div className="timerBarTrack">
-              <div className="timerBarFill" ref={timerBarFillRef} />
-            </div>
             <div className="ringSlot" ref={ringSlotRef} />
-            <div className="prompt">Pump R / G / B to match the target hue, then lock it in</div>
+            <div className="prompt">Pump R / G / B toward the target, then lock in when you're close — closer mixes score more</div>
             <div className="swatchRow">
               <div className="swatchBox">
                 <div className="swatchLabel">Target</div>
@@ -698,9 +661,9 @@ function App() {
               </button>
             </div>
             <button
-              className={`lockBtn ${lockFlash === 'success' ? 'flashOk' : ''} ${lockFlash === 'fail' ? 'flashBad' : ''}`}
+              className={`lockBtn ${lockFlash === 'success' ? 'flashOk' : ''} ${lockFlash === 'ok' ? 'flashMeh' : ''} ${lockFlash === 'fail' ? 'flashBad' : ''}`}
               data-testid="lock-btn"
-              onClick={() => handleLock(false)}
+              onClick={() => handleLock()}
             >
               LOCK IN
             </button>
@@ -712,9 +675,9 @@ function App() {
             <div className="title">CHROMA MIX</div>
             <div className="subtitle">
               A glowing target hue appears — tap the R, G and B pads (or press R/G/B, arrow keys) to pump your
-              mixing orb toward it. Channels drain fast, so keep pumping. Get close and hit LOCK IN (or Space)
-              before the timer runs out. Lock in a bad blend or run out of time and you lose a life — tolerance
-              shrinks and the clock tightens as your level climbs.
+              mixing orb toward it. No clock — take your time and get as close as you can, then hit LOCK IN
+              (or Space). Score scales with how close your mix is, with a bonus for nailing it exactly. Lock in
+              a mix that's way off target and you'll lose a life — tolerance tightens as your level climbs.
             </div>
             <div className="highscoreLine" data-testid="high-score">Best: {highScore}</div>
             <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
