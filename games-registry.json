@@ -3578,5 +3578,26 @@
     "file": "games/2026-09-08/index.html",
     "preview": "games/2026-09-08/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-09-09",
+    "name": "Volt Serpent",
+    "date": "2026-09-09",
+    "description": "A neon grid-based serpent survival game: steer a glowing snake across a 16x16 grid to devour pulsing orbs and grow longer, chaining consecutive eats into a rising combo and score. Gold surge orbs are worth extra and add two segments instead of one. Hit a wall, a red hazard cell, or your own tail and you lose one of three lives — the serpent snaps back to starting length while your score and level survive. Every five orbs eaten speeds up the serpent's crawl and seeds more hazard cells onto the grid, forcing tighter, more deliberate turns as you go.",
+    "tagline": "Grow long, don't bite yourself.",
+    "tags": [
+      "snake",
+      "arcade",
+      "grid",
+      "survival",
+      "reflex"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys or WASD to steer, on-screen D-pad or swipe on mobile, Space triggers a cosmetic shockwave pulse",
+    "folder": "games/2026-09-09",
+    "file": "games/2026-09-09/index.html",
+    "preview": "games/2026-09-09/preview.png",
+    "rating": 4.2
   }
 ]
