@@ -3599,5 +3599,26 @@
     "file": "games/2026-09-09/index.html",
     "preview": "games/2026-09-09/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-10",
+    "name": "Glitch Popper",
+    "date": "2026-09-10",
+    "description": "A neon whack-a-glitch reaction game: nodes flicker to life across a 5x4 grid, each ringed by a shrinking countdown, and you click, tap, or move a keyboard cursor to pop them before the ring collapses. Chaining hits builds a rising combo and score, gold surge nodes pay out extra, and letting a good node expire silently resets your streak. Red glitch nodes are decoys — popping one costs one of three lives and your combo, but ignoring them is free, so split-second judgment matters as much as speed. Every ten hits levels you up, spawning glitches faster, shrinking their lifespan, and letting more flicker at once.",
+    "tagline": "Pop the good, dodge the red.",
+    "tags": [
+      "reaction",
+      "whack-a-mole",
+      "grid",
+      "reflex",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click or tap glowing grid nodes; or move a cursor with arrow keys / WASD and pop with Space or Enter",
+    "folder": "games/2026-09-10",
+    "file": "games/2026-09-10/index.html",
+    "preview": "games/2026-09-10/preview.png",
+    "rating": 4.2
   }
 ]
