@@ -3620,5 +3620,26 @@
     "file": "games/2026-09-10/index.html",
     "preview": "games/2026-09-10/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-11",
+    "name": "Socket Shift",
+    "date": "2026-09-11",
+    "description": "A neon rotation-precision game: glowing keys drift down toward a socket ring, each stamped with a notch at its own angle, and you rotate the socket to match before the key reaches the capture line. Hold Left/Right or A/D, drag anywhere in the field, or tap the rotate buttons to swing the notch into place — a clean lock chains a rising combo and score with a precision bonus for a dead-center match, while a misaligned key costs one of three lives and resets your streak. Gold keys pay out big, and every six locks levels you up, dropping keys faster and tightening the tolerance window, forcing sharper angle reads under pressure.",
+    "tagline": "Match the angle, lock the key.",
+    "tags": [
+      "precision",
+      "rotation",
+      "reflex",
+      "timing",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Hold arrow keys / A-D, drag in the play field, or tap the rotate buttons to spin the socket",
+    "folder": "games/2026-09-11",
+    "file": "games/2026-09-11/index.html",
+    "preview": "games/2026-09-11/preview.png",
+    "rating": 4.1
   }
 ]
