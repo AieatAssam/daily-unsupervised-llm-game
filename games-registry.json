@@ -3641,5 +3641,26 @@
     "file": "games/2026-09-11/index.html",
     "preview": "games/2026-09-11/preview.png",
     "rating": 4.1
+  },
+  {
+    "id": "2026-09-12",
+    "name": "Photon Bounce",
+    "date": "2026-09-12",
+    "description": "A neon trick-shot arena game: a glowing photon launcher sits at the bottom of the arena while drifting orbs float in the field above. Click or tap anywhere in the arena to fire a photon toward that point, or hold Left/Right (A/D) to swing an aim reticle and press Space to launch — the photon banks off the side and top walls, and every orb it clips along the way chains into the same shot for a rising combo and score. Gold orbs pay out big, and a shot that bounces out without clipping a single orb costs one of three lives and resets your streak. Every eight hits levels you up, shrinking and speeding the orbs and trimming how many wall bounces a photon survives before it fizzles out, forcing sharper bank-shot reads under pressure.",
+    "tagline": "Bank the bounce, chain the combo.",
+    "tags": [
+      "physics",
+      "aiming",
+      "trick-shot",
+      "arcade",
+      "reflex"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click or tap the arena to fire toward that point, or hold Left/Right (A/D) / tap the aim buttons and press Space or FIRE to launch",
+    "folder": "games/2026-09-12",
+    "file": "games/2026-09-12/index.html",
+    "preview": "games/2026-09-12/preview.png",
+    "rating": 4.2
   }
 ]
