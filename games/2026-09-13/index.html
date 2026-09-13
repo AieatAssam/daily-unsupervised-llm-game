@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Gravity Flux</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030a; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 6px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 15%, #0a1a24 0%, #080a14 55%, #030308 100%);
+  }
+
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-around;
+    padding: 10px 12px; z-index: 15; pointer-events: none;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 10px; letter-spacing: 2px; color: #3ddcff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 22px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #3ddcff, 0 0 20px #3ddcff;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.lives { color: #ff5ec4; text-shadow: 0 0 10px #ff5ec4, 0 0 22px #c9007f; }
+  .hudValue.hurt { animation: hurtPulse 0.4s ease; }
+  @keyframes hurtPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.4; transform: scale(1.25);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 30px); font-weight: 900; letter-spacing: 3px; margin-top: 34px;
+    background: linear-gradient(90deg, #3ddcff, #7cffb2, #ffd23d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(61,220,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(61,220,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(124,255,178,0.85)); } }
+
+  .subtitle { color: #b8ccd8; font-size: 13px; letter-spacing: 0.5px; text-align: center; max-width: 460px; line-height: 1.55; }
+
+  .btn {
+    padding: 15px 40px; font-size: 19px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #3ddcff, #7cffb2);
+    border: none; border-radius: 50px; color: #001a0e; cursor: pointer;
+    box-shadow: 0 0 20px rgba(61,220,255,0.7), 0 0 50px rgba(124,255,178,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(61,220,255,0.9), 0 0 70px rgba(124,255,178,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd23d; font-size: 14px; text-shadow: 0 0 8px rgba(255,210,61,0.6); }
+
+  .arenaOuter {
+    position: relative; width: min(92vw, 420px); height: min(56vh, 420px); z-index: 5;
+    border-radius: 18px; overflow: hidden; border: 2px solid rgba(61,220,255,0.25);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 0 30px rgba(61,220,255,0.12);
+    background: #060812; touch-action: none; cursor: pointer;
+  }
+  .arenaOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-6px, 3px); }
+    40% { transform: translate(6px, -3px); }
+    60% { transform: translate(-5px, -2px); }
+    80% { transform: translate(5px, 2px); }
+  }
+
+  canvas.gameCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; z-index: 9; pointer-events: none; background: rgba(255,46,79,0);
+  }
+  .flashOverlay.on { animation: flashKf 0.3s ease; }
+  @keyframes flashKf { 0% { background: rgba(255,46,79,0.35); } 100% { background: rgba(255,46,79,0); } }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 18px;
+    background: rgba(6, 8, 18, 0.92); backdrop-filter: blur(4px);
+  }
+
+  .dpad {
+    position: relative; z-index: 6; display: grid; grid-template-columns: repeat(3, 52px);
+    grid-template-rows: repeat(2, 52px); gap: 8px; margin-top: 4px; justify-content: center;
+  }
+  .dirBtn {
+    width: 52px; height: 52px; border-radius: 14px; border: 2px solid rgba(61,220,255,0.5);
+    background: radial-gradient(circle at 40% 35%, rgba(61,220,255,0.25), rgba(10,10,20,0.9));
+    color: #3ddcff; font-size: 22px; font-weight: 900; cursor: pointer;
+    box-shadow: 0 0 16px rgba(61,220,255,0.35); -webkit-appearance: none; appearance: none;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .dirBtn:active { transform: scale(0.9); box-shadow: 0 0 24px rgba(61,220,255,0.7); }
+  .dirUp { grid-column: 2; grid-row: 1; }
+  .dirLeft { grid-column: 1; grid-row: 2; }
+  .dirDown { grid-column: 2; grid-row: 2; }
+  .dirRight { grid-column: 3; grid-row: 2; }
+
+  .status { color: #98b8c8; font-size: 12px; letter-spacing: 0.5px; height: 15px; z-index: 10; text-align: center; }
+  .footer { position: relative; text-align: center; color: #1f2624; font-size: 10px; z-index: 10; padding-bottom: 2px; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 17px; }
+    .btn { padding: 13px 30px; font-size: 16px; }
+    .subtitle { font-size: 12px; }
+    .arenaOuter { height: min(48vh, 360px); }
+    .dirBtn { width: 46px; height: 46px; font-size: 19px; }
+    .dpad { grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(2, 46px); }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'gravityFlux_highScore';
+const LIVES_START = 3;
+const CATCHES_PER_LEVEL = 6;
+const BALL_RADIUS = 9;
+const ORB_RADIUS = 10;
+const HAZARD_RADIUS = 12;
+const RESTITUTION = 0.52;
+const MAX_SPEED = 760;
+const INVULN_MS = 800;
+
+const ORB_COLOR = '#3ddcff';
+const GOLD_COLOR = '#ffd23d';
+const HAZARD_COLOR = '#ff3a5e';
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+const gravityMag = (level) => clamp(1250 + (level - 1) * 55, 1250, 1900);
+const orbLifeMs = (level) => clamp(4200 - (level - 1) * 160, 2200, 4200);
+const orbTargetCount = (level) => clamp(2 + Math.floor((level - 1) / 4), 2, 4);
+const hazardCount = (level) => clamp(1 + Math.floor((level - 1) / 2), 1, 5);
+const hazardSpeed = (level) => clamp(55 + (level - 1) * 9, 55, 150);
+const goldChance = (level) => clamp(0.14 + (level - 1) * 0.008, 0.14, 0.3);
+
+const DIRS = {
+  down: { x: 0, y: 1 },
+  up: { x: 0, y: -1 },
+  left: { x: -1, y: 0 },
+  right: { x: 1, y: 0 },
+};
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration, type, gainScale, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const flipSound = useCallback(() => tone(260, 0.05, 'square', 0.06, 420), [tone]);
+  const catchSound = useCallback((combo) => tone(460 + combo * 16, 0.09, 'triangle', 0.15, 900 + combo * 20), [tone]);
+  const goldSound = useCallback(() => { tone(680, 0.1, 'sine', 0.18, 1080); setTimeout(() => tone(980, 0.14, 'sine', 0.16, 1400), 90); }, [tone]);
+  const hitSound = useCallback(() => tone(190, 0.28, 'sawtooth', 0.2, 70), [tone]);
+  const expireSound = useCallback(() => tone(220, 0.12, 'sine', 0.05, 150), [tone]);
+  const levelUpSound = useCallback(() => { tone(520, 0.12, 'sine', 0.18, 820); setTimeout(() => tone(760, 0.16, 'sine', 0.18, 1150), 110); }, [tone]);
+  const overSound = useCallback(() => { tone(300, 0.25, 'sawtooth', 0.2, 200); setTimeout(() => tone(180, 0.35, 'sawtooth', 0.2, 80), 150); }, [tone]);
+
+  return { flipSound, catchSound, goldSound, hitSound, expireSound, levelUpSound, overSound };
+}
+
+function spawnBurst(arr, x, y, color, count, speedMin, speedMax, sizeMin, sizeMax, lifeMs) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = speedMin + Math.random() * (speedMax - speedMin);
+    arr.push({
+      x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      life: lifeMs, maxLife: lifeMs, color,
+      size: sizeMin + Math.random() * (sizeMax - sizeMin),
+    });
+  }
+}
+
+function makeOrb(id, w, h, level) {
+  return {
+    id,
+    x: ORB_RADIUS * 2 + Math.random() * (w - ORB_RADIUS * 4),
+    y: ORB_RADIUS * 2 + Math.random() * (h - ORB_RADIUS * 4),
+    r: ORB_RADIUS,
+    gold: Math.random() < goldChance(level),
+    life: orbLifeMs(level),
+    maxLife: orbLifeMs(level),
+    pulse: Math.random() * Math.PI * 2,
+  };
+}
+
+function makeHazard(id, w, h, level) {
+  const ang = Math.random() * Math.PI * 2;
+  const spd = hazardSpeed(level);
+  return {
+    id,
+    x: HAZARD_RADIUS * 2 + Math.random() * (w - HAZARD_RADIUS * 4),
+    y: HAZARD_RADIUS * 2 + Math.random() * (h - HAZARD_RADIUS * 4),
+    r: HAZARD_RADIUS,
+    vx: Math.cos(ang) * spd,
+    vy: Math.sin(ang) * spd,
+    rot: 0,
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start'); // start | playing | over
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(LIVES_START);
+  const [combo, setCombo] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [hurt, setHurt] = useState(false);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [flashOn, setFlashOn] = useState(false);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [statusMsg, setStatusMsg] = useState('Flip gravity to steer the orb into targets.');
+  const [gravityDir, setGravityDir] = useState('down');
+
+  const canvasRef = useRef(null);
+  const arenaRef = useRef(null);
+  const ballRef = useRef({ x: 0, y: 0, vx: 0, vy: 0 });
+  const gravityDirRef = useRef('down');
+  const orbsRef = useRef([]);
+  const hazardsRef = useRef([]);
+  const particlesRef = useRef([]);
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const livesRef = useRef(LIVES_START);
+  const levelRef = useRef(1);
+  const catchesRef = useRef(0);
+  const idCounterRef = useRef(0);
+  const highScoreRef = useRef(highScore);
+  const phaseRef = useRef('start');
+  const invulnRef = useRef(0);
+  const dimsRef = useRef({ w: 300, h: 300 });
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(null);
+
+  const { flipSound, catchSound, goldSound, hitSound, expireSound, levelUpSound, overSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const arena = arenaRef.current;
+    if (!canvas || !arena) return;
+    const rect = arena.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const ensureOrbs = useCallback((w, h) => {
+    const need = orbTargetCount(levelRef.current);
+    while (orbsRef.current.length < need) {
+      orbsRef.current.push(makeOrb(++idCounterRef.current, w, h, levelRef.current));
+    }
+  }, []);
+
+  const ensureHazards = useCallback((w, h) => {
+    const need = hazardCount(levelRef.current);
+    while (hazardsRef.current.length < need) {
+      hazardsRef.current.push(makeHazard(++idCounterRef.current, w, h, levelRef.current));
+    }
+    while (hazardsRef.current.length > need) {
+      hazardsRef.current.pop();
+    }
+  }, []);
+
+  const endGame = useCallback(() => {
+    phaseRef.current = 'over';
+    setPhase('over');
+    overSound();
+    setStatusMsg('Gravity core collapsed.');
+  }, [overSound]);
+
+  const setGravity = useCallback((dir) => {
+    if (phaseRef.current !== 'playing') return;
+    if (gravityDirRef.current === dir) return;
+    gravityDirRef.current = dir;
+    setGravityDir(dir);
+    flipSound();
+  }, [flipSound]);
+
+  const setGravityFromPoint = useCallback((px, py) => {
+    const { w, h } = dimsRef.current;
+    const dx = px - w / 2;
+    const dy = py - h / 2;
+    if (Math.abs(dx) > Math.abs(dy)) setGravity(dx > 0 ? 'right' : 'left');
+    else setGravity(dy > 0 ? 'down' : 'up');
+  }, [setGravity]);
+
+  const registerCatch = useCallback((orb) => {
+    comboRef.current += 1;
+    setCombo(comboRef.current);
+    const base = orb.gold ? 55 : 12;
+    const gained = base + comboRef.current * 3;
+    scoreRef.current += gained;
+    setScore(scoreRef.current);
+    if (scoreRef.current > highScoreRef.current) {
+      highScoreRef.current = scoreRef.current;
+      localStorage.setItem(HS_KEY, String(scoreRef.current));
+      setHighScore(scoreRef.current);
+    }
+    if (orb.gold) goldSound(); else catchSound(comboRef.current);
+    spawnBurst(particlesRef.current, orb.x, orb.y, orb.gold ? GOLD_COLOR : ORB_COLOR, orb.gold ? 22 : 13, 50, 220, 2, 5, 480);
+
+    catchesRef.current += 1;
+    if (catchesRef.current % CATCHES_PER_LEVEL === 0) {
+      levelRef.current += 1;
+      setLevel(levelRef.current);
+      levelUpSound();
+      setStatusMsg(`Level ${levelRef.current}! Hazards multiply and speed up.`);
+      ensureHazards(dimsRef.current.w, dimsRef.current.h);
+    } else {
+      setStatusMsg(orb.gold ? 'Gold catch!' : 'Catch!');
+    }
+
+    orbsRef.current = orbsRef.current.filter((o) => o.id !== orb.id);
+    ensureOrbs(dimsRef.current.w, dimsRef.current.h);
+  }, [goldSound, catchSound, levelUpSound, ensureOrbs, ensureHazards]);
+
+  const registerHazardHit = useCallback(() => {
+    if (invulnRef.current > 0) return;
+    invulnRef.current = INVULN_MS;
+    comboRef.current = 0;
+    setCombo(0);
+    livesRef.current -= 1;
+    setLives(livesRef.current);
+    setHurt(true);
+    setTimeout(() => setHurt(false), 400);
+    setShakeIt(true);
+    setTimeout(() => setShakeIt(false), 300);
+    setFlashOn(true);
+    setTimeout(() => setFlashOn(false), 300);
+    hitSound();
+    spawnBurst(particlesRef.current, ballRef.current.x, ballRef.current.y, HAZARD_COLOR, 16, 60, 220, 2, 5, 420);
+    setStatusMsg('Hit a hazard — combo lost.');
+    ballRef.current.vx *= -0.4;
+    ballRef.current.vy *= -0.4;
+    if (livesRef.current <= 0) endGame();
+  }, [hitSound, endGame]);
+
+  const resetGame = useCallback(() => {
+    const { w, h } = dimsRef.current;
+    scoreRef.current = 0; setScore(0);
+    comboRef.current = 0; setCombo(0);
+    livesRef.current = LIVES_START; setLives(LIVES_START);
+    levelRef.current = 1; setLevel(1);
+    catchesRef.current = 0;
+    invulnRef.current = 0;
+    gravityDirRef.current = 'down';
+    setGravityDir('down');
+    ballRef.current = { x: w / 2, y: h / 2, vx: 0, vy: 0 };
+    orbsRef.current = [];
+    hazardsRef.current = [];
+    particlesRef.current = [];
+    ensureOrbs(w, h);
+    ensureHazards(w, h);
+    setStatusMsg('Flip gravity to steer the orb into targets.');
+  }, [ensureOrbs, ensureHazards]);
+
+  const startGame = useCallback(() => {
+    resizeCanvas();
+    resetGame();
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [resizeCanvas, resetGame]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); setGravity('up'); }
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); setGravity('down'); }
+      else if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); setGravity('left'); }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); setGravity('right'); }
+      else if (e.code === 'Space') { e.preventDefault(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setGravity]);
+
+  // Main game loop
+  useEffect(() => {
+    const loop = (ts) => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        const { w, h } = dimsRef.current;
+
+        if (lastTsRef.current == null) lastTsRef.current = ts;
+        let dt = (ts - lastTsRef.current) / 1000;
+        lastTsRef.current = ts;
+        dt = clamp(dt, 0, 0.033);
+
+        if (phaseRef.current === 'playing' && w > 10 && h > 10) {
+          if (invulnRef.current > 0) invulnRef.current = Math.max(0, invulnRef.current - dt * 1000);
+
+          const g = DIRS[gravityDirRef.current];
+          const mag = gravityMag(levelRef.current);
+          const ball = ballRef.current;
+          ball.vx += g.x * mag * dt;
+          ball.vy += g.y * mag * dt;
+          const spd = Math.hypot(ball.vx, ball.vy);
+          if (spd > MAX_SPEED) { const s = MAX_SPEED / spd; ball.vx *= s; ball.vy *= s; }
+          ball.x += ball.vx * dt;
+          ball.y += ball.vy * dt;
+
+          if (ball.x - BALL_RADIUS < 0) { ball.x = BALL_RADIUS; ball.vx = -ball.vx * RESTITUTION; }
+          else if (ball.x + BALL_RADIUS > w) { ball.x = w - BALL_RADIUS; ball.vx = -ball.vx * RESTITUTION; }
+          if (ball.y - BALL_RADIUS < 0) { ball.y = BALL_RADIUS; ball.vy = -ball.vy * RESTITUTION; }
+          else if (ball.y + BALL_RADIUS > h) { ball.y = h - BALL_RADIUS; ball.vy = -ball.vy * RESTITUTION; }
+
+          // orbs: lifespan + collision
+          for (const orb of orbsRef.current) {
+            orb.life -= dt * 1000;
+            orb.pulse += dt * 4;
+          }
+          const caught = orbsRef.current.find((o) => Math.hypot(o.x - ball.x, o.y - ball.y) < o.r + BALL_RADIUS);
+          if (caught) registerCatch(caught);
+          const expired = orbsRef.current.filter((o) => o.life <= 0);
+          if (expired.length) {
+            if (comboRef.current > 0) { comboRef.current = 0; setCombo(0); expireSound(); }
+            orbsRef.current = orbsRef.current.filter((o) => o.life > 0);
+            ensureOrbs(w, h);
+          }
+
+          // hazards: move + bounce + collision
+          for (const hz of hazardsRef.current) {
+            hz.x += hz.vx * dt; hz.y += hz.vy * dt; hz.rot += dt * 2;
+            if (hz.x - hz.r < 0) { hz.x = hz.r; hz.vx = -hz.vx; }
+            else if (hz.x + hz.r > w) { hz.x = w - hz.r; hz.vx = -hz.vx; }
+            if (hz.y - hz.r < 0) { hz.y = hz.r; hz.vy = -hz.vy; }
+            else if (hz.y + hz.r > h) { hz.y = h - hz.r; hz.vy = -hz.vy; }
+          }
+          const hazHit = hazardsRef.current.some((hz) => Math.hypot(hz.x - ball.x, hz.y - ball.y) < hz.r + BALL_RADIUS);
+          if (hazHit && invulnRef.current <= 0) registerHazardHit();
+
+          // particles
+          particlesRef.current = particlesRef.current.filter((p) => p.life > 0);
+          for (const p of particlesRef.current) {
+            p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; p.life -= dt * 1000;
+          }
+        }
+
+        // === render ===
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#060812';
+        ctx.fillRect(0, 0, w, h);
+
+        // subtle grid
+        ctx.strokeStyle = 'rgba(61,220,255,0.05)';
+        ctx.lineWidth = 1;
+        const gridStep = 30;
+        for (let gx = 0; gx < w; gx += gridStep) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke(); }
+        for (let gy = 0; gy < h; gy += gridStep) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
+
+        // gravity direction arrow (edge indicator)
+        const g2 = DIRS[gravityDirRef.current];
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        const angle = Math.atan2(g2.y, g2.x);
+        ctx.rotate(angle);
+        ctx.fillStyle = 'rgba(61,220,255,0.18)';
+        ctx.beginPath();
+        ctx.moveTo(Math.min(w, h) * 0.42, 0);
+        ctx.lineTo(Math.min(w, h) * 0.34, -10);
+        ctx.lineTo(Math.min(w, h) * 0.34, 10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // orbs
+        for (const orb of orbsRef.current) {
+          const lifeRatio = clamp(orb.life / orb.maxLife, 0, 1);
+          const pulseR = orb.r * (0.9 + Math.sin(orb.pulse) * 0.12) * (0.5 + lifeRatio * 0.5);
+          const color = orb.gold ? GOLD_COLOR : ORB_COLOR;
+          ctx.save();
+          ctx.globalAlpha = 0.35 + lifeRatio * 0.65;
+          ctx.shadowColor = color; ctx.shadowBlur = 16;
+          ctx.fillStyle = color;
+          ctx.beginPath(); ctx.arc(orb.x, orb.y, pulseR, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+
+        // hazards
+        for (const hz of hazardsRef.current) {
+          ctx.save();
+          ctx.translate(hz.x, hz.y);
+          ctx.rotate(hz.rot);
+          ctx.shadowColor = HAZARD_COLOR; ctx.shadowBlur = 14;
+          ctx.fillStyle = HAZARD_COLOR;
+          ctx.beginPath();
+          for (let i = 0; i < 4; i++) {
+            const a = (Math.PI / 2) * i;
+            const rr = i % 2 === 0 ? hz.r : hz.r * 0.5;
+            const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.restore();
+        }
+
+        // particles
+        for (const p of particlesRef.current) {
+          const a = clamp(p.life / p.maxLife, 0, 1);
+          ctx.save();
+          ctx.globalAlpha = a;
+          ctx.fillStyle = p.color;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+
+        // ball
+        if (phaseRef.current === 'playing') {
+          const ball = ballRef.current;
+          ctx.save();
+          if (invulnRef.current > 0 && Math.floor(invulnRef.current / 80) % 2 === 0) ctx.globalAlpha = 0.4;
+          ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 18;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [registerCatch, registerHazardHit, ensureOrbs, expireSound]);
+
+  const handleArenaClick = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    const rect = arenaRef.current.getBoundingClientRect();
+    const px = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const py = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    setGravityFromPoint(px, py);
+  }, [setGravityFromPoint]);
+
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className={"hudValue lives" + (hurt ? " hurt" : "")} data-testid="lives">{'♥'.repeat(Math.max(0, lives))}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Gravity</div>
+          <div
+            className="hudValue"
+            data-testid="gravity-dir"
+            data-dir={gravityDir}
+            style={{ display: 'inline-block', transition: 'transform 0.15s ease', transform: `rotate(${{ down: 0, left: 90, up: 180, right: 270 }[gravityDir]}deg)` }}
+          >▼</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 34, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+          <div className="title">GRAVITY FLUX</div>
+          <div className="subtitle">
+            Flip the pull of gravity — up, down, left, right — to steer your glowing orb into targets and dodge red hazards. Arrow keys, WASD, the D-pad, or tap a side of the arena all shift gravity that way.
+          </div>
+        </div>
+      )}
+
+      <div className={"arenaOuter" + (shakeIt ? " shakeIt" : "")} data-testid="play-field" ref={arenaRef} onMouseDown={handleArenaClick} onTouchStart={handleArenaClick}>
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashOn ? " on" : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">High Score: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 26 }}>CORE COLLAPSED</div>
+            <div className="hudValue" style={{ fontSize: 30 }}>{score}</div>
+            <div className="highscoreLine">High Score: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <div className="dpad">
+          <button className="dirBtn dirUp" data-testid="dir-up-btn" onClick={() => setGravity('up')}>▲</button>
+          <button className="dirBtn dirLeft" data-testid="dir-left-btn" onClick={() => setGravity('left')}>◀</button>
+          <button className="dirBtn dirDown" data-testid="dir-down-btn" onClick={() => setGravity('down')}>▼</button>
+          <button className="dirBtn dirRight" data-testid="dir-right-btn" onClick={() => setGravity('right')}>▶</button>
+        </div>
+      )}
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
