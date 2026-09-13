@@ -3556,7 +3556,8 @@
     "folder": "games/2026-09-06",
     "file": "games/2026-09-06/index.html",
     "preview": "games/2026-09-06/preview.png",
-    "rating": 4.2
+    "rating": 4.2,
+    "broken": true
   },
   {
     "id": "2026-09-08",
