@@ -3662,5 +3662,26 @@
     "file": "games/2026-09-12/index.html",
     "preview": "games/2026-09-12/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-13",
+    "name": "Gravity Flux",
+    "date": "2026-09-13",
+    "description": "A neon gravity-flip physics game: a glowing orb drifts freely in a square arena, pulled by whichever direction gravity currently points, and you flip that pull between up, down, left, and right to steer it into pulsing targets while dodging spinning red hazards. Arrow keys, WASD, on-screen D-pad buttons, or a tap toward any side of the arena all redirect gravity instantly, chaining consecutive catches into a rising combo and score while gold orbs pay out big. Letting a target expire unclaimed silently resets your streak, and clipping a hazard costs one of three lives and knocks the orb back. Every six catches levels you up, strengthening gravity, spawning more hazards, and shrinking target lifespans, forcing sharper directional reads under pressure.",
+    "tagline": "Flip gravity, chase the orb.",
+    "tags": [
+      "physics",
+      "gravity",
+      "reflex",
+      "arcade",
+      "action"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys / WASD, the on-screen D-pad, or tap a side of the arena to flip gravity in that direction",
+    "folder": "games/2026-09-13",
+    "file": "games/2026-09-13/index.html",
+    "preview": "games/2026-09-13/preview.png",
+    "rating": 4.2
   }
 ]
