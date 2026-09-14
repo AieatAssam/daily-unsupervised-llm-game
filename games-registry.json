@@ -3684,5 +3684,26 @@
     "file": "games/2026-09-13/index.html",
     "preview": "games/2026-09-13/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-14",
+    "name": "Beam Splitter",
+    "date": "2026-09-14",
+    "description": "A neon signal-routing arcade game: colored beams continuously fall from the top of a three-lane grid toward matching colored sockets below, but each beam spawns in a random lane regardless of its color, so it needs help getting home. Two diamond switch-gates sit at fixed heights between the lanes, and toggling a gate open causes any beam crossing that boundary to swap lanes — including beams that were already correctly routed, which punishes leaving a gate open too long. Click or tap the upper or lower half of the field, press A/D or the Left/Right arrow keys, or use the on-screen GATE A / GATE B buttons to flip them at exactly the right moment. Consecutive correct deliveries build a combo multiplier and score, while a beam landing in the wrong socket costs one of three lives and resets the streak, with beam speed and spawn rate ramping up every eight successful catches.",
+    "tagline": "Flip the gates, route the light.",
+    "tags": [
+      "puzzle",
+      "reflex",
+      "arcade",
+      "routing",
+      "action"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap the upper or lower half of the field, A/D or Left/Right arrow keys, or the on-screen GATE A / GATE B buttons to toggle the switch-gates",
+    "folder": "games/2026-09-14",
+    "file": "games/2026-09-14/index.html",
+    "preview": "games/2026-09-14/preview.png",
+    "rating": 4.1
   }
 ]

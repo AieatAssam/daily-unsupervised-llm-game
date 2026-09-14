@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Beam Splitter</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030a; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 6px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 10%, #10071f 0%, #08050f 55%, #030308 100%);
+  }
+
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-around;
+    padding: 10px 12px; z-index: 15; pointer-events: none;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 10px; letter-spacing: 2px; color: #9d6bff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 22px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #9d6bff, 0 0 20px #9d6bff;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.lives { color: #ff5ec4; text-shadow: 0 0 10px #ff5ec4, 0 0 22px #c9007f; }
+  .hudValue.hurt { animation: hurtPulse 0.4s ease; }
+  @keyframes hurtPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.4; transform: scale(1.25);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 30px); font-weight: 900; letter-spacing: 3px; margin-top: 34px;
+    background: linear-gradient(90deg, #3ddcff, #9d6bff, #ff5ec4);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(157,107,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(157,107,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(61,220,255,0.85)); } }
+
+  .subtitle { color: #c4bcd8; font-size: 13px; letter-spacing: 0.5px; text-align: center; max-width: 460px; line-height: 1.55; }
+
+  .btn {
+    padding: 15px 40px; font-size: 19px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #9d6bff, #3ddcff);
+    border: none; border-radius: 50px; color: #0a0020; cursor: pointer;
+    box-shadow: 0 0 20px rgba(157,107,255,0.7), 0 0 50px rgba(61,220,255,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(157,107,255,0.9), 0 0 70px rgba(61,220,255,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd23d; font-size: 14px; text-shadow: 0 0 8px rgba(255,210,61,0.6); }
+
+  .arenaOuter {
+    position: relative; width: min(90vw, 380px); height: min(60vh, 460px); z-index: 5;
+    border-radius: 18px; overflow: hidden; border: 2px solid rgba(157,107,255,0.25);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 0 30px rgba(157,107,255,0.12);
+    background: #07050f; touch-action: none; cursor: pointer;
+  }
+  .arenaOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-6px, 3px); }
+    40% { transform: translate(6px, -3px); }
+    60% { transform: translate(-5px, -2px); }
+    80% { transform: translate(5px, 2px); }
+  }
+
+  canvas.gameCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; z-index: 9; pointer-events: none; background: rgba(255,46,79,0);
+  }
+  .flashOverlay.on { animation: flashKf 0.3s ease; }
+  @keyframes flashKf { 0% { background: rgba(255,46,79,0.35); } 100% { background: rgba(255,46,79,0); } }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 18px;
+    background: rgba(8, 5, 16, 0.92); backdrop-filter: blur(4px);
+  }
+
+  .gateRow {
+    position: relative; z-index: 6; display: flex; gap: 14px; margin-top: 4px; justify-content: center;
+  }
+  .gateBtn {
+    min-width: 128px; height: 48px; border-radius: 14px; border: 2px solid rgba(157,107,255,0.5);
+    background: radial-gradient(circle at 40% 35%, rgba(157,107,255,0.25), rgba(10,10,20,0.9));
+    color: #d4c4ff; font-size: 14px; font-weight: 900; letter-spacing: 1px; cursor: pointer;
+    box-shadow: 0 0 16px rgba(157,107,255,0.35); -webkit-appearance: none; appearance: none;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .gateBtn.active {
+    border-color: rgba(61,220,255,0.9); color: #eafcff;
+    box-shadow: 0 0 24px rgba(61,220,255,0.8), 0 0 44px rgba(61,220,255,0.4);
+  }
+  .gateBtn:active { transform: scale(0.94); }
+
+  .status { color: #b3a8cc; font-size: 12px; letter-spacing: 0.5px; height: 15px; z-index: 10; text-align: center; }
+  .footer { position: relative; text-align: center; color: #201a2c; font-size: 10px; z-index: 10; padding-bottom: 2px; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 17px; }
+    .btn { padding: 13px 30px; font-size: 16px; }
+    .subtitle { font-size: 12px; }
+    .arenaOuter { height: min(52vh, 400px); }
+    .gateBtn { min-width: 108px; height: 44px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'beamSplitter_highScore';
+const LIVES_START = 3;
+const CATCHES_PER_LEVEL = 8;
+const BEAM_RADIUS = 9;
+const GATE_RADIUS = 15;
+
+const LANE_COLORS = ['#3ddcff', '#ff5ec4', '#ffd23d'];
+const LANE_NAMES = ['CYAN', 'MAGENTA', 'YELLOW'];
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+const beamSpeed = (level) => clamp(120 + (level - 1) * 13, 120, 300);
+const spawnIntervalMs = (level) => clamp(1450 - (level - 1) * 65, 550, 1450);
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration, type, gainScale, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const toggleSound = useCallback((on) => tone(on ? 520 : 340, 0.06, 'square', 0.07, on ? 760 : 260), [tone]);
+  const zapSound = useCallback(() => tone(700, 0.06, 'sawtooth', 0.08, 1100), [tone]);
+  const catchSound = useCallback((combo) => tone(460 + combo * 16, 0.09, 'triangle', 0.15, 900 + combo * 20), [tone]);
+  const hitSound = useCallback(() => tone(190, 0.28, 'sawtooth', 0.2, 70), [tone]);
+  const levelUpSound = useCallback(() => { tone(520, 0.12, 'sine', 0.18, 820); setTimeout(() => tone(760, 0.16, 'sine', 0.18, 1150), 110); }, [tone]);
+  const overSound = useCallback(() => { tone(300, 0.25, 'sawtooth', 0.2, 200); setTimeout(() => tone(180, 0.35, 'sawtooth', 0.2, 80), 150); }, [tone]);
+
+  return { toggleSound, zapSound, catchSound, hitSound, levelUpSound, overSound };
+}
+
+function spawnBurst(arr, x, y, color, count, speedMin, speedMax, sizeMin, sizeMax, lifeMs) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = speedMin + Math.random() * (speedMax - speedMin);
+    arr.push({
+      x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      life: lifeMs, maxLife: lifeMs, color,
+      size: sizeMin + Math.random() * (sizeMax - sizeMin),
+    });
+  }
+}
+
+function makeBeam(id, laneX, level) {
+  const lane = Math.floor(Math.random() * 3);
+  const color = Math.floor(Math.random() * 3);
+  return {
+    id, lane, color,
+    x: laneX[lane], y: -BEAM_RADIUS * 3,
+    speed: beamSpeed(level),
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start'); // start | playing | over
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(LIVES_START);
+  const [combo, setCombo] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [hurt, setHurt] = useState(false);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [flashOn, setFlashOn] = useState(false);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [statusMsg, setStatusMsg] = useState('Route beams into their matching sockets.');
+  const [gateA, setGateAState] = useState(false);
+  const [gateB, setGateBState] = useState(false);
+
+  const canvasRef = useRef(null);
+  const arenaRef = useRef(null);
+  const beamsRef = useRef([]);
+  const particlesRef = useRef([]);
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const livesRef = useRef(LIVES_START);
+  const levelRef = useRef(1);
+  const catchesRef = useRef(0);
+  const idCounterRef = useRef(0);
+  const highScoreRef = useRef(highScore);
+  const phaseRef = useRef('start');
+  const dimsRef = useRef({ w: 300, h: 300 });
+  const laneXRef = useRef([60, 150, 240]);
+  const gateAYRef = useRef(160);
+  const gateBYRef = useRef(260);
+  const socketYRef = useRef(360);
+  const gateARef = useRef(false);
+  const gateBRef = useRef(false);
+  const spawnTimerRef = useRef(0);
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(null);
+
+  const { toggleSound, zapSound, catchSound, hitSound, levelUpSound, overSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const arena = arenaRef.current;
+    if (!canvas || !arena) return;
+    const rect = arena.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+    laneXRef.current = [rect.width * 0.2, rect.width * 0.5, rect.width * 0.8];
+    gateAYRef.current = rect.height * 0.4;
+    gateBYRef.current = rect.height * 0.64;
+    socketYRef.current = rect.height - 44;
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const endGame = useCallback(() => {
+    phaseRef.current = 'over';
+    setPhase('over');
+    overSound();
+    setStatusMsg('Signal grid overloaded.');
+  }, [overSound]);
+
+  const setGateA = useCallback((on) => {
+    if (phaseRef.current !== 'playing') return;
+    gateARef.current = on;
+    setGateAState(on);
+    toggleSound(on);
+  }, [toggleSound]);
+
+  const setGateB = useCallback((on) => {
+    if (phaseRef.current !== 'playing') return;
+    gateBRef.current = on;
+    setGateBState(on);
+    toggleSound(on);
+  }, [toggleSound]);
+
+  const toggleGateA = useCallback(() => setGateA(!gateARef.current), [setGateA]);
+  const toggleGateB = useCallback(() => setGateB(!gateBRef.current), [setGateB]);
+
+  const resolveBeam = useCallback((beam) => {
+    const correct = beam.lane === beam.color;
+    if (correct) {
+      comboRef.current += 1;
+      setCombo(comboRef.current);
+      const gained = 10 + comboRef.current * 2;
+      scoreRef.current += gained;
+      setScore(scoreRef.current);
+      if (scoreRef.current > highScoreRef.current) {
+        highScoreRef.current = scoreRef.current;
+        localStorage.setItem(HS_KEY, String(scoreRef.current));
+        setHighScore(scoreRef.current);
+      }
+      catchSound(comboRef.current);
+      spawnBurst(particlesRef.current, beam.x, socketYRef.current, LANE_COLORS[beam.color], 18, 50, 220, 2, 5, 480);
+
+      catchesRef.current += 1;
+      if (catchesRef.current % CATCHES_PER_LEVEL === 0) {
+        levelRef.current += 1;
+        setLevel(levelRef.current);
+        levelUpSound();
+        setStatusMsg(`Level ${levelRef.current}! Beams move faster and arrive quicker.`);
+      } else {
+        setStatusMsg(`${LANE_NAMES[beam.color]} routed home!`);
+      }
+    } else {
+      comboRef.current = 0;
+      setCombo(0);
+      livesRef.current -= 1;
+      setLives(livesRef.current);
+      setHurt(true);
+      setTimeout(() => setHurt(false), 400);
+      setShakeIt(true);
+      setTimeout(() => setShakeIt(false), 300);
+      setFlashOn(true);
+      setTimeout(() => setFlashOn(false), 300);
+      hitSound();
+      spawnBurst(particlesRef.current, beam.x, socketYRef.current, '#ff3a5e', 16, 60, 220, 2, 5, 420);
+      setStatusMsg(`${LANE_NAMES[beam.color]} hit the wrong socket!`);
+      if (livesRef.current <= 0) endGame();
+    }
+  }, [catchSound, hitSound, levelUpSound, endGame]);
+
+  const resetGame = useCallback(() => {
+    scoreRef.current = 0; setScore(0);
+    comboRef.current = 0; setCombo(0);
+    livesRef.current = LIVES_START; setLives(LIVES_START);
+    levelRef.current = 1; setLevel(1);
+    catchesRef.current = 0;
+    gateARef.current = false; setGateAState(false);
+    gateBRef.current = false; setGateBState(false);
+    beamsRef.current = [];
+    particlesRef.current = [];
+    spawnTimerRef.current = 0;
+    setStatusMsg('Route beams into their matching sockets.');
+  }, []);
+
+  const startGame = useCallback(() => {
+    resizeCanvas();
+    resetGame();
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [resizeCanvas, resetGame]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); toggleGateA(); }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); toggleGateB(); }
+      else if (e.code === 'Space') { e.preventDefault(); toggleGateA(); }
+      else if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { e.preventDefault(); toggleGateB(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggleGateA, toggleGateB]);
+
+  // Main game loop
+  useEffect(() => {
+    const loop = (ts) => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        const { w, h } = dimsRef.current;
+        const laneX = laneXRef.current;
+        const gateAY = gateAYRef.current;
+        const gateBY = gateBYRef.current;
+        const socketY = socketYRef.current;
+
+        if (lastTsRef.current == null) lastTsRef.current = ts;
+        let dt = (ts - lastTsRef.current) / 1000;
+        lastTsRef.current = ts;
+        dt = clamp(dt, 0, 0.033);
+
+        if (phaseRef.current === 'playing' && w > 10 && h > 10) {
+          spawnTimerRef.current -= dt * 1000;
+          if (spawnTimerRef.current <= 0) {
+            spawnTimerRef.current = spawnIntervalMs(levelRef.current);
+            beamsRef.current.push(makeBeam(++idCounterRef.current, laneX, levelRef.current));
+          }
+
+          const resolved = [];
+          for (const beam of beamsRef.current) {
+            const prevY = beam.y;
+            beam.y += beam.speed * dt;
+            beam.x += (laneX[beam.lane] - beam.x) * Math.min(1, dt * 9);
+
+            if (gateARef.current && (beam.lane === 0 || beam.lane === 1) && prevY < gateAY && beam.y >= gateAY) {
+              beam.lane = beam.lane === 0 ? 1 : 0;
+              zapSound();
+              spawnBurst(particlesRef.current, (laneX[0] + laneX[1]) / 2, gateAY, '#eafcff', 10, 40, 160, 1, 3, 300);
+            }
+            if (gateBRef.current && (beam.lane === 1 || beam.lane === 2) && prevY < gateBY && beam.y >= gateBY) {
+              beam.lane = beam.lane === 1 ? 2 : 1;
+              zapSound();
+              spawnBurst(particlesRef.current, (laneX[1] + laneX[2]) / 2, gateBY, '#eafcff', 10, 40, 160, 1, 3, 300);
+            }
+            if (prevY < socketY && beam.y >= socketY) {
+              resolved.push(beam);
+            }
+          }
+          if (resolved.length) {
+            for (const beam of resolved) resolveBeam(beam);
+            const resolvedIds = new Set(resolved.map((b) => b.id));
+            beamsRef.current = beamsRef.current.filter((b) => !resolvedIds.has(b.id));
+          }
+
+          particlesRef.current = particlesRef.current.filter((p) => p.life > 0);
+          for (const p of particlesRef.current) {
+            p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; p.life -= dt * 1000;
+          }
+        }
+
+        // === render ===
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#07050f';
+        ctx.fillRect(0, 0, w, h);
+
+        // lane tracks
+        for (let i = 0; i < 3; i++) {
+          ctx.save();
+          ctx.globalAlpha = 0.08;
+          ctx.fillStyle = LANE_COLORS[i];
+          ctx.fillRect(laneX[i] - 26, 0, 52, socketY);
+          ctx.restore();
+        }
+
+        // subtle grid
+        ctx.strokeStyle = 'rgba(157,107,255,0.05)';
+        ctx.lineWidth = 1;
+        const gridStep = 30;
+        for (let gx = 0; gx < w; gx += gridStep) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke(); }
+        for (let gy = 0; gy < h; gy += gridStep) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
+
+        // gates
+        const drawGate = (gx, gy, active) => {
+          ctx.save();
+          ctx.translate(gx, gy);
+          ctx.rotate(Math.PI / 4);
+          ctx.shadowColor = active ? '#3ddcff' : '#4a4560';
+          ctx.shadowBlur = active ? 20 : 6;
+          ctx.fillStyle = active ? '#eafcff' : 'rgba(157,107,255,0.35)';
+          ctx.fillRect(-GATE_RADIUS, -GATE_RADIUS, GATE_RADIUS * 2, GATE_RADIUS * 2);
+          ctx.restore();
+        };
+        drawGate((laneX[0] + laneX[1]) / 2, gateAY, gateARef.current);
+        drawGate((laneX[1] + laneX[2]) / 2, gateBY, gateBRef.current);
+
+        // sockets
+        for (let i = 0; i < 3; i++) {
+          ctx.save();
+          ctx.shadowColor = LANE_COLORS[i]; ctx.shadowBlur = 14;
+          ctx.fillStyle = LANE_COLORS[i];
+          ctx.globalAlpha = 0.85;
+          ctx.beginPath();
+          ctx.arc(laneX[i], socketY + 14, 16, Math.PI, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // beams
+        for (const beam of beamsRef.current) {
+          ctx.save();
+          ctx.shadowColor = LANE_COLORS[beam.color]; ctx.shadowBlur = 16;
+          ctx.fillStyle = LANE_COLORS[beam.color];
+          ctx.beginPath();
+          ctx.arc(beam.x, beam.y, BEAM_RADIUS, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // particles
+        for (const p of particlesRef.current) {
+          const a = clamp(p.life / p.maxLife, 0, 1);
+          ctx.save();
+          ctx.globalAlpha = a;
+          ctx.fillStyle = p.color;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [resolveBeam, zapSound]);
+
+  const handleArenaClick = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    const rect = arenaRef.current.getBoundingClientRect();
+    const py = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    const mid = (gateAYRef.current + gateBYRef.current) / 2;
+    if (py < mid) toggleGateA(); else toggleGateB();
+  }, [toggleGateA, toggleGateB]);
+
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className="hudValue combo" data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className={"hudValue lives" + (hurt ? " hurt" : "")} data-testid="lives">{'♥'.repeat(Math.max(0, lives))}</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 34, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+          <div className="title">BEAM SPLITTER</div>
+          <div className="subtitle">
+            Colored beams fall from the top toward three sockets. Toggle the two switch-gates to shunt a beam sideways into its matching colored socket — but leave a gate open too long and it'll misroute a beam that was already headed home. Click/tap the upper or lower half of the field, use A/D or Left/Right arrows, or the on-screen gate buttons.
+          </div>
+        </div>
+      )}
+
+      <div className={"arenaOuter" + (shakeIt ? " shakeIt" : "")} data-testid="play-field" ref={arenaRef} onMouseDown={handleArenaClick} onTouchStart={handleArenaClick}>
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashOn ? " on" : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">High Score: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 26 }}>GRID OVERLOADED</div>
+            <div className="hudValue" style={{ fontSize: 30 }}>{score}</div>
+            <div className="highscoreLine">High Score: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <div className="gateRow">
+          <button
+            className={"gateBtn" + (gateA ? " active" : "")}
+            data-testid="gate-a-btn"
+            onClick={(e) => { e.stopPropagation(); toggleGateA(); }}
+          >GATE A {gateA ? 'OPEN' : 'SHUT'}</button>
+          <button
+            className={"gateBtn" + (gateB ? " active" : "")}
+            data-testid="gate-b-btn"
+            onClick={(e) => { e.stopPropagation(); toggleGateB(); }}
+          >GATE B {gateB ? 'OPEN' : 'SHUT'}</button>
+        </div>
+      )}
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
