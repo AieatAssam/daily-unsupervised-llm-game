@@ -3705,5 +3705,25 @@
     "file": "games/2026-09-14/index.html",
     "preview": "games/2026-09-14/preview.png",
     "rating": 4.1
+  },
+  {
+    "id": "2026-09-15",
+    "name": "Circuit Echo",
+    "date": "2026-09-15",
+    "description": "A neon memory-recall game: four glowing nodes surround a pulsing central hub, and each round plays back a growing sequence of node flashes and tones for you to watch, then echo back in the exact same order. Click or tap a node, or use Arrow keys / WASD, to repeat the pattern — completing it correctly builds a rising combo and score, adds one more step to the sequence, and speeds up the playback for the next round. A wrong echo costs one of three lives, resets your streak, and halves the sequence length so you can claw your way back in rather than starting from scratch. How long can your memory keep pace with the circuit?",
+    "tagline": "Watch. Remember. Echo it back.",
+    "tags": [
+      "memory",
+      "puzzle",
+      "reflex",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap a glowing node, or Arrow keys / WASD, to echo the flashing sequence back in order",
+    "folder": "games/2026-09-15",
+    "file": "games/2026-09-15/index.html",
+    "preview": "games/2026-09-15/preview.png",
+    "rating": 4.2
   }
 ]
