@@ -3725,5 +3725,26 @@
     "file": "games/2026-09-15/index.html",
     "preview": "games/2026-09-15/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-16",
+    "name": "Rift Runner",
+    "date": "2026-09-16",
+    "description": "A neon five-lane dodge-and-collect arcade sprint: streaking rift-light pours down a vertical corridor as waves of cyan crystals, rare gold crystals, protective shields, and jagged red rock shards fall toward your glowing ship. Switch lanes instantly with Arrow keys or A-D, tap/click anywhere in the field to snap straight to that lane, or use the on-screen side buttons to weave between all five lanes on the fly. Catching crystals builds a rising combo and score, gold crystals pay out big, and a shield pickup grants a few seconds of immunity to rock hits — but clipping a rock shard costs one of three lives and resets your streak. Every eight successful catches levels you up, accelerating the fall speed and thickening the rock density for a faster, sharper read on which lane is safe.",
+    "tagline": "Weave the lanes, chain the crystals.",
+    "tags": [
+      "endless",
+      "dodge",
+      "reflex",
+      "arcade",
+      "action"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys / A-D to switch lanes, click/tap anywhere in the field to jump to that lane, or the on-screen ◀ / ▶ buttons",
+    "folder": "games/2026-09-16",
+    "file": "games/2026-09-16/index.html",
+    "preview": "games/2026-09-16/preview.png",
+    "rating": 4.2
   }
 ]
