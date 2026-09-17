@@ -3746,5 +3746,26 @@
     "file": "games/2026-09-16/index.html",
     "preview": "games/2026-09-16/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-17",
+    "name": "Chroma Forge",
+    "date": "2026-09-17",
+    "description": "A neon color-matching precision game: three glowing columns continuously drip colored orbs of red, green, and blue toward a mixing vessel at the bottom, while a recipe bar at the top shows exactly which colors and how many of each the current batch needs. Move the vessel between the three columns with Arrow keys or A-D, click/tap a column to jump straight to it, or use the on-screen side buttons, catching only the colors still needed to fill the recipe. Every correct catch builds a rising combo and score, and completing the recipe banks a big bonus and rolls a new, tougher one — but catching a color the recipe no longer needs spills the whole batch, costing one of three lives, resetting the combo, and forcing you to refill the recipe from scratch. Every four banked batches levels you up, adding more colors and higher quantities to the recipe for a sharper read on when to hold back.",
+    "tagline": "Catch the right hue. Don't overfill.",
+    "tags": [
+      "color",
+      "precision",
+      "arcade",
+      "reflex",
+      "resource-management"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys / A-D to move the vessel between columns, click/tap a column to jump to it, or the on-screen ◀ / ▶ buttons",
+    "folder": "games/2026-09-17",
+    "file": "games/2026-09-17/index.html",
+    "preview": "games/2026-09-17/preview.png",
+    "rating": 4.2
   }
 ]
