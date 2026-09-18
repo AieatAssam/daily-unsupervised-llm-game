@@ -3767,5 +3767,26 @@
     "file": "games/2026-09-17/index.html",
     "preview": "games/2026-09-17/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-18",
+    "name": "Wire Snap",
+    "date": "2026-09-18",
+    "description": "A neon bomb-defusal reflex game: a bundle of four to seven glowing colored wires stretches across the board, and a call at the top names exactly one to cut — by color, by position, by ordinal among a repeated color, or as the lone odd wire out. Click or tap the named wire, move a cursor with Arrow keys / A-D and cut with Space/Enter, or press a number key to snip it directly, all before the fuse bar burns out. A clean snip builds a rising combo and score, but cutting the wrong wire or letting the fuse expire costs one of three lives and resets the combo. Every five clean snips levels you up, adding more wires to the bundle and burning the fuse faster, forcing sharper reads under tightening pressure.",
+    "tagline": "Read the call. Snip fast.",
+    "tags": [
+      "reflex",
+      "precision",
+      "puzzle",
+      "arcade",
+      "reaction"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap the named wire, Arrow keys / A-D to move the cursor plus Space/Enter to cut, or number keys to snip directly",
+    "folder": "games/2026-09-18",
+    "file": "games/2026-09-18/index.html",
+    "preview": "games/2026-09-18/preview.png",
+    "rating": 4.1
   }
 ]
