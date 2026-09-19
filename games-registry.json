@@ -3788,5 +3788,26 @@
     "file": "games/2026-09-18/index.html",
     "preview": "games/2026-09-18/preview.png",
     "rating": 4.1
+  },
+  {
+    "id": "2026-09-19",
+    "name": "Signal Lock",
+    "date": "2026-09-19",
+    "description": "A neon signal-tracking precision game: a glowing needle sits on a horizontal frequency track while a target zone drifts unpredictably back and forth, and you must keep the needle inside it as a timed pulse sweeps in. Drag anywhere on the track to snap the needle straight to your finger or cursor, hold Arrow keys / A-D for fine steering, or tap the on-screen NUDGE buttons to shift it, banking a steady trickle of score for every moment you stay locked on. When the pulse lands, being inside the zone chains a rising combo and big bonus score, with gold pulses paying out even bigger, while missing the pulse costs one of three lives and resets the combo. Every four survived pulses levels you up, shrinking the target zone and accelerating its drift for a sharper read on where it is headed next.",
+    "tagline": "Hold the lock. Survive the pulse.",
+    "tags": [
+      "precision",
+      "tracking",
+      "reflex",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Drag the track directly, hold Arrow keys / A-D, or tap the NUDGE buttons to move the needle",
+    "folder": "games/2026-09-19",
+    "file": "games/2026-09-19/index.html",
+    "preview": "games/2026-09-19/preview.png",
+    "rating": 4.2
   }
 ]
