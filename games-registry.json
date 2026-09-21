@@ -3831,5 +3831,26 @@
     "file": "games/2026-09-20/index.html",
     "preview": "games/2026-09-20/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-09-21",
+    "name": "Halo Snap",
+    "date": "2026-09-21",
+    "description": "A neon timing-precision reflex game: glowing halo rings bloom at random spots across the field, each one shrinking steadily down toward its fixed core dot. Click or tap a halo the instant its shrinking ring lands on the core for a PERFECT, or catch it a little early or late for a smaller GOOD, building a rising combo and score with every clean snap. Gold halos pay out a big bonus, tapping empty space or a halo that's off its timing window just breaks your combo, but letting a ring collapse past the window entirely costs one of three lives and resets your streak. No mouse for precise aiming? Press Space, Enter, or any arrow key to auto-snap whichever halo is closest to its core. Every six perfects levels you up, speeding the shrink, tightening the perfect window, and spawning more halos at once for a sharper read on which ring to prioritize.",
+    "tagline": "Snap the ring the instant it finds its core.",
+    "tags": [
+      "reflex",
+      "timing",
+      "precision",
+      "arcade",
+      "clicker"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click or tap a halo when its ring reaches the core, or press Space/Enter/Arrow keys to auto-snap the nearest one",
+    "folder": "games/2026-09-21",
+    "file": "games/2026-09-21/index.html",
+    "preview": "games/2026-09-21/preview.png",
+    "rating": 4.2
   }
 ]
