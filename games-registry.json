@@ -3852,5 +3852,26 @@
     "file": "games/2026-09-21/index.html",
     "preview": "games/2026-09-21/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-22",
+    "name": "Block Cascade",
+    "date": "2026-09-22",
+    "description": "A neon falling-block stacking game: seven glowing tetromino shapes tumble one at a time down a narrow nine-column shaft, and you slide them left or right, rotate them to fit the gaps, and guide them into complete rows to blast them apart for score. A translucent ghost outline always shows exactly where the current piece will land, soft-dropping banks a small speed bonus, and hard-dropping slams it home instantly with a distance bonus and a satisfying shake. Clearing a row chains a rising combo with every consecutive clear, clearing four rows in a single cascade triggers a huge gold flash bonus, and every ten lines levels you up, quickening the fall for a sharper read on where each piece belongs. Let the stack reach the top and it is game over — how many cascades can you chain before it does?",
+    "tagline": "Stack, rotate, and cascade the blocks away.",
+    "tags": [
+      "puzzle",
+      "stacking",
+      "blocks",
+      "arcade",
+      "strategy"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow keys or WASD to move, rotate, and soft-drop, Space to hard-drop, or the on-screen ◀ ▶ ROTATE DROP buttons",
+    "folder": "games/2026-09-22",
+    "file": "games/2026-09-22/index.html",
+    "preview": "games/2026-09-22/preview.png",
+    "rating": 4.4
   }
 ]
