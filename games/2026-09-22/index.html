@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Block Cascade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030c; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 6%, #10142a 0%, #070a14 55%, #030208 100%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 480px;
+    padding: 4px 12px; z-index: 15; gap: 4px;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 9px; letter-spacing: 2px; color: #4de8ff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 19px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #4de8ff, 0 0 20px #4de8ff;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.lines { color: #3dffa0; text-shadow: 0 0 10px #3dffa0, 0 0 20px #1a8a55; }
+  .hudValue.pulse { animation: hudPulse 0.4s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 28px); font-weight: 900; letter-spacing: 3px; margin-top: 20px;
+    background: linear-gradient(90deg, #4de8ff, #b76dff, #ffd23d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(77,232,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(77,232,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(183,109,255,0.85)); } }
+
+  .subtitle { color: #b8c8d0; font-size: 12px; letter-spacing: 0.5px; text-align: center; max-width: 440px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 14px 38px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #4de8ff, #b76dff);
+    border: none; border-radius: 50px; color: #06121a; cursor: pointer;
+    box-shadow: 0 0 20px rgba(77,232,255,0.7), 0 0 50px rgba(183,109,255,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(77,232,255,0.9), 0 0 70px rgba(183,109,255,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd23d; font-size: 13px; text-shadow: 0 0 8px rgba(255,210,61,0.6); }
+
+  .mainRow {
+    display: flex; gap: 10px; align-items: flex-start; justify-content: center; z-index: 5;
+    flex: 1; min-height: 0; width: 100%;
+  }
+
+  .fieldOuter {
+    position: relative; height: min(58vh, 460px); z-index: 5;
+    border-radius: 14px; overflow: hidden; border: 2px solid rgba(77,232,255,0.25);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 0 30px rgba(77,232,255,0.12);
+    background: #060a0f; touch-action: none;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  canvas.gameCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .sidePanel {
+    display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 2px;
+  }
+  .nextBox {
+    width: 78px; height: 78px; border-radius: 10px; border: 2px solid rgba(183,109,255,0.35);
+    background: #060a0f; box-shadow: 0 0 16px rgba(183,109,255,0.15); position: relative;
+  }
+  .nextLabel { font-size: 9px; letter-spacing: 2px; color: #b76dff; text-transform: uppercase; text-align: center; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; z-index: 9; pointer-events: none; background: rgba(255,46,79,0);
+  }
+  .flashOverlay.bad { animation: flashBadKf 0.3s ease; }
+  @keyframes flashBadKf { 0% { background: rgba(255,46,79,0.28); } 100% { background: rgba(255,46,79,0); } }
+  .flashOverlay.good { animation: flashGoodKf 0.4s ease; }
+  @keyframes flashGoodKf { 0% { background: rgba(61,255,160,0.3); } 100% { background: rgba(61,255,160,0); } }
+  .flashOverlay.tetris { animation: flashTetrisKf 0.5s ease; }
+  @keyframes flashTetrisKf { 0% { background: rgba(255,210,61,0.38); } 100% { background: rgba(255,210,61,0); } }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 14px;
+    background: rgba(6, 10, 15, 0.93); backdrop-filter: blur(4px);
+  }
+
+  .controlsRow {
+    display: flex; gap: 8px; z-index: 10; margin-top: 2px; width: min(94vw, 420px); justify-content: center;
+  }
+  .padBtn {
+    height: 52px; flex: 1; border-radius: 12px; cursor: pointer;
+    background: linear-gradient(135deg, rgba(77,232,255,0.22), rgba(183,109,255,0.14));
+    border: 2px solid rgba(77,232,255,0.45); color: #d7f6ff; font-size: 15px; font-weight: 900;
+    letter-spacing: 1px;
+    box-shadow: 0 0 14px rgba(77,232,255,0.3);
+    transition: transform 0.12s ease, background 0.12s ease;
+  }
+  .padBtn:active { transform: scale(0.94); background: rgba(77,232,255,0.34); }
+  .padBtn.drop { background: linear-gradient(135deg, rgba(255,210,61,0.28), rgba(255,94,108,0.16)); border-color: rgba(255,210,61,0.5); }
+
+  .status { color: #9aa8b3; font-size: 11px; letter-spacing: 0.5px; height: 14px; z-index: 10; text-align: center; }
+  .footer { position: relative; text-align: center; color: #171d20; font-size: 10px; z-index: 10; padding-bottom: 2px; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 15px; }
+    .btn { padding: 12px 28px; font-size: 15px; }
+    .subtitle { font-size: 11px; }
+    .fieldOuter { height: min(50vh, 380px); }
+    .nextBox { width: 60px; height: 60px; }
+    .padBtn { height: 48px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'blockCascadeHighScore';
+const COLS = 9;
+const ROWS = 15;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration, type, gainScale, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const moveSound = useCallback(() => tone(220, 0.04, 'square', 0.06), [tone]);
+  const rotateSound = useCallback(() => tone(340, 0.06, 'square', 0.08, 460), [tone]);
+  const lockSound = useCallback(() => tone(160, 0.08, 'triangle', 0.12, 90), [tone]);
+  const clearSound = useCallback((n) => {
+    const base = 500 + n * 120;
+    tone(base, 0.12, 'sine', 0.18, base * 1.6);
+    if (n >= 4) {
+      setTimeout(() => tone(base * 1.6, 0.16, 'sine', 0.16, base * 2.2), 90);
+      setTimeout(() => tone(base * 2.2, 0.2, 'sine', 0.14, base * 3), 180);
+    }
+  }, [tone]);
+  const levelSound = useCallback(() => { tone(500, 0.1, 'square', 0.1, 900); setTimeout(() => tone(750, 0.12, 'square', 0.1, 1200), 90); }, [tone]);
+  const overSound = useCallback(() => { tone(300, 0.25, 'sawtooth', 0.2, 200); setTimeout(() => tone(180, 0.35, 'sawtooth', 0.2, 80), 150); }, [tone]);
+
+  return { moveSound, rotateSound, lockSound, clearSound, levelSound, overSound };
+}
+
+function spawnBurst(arr, x, y, color, count, speedMin, speedMax, sizeMin, sizeMax, lifeMs) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = speedMin + Math.random() * (speedMax - speedMin);
+    arr.push({
+      x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      life: lifeMs, maxLife: lifeMs, color,
+      size: sizeMin + Math.random() * (sizeMax - sizeMin),
+    });
+  }
+}
+
+const SHAPES = {
+  I: { size: 4, cells: [[0, 1], [1, 1], [2, 1], [3, 1]], color: '#4de8ff' },
+  O: { size: 2, cells: [[0, 0], [1, 0], [0, 1], [1, 1]], color: '#ffd23d' },
+  T: { size: 3, cells: [[1, 0], [0, 1], [1, 1], [2, 1]], color: '#b76dff' },
+  S: { size: 3, cells: [[1, 0], [2, 0], [0, 1], [1, 1]], color: '#3dffa0' },
+  Z: { size: 3, cells: [[0, 0], [1, 0], [1, 1], [2, 1]], color: '#ff5e6c' },
+  J: { size: 3, cells: [[0, 0], [0, 1], [1, 1], [2, 1]], color: '#4d8cff' },
+  L: { size: 3, cells: [[2, 0], [0, 1], [1, 1], [2, 1]], color: '#ff9d3d' },
+};
+const SHAPE_KEYS = Object.keys(SHAPES);
+
+function rotateCells(cells, size) {
+  return cells.map(([x, y]) => [size - 1 - y, x]);
+}
+
+function randomShapeKey() { return SHAPE_KEYS[Math.floor(Math.random() * SHAPE_KEYS.length)]; }
+
+function makePiece(key) {
+  const s = SHAPES[key];
+  return {
+    type: key,
+    size: s.size,
+    color: s.color,
+    cells: s.cells.map((c) => [...c]),
+    x: Math.floor((COLS - s.size) / 2),
+    y: 0,
+  };
+}
+
+function dropIntervalForLevel(level) { return clamp(760 - (level - 1) * 55, 110, 760); }
+
+function App() {
+  const [phase, setPhase] = useState('start'); // start | playing | over
+  const [score, setScore] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [lines, setLines] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [comboPulse, setComboPulse] = useState(false);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [flashKind, setFlashKind] = useState(null);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [statusMsg, setStatusMsg] = useState('Arrange the falling blocks — clear full rows to score.');
+  const [nextType, setNextType] = useState(null);
+
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const nextCanvasRef = useRef(null);
+  const particlesRef = useRef([]);
+
+  const gridRef = useRef(null);
+  const pieceRef = useRef(null);
+  const nextKeyRef = useRef(null);
+  const scoreRef = useRef(0);
+  const levelRef = useRef(1);
+  const linesRef = useRef(0);
+  const comboRef = useRef(0);
+  const highScoreRef = useRef(highScore);
+  const phaseRef = useRef('start');
+  const dimsRef = useRef({ w: 300, h: 300 });
+  const cellSizeRef = useRef(20);
+  const gravityTimerRef = useRef(0);
+  const clearFlashRowsRef = useRef([]);
+  const clearFlashTimerRef = useRef(0);
+
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(null);
+  const flashTimeoutRef = useRef(null);
+  const shakeTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+
+  const { moveSound, rotateSound, lockSound, clearSound, levelSound, overSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const checkHighScore = useCallback(() => {
+    if (scoreRef.current > highScoreRef.current) {
+      highScoreRef.current = scoreRef.current;
+      localStorage.setItem(HS_KEY, String(scoreRef.current));
+      setHighScore(scoreRef.current);
+    }
+  }, []);
+
+  const makeEmptyGrid = () => Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+    cellSizeRef.current = rect.width / COLS;
+
+    const nc = nextCanvasRef.current;
+    if (nc) {
+      const nr = nc.getBoundingClientRect();
+      nc.width = Math.round(nr.width * dpr);
+      nc.height = Math.round(nr.height * dpr);
+      nc.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    const setFieldHeight = () => {
+      const field = fieldRef.current;
+      if (!field) return;
+      const h = field.getBoundingClientRect().height;
+      field.style.width = Math.round((h / ROWS) * COLS) + 'px';
+      resizeCanvas();
+    };
+    setFieldHeight();
+    window.addEventListener('resize', setFieldHeight);
+    return () => window.removeEventListener('resize', setFieldHeight);
+  }, [resizeCanvas]);
+
+  const collides = useCallback((piece, dx, dy, cells) => {
+    const grid = gridRef.current;
+    const useCells = cells || piece.cells;
+    for (const [cx, cy] of useCells) {
+      const gx = piece.x + cx + dx;
+      const gy = piece.y + cy + dy;
+      if (gx < 0 || gx >= COLS || gy >= ROWS) return true;
+      if (gy < 0) continue;
+      if (grid[gy][gx]) return true;
+    }
+    return false;
+  }, []);
+
+  const spawnNextPiece = useCallback(() => {
+    const key = nextKeyRef.current || randomShapeKey();
+    const piece = makePiece(key);
+    nextKeyRef.current = randomShapeKey();
+    setNextType(nextKeyRef.current);
+    pieceRef.current = piece;
+    if (collides(piece, 0, 0)) {
+      phaseRef.current = 'over';
+      setPhase('over');
+      overSound();
+      setStatusMsg('Stack overflowed!');
+      checkHighScore();
+    }
+  }, [collides, overSound, checkHighScore]);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const lockPiece = useCallback(() => {
+    const piece = pieceRef.current;
+    if (!piece) return;
+    const grid = gridRef.current;
+    for (const [cx, cy] of piece.cells) {
+      const gx = piece.x + cx;
+      const gy = piece.y + cy;
+      if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) grid[gy][gx] = piece.color;
+    }
+    lockSound();
+
+    const cleared = [];
+    for (let r = 0; r < ROWS; r++) {
+      if (grid[r].every((c) => c !== null)) cleared.push(r);
+    }
+
+    if (cleared.length > 0) {
+      const cellSize = cellSizeRef.current;
+      for (const r of cleared) {
+        for (let c = 0; c < COLS; c++) {
+          spawnBurst(particlesRef.current, c * cellSize + cellSize / 2, r * cellSize + cellSize / 2, grid[r][c] || '#4de8ff', 5, 30, 130, 1.5, 4, 500);
+        }
+      }
+      const newGrid = grid.filter((_, r) => !cleared.includes(r));
+      while (newGrid.length < ROWS) newGrid.unshift(Array(COLS).fill(null));
+      gridRef.current = newGrid;
+
+      comboRef.current += 1;
+      setCombo(comboRef.current);
+      setComboPulse(true);
+      clearTimeout(comboPulseTimeoutRef.current);
+      comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 400);
+
+      const lineScores = [0, 100, 300, 500, 800];
+      const gained = (lineScores[cleared.length] || 800) * levelRef.current + (comboRef.current - 1) * 40;
+      scoreRef.current += gained;
+      setScore(scoreRef.current);
+      checkHighScore();
+
+      linesRef.current += cleared.length;
+      setLines(linesRef.current);
+      clearSound(cleared.length);
+      triggerFlash(cleared.length >= 4 ? 'tetris' : 'good', cleared.length >= 4 ? 500 : 350);
+      setStatusMsg(cleared.length >= 4 ? 'CASCADE CLEAR!' : cleared.length > 1 ? `${cleared.length} lines!` : 'Line cleared!');
+
+      const newLevel = Math.floor(linesRef.current / 10) + 1;
+      if (newLevel !== levelRef.current) {
+        levelRef.current = newLevel;
+        setLevel(newLevel);
+        levelSound();
+        setStatusMsg(`Level ${newLevel}! Faster drop.`);
+      }
+    } else {
+      comboRef.current = 0;
+      setCombo(0);
+    }
+
+    spawnNextPiece();
+  }, [lockSound, clearSound, levelSound, triggerFlash, checkHighScore, spawnNextPiece]);
+
+  const tryMove = useCallback((dx, dy) => {
+    if (phaseRef.current !== 'playing') return false;
+    const piece = pieceRef.current;
+    if (!piece || !collides(piece, dx, dy)) {
+      if (piece) { piece.x += dx; piece.y += dy; }
+      return true;
+    }
+    return false;
+  }, [collides]);
+
+  const doMove = useCallback((dx) => {
+    if (tryMove(dx, 0)) { moveSound(); }
+  }, [tryMove, moveSound]);
+
+  const doSoftDrop = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    if (tryMove(0, 1)) {
+      scoreRef.current += 1;
+      setScore(scoreRef.current);
+      gravityTimerRef.current = 0;
+    }
+  }, [tryMove]);
+
+  const doRotate = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    const piece = pieceRef.current;
+    if (!piece) return;
+    const rotated = rotateCells(piece.cells, piece.size);
+    const kicks = [0, -1, 1, -2, 2];
+    for (const k of kicks) {
+      if (!collides(piece, k, 0, rotated)) {
+        piece.cells = rotated;
+        piece.x += k;
+        rotateSound();
+        return;
+      }
+    }
+  }, [collides, rotateSound]);
+
+  const doHardDrop = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    const piece = pieceRef.current;
+    if (!piece) return;
+    let dist = 0;
+    while (!collides(piece, 0, dist + 1)) dist++;
+    piece.y += dist;
+    scoreRef.current += dist * 2;
+    setScore(scoreRef.current);
+    setShakeIt(true);
+    clearTimeout(shakeTimeoutRef.current);
+    shakeTimeoutRef.current = setTimeout(() => setShakeIt(false), 200);
+    lockPiece();
+    gravityTimerRef.current = 0;
+  }, [collides, lockPiece]);
+
+  const doMoveRef = useRef(doMove);
+  const doRotateRef = useRef(doRotate);
+  const doHardDropRef = useRef(doHardDrop);
+  const doSoftDropRef = useRef(doSoftDrop);
+  useEffect(() => { doMoveRef.current = doMove; }, [doMove]);
+  useEffect(() => { doRotateRef.current = doRotate; }, [doRotate]);
+  useEffect(() => { doHardDropRef.current = doHardDrop; }, [doHardDrop]);
+  useEffect(() => { doSoftDropRef.current = doSoftDrop; }, [doSoftDrop]);
+
+  const resetGame = useCallback(() => {
+    scoreRef.current = 0; setScore(0);
+    levelRef.current = 1; setLevel(1);
+    linesRef.current = 0; setLines(0);
+    comboRef.current = 0; setCombo(0);
+    gridRef.current = makeEmptyGrid();
+    particlesRef.current = [];
+    gravityTimerRef.current = 0;
+    nextKeyRef.current = randomShapeKey();
+  }, []);
+
+  const startGame = useCallback(() => {
+    resizeCanvas();
+    resetGame();
+    setStatusMsg('Arrange the falling blocks — clear full rows to score.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+    spawnNextPiece();
+  }, [resizeCanvas, resetGame, spawnNextPiece]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); doMoveRef.current(-1); }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); doMoveRef.current(1); }
+      else if (e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); doRotateRef.current(); }
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); doSoftDropRef.current(); }
+      else if (e.code === 'Space') { e.preventDefault(); doHardDropRef.current(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+  }, []);
+
+  // Main loop: gravity, particles, drawing
+  useEffect(() => {
+    const loop = (ts) => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        const { w, h } = dimsRef.current;
+        const cellSize = cellSizeRef.current;
+
+        if (lastTsRef.current == null) lastTsRef.current = ts;
+        let dt = (ts - lastTsRef.current) / 1000;
+        lastTsRef.current = ts;
+        dt = clamp(dt, 0, 0.033);
+
+        if (w > 10 && h > 10) {
+          if (phaseRef.current === 'playing' && pieceRef.current) {
+            gravityTimerRef.current += dt * 1000;
+            const interval = dropIntervalForLevel(levelRef.current);
+            if (gravityTimerRef.current >= interval) {
+              gravityTimerRef.current = 0;
+              if (!tryMove(0, 1)) {
+                lockPiece();
+              }
+            }
+          }
+
+          particlesRef.current = particlesRef.current.filter((p) => p.life > 0);
+          for (const p of particlesRef.current) {
+            p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; p.life -= dt * 1000;
+          }
+
+          ctx.clearRect(0, 0, w, h);
+          ctx.fillStyle = '#060a0f';
+          ctx.fillRect(0, 0, w, h);
+
+          // grid lines
+          ctx.save();
+          ctx.strokeStyle = 'rgba(77,232,255,0.06)';
+          ctx.lineWidth = 1;
+          for (let c = 0; c <= COLS; c++) {
+            ctx.beginPath(); ctx.moveTo(c * cellSize, 0); ctx.lineTo(c * cellSize, ROWS * cellSize); ctx.stroke();
+          }
+          for (let r = 0; r <= ROWS; r++) {
+            ctx.beginPath(); ctx.moveTo(0, r * cellSize); ctx.lineTo(COLS * cellSize, r * cellSize); ctx.stroke();
+          }
+          ctx.restore();
+
+          const grid = gridRef.current;
+          if (grid) {
+            for (let r = 0; r < ROWS; r++) {
+              for (let c = 0; c < COLS; c++) {
+                const color = grid[r][c];
+                if (!color) continue;
+                ctx.save();
+                ctx.fillStyle = color;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 6;
+                ctx.globalAlpha = 0.9;
+                ctx.fillRect(c * cellSize + 1, r * cellSize + 1, cellSize - 2, cellSize - 2);
+                ctx.restore();
+              }
+            }
+          }
+
+          const piece = pieceRef.current;
+          if (piece && phaseRef.current === 'playing') {
+            let ghostDist = 0;
+            while (!collides(piece, 0, ghostDist + 1)) ghostDist++;
+            ctx.save();
+            ctx.strokeStyle = piece.color;
+            ctx.globalAlpha = 0.35;
+            ctx.lineWidth = 2;
+            for (const [cx, cy] of piece.cells) {
+              const gx = piece.x + cx;
+              const gy = piece.y + cy + ghostDist;
+              if (gy >= 0) ctx.strokeRect(gx * cellSize + 2, gy * cellSize + 2, cellSize - 4, cellSize - 4);
+            }
+            ctx.restore();
+
+            ctx.save();
+            ctx.fillStyle = piece.color;
+            ctx.shadowColor = piece.color;
+            ctx.shadowBlur = 12;
+            for (const [cx, cy] of piece.cells) {
+              const gx = piece.x + cx;
+              const gy = piece.y + cy;
+              if (gy >= 0) ctx.fillRect(gx * cellSize + 1, gy * cellSize + 1, cellSize - 2, cellSize - 2);
+            }
+            ctx.restore();
+          }
+
+          for (const p of particlesRef.current) {
+            const a = clamp(p.life / p.maxLife, 0, 1);
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        // next piece preview
+        const nc = nextCanvasRef.current;
+        if (nc && nextKeyRef.current) {
+          const nctx = nc.getContext('2d');
+          const nr = nc.getBoundingClientRect();
+          nctx.clearRect(0, 0, nr.width, nr.height);
+          const shape = SHAPES[nextKeyRef.current];
+          if (shape) {
+            const cs = Math.min(nr.width, nr.height) / 4;
+            const offX = (nr.width - shape.size * cs) / 2;
+            const offY = (nr.height - shape.size * cs) / 2;
+            nctx.save();
+            nctx.fillStyle = shape.color;
+            nctx.shadowColor = shape.color;
+            nctx.shadowBlur = 8;
+            for (const [cx, cy] of shape.cells) {
+              nctx.fillRect(offX + cx * cs + 1, offY + cy * cs + 1, cs - 2, cs - 2);
+            }
+            nctx.restore();
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [collides, tryMove, lockPiece]);
+
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lines</div>
+          <div className="hudValue lines" data-testid="lines">{lines}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <div className="title">BLOCK CASCADE</div>
+          <div className="subtitle">
+            Neon blocks tumble down a narrow shaft — slide them left and right, rotate to fit the gaps, and stack them into complete rows to blast them away. Soft-drop for a small speed bonus, hard-drop to slam a piece home instantly, and chain clears back-to-back for a rising combo. Clearing four rows in one cascade triggers a huge bonus flash. Every ten lines levels you up, speeding the fall — stack too high and it's game over.
+          </div>
+        </div>
+      )}
+
+      <div className="mainRow">
+        <div
+          className={"fieldOuter" + (shakeIt ? " shakeIt" : "")}
+          data-testid="play-field"
+          ref={fieldRef}
+        >
+          <canvas
+            className="gameCanvas"
+            data-testid="canvas"
+            ref={canvasRef}
+          ></canvas>
+          <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+          {phase === 'start' && (
+            <div className="overlay">
+              <div className="highscoreLine">High Score: {highScore}</div>
+              <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+            </div>
+          )}
+
+          {phase === 'over' && (
+            <div className="overlay">
+              <div className="title" style={{ marginTop: 0, fontSize: 22 }}>STACK OVERFLOW</div>
+              <div className="hudValue" style={{ fontSize: 26 }}>{score}</div>
+              <div className="highscoreLine">High Score: {highScore}</div>
+              <button className="btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+            </div>
+          )}
+        </div>
+
+        {phase === 'playing' && (
+          <div className="sidePanel">
+            <div className="nextLabel">Next</div>
+            <div className="nextBox">
+              <canvas ref={nextCanvasRef} data-testid="next-canvas" style={{ width: '100%', height: '100%' }}></canvas>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <div className="controlsRow">
+          <button className="padBtn" data-testid="left-btn" onClick={() => doMove(-1)} onTouchStart={(e) => { e.preventDefault(); doMove(-1); }}>◀</button>
+          <button className="padBtn" data-testid="rotate-btn" onClick={doRotate} onTouchStart={(e) => { e.preventDefault(); doRotate(); }}>⟳ ROTATE</button>
+          <button className="padBtn" data-testid="right-btn" onClick={() => doMove(1)} onTouchStart={(e) => { e.preventDefault(); doMove(1); }}>▶</button>
+          <button className="padBtn drop" data-testid="drop-btn" onClick={doHardDrop} onTouchStart={(e) => { e.preventDefault(); doHardDrop(); }}>▼ DROP</button>
+        </div>
+      )}
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
