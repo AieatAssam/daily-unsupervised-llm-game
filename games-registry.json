@@ -3857,7 +3857,7 @@
     "id": "2026-09-22",
     "name": "Block Cascade",
     "date": "2026-09-22",
-    "description": "A neon falling-block stacking game: seven glowing tetromino shapes tumble one at a time down a narrow nine-column shaft, and you slide them left or right, rotate them to fit the gaps, and guide them into complete rows to blast them apart for score. A translucent ghost outline always shows exactly where the current piece will land, soft-dropping banks a small speed bonus, and hard-dropping slams it home instantly with a distance bonus and a satisfying shake. Clearing a row chains a rising combo with every consecutive clear, clearing four rows in a single cascade triggers a huge gold flash bonus, and every ten lines levels you up, quickening the fall for a sharper read on where each piece belongs. Let the stack reach the top and it is game over — how many cascades can you chain before it does?",
+    "description": "A neon falling-block stacking game: seven glowing tetromino shapes tumble one at a time down a narrow nine-column shaft, and you slide them left or right, rotate them to fit the gaps, and guide them into complete rows to blast them apart for score. A translucent ghost outline always shows exactly where the current piece will land, soft-dropping banks a small speed bonus, and hard-dropping slams it home instantly with a distance bonus and a satisfying shake. Clearing a row chains a rising combo with every consecutive clear, clearing four rows in a single cascade triggers a huge gold flash bonus, and every ten lines levels you up, quickening the fall for a sharper read on where each piece belongs. Let the stack reach the top and it is game over \u2014 how many cascades can you chain before it does?",
     "tagline": "Stack, rotate, and cascade the blocks away.",
     "tags": [
       "puzzle",
@@ -3868,10 +3868,31 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Arrow keys or WASD to move, rotate, and soft-drop, Space to hard-drop, or the on-screen ◀ ▶ ROTATE DROP buttons",
+    "controls": "Arrow keys or WASD to move, rotate, and soft-drop, Space to hard-drop, or the on-screen \u25c0 \u25b6 ROTATE DROP buttons",
     "folder": "games/2026-09-22",
     "file": "games/2026-09-22/index.html",
     "preview": "games/2026-09-22/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-09-23",
+    "name": "Flipper Surge",
+    "date": "2026-09-23",
+    "description": "A neon pinball reflex game: a glowing ball drops through a vertical arena of five bumpers while two flippers wait at the bottom, each pivoting from a corner and drooping inward at rest with a gap between their tips. Hold the left or right flipper (or both together) with Arrow keys / A-D / Space, click-and-hold the on-screen L FLIP / R FLIP buttons, or tap and hold them on mobile, to swing it up just as the ball arrives and launch it back into the bumpers for a strong flip \u2014 catch it late or not at all and the ball just dribbles off the drooping paddle and drains through the gap. Every bumper smacked builds a rising combo and score, with the central gold bumper paying out a big bonus, while gravity strengthens and the payouts climb as your score crosses each level threshold. Let the ball slip past both flippers and you lose one of three balls \u2014 how long can you keep the surge alive?",
+    "tagline": "Time the flip. Keep the surge alive.",
+    "tags": [
+      "pinball",
+      "physics",
+      "reflex",
+      "arcade",
+      "timing"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Hold Arrow keys / A-D / Space, or click-and-hold / tap-and-hold the L FLIP / R FLIP buttons, to swing the flippers",
+    "folder": "games/2026-09-23",
+    "file": "games/2026-09-23/index.html",
+    "preview": "games/2026-09-23/preview.png",
+    "rating": 4.1
   }
 ]
