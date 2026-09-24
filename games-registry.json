@@ -3894,5 +3894,26 @@
     "file": "games/2026-09-23/index.html",
     "preview": "games/2026-09-23/preview.png",
     "rating": 4.1
+  },
+  {
+    "id": "2026-09-24",
+    "name": "Orbit Slinger",
+    "date": "2026-09-24",
+    "description": "A neon slingshot skill-shot game: a glowing orb waits on a launcher at the bottom of a tall arena while a scatter of pulsing rings and spiked mines float above. Drag anywhere in the field to pull the orb back — the further you pull, the harder it flies when you let go, launching it in the exact opposite direction. No mouse for precise dragging? Press and hold Space or the on-screen HOLD TO FIRE button to charge power while the ◀ / ▶ buttons or Arrow keys steer the launch angle, then release to fire. Chaining a shot into multiple glowing rings via wall ricochets builds a rising combo and score, the gold ring pays out huge, but clipping a spiked mine drifting among the rings costs one of three orbs and resets the streak. Every five clean hits levels you up, adding more rings and mines, setting some rings adrift, and tightening gravity for a sharper trajectory read.",
+    "tagline": "Pull back. Aim true. Chain the lights.",
+    "tags": [
+      "arcade",
+      "physics",
+      "aiming",
+      "skillshot",
+      "precision"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Drag anywhere in the field to pull back and aim, release to launch, or hold Space / the HOLD TO FIRE button to charge power and use Arrow keys / the ◀ ▶ buttons to steer the angle",
+    "folder": "games/2026-09-24",
+    "file": "games/2026-09-24/index.html",
+    "preview": "games/2026-09-24/preview.png",
+    "rating": 4.3
   }
 ]
