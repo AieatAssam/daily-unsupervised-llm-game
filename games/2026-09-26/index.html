@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Turf Claim</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050a12; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 4%, #0f1a2e 0%, #081019 55%, #030509 100%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 480px;
+    padding: 4px 12px; z-index: 15; gap: 4px;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 9px; letter-spacing: 2px; color: #4de8c4; text-transform: uppercase; }
+  .hudValue {
+    font-size: 19px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #4de8c4, 0 0 20px #4de8c4;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.lives { color: #ff6ec7; text-shadow: 0 0 10px #ff6ec7, 0 0 20px #8a1a5a; }
+  .hudValue.pulse { animation: hudPulse 0.4s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 28px); font-weight: 900; letter-spacing: 3px; margin-top: 20px;
+    background: linear-gradient(90deg, #4de8c4, #8a6bff, #ff6ec7);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(77,232,196,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(77,232,196,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(255,110,199,0.85)); } }
+
+  .subtitle { color: #b8c8d0; font-size: 12px; letter-spacing: 0.5px; text-align: center; max-width: 440px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 14px 38px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #4de8c4, #ff6ec7);
+    border: none; border-radius: 50px; color: #071018; cursor: pointer;
+    box-shadow: 0 0 20px rgba(77,232,196,0.7), 0 0 50px rgba(255,110,199,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(77,232,196,0.9), 0 0 70px rgba(255,110,199,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd23d; font-size: 13px; text-shadow: 0 0 8px rgba(255,210,61,0.6); }
+
+  .fieldOuter {
+    position: relative; height: min(64vh, 520px); z-index: 5;
+    border-radius: 14px; overflow: hidden; border: 2px solid rgba(77,232,196,0.25);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 0 30px rgba(77,232,196,0.12);
+    background: #050a12; touch-action: none; cursor: crosshair;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  canvas.gameCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; z-index: 9; pointer-events: none; background: rgba(255,51,85,0);
+  }
+  .flashOverlay.bad { animation: flashBadKf 0.3s ease; }
+  @keyframes flashBadKf { 0% { background: rgba(255,51,85,0.28); } 100% { background: rgba(255,51,85,0); } }
+  .flashOverlay.good { animation: flashGoodKf 0.35s ease; }
+  @keyframes flashGoodKf { 0% { background: rgba(77,232,196,0.26); } 100% { background: rgba(77,232,196,0); } }
+  .flashOverlay.gold { animation: flashGoldKf 0.5s ease; }
+  @keyframes flashGoldKf { 0% { background: rgba(255,210,61,0.38); } 100% { background: rgba(255,210,61,0); } }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 14px;
+    background: rgba(5, 10, 18, 0.93); backdrop-filter: blur(4px);
+  }
+
+  .controlsRow {
+    display: flex; gap: 8px; z-index: 10; margin-top: 4px; width: min(94vw, 420px); justify-content: center;
+  }
+  .turnBtn {
+    height: 58px; flex: 1; border-radius: 12px; cursor: pointer;
+    background: linear-gradient(135deg, rgba(77,232,196,0.22), rgba(138,107,255,0.14));
+    border: 2px solid rgba(77,232,196,0.45); color: #daffee; font-size: 22px; font-weight: 900;
+    box-shadow: 0 0 14px rgba(77,232,196,0.3);
+    transition: transform 0.1s ease, background 0.1s ease;
+  }
+  .turnBtn:active { transform: scale(0.92); background: rgba(77,232,196,0.4); }
+
+  .status { color: #9aa8b3; font-size: 11px; letter-spacing: 0.5px; height: 14px; z-index: 10; text-align: center; transition: color 0.15s ease; }
+  .status.pulseTick { color: #4de8c4; }
+  .footer { position: relative; text-align: center; color: #171d20; font-size: 10px; z-index: 10; padding-bottom: 2px; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 15px; }
+    .btn { padding: 12px 28px; font-size: 15px; }
+    .subtitle { font-size: 11px; }
+    .fieldOuter { height: min(54vh, 440px); }
+    .turnBtn { height: 54px; font-size: 19px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'turfClaimHighScore';
+const ASPECT = 0.66;
+const COLS = 20;
+const ROWS = 30;
+const TURN_RATE = 3.1;
+const SPEED_BASE = 78;
+const SPEED_LEVEL_GAIN = 4;
+const RAIDER_SPEED_BASE = 36;
+const RAIDER_SPEED_LEVEL_GAIN = 7;
+const CLAIMS_PER_LEVEL = 4;
+const SECTOR_CLEAR_FRACTION = 0.85;
+const OWNED_COLOR = '#4de8c4';
+const TRAIL_COLOR = '#ff6ec7';
+const RAIDER_COLOR = '#ff3355';
+const GOLD_COLOR = '#ffe066';
+const PLAYER_COLOR = '#ffffff';
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
+function speedForLevel(level) { return SPEED_BASE + Math.min(level - 1, 10) * SPEED_LEVEL_GAIN; }
+function raiderSpeedForLevel(level) { return RAIDER_SPEED_BASE + Math.min(level - 1, 10) * RAIDER_SPEED_LEVEL_GAIN; }
+function raiderCountForLevel(level) { return Math.min(1 + Math.floor((level - 1) * 0.7), 5); }
+function wrapAngle(a) { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration, type, gainScale, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const claimSound = useCallback((combo) => {
+    const base = 440 + Math.min(combo, 14) * 30;
+    tone(base, 0.09, 'sine', 0.15, base * 1.7);
+    setTimeout(() => tone(base * 1.5, 0.1, 'sine', 0.1, base * 2.1), 65);
+  }, [tone]);
+  const crashSound = useCallback(() => { tone(280, 0.24, 'sawtooth', 0.2, 90); }, [tone]);
+  const levelSound = useCallback(() => { tone(520, 0.1, 'square', 0.1, 880); setTimeout(() => tone(760, 0.12, 'square', 0.1, 1180), 90); }, [tone]);
+  const sectorSound = useCallback(() => {
+    tone(600, 0.16, 'triangle', 0.18, 1100);
+    setTimeout(() => tone(900, 0.16, 'triangle', 0.15, 1400), 90);
+    setTimeout(() => tone(1200, 0.18, 'triangle', 0.13, 1700), 180);
+  }, [tone]);
+  const overSound = useCallback(() => { tone(300, 0.25, 'sawtooth', 0.2, 200); setTimeout(() => tone(180, 0.35, 'sawtooth', 0.2, 80), 150); }, [tone]);
+
+  return { claimSound, crashSound, levelSound, sectorSound, overSound };
+}
+
+function spawnBurst(arr, x, y, color, count, speedMin, speedMax, sizeMin, sizeMax, lifeMs) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = speedMin + Math.random() * (speedMax - speedMin);
+    arr.push({
+      x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      life: lifeMs, maxLife: lifeMs, color,
+      size: sizeMin + Math.random() * (sizeMax - sizeMin),
+    });
+  }
+}
+
+function makeTerritory(cols, rows) {
+  const owned = new Uint8Array(cols * rows);
+  const cx = Math.floor(cols / 2), cy = Math.floor(rows / 2);
+  for (let r = cy - 2; r < cy + 2; r++) {
+    for (let c = cx - 2; c < cx + 2; c++) {
+      owned[r * cols + c] = 1;
+    }
+  }
+  return owned;
+}
+
+function floodClaim(owned, cols, rows, trailIdxs) {
+  const size = cols * rows;
+  const before = owned;
+  const newOwned = new Uint8Array(before);
+  for (const idx of trailIdxs) newOwned[idx] = 1;
+
+  const outside = new Uint8Array(size);
+  const queue = [];
+  const consider = (c, r) => {
+    if (c < 0 || c >= cols || r < 0 || r >= rows) return;
+    const i = r * cols + c;
+    if (newOwned[i] === 1 || outside[i] === 1) return;
+    outside[i] = 1;
+    queue.push(i);
+  };
+  for (let c = 0; c < cols; c++) { consider(c, 0); consider(c, rows - 1); }
+  for (let r = 0; r < rows; r++) { consider(0, r); consider(cols - 1, r); }
+  let qi = 0;
+  while (qi < queue.length) {
+    const idx = queue[qi++];
+    const c = idx % cols, r = (idx - c) / cols;
+    consider(c - 1, r); consider(c + 1, r); consider(c, r - 1); consider(c, r + 1);
+  }
+
+  let claimedCount = 0;
+  for (let i = 0; i < size; i++) {
+    if (newOwned[i] === 0 && outside[i] === 0) newOwned[i] = 1;
+    if (before[i] === 0 && newOwned[i] === 1) claimedCount++;
+  }
+  return { newOwned, claimedCount };
+}
+
+function buildRaiders(count, w, h, avoid) {
+  const raiders = [];
+  for (let i = 0; i < count; i++) {
+    let x, y, tries = 0;
+    do {
+      x = w * 0.1 + Math.random() * w * 0.8;
+      y = h * 0.1 + Math.random() * h * 0.8;
+      tries++;
+    } while (avoid && dist(x, y, avoid.x, avoid.y) < Math.min(w, h) * 0.45 && tries < 20);
+    const ang = Math.random() * Math.PI * 2;
+    raiders.push({ x, y, angle: ang, changeTimer: 0.6 + Math.random() * 1.2 });
+  }
+  return raiders;
+}
+
+function App() {
+  const [phase, setPhase] = useState('start'); // start | playing | over
+  const [score, setScore] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [lives, setLives] = useState(3);
+  const [combo, setCombo] = useState(0);
+  const [comboPulse, setComboPulse] = useState(false);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [flashKind, setFlashKind] = useState(null);
+  const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [statusMsg, setStatusMsg] = useState('Drag away from your base to claim new turf.');
+  const [enginePulse, setEnginePulse] = useState(false);
+
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const particlesRef = useRef([]);
+
+  const ownedRef = useRef(makeTerritory(COLS, ROWS));
+  const trailRef = useRef([]);
+  const exposedRef = useRef(false);
+  const playerRef = useRef({ x: 130, y: 210, heading: -Math.PI / 2 });
+  const raidersRef = useRef([]);
+  const heldRef = useRef({ left: false, right: false });
+  const draggingRef = useRef(false);
+  const dragPointRef = useRef({ x: 0, y: 0 });
+  const timeRef = useRef(0);
+  const graceUntilRef = useRef(0);
+
+  const scoreRef = useRef(0);
+  const levelRef = useRef(1);
+  const livesRef = useRef(3);
+  const comboRef = useRef(0);
+  const claimsRef = useRef(0);
+  const highScoreRef = useRef(highScore);
+  const phaseRef = useRef('start');
+  const dimsRef = useRef({ w: 260, h: 420 });
+
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(null);
+  const flashTimeoutRef = useRef(null);
+  const shakeTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+
+  const { claimSound, crashSound, levelSound, sectorSound, overSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const checkHighScore = useCallback(() => {
+    if (scoreRef.current > highScoreRef.current) {
+      highScoreRef.current = scoreRef.current;
+      localStorage.setItem(HS_KEY, String(scoreRef.current));
+      setHighScore(scoreRef.current);
+    }
+  }, []);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    const setFieldWidth = () => {
+      const field = fieldRef.current;
+      if (!field) return;
+      const h = field.getBoundingClientRect().height;
+      field.style.width = Math.round(h * ASPECT) + 'px';
+      resizeCanvas();
+    };
+    setFieldWidth();
+    window.addEventListener('resize', setFieldWidth);
+    return () => window.removeEventListener('resize', setFieldWidth);
+  }, [resizeCanvas]);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const resetGame = useCallback(() => {
+    const { w, h } = dimsRef.current;
+    scoreRef.current = 0; setScore(0);
+    levelRef.current = 1; setLevel(1);
+    livesRef.current = 3; setLives(3);
+    comboRef.current = 0; setCombo(0);
+    claimsRef.current = 0;
+    particlesRef.current = [];
+    trailRef.current = [];
+    exposedRef.current = false;
+    heldRef.current = { left: false, right: false };
+    draggingRef.current = false;
+    ownedRef.current = makeTerritory(COLS, ROWS);
+    const cellW = w / COLS, cellH = h / ROWS;
+    const px = (COLS / 2) * cellW, py = (ROWS / 2) * cellH;
+    playerRef.current = { x: px, y: py, heading: -Math.PI / 2 };
+    raidersRef.current = buildRaiders(raiderCountForLevel(1), w, h, { x: px, y: py });
+    graceUntilRef.current = timeRef.current + 1.2;
+  }, []);
+
+  const startGame = useCallback(() => {
+    resizeCanvas();
+    resetGame();
+    setStatusMsg('Drag away from your base to claim new turf.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [resizeCanvas, resetGame]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  const respawnPlayer = useCallback(() => {
+    const { w, h } = dimsRef.current;
+    const cellW = w / COLS, cellH = h / ROWS;
+    const px = (COLS / 2) * cellW, py = (ROWS / 2) * cellH;
+    playerRef.current = { x: px, y: py, heading: -Math.PI / 2 };
+    trailRef.current = [];
+    exposedRef.current = false;
+    graceUntilRef.current = timeRef.current + 1.5;
+    for (const raider of raidersRef.current) {
+      if (dist(raider.x, raider.y, px, py) < Math.min(w, h) * 0.4) {
+        let x, y, tries = 0;
+        do {
+          x = w * 0.1 + Math.random() * w * 0.8;
+          y = h * 0.1 + Math.random() * h * 0.8;
+          tries++;
+        } while (dist(x, y, px, py) < Math.min(w, h) * 0.4 && tries < 20);
+        raider.x = x; raider.y = y;
+      }
+    }
+  }, []);
+
+  const onCrash = useCallback(() => {
+    livesRef.current -= 1;
+    setLives(livesRef.current);
+    comboRef.current = 0;
+    setCombo(0);
+    crashSound();
+    triggerFlash('bad', 300);
+    setShakeIt(true);
+    clearTimeout(shakeTimeoutRef.current);
+    shakeTimeoutRef.current = setTimeout(() => setShakeIt(false), 200);
+
+    const p = playerRef.current;
+    spawnBurst(particlesRef.current, p.x, p.y, RAIDER_COLOR, 16, 80, 240, 1.5, 4, 500);
+    setStatusMsg('Trail cut! Territory lost.');
+
+    if (livesRef.current <= 0) {
+      phaseRef.current = 'over';
+      setPhase('over');
+      overSound();
+      setStatusMsg('Out of runners!');
+      checkHighScore();
+    } else {
+      respawnPlayer();
+    }
+  }, [crashSound, triggerFlash, overSound, checkHighScore, respawnPlayer]);
+
+  const onClaim = useCallback((trailIdxs) => {
+    const { w, h } = dimsRef.current;
+    const { newOwned, claimedCount } = floodClaim(ownedRef.current, COLS, ROWS, trailIdxs);
+    ownedRef.current = newOwned;
+    trailRef.current = [];
+    exposedRef.current = false;
+
+    if (claimedCount <= 0) return;
+
+    claimsRef.current += 1;
+    comboRef.current += 1;
+    setCombo(comboRef.current);
+    setComboPulse(true);
+    clearTimeout(comboPulseTimeoutRef.current);
+    comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 350);
+
+    const gained = Math.round(claimedCount * 8 * (1 + comboRef.current * 0.08));
+    scoreRef.current += gained;
+    setScore(scoreRef.current);
+    checkHighScore();
+
+    const p = playerRef.current;
+    spawnBurst(particlesRef.current, p.x, p.y, OWNED_COLOR, Math.min(20, 6 + claimedCount), 60, 200, 1.5, 3.8, 480);
+    claimSound(comboRef.current);
+    triggerFlash('good', 220);
+    setStatusMsg(comboRef.current > 3 ? `Combo x${comboRef.current}! +${gained}` : `Claimed ${claimedCount} tiles!`);
+
+    const newLevel = Math.floor(claimsRef.current / CLAIMS_PER_LEVEL) + 1;
+    if (newLevel !== levelRef.current) {
+      levelRef.current = newLevel;
+      setLevel(newLevel);
+      const need = raiderCountForLevel(newLevel);
+      while (raidersRef.current.length < need) {
+        raidersRef.current.push(...buildRaiders(1, w, h, playerRef.current));
+      }
+      levelSound();
+      setStatusMsg(`Level ${newLevel}! Raiders closing in.`);
+    }
+
+    let totalOwned = 0;
+    for (let i = 0; i < newOwned.length; i++) if (newOwned[i] === 1) totalOwned++;
+    if (totalOwned / newOwned.length >= SECTOR_CLEAR_FRACTION) {
+      scoreRef.current += 400 + levelRef.current * 100;
+      setScore(scoreRef.current);
+      checkHighScore();
+      ownedRef.current = makeTerritory(COLS, ROWS);
+      levelRef.current += 1;
+      setLevel(levelRef.current);
+      const cellW = w / COLS, cellH = h / ROWS;
+      raidersRef.current = buildRaiders(raiderCountForLevel(levelRef.current), w, h, { x: (COLS / 2) * cellW, y: (ROWS / 2) * cellH });
+      sectorSound();
+      triggerFlash('gold', 450);
+      setStatusMsg('SECTOR CLAIMED! Fresh map, tougher raiders.');
+    }
+  }, [checkHighScore, claimSound, triggerFlash, levelSound, sectorSound]);
+
+  const getLocalPoint = useCallback((e) => {
+    const field = fieldRef.current;
+    const rect = field.getBoundingClientRect();
+    const cx = e.touches && e.touches.length ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches && e.touches.length ? e.touches[0].clientY : e.clientY;
+    return { x: cx - rect.left, y: cy - rect.top };
+  }, []);
+
+  const onPointerDownField = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    e.preventDefault();
+    draggingRef.current = true;
+    dragPointRef.current = getLocalPoint(e);
+    setEnginePulse((p) => !p);
+  }, [getLocalPoint]);
+
+  const onPointerMoveField = useCallback((e) => {
+    if (!draggingRef.current) return;
+    e.preventDefault();
+    dragPointRef.current = getLocalPoint(e);
+  }, [getLocalPoint]);
+
+  const onPointerUpField = useCallback(() => {
+    draggingRef.current = false;
+  }, []);
+
+  const setHeld = useCallback((dir, val) => {
+    heldRef.current[dir] = val;
+    if (val && phaseRef.current === 'playing') setEnginePulse((p) => !p);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); heldRef.current.left = true; }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); heldRef.current.right = true; }
+    };
+    const onKeyUp = (e) => {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') heldRef.current.left = false;
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') heldRef.current.right = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
+  }, []);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+  }, []);
+
+  // Main physics + draw loop
+  useEffect(() => {
+    const onClaimRef = onClaim;
+    const onCrashRef = onCrash;
+
+    const loop = (ts) => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        const { w, h } = dimsRef.current;
+
+        if (lastTsRef.current == null) lastTsRef.current = ts;
+        let dt = (ts - lastTsRef.current) / 1000;
+        lastTsRef.current = ts;
+        dt = clamp(dt, 0, 0.033);
+        timeRef.current += dt;
+
+        if (w > 10 && h > 10) {
+          const cellW = w / COLS, cellH = h / ROWS;
+          const player = playerRef.current;
+          const pr = Math.min(cellW, cellH) * 0.45;
+
+          if (phaseRef.current === 'playing') {
+            const held = heldRef.current;
+            if (draggingRef.current) {
+              const dx = dragPointRef.current.x - player.x;
+              const dy = dragPointRef.current.y - player.y;
+              if (Math.hypot(dx, dy) > 6) {
+                const target = Math.atan2(dy, dx);
+                const diff = wrapAngle(target - player.heading);
+                const maxStep = TURN_RATE * dt;
+                player.heading += clamp(diff, -maxStep, maxStep);
+              }
+            } else if (held.left) {
+              player.heading -= TURN_RATE * dt;
+            } else if (held.right) {
+              player.heading += TURN_RATE * dt;
+            }
+
+            const speed = speedForLevel(levelRef.current);
+            player.x += Math.cos(player.heading) * speed * dt;
+            player.y += Math.sin(player.heading) * speed * dt;
+
+            if (player.x - pr < 0) { player.x = pr; player.heading = Math.PI - player.heading; }
+            if (player.x + pr > w) { player.x = w - pr; player.heading = Math.PI - player.heading; }
+            if (player.y - pr < 0) { player.y = pr; player.heading = -player.heading; }
+            if (player.y + pr > h) { player.y = h - pr; player.heading = -player.heading; }
+            player.heading = wrapAngle(player.heading);
+
+            const col = clamp(Math.floor(player.x / cellW), 0, COLS - 1);
+            const row = clamp(Math.floor(player.y / cellH), 0, ROWS - 1);
+            const idx = row * COLS + col;
+            const owned = ownedRef.current;
+
+            if (owned[idx] === 1) {
+              if (trailRef.current.length > 0) {
+                onClaimRef(trailRef.current);
+              }
+              exposedRef.current = false;
+            } else {
+              exposedRef.current = true;
+              const trail = trailRef.current;
+              const last = trail.length ? trail[trail.length - 1] : -1;
+              if (idx !== last) {
+                const checkUpto = Math.max(0, trail.length - 4);
+                let hit = false;
+                for (let ti = 0; ti < checkUpto; ti++) {
+                  if (trail[ti] === idx) { hit = true; break; }
+                }
+                if (hit) {
+                  onCrashRef();
+                } else {
+                  trail.push(idx);
+                }
+              }
+            }
+
+            // Raiders
+            const raiders = raidersRef.current;
+            const raiderSpeed = raiderSpeedForLevel(levelRef.current);
+            for (const raider of raiders) {
+              raider.changeTimer -= dt;
+              if (raider.changeTimer <= 0) {
+                raider.angle = Math.random() * Math.PI * 2;
+                raider.changeTimer = 0.6 + Math.random() * 1.2;
+              }
+              raider.x += Math.cos(raider.angle) * raiderSpeed * dt;
+              raider.y += Math.sin(raider.angle) * raiderSpeed * dt;
+              const rr = Math.min(cellW, cellH) * 0.4;
+              if (raider.x - rr < 0) { raider.x = rr; raider.angle = Math.PI - raider.angle; }
+              if (raider.x + rr > w) { raider.x = w - rr; raider.angle = Math.PI - raider.angle; }
+              if (raider.y - rr < 0) { raider.y = rr; raider.angle = -raider.angle; }
+              if (raider.y + rr > h) { raider.y = h - rr; raider.angle = -raider.angle; }
+
+              if (exposedRef.current && timeRef.current >= graceUntilRef.current && dist(player.x, player.y, raider.x, raider.y) < pr + rr) {
+                onCrashRef();
+              }
+            }
+          }
+
+          particlesRef.current = particlesRef.current.filter((p) => p.life > 0);
+          for (const p of particlesRef.current) {
+            p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; p.life -= dt * 1000;
+          }
+
+          ctx.clearRect(0, 0, w, h);
+          ctx.fillStyle = '#050a12';
+          ctx.fillRect(0, 0, w, h);
+
+          // Owned territory
+          const owned = ownedRef.current;
+          ctx.save();
+          ctx.fillStyle = OWNED_COLOR;
+          ctx.globalAlpha = 0.28;
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              if (owned[r * COLS + c] === 1) {
+                ctx.fillRect(c * cellW, r * cellH, cellW + 0.5, cellH + 0.5);
+              }
+            }
+          }
+          ctx.restore();
+
+          // Trail
+          const trail = trailRef.current;
+          if (trail.length > 0) {
+            ctx.save();
+            ctx.fillStyle = TRAIL_COLOR;
+            ctx.shadowColor = TRAIL_COLOR;
+            ctx.shadowBlur = 10;
+            ctx.globalAlpha = 0.55;
+            for (const idx of trail) {
+              const c = idx % COLS, r = (idx - c) / COLS;
+              ctx.fillRect(c * cellW, r * cellH, cellW + 0.5, cellH + 0.5);
+            }
+            ctx.restore();
+          }
+
+          // Raiders
+          for (const raider of raidersRef.current) {
+            ctx.save();
+            ctx.translate(raider.x, raider.y);
+            ctx.rotate(timeRef.current * 2);
+            const rr = Math.min(cellW, cellH) * 0.42;
+            ctx.strokeStyle = RAIDER_COLOR;
+            ctx.shadowColor = RAIDER_COLOR;
+            ctx.shadowBlur = 12;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(rr, 0); ctx.lineTo(0, rr); ctx.lineTo(-rr, 0); ctx.lineTo(0, -rr); ctx.closePath();
+            ctx.stroke();
+            ctx.fillStyle = RAIDER_COLOR;
+            ctx.globalAlpha = 0.3;
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Player
+          ctx.save();
+          ctx.translate(player.x, player.y);
+          ctx.rotate(player.heading);
+          ctx.strokeStyle = PLAYER_COLOR;
+          ctx.shadowColor = exposedRef.current ? TRAIL_COLOR : OWNED_COLOR;
+          ctx.shadowBlur = 14;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(pr * 1.4, 0);
+          ctx.lineTo(-pr * 0.9, pr * 0.85);
+          ctx.lineTo(-pr * 0.4, 0);
+          ctx.lineTo(-pr * 0.9, -pr * 0.85);
+          ctx.closePath();
+          ctx.stroke();
+          ctx.fillStyle = PLAYER_COLOR;
+          ctx.globalAlpha = 0.3;
+          ctx.fill();
+          ctx.restore();
+
+          for (const p of particlesRef.current) {
+            const a = clamp(p.life / p.maxLife, 0, 1);
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [onClaim, onCrash]);
+
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Runners</div>
+          <div className="hudValue lives" data-testid="lives">{lives}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <div className="title">TURF CLAIM</div>
+          <div className="subtitle">
+            Drag away from your glowing home base to lay down a neon trail, then loop back home to seal the shape and claim everything you enclosed. Cross your own trail and it's game over for that runner — clip a red raider while you're exposed outside your territory and the same fate awaits. Chain fast claims for a rising combo, level up for tougher raiders, and claim 85% of the map to trigger a Sector Clear for a fresh board and a big bonus.
+          </div>
+        </div>
+      )}
+
+      <div
+        className={"fieldOuter" + (shakeIt ? " shakeIt" : "")}
+        data-testid="play-field"
+        ref={fieldRef}
+        onMouseDown={onPointerDownField}
+        onMouseMove={onPointerMoveField}
+        onMouseUp={onPointerUpField}
+        onMouseLeave={onPointerUpField}
+        onTouchStart={onPointerDownField}
+        onTouchMove={onPointerMoveField}
+        onTouchEnd={onPointerUpField}
+        onTouchCancel={onPointerUpField}
+      >
+        <canvas
+          className="gameCanvas"
+          data-testid="canvas"
+          ref={canvasRef}
+        ></canvas>
+        <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">High Score: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 22 }}>RUNNERS DOWN</div>
+            <div className="hudValue" style={{ fontSize: 26 }}>{score}</div>
+            <div className="highscoreLine">High Score: {highScore}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <div className="controlsRow">
+          <button
+            className="turnBtn"
+            data-testid="turn-left-btn"
+            onMouseDown={() => setHeld('left', true)}
+            onMouseUp={() => setHeld('left', false)}
+            onMouseLeave={() => setHeld('left', false)}
+            onTouchStart={(e) => { e.preventDefault(); setHeld('left', true); }}
+            onTouchEnd={(e) => { e.preventDefault(); setHeld('left', false); }}
+            onTouchCancel={(e) => { e.preventDefault(); setHeld('left', false); }}
+          >◀ TURN</button>
+          <button
+            className="turnBtn"
+            data-testid="turn-right-btn"
+            onMouseDown={() => setHeld('right', true)}
+            onMouseUp={() => setHeld('right', false)}
+            onMouseLeave={() => setHeld('right', false)}
+            onTouchStart={(e) => { e.preventDefault(); setHeld('right', true); }}
+            onTouchEnd={(e) => { e.preventDefault(); setHeld('right', false); }}
+            onTouchCancel={(e) => { e.preventDefault(); setHeld('right', false); }}
+          >TURN ▶</button>
+        </div>
+      )}
+
+      <div className={"status" + (enginePulse ? " pulseTick" : "")}>{statusMsg}</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
