@@ -3899,7 +3899,7 @@
     "id": "2026-09-24",
     "name": "Orbit Slinger",
     "date": "2026-09-24",
-    "description": "A neon slingshot skill-shot game: a glowing orb waits on a launcher at the bottom of a tall arena while a scatter of pulsing rings and spiked mines float above. Drag anywhere in the field to pull the orb back — the further you pull, the harder it flies when you let go, launching it in the exact opposite direction. No mouse for precise dragging? Press and hold Space or the on-screen HOLD TO FIRE button to charge power while the ◀ / ▶ buttons or Arrow keys steer the launch angle, then release to fire. Chaining a shot into multiple glowing rings via wall ricochets builds a rising combo and score, the gold ring pays out huge, but clipping a spiked mine drifting among the rings costs one of three orbs and resets the streak. Every five clean hits levels you up, adding more rings and mines, setting some rings adrift, and tightening gravity for a sharper trajectory read.",
+    "description": "A neon slingshot skill-shot game: a glowing orb waits on a launcher at the bottom of a tall arena while a scatter of pulsing rings and spiked mines float above. Drag anywhere in the field to pull the orb back \u2014 the further you pull, the harder it flies when you let go, launching it in the exact opposite direction. No mouse for precise dragging? Press and hold Space or the on-screen HOLD TO FIRE button to charge power while the \u25c0 / \u25b6 buttons or Arrow keys steer the launch angle, then release to fire. Chaining a shot into multiple glowing rings via wall ricochets builds a rising combo and score, the gold ring pays out huge, but clipping a spiked mine drifting among the rings costs one of three orbs and resets the streak. Every five clean hits levels you up, adding more rings and mines, setting some rings adrift, and tightening gravity for a sharper trajectory read.",
     "tagline": "Pull back. Aim true. Chain the lights.",
     "tags": [
       "arcade",
@@ -3910,7 +3910,7 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "2 minutes",
-    "controls": "Drag anywhere in the field to pull back and aim, release to launch, or hold Space / the HOLD TO FIRE button to charge power and use Arrow keys / the ◀ ▶ buttons to steer the angle",
+    "controls": "Drag anywhere in the field to pull back and aim, release to launch, or hold Space / the HOLD TO FIRE button to charge power and use Arrow keys / the \u25c0 \u25b6 buttons to steer the angle",
     "folder": "games/2026-09-24",
     "file": "games/2026-09-24/index.html",
     "preview": "games/2026-09-24/preview.png",
@@ -3920,7 +3920,7 @@
     "id": "2026-09-25",
     "name": "Comet Courier",
     "date": "2026-09-25",
-    "description": "A neon space-delivery navigation game: a glowing ship drifts with real inertia through a debris field, and you must scoop up the pulsing cargo pod then haul it across the arena to the beacon to deliver it, chaining fast deliveries into a rising combo and score. Hold Arrow keys / WASD, tap-and-hold the on-screen thrusters, or drag anywhere in the field to thrust your ship toward your finger or cursor — release and momentum keeps carrying you, so every turn means fighting your own drift. Gold cargo pods pay out huge, but clipping a drifting spiked mine costs one of three hull points and drops any cargo you're currently carrying, resetting your combo. Every three deliveries levels you up, spawning faster mines and shrinking the beacon for a tighter dock.",
+    "description": "A neon space-delivery navigation game: a glowing ship drifts with real inertia through a debris field, and you must scoop up the pulsing cargo pod then haul it across the arena to the beacon to deliver it, chaining fast deliveries into a rising combo and score. Hold Arrow keys / WASD, tap-and-hold the on-screen thrusters, or drag anywhere in the field to thrust your ship toward your finger or cursor \u2014 release and momentum keeps carrying you, so every turn means fighting your own drift. Gold cargo pods pay out huge, but clipping a drifting spiked mine costs one of three hull points and drops any cargo you're currently carrying, resetting your combo. Every three deliveries levels you up, spawning faster mines and shrinking the beacon for a tighter dock.",
     "tagline": "Chase the drift. Deliver the light.",
     "tags": [
       "arcade",
@@ -3931,10 +3931,31 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "2 minutes",
-    "controls": "Hold Arrow keys / WASD, tap-and-hold the on-screen ◀ ▲ ▼ ▶ thrusters, or drag anywhere in the field to thrust your ship toward your finger or cursor",
+    "controls": "Hold Arrow keys / WASD, tap-and-hold the on-screen \u25c0 \u25b2 \u25bc \u25b6 thrusters, or drag anywhere in the field to thrust your ship toward your finger or cursor",
     "folder": "games/2026-09-25",
     "file": "games/2026-09-25/index.html",
     "preview": "games/2026-09-25/preview.png",
+    "rating": 4.2
+  },
+  {
+    "id": "2026-09-26",
+    "name": "Turf Claim",
+    "date": "2026-09-26",
+    "description": "A neon territory-conquest game: drag your glowing runner away from its home base to lay down a bright trail, then loop back home to seal the shape and instantly claim every tile you enclosed. Drag anywhere to steer toward your cursor, or hold Arrow keys / A-D / the on-screen TURN buttons to bank left and right, weaving wider and wider loops out into unclaimed space. Cross your own trail before you get home and that runner is gone, and a wandering red raider is just as deadly if it clips you while you're outside your territory. Chain fast claims into a rising combo for bonus points, level up every few claims to face faster, more numerous raiders, and claim 85% of the map to trigger a Sector Clear for a fresh board and a big score bonus.",
+    "tagline": "Loop it. Claim it. Defend it.",
+    "tags": [
+      "strategy",
+      "arcade",
+      "territory",
+      "risk",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Drag anywhere in the field to steer toward your cursor/finger, or hold Arrow keys / A-D / the on-screen \u25c0 TURN / TURN \u25b6 buttons to bank left and right",
+    "folder": "games/2026-09-26",
+    "file": "games/2026-09-26/index.html",
+    "preview": "games/2026-09-26/preview.png",
     "rating": 4.2
   }
 ]
