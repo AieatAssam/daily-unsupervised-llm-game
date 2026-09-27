@@ -3621,7 +3621,8 @@
     "folder": "games/2026-09-10",
     "file": "games/2026-09-10/index.html",
     "preview": "games/2026-09-10/preview.png",
-    "rating": 4.2
+    "rating": 4.2,
+    "broken": true
   },
   {
     "id": "2026-09-11",
@@ -3725,7 +3726,8 @@
     "folder": "games/2026-09-15",
     "file": "games/2026-09-15/index.html",
     "preview": "games/2026-09-15/preview.png",
-    "rating": 4.2
+    "rating": 4.2,
+    "broken": true
   },
   {
     "id": "2026-09-16",
