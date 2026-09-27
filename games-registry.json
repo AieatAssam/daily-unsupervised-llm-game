@@ -3957,5 +3957,26 @@
     "file": "games/2026-09-26/index.html",
     "preview": "games/2026-09-26/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-27",
+    "name": "Neon Fusion",
+    "date": "2026-09-27",
+    "description": "A neon merge-puzzle game: every glowing tile on a 4x4 grid slides at once in whichever direction you push, and matching values fuse into the next glowing number in a satisfying chain reaction. Use Arrow keys / WASD, the on-screen D-pad, or a swipe/drag directly on the board to shove the whole grid left, right, up, or down, banking a rising combo multiplier for consecutive fusing moves. Gold tiles pay out a huge bonus when fused into, but every level up cracks open a fixed glitch cell that permanently blocks part of the grid and never moves, squeezing your space tighter and tighter. Run out of legal moves and the grid locks for good — how high can you fuse before it does?",
+    "tagline": "Slide, merge, ascend.",
+    "tags": [
+      "puzzle",
+      "strategy",
+      "merge",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Arrow keys / WASD, the on-screen ▲◀▼▶ D-pad, or a swipe/drag directly on the board to slide every tile in one direction at once",
+    "folder": "games/2026-09-27",
+    "file": "games/2026-09-27/index.html",
+    "preview": "games/2026-09-27/preview.png",
+    "rating": 4.3
   }
 ]
