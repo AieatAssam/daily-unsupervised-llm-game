@@ -3980,5 +3980,26 @@
     "file": "games/2026-09-27/index.html",
     "preview": "games/2026-09-27/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-09-28",
+    "name": "Crate Shift",
+    "date": "2026-09-28",
+    "description": "A neon sokoban-style puzzle-arcade game: every layout is a procedurally generated grid of walls, glowing crates, and dashed gold pads, guaranteed solvable by construction. Walk into a crate with Arrow keys / WASD or the on-screen D-pad to shove it one tile at a time, locking it in with a burst of particles the instant it lands on a pad, and chain fast consecutive locks into a rising combo multiplier for huge scores. Push a locked crate back off its pad and the combo resets, so plan your route before you shove. Clear every pad before the countdown hits zero to bank a time bonus and advance to a tighter, more crowded layout with less time on the clock — run out of time three times and it's game over. How deep can you shift?",
+    "tagline": "Shove smart. Lock fast. Beat the clock.",
+    "tags": [
+      "puzzle",
+      "strategy",
+      "sokoban",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow keys / WASD, or the on-screen ▲◀▼▶ D-pad, to walk into a crate and shove it one tile in that direction",
+    "folder": "games/2026-09-28",
+    "file": "games/2026-09-28/index.html",
+    "preview": "games/2026-09-28/preview.png",
+    "rating": 4.2
   }
 ]
