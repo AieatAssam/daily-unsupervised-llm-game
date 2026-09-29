@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Neon Duelist</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05040c; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: manipulation; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 0%, #1a1035 0%, #0c081c 50%, #050308 100%);
+  }
+
+  .bgGlow {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.5;
+    background: radial-gradient(circle at 20% 15%, rgba(255,110,199,0.12), transparent 40%),
+                radial-gradient(circle at 80% 25%, rgba(77,232,196,0.12), transparent 40%),
+                radial-gradient(circle at 50% 95%, rgba(138,107,255,0.14), transparent 45%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 480px;
+    padding: 4px 12px; z-index: 15; gap: 4px; position: relative;
+  }
+  .hudBox { text-align: center; }
+  .hudLabel { font-size: 9px; letter-spacing: 2px; color: #b98bff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 18px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #b98bff, 0 0 20px #b98bff;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.best { color: #4de8c4; text-shadow: 0 0 10px #4de8c4, 0 0 20px #1c7a63; }
+  .hudValue.pulse { animation: hudPulse 0.4s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 26px); font-weight: 900; letter-spacing: 3px; margin-top: 6px;
+    background: linear-gradient(90deg, #ff6ec7, #b98bff, #4de8c4);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(185,139,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(185,139,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(255,110,199,0.85)); } }
+
+  .subtitle { color: #c3b8d8; font-size: 11.5px; letter-spacing: 0.3px; text-align: center; max-width: 440px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 13px 34px; font-size: 16px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #b98bff, #ff6ec7);
+    border: none; border-radius: 50px; color: #0a0714; cursor: pointer;
+    box-shadow: 0 0 20px rgba(185,139,255,0.7), 0 0 50px rgba(255,110,199,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(185,139,255,0.9), 0 0 70px rgba(255,110,199,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #4de8c4; font-size: 13px; text-shadow: 0 0 8px rgba(77,232,196,0.6); }
+
+  .fieldOuter {
+    position: relative; width: min(92vw, 460px); flex: 1; min-height: 0; z-index: 5;
+    border-radius: 16px; overflow: hidden; border: 2px solid rgba(185,139,255,0.3);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 0 30px rgba(185,139,255,0.14);
+    background: #0a0714; margin-top: 4px; display: flex; flex-direction: column;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  .arena {
+    position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;
+    justify-content: space-around; padding: 8px 10px; z-index: 3;
+  }
+
+  .combatant { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; }
+  .avatar {
+    width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 900; color: #0a0714; position: relative; z-index: 2;
+    transition: transform 0.12s ease;
+  }
+  .avatar.enemy { background: radial-gradient(circle at 35% 30%, #ff6ec7, #c22a72); box-shadow: 0 0 18px 3px rgba(255,110,199,0.6); }
+  .avatar.player { background: radial-gradient(circle at 35% 30%, #4de8c4, #1c9e82); box-shadow: 0 0 18px 3px rgba(77,232,196,0.6); }
+  .combatant.shakeHit .avatar { animation: hitShakeKf 0.3s ease; }
+  @keyframes hitShakeKf {
+    0%, 100% { transform: translate(0,0) scale(1); }
+    30% { transform: translate(-6px, 0) scale(0.94); }
+    60% { transform: translate(6px, 0) scale(0.98); }
+  }
+
+  .barTrack {
+    width: min(60vw, 260px); height: 14px; border-radius: 8px; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12); overflow: hidden; position: relative;
+  }
+  .barFill { height: 100%; border-radius: 8px; transition: width 0.3s ease; }
+  .barFill.enemyFill { background: linear-gradient(90deg, #ff6ec7, #ff4d6d); box-shadow: 0 0 10px rgba(255,77,109,0.7); }
+  .barFill.playerFill { background: linear-gradient(90deg, #4de8c4, #38bdf8); box-shadow: 0 0 10px rgba(77,232,196,0.7); }
+  .barLabel { font-size: 10.5px; color: #cfc4e6; letter-spacing: 0.5px; }
+  .shieldBadge {
+    position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%;
+    background: radial-gradient(circle, #4de8c4, #14806a); box-shadow: 0 0 12px rgba(77,232,196,0.8);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; color: #05140f;
+    animation: popIn 0.2s ease;
+  }
+  @keyframes popIn { 0% { transform: scale(0.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+  .vsRow { display: flex; align-items: center; justify-content: center; gap: 10px; position: relative; }
+  .timerTrack {
+    width: min(70vw, 300px); height: 6px; border-radius: 4px; background: rgba(255,255,255,0.08); overflow: hidden;
+  }
+  .timerFill { height: 100%; background: linear-gradient(90deg, #ffd23d, #ff6ec7); transition: width 0.1s linear; }
+
+  canvas.gameCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 6; pointer-events: none; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; z-index: 9; pointer-events: none; background: rgba(255,255,255,0);
+  }
+  .flashOverlay.good { animation: flashGoodKf 0.3s ease; }
+  @keyframes flashGoodKf { 0% { background: rgba(77,232,196,0.2); } 100% { background: rgba(77,232,196,0); } }
+  .flashOverlay.gold { animation: flashGoldKf 0.5s ease; }
+  @keyframes flashGoldKf { 0% { background: rgba(255,210,61,0.36); } 100% { background: rgba(255,210,61,0); } }
+  .flashOverlay.level { animation: flashLevelKf 0.5s ease; }
+  @keyframes flashLevelKf { 0% { background: rgba(185,139,255,0.36); } 100% { background: rgba(185,139,255,0); } }
+  .flashOverlay.bad { animation: flashBadKf 0.35s ease; }
+  @keyframes flashBadKf { 0% { background: rgba(255,77,109,0.32); } 100% { background: rgba(255,77,109,0); } }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 14px;
+    background: rgba(10, 7, 20, 0.94); backdrop-filter: blur(4px);
+  }
+
+  .handRow {
+    display: flex; gap: 6px; justify-content: center; align-items: stretch; z-index: 10;
+    padding: 4px 6px 6px; flex-wrap: nowrap;
+  }
+  .card {
+    flex: 1 1 0; max-width: 92px; min-height: 78px; border-radius: 10px; cursor: pointer;
+    background: rgba(255,255,255,0.04); border: 2px solid var(--cc, #b98bff);
+    box-shadow: 0 0 12px var(--ccg, rgba(185,139,255,0.35));
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    padding: 6px 3px; transition: transform 0.1s ease, opacity 0.15s ease;
+    color: #fff; position: relative;
+  }
+  .card:active { transform: scale(0.94); }
+  .card.locked { opacity: 0.32; pointer-events: none; }
+  .card.gold { border-color: #ffe066; box-shadow: 0 0 16px rgba(255,224,102,0.7); }
+  .cardCost {
+    position: absolute; top: -8px; left: -8px; width: 22px; height: 22px; border-radius: 50%;
+    background: #0a0714; border: 2px solid var(--cc, #b98bff); display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 900; color: #fff;
+  }
+  .cardLabel { font-size: 11.5px; font-weight: 800; letter-spacing: 0.4px; text-align: center; }
+  .cardValue { font-size: 10px; color: #d8cdf0; text-align: center; }
+
+  .endTurnBtn {
+    padding: 12px 22px; font-size: 13px; font-weight: 800; letter-spacing: 1.5px;
+    background: linear-gradient(135deg, #ff6ec7, #b98bff); border: none; border-radius: 40px;
+    color: #0a0714; cursor: pointer; box-shadow: 0 0 16px rgba(255,110,199,0.6);
+    transition: transform 0.1s ease, opacity 0.15s ease; margin: 0 auto 6px;
+    min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .endTurnBtn:active { transform: scale(0.95); }
+  .endTurnBtn.locked { opacity: 0.4; pointer-events: none; }
+
+  .status { color: #9a8fb0; font-size: 11px; letter-spacing: 0.5px; height: 14px; z-index: 10; text-align: center; margin-top: 2px; }
+  .footer { position: relative; text-align: center; color: #14101c; font-size: 10px; z-index: 10; padding-bottom: 2px; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 14px; }
+    .btn { padding: 12px 26px; font-size: 14px; min-height: 44px; }
+    .subtitle { font-size: 10.5px; }
+    .fieldOuter { width: min(94vw, 380px); }
+    .avatar { width: 46px; height: 46px; font-size: 18px; }
+    .barTrack { width: min(62vw, 220px); }
+    .card { max-width: 78px; min-height: 70px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'neonDuelistHighScore';
+const PLAYER_MAX_HP = 100;
+const TURN_MS = 9000;
+
+const POOL = [
+  { key: 'strike', label: 'Strike', cost: 1, type: 'atk', dmgMin: 6, dmgMax: 9, color: '#ff6ec7', glow: 'rgba(255,110,199,0.4)', weight: 30 },
+  { key: 'slash', label: 'Slash', cost: 2, type: 'atk', dmgMin: 12, dmgMax: 16, color: '#38bdf8', glow: 'rgba(56,189,248,0.4)', weight: 22 },
+  { key: 'overload', label: 'Overload', cost: 3, type: 'atk', dmgMin: 20, dmgMax: 26, color: '#b98bff', glow: 'rgba(185,139,255,0.4)', weight: 14 },
+  { key: 'guard', label: 'Guard', cost: 1, type: 'def', color: '#4de8c4', glow: 'rgba(77,232,196,0.4)', weight: 16 },
+  { key: 'mend', label: 'Mend', cost: 2, type: 'heal', healMin: 10, healMax: 14, color: '#7CFC9A', glow: 'rgba(124,252,154,0.4)', weight: 14 },
+  { key: 'overcharge', label: 'Overcharge', cost: 0, type: 'buff', color: '#ffd23d', glow: 'rgba(255,210,61,0.5)', gold: true, weight: 4 },
+];
+const TOTAL_WEIGHT = POOL.reduce((s, c) => s + c.weight, 0);
+
+let cardIdSeq = 0;
+function nextCardId() { return ++cardIdSeq; }
+
+function pickCardDef() {
+  let roll = Math.random() * TOTAL_WEIGHT;
+  for (const def of POOL) {
+    if (roll < def.weight) return def;
+    roll -= def.weight;
+  }
+  return POOL[0];
+}
+
+function genHand() {
+  return Array.from({ length: 4 }, () => {
+    const def = pickCardDef();
+    return { ...def, id: nextCardId() };
+  });
+}
+
+function newOpponent(idx) {
+  return { maxHP: 36 + idx * 14, atk: 5 + idx * 2 };
+}
+
+function randInt(min, max) { return Math.floor(min + Math.random() * (max - min + 1)); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration, type, gainScale, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const strikeSound = useCallback((dmg) => { const base = 260 + Math.min(dmg, 30) * 8; tone(base, 0.1, 'sawtooth', 0.14, base * 0.6); }, [tone]);
+  const guardSound = useCallback(() => { tone(500, 0.14, 'triangle', 0.12, 700); }, [tone]);
+  const healSound = useCallback(() => { tone(600, 0.12, 'sine', 0.12, 900); setTimeout(() => tone(800, 0.1, 'sine', 0.1, 1000), 70); }, [tone]);
+  const overchargeSound = useCallback(() => { tone(700, 0.1, 'square', 0.12, 1300); }, [tone]);
+  const enemyHitSound = useCallback(() => { tone(200, 0.18, 'sawtooth', 0.16, 90); }, [tone]);
+  const winSound = useCallback(() => { tone(520, 0.1, 'square', 0.12, 880); setTimeout(() => tone(760, 0.12, 'square', 0.12, 1180), 90); setTimeout(() => tone(1040, 0.14, 'square', 0.1, 1400), 180); }, [tone]);
+  const overSound = useCallback(() => { tone(300, 0.25, 'sawtooth', 0.2, 200); setTimeout(() => tone(180, 0.35, 'sawtooth', 0.2, 80), 150); }, [tone]);
+  const errorSound = useCallback(() => { tone(150, 0.08, 'square', 0.08, 100); }, [tone]);
+
+  return { strikeSound, guardSound, healSound, overchargeSound, enemyHitSound, winSound, overSound, errorSound };
+}
+
+function spawnBurst(arr, x, y, color, count, speedMin, speedMax, sizeMin, sizeMax, lifeMs) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = speedMin + Math.random() * (speedMax - speedMin);
+    arr.push({
+      x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      life: lifeMs, maxLife: lifeMs, color,
+      size: sizeMin + Math.random() * (sizeMax - sizeMin),
+    });
+  }
+}
+
+function App() {
+  const [phase, setPhase] = useState('start');
+  const [score, setScore] = useState(0);
+  const [best, setBest] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [combo, setCombo] = useState(0);
+  const [comboPulse, setComboPulse] = useState(false);
+  const [level, setLevel] = useState(1);
+
+  const [playerHP, setPlayerHP] = useState(PLAYER_MAX_HP);
+  const [enemyHP, setEnemyHP] = useState(40);
+  const [enemyMaxHP, setEnemyMaxHP] = useState(40);
+  const [energy, setEnergy] = useState(3);
+  const [energyMax, setEnergyMax] = useState(3);
+  const [hand, setHand] = useState([]);
+  const [usedIds, setUsedIds] = useState(() => new Set());
+  const [shieldActive, setShieldActive] = useState(false);
+  const [turnTimePct, setTurnTimePct] = useState(100);
+  const [resolving, setResolving] = useState(false);
+  const [shakeEnemy, setShakeEnemy] = useState(false);
+  const [shakePlayer, setShakePlayer] = useState(false);
+  const [flashKind, setFlashKind] = useState(null);
+  const [statusMsg, setStatusMsg] = useState('Play cards to attack, guard, or mend.');
+
+  const phaseRef = useRef('start');
+  const scoreRef = useRef(0);
+  const bestRef = useRef(best);
+  const comboRef = useRef(0);
+  const opponentIndexRef = useRef(0);
+  const levelRef = useRef(1);
+  const playerHPRef = useRef(PLAYER_MAX_HP);
+  const enemyHPRef = useRef(40);
+  const enemyMaxHPRef = useRef(40);
+  const enemyAtkRef = useRef(5);
+  const energyRef = useRef(3);
+  const energyMaxRef = useRef(3);
+  const handRef = useRef([]);
+  const usedIdsRef = useRef(new Set());
+  const shieldActiveRef = useRef(false);
+  const dealtDamageRef = useRef(false);
+  const turnTimeLeftRef = useRef(TURN_MS);
+  const actionLockRef = useRef(false);
+
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const particlesRef = useRef([]);
+  const dimsRef = useRef({ w: 300, h: 300 });
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(null);
+  const timeAccumRef = useRef(0);
+
+  const flashTimeoutRef = useRef(null);
+  const shakeEnemyTimeoutRef = useRef(null);
+  const shakePlayerTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+  const enemyTurnTimeoutRef = useRef(null);
+
+  const { strikeSound, guardSound, healSound, overchargeSound, enemyHitSound, winSound, overSound, errorSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const triggerShake = useCallback((who) => {
+    if (who === 'enemy') {
+      setShakeEnemy(true);
+      clearTimeout(shakeEnemyTimeoutRef.current);
+      shakeEnemyTimeoutRef.current = setTimeout(() => setShakeEnemy(false), 300);
+    } else {
+      setShakePlayer(true);
+      clearTimeout(shakePlayerTimeoutRef.current);
+      shakePlayerTimeoutRef.current = setTimeout(() => setShakePlayer(false), 300);
+    }
+  }, []);
+
+  const enemyPoint = useCallback(() => {
+    const { w, h } = dimsRef.current;
+    return { x: w * 0.5, y: h * 0.24 };
+  }, []);
+  const playerPoint = useCallback(() => {
+    const { w, h } = dimsRef.current;
+    return { x: w * 0.5, y: h * 0.58 };
+  }, []);
+
+  const startGame = useCallback(() => {
+    resizeCanvas();
+    opponentIndexRef.current = 0;
+    levelRef.current = 1; setLevel(1);
+    scoreRef.current = 0; setScore(0);
+    comboRef.current = 0; setCombo(0);
+    playerHPRef.current = PLAYER_MAX_HP; setPlayerHP(PLAYER_MAX_HP);
+    const opp = newOpponent(0);
+    enemyMaxHPRef.current = opp.maxHP; setEnemyMaxHP(opp.maxHP);
+    enemyHPRef.current = opp.maxHP; setEnemyHP(opp.maxHP);
+    enemyAtkRef.current = opp.atk;
+    energyMaxRef.current = 3; setEnergyMax(3);
+    energyRef.current = 3; setEnergy(3);
+    handRef.current = genHand(); setHand(handRef.current);
+    usedIdsRef.current = new Set(); setUsedIds(new Set());
+    shieldActiveRef.current = false; setShieldActive(false);
+    dealtDamageRef.current = false;
+    turnTimeLeftRef.current = TURN_MS; setTurnTimePct(100);
+    actionLockRef.current = false; setResolving(false);
+    particlesRef.current = [];
+    setStatusMsg('Play cards to attack, guard, or mend.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [resizeCanvas]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  const anyPlayable = useCallback(() => {
+    return handRef.current.some(c => !usedIdsRef.current.has(c.id) && (c.type === 'buff' || c.cost <= energyRef.current));
+  }, []);
+
+  const beginNewTurn = useCallback(() => {
+    energyRef.current = energyMaxRef.current; setEnergy(energyRef.current);
+    handRef.current = genHand(); setHand(handRef.current);
+    usedIdsRef.current = new Set(); setUsedIds(new Set());
+    turnTimeLeftRef.current = TURN_MS; setTurnTimePct(100);
+    dealtDamageRef.current = false;
+    actionLockRef.current = false; setResolving(false);
+  }, []);
+
+  const endTurn = useCallback(() => {
+    if (phaseRef.current !== 'playing' || actionLockRef.current) return;
+    actionLockRef.current = true; setResolving(true);
+
+    if (dealtDamageRef.current) { comboRef.current += 1; } else { comboRef.current = 0; }
+    setCombo(comboRef.current);
+    if (comboRef.current > 0) {
+      setComboPulse(true);
+      clearTimeout(comboPulseTimeoutRef.current);
+      comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 350);
+    }
+
+    clearTimeout(enemyTurnTimeoutRef.current);
+    enemyTurnTimeoutRef.current = setTimeout(() => {
+      let dmg = Math.max(1, Math.round(enemyAtkRef.current * (0.8 + Math.random() * 0.4)));
+      if (shieldActiveRef.current) dmg = Math.round(dmg * 0.4);
+      shieldActiveRef.current = false; setShieldActive(false);
+      playerHPRef.current = Math.max(0, playerHPRef.current - dmg); setPlayerHP(playerHPRef.current);
+      enemyHitSound();
+      triggerShake('player');
+      triggerFlash('bad', 350);
+      const pp = playerPoint();
+      spawnBurst(particlesRef.current, pp.x, pp.y, '#ff4d6d', 16, 40, 140, 1.5, 3.5, 420);
+      setStatusMsg(`Enemy strikes for ${dmg}!`);
+
+      if (playerHPRef.current <= 0) {
+        phaseRef.current = 'over'; setPhase('over');
+        overSound();
+        setStatusMsg('Defeated!');
+        actionLockRef.current = false; setResolving(false);
+        return;
+      }
+      beginNewTurn();
+    }, 500);
+  }, [beginNewTurn, enemyHitSound, overSound, triggerFlash, triggerShake, playerPoint]);
+
+  const endTurnRef = useRef(null);
+  useEffect(() => { endTurnRef.current = endTurn; }, [endTurn]);
+
+  const handleDuelWin = useCallback(() => {
+    actionLockRef.current = true; setResolving(true);
+    clearTimeout(enemyTurnTimeoutRef.current);
+
+    comboRef.current += 1; setCombo(comboRef.current);
+    setComboPulse(true);
+    clearTimeout(comboPulseTimeoutRef.current);
+    comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 350);
+
+    const bonus = 150 + opponentIndexRef.current * 20;
+    scoreRef.current += bonus; setScore(scoreRef.current);
+    opponentIndexRef.current += 1;
+    levelRef.current = opponentIndexRef.current + 1; setLevel(levelRef.current);
+    playerHPRef.current = Math.min(PLAYER_MAX_HP, playerHPRef.current + 15); setPlayerHP(playerHPRef.current);
+    energyMaxRef.current = Math.min(6, 3 + Math.floor(opponentIndexRef.current / 3)); setEnergyMax(energyMaxRef.current);
+
+    const opp = newOpponent(opponentIndexRef.current);
+    enemyMaxHPRef.current = opp.maxHP; setEnemyMaxHP(opp.maxHP);
+    enemyHPRef.current = opp.maxHP; setEnemyHP(opp.maxHP);
+    enemyAtkRef.current = opp.atk;
+    shieldActiveRef.current = false; setShieldActive(false);
+
+    if (scoreRef.current > bestRef.current) {
+      bestRef.current = scoreRef.current;
+      localStorage.setItem(HS_KEY, String(scoreRef.current));
+      setBest(scoreRef.current);
+    }
+
+    winSound();
+    triggerFlash('level', 500);
+    setStatusMsg(`Duel ${levelRef.current - 1} won! New challenger approaches!`);
+
+    setTimeout(() => { beginNewTurn(); }, 500);
+  }, [beginNewTurn, winSound, triggerFlash]);
+
+  const playCard = useCallback((card) => {
+    if (phaseRef.current !== 'playing' || actionLockRef.current) return;
+    if (usedIdsRef.current.has(card.id)) return;
+    if (card.type !== 'buff' && card.cost > energyRef.current) {
+      errorSound();
+      setStatusMsg('Not enough energy!');
+      return;
+    }
+
+    energyRef.current -= card.cost; setEnergy(energyRef.current);
+    const nextUsed = new Set(usedIdsRef.current);
+    nextUsed.add(card.id);
+    usedIdsRef.current = nextUsed; setUsedIds(nextUsed);
+
+    if (card.type === 'atk') {
+      const dmg = randInt(card.dmgMin, card.dmgMax);
+      enemyHPRef.current = Math.max(0, enemyHPRef.current - dmg); setEnemyHP(enemyHPRef.current);
+      dealtDamageRef.current = true;
+      const gained = Math.round(dmg * 2 * (1 + Math.min(comboRef.current, 10) * 0.1));
+      scoreRef.current += gained; setScore(scoreRef.current);
+      strikeSound(dmg);
+      triggerShake('enemy');
+      const ep = enemyPoint();
+      spawnBurst(particlesRef.current, ep.x, ep.y, card.color, 16, 40, 150, 1.5, 3.5, 440);
+      setStatusMsg(`${card.label}! -${dmg} HP (+${gained})`);
+    } else if (card.type === 'def') {
+      shieldActiveRef.current = true; setShieldActive(true);
+      guardSound();
+      setStatusMsg('Guard up! Incoming damage reduced.');
+    } else if (card.type === 'heal') {
+      const heal = randInt(card.healMin, card.healMax);
+      playerHPRef.current = Math.min(PLAYER_MAX_HP, playerHPRef.current + heal); setPlayerHP(playerHPRef.current);
+      scoreRef.current += heal; setScore(scoreRef.current);
+      healSound();
+      const pp = playerPoint();
+      spawnBurst(particlesRef.current, pp.x, pp.y, card.color, 14, 30, 110, 1.5, 3.5, 420);
+      setStatusMsg(`Mend! +${heal} HP`);
+    } else if (card.type === 'buff') {
+      energyRef.current += 2; setEnergy(energyRef.current);
+      scoreRef.current += 20; setScore(scoreRef.current);
+      overchargeSound();
+      triggerFlash('gold', 400);
+      setStatusMsg('Overcharge! +2 Energy');
+    }
+
+    if (enemyHPRef.current <= 0) {
+      handleDuelWin();
+      return;
+    }
+
+    if (!anyPlayable()) {
+      endTurnRef.current && endTurnRef.current();
+    }
+  }, [anyPlayable, errorSound, strikeSound, guardSound, healSound, overchargeSound, triggerFlash, triggerShake, handleDuelWin, enemyPoint, playerPoint]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); endTurnRef.current && endTurnRef.current(); return; }
+      const digitMap = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 };
+      if (e.code in digitMap) {
+        e.preventDefault();
+        const c = handRef.current[digitMap[e.code]];
+        if (c) playCard(c);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [playCard]);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeEnemyTimeoutRef.current);
+    clearTimeout(shakePlayerTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+    clearTimeout(enemyTurnTimeoutRef.current);
+  }, []);
+
+  // Main rAF loop: turn timer countdown + particle rendering
+  useEffect(() => {
+    const loop = (ts) => {
+      if (lastTsRef.current == null) lastTsRef.current = ts;
+      const dt = ts - lastTsRef.current;
+      lastTsRef.current = ts;
+
+      if (phaseRef.current === 'playing' && !actionLockRef.current) {
+        turnTimeLeftRef.current = Math.max(0, turnTimeLeftRef.current - dt);
+        timeAccumRef.current += dt;
+        if (timeAccumRef.current > 90) {
+          timeAccumRef.current = 0;
+          setTurnTimePct(Math.round((turnTimeLeftRef.current / TURN_MS) * 100));
+        }
+        if (turnTimeLeftRef.current <= 0) {
+          endTurnRef.current && endTurnRef.current();
+        }
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        const { w, h } = dimsRef.current;
+        if (w > 5 && h > 5) {
+          ctx.clearRect(0, 0, w, h);
+          const particles = particlesRef.current;
+          for (const p of particles) {
+            p.x += p.vx * 0.016; p.y += p.vy * 0.016;
+            p.vx *= 0.94; p.vy *= 0.94; p.life -= 16;
+          }
+          particlesRef.current = particles.filter(p => p.life > 0);
+          for (const p of particlesRef.current) {
+            const a = clamp(p.life / p.maxLife, 0, 1);
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, []);
+
+  return (
+    <div className="app">
+      <div className="bgGlow"></div>
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Duel</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Best</div>
+          <div className="hudValue best" data-testid="best">{best}</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <div className="title">NEON DUELIST</div>
+          <div className="subtitle">
+            Face an endless gauntlet of glowing rivals in turn-based card duels. Click or tap a card (or press 1-4) to spend energy on an Attack, Guard, or Mend, chaining damage into a rising combo multiplier — rare gold Overcharge cards refund energy for extra plays. Click END TURN (or press Space) when you're done, or let the timer bar run out and the turn ends for you. Guarding blunts the enemy's counterattack, but let your HP hit zero and the gauntlet ends — defeat each rival to face a tougher one and keep the streak alive.
+          </div>
+        </div>
+      )}
+
+      <div
+        className={"fieldOuter" + (shakePlayer || shakeEnemy ? "" : "")}
+        data-testid="play-field"
+        ref={fieldRef}
+      >
+        <div className="arena" data-testid="arena">
+          <div className={"combatant" + (shakeEnemy ? " shakeHit" : "")} data-testid="enemy-combatant">
+            <div className="avatar enemy">VS</div>
+            <div className="barLabel">Rival HP</div>
+            <div className="barTrack">
+              <div className="barFill enemyFill" data-testid="enemy-hp" style={{ width: `${enemyMaxHP > 0 ? (enemyHP / enemyMaxHP) * 100 : 0}%` }}></div>
+            </div>
+          </div>
+
+          <div className="vsRow">
+            <div className="timerTrack">
+              <div className="timerFill" data-testid="turn-timer" style={{ width: `${turnTimePct}%` }}></div>
+            </div>
+          </div>
+
+          <div className={"combatant" + (shakePlayer ? " shakeHit" : "")} data-testid="player-combatant">
+            {shieldActive && <div className="shieldBadge" data-testid="shield-badge">G</div>}
+            <div className="avatar player">YOU</div>
+            <div className="barLabel">Your HP</div>
+            <div className="barTrack">
+              <div className="barFill playerFill" data-testid="player-hp" style={{ width: `${(playerHP / PLAYER_MAX_HP) * 100}%` }}></div>
+            </div>
+          </div>
+        </div>
+
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 22 }}>DEFEATED</div>
+            <div className="hudValue" style={{ fontSize: 26 }}>{score}</div>
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <React.Fragment>
+          <div className="handRow" data-testid="hand-row">
+            {hand.map((card, idx) => {
+              const locked = usedIds.has(card.id) || (card.type !== 'buff' && card.cost > energy);
+              return (
+                <button
+                  key={card.id}
+                  className={"card" + (locked ? " locked" : "") + (card.gold ? " gold" : "")}
+                  data-testid="card-btn"
+                  style={{ '--cc': card.color, '--ccg': card.glow }}
+                  onClick={() => playCard(card)}
+                >
+                  <div className="cardCost" style={{ '--cc': card.color }}>{card.cost}</div>
+                  <div className="cardLabel">{card.label}</div>
+                  <div className="cardValue">
+                    {card.type === 'atk' ? `${card.dmgMin}-${card.dmgMax} DMG` :
+                     card.type === 'heal' ? `${card.healMin}-${card.healMax} HP` :
+                     card.type === 'def' ? '60% BLOCK' : '+2 NRG'}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            className={"endTurnBtn" + (resolving ? " locked" : "")}
+            data-testid="end-turn-btn"
+            onClick={endTurn}
+          >
+            END TURN ({energy} NRG)
+          </button>
+        </React.Fragment>
+      )}
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
