@@ -4001,5 +4001,26 @@
     "file": "games/2026-09-28/index.html",
     "preview": "games/2026-09-28/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-29",
+    "name": "Neon Duelist",
+    "date": "2026-09-29",
+    "description": "A neon turn-based card-duel gauntlet: you and a glowing rival trade blows across an endless string of one-on-one duels, each fought with a fresh hand of energy-cost cards. Click or tap a card, or press 1-4, to spend energy on a Strike, Slash, or Overload attack, throw up a Guard to blunt the counterattack, Mend back some HP, or cash in a rare gold Overcharge card for extra energy — chain damage across a turn without wasting one to build a rising combo multiplier. Click END TURN or press Space once you're done, or let the glowing timer bar run out and the turn resolves for you, triggering the rival's counterattack. Win a duel and a tougher rival immediately steps up with more HP and a harder-hitting attack, while your energy ceiling slowly grows to keep pace — let your HP hit zero and the gauntlet ends. How deep can you duel?",
+    "tagline": "Play your hand. Win the duel. Face the next one.",
+    "tags": [
+      "card-battler",
+      "strategy",
+      "turn-based",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Click/tap a card, or press 1-4, to play it; click END TURN or press Space to end your turn",
+    "folder": "games/2026-09-29",
+    "file": "games/2026-09-29/index.html",
+    "preview": "games/2026-09-29/preview.png",
+    "rating": 4.2
   }
 ]
