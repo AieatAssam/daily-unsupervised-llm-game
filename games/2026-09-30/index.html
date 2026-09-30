@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Sonar Drift</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #030308; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 0%, #0a1830 0%, #060a16 50%, #030308 100%);
+  }
+
+  .bgGlow {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.55;
+    background: radial-gradient(circle at 15% 15%, rgba(56,189,248,0.12), transparent 40%),
+                radial-gradient(circle at 85% 25%, rgba(167,139,250,0.14), transparent 40%),
+                radial-gradient(circle at 50% 95%, rgba(45,212,191,0.12), transparent 45%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 480px;
+    padding: 4px 8px; z-index: 15; gap: 2px; position: relative; flex-wrap: wrap;
+  }
+  .hudBox { text-align: center; min-width: 46px; }
+  .hudLabel { font-size: 8px; letter-spacing: 1.5px; color: #67d6ff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 17px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #67d6ff, 0 0 20px #67d6ff;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.best { color: #2dd4bf; text-shadow: 0 0 10px #2dd4bf, 0 0 20px #1c7a63; }
+  .hudValue.lives { color: #ff6ec7; text-shadow: 0 0 10px #ff6ec7, 0 0 20px #ff6ec7; }
+  .hudValue.energy { color: #a78bfa; text-shadow: 0 0 10px #a78bfa, 0 0 20px #a78bfa; }
+  .hudValue.pulse { animation: hudPulse 0.4s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 28px); font-weight: 900; letter-spacing: 3px; margin-top: 10px;
+    background: linear-gradient(90deg, #67d6ff, #a78bfa, #2dd4bf);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(103,214,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(103,214,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(167,139,250,0.85)); } }
+
+  .subtitle { color: #b8c8d8; font-size: 12px; letter-spacing: 0.5px; text-align: center; max-width: 440px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 14px 38px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #67d6ff, #a78bfa);
+    border: none; border-radius: 50px; color: #04121a; cursor: pointer;
+    box-shadow: 0 0 20px rgba(103,214,255,0.7), 0 0 50px rgba(167,139,250,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(103,214,255,0.9), 0 0 70px rgba(167,139,250,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #2dd4bf; font-size: 13px; text-shadow: 0 0 8px rgba(45,212,191,0.6); }
+
+  .fieldOuter {
+    position: relative; width: min(88vw, 420px); height: min(88vw, 420px); z-index: 5;
+    border-radius: 16px; overflow: hidden; border: 2px solid rgba(103,214,255,0.3);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 0 30px rgba(103,214,255,0.14);
+    background: #010103; touch-action: none;
+    margin-top: 4px;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  canvas.gameCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 3; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; z-index: 9; pointer-events: none; background: rgba(255,255,255,0);
+  }
+  .flashOverlay.good { animation: flashGoodKf 0.3s ease; }
+  @keyframes flashGoodKf { 0% { background: rgba(45,212,191,0.22); } 100% { background: rgba(45,212,191,0); } }
+  .flashOverlay.level { animation: flashLevelKf 0.5s ease; }
+  @keyframes flashLevelKf { 0% { background: rgba(167,139,250,0.36); } 100% { background: rgba(167,139,250,0); } }
+  .flashOverlay.bad { animation: flashBadKf 0.4s ease; }
+  @keyframes flashBadKf { 0% { background: rgba(255,77,109,0.36); } 100% { background: rgba(255,77,109,0); } }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 14px;
+    background: rgba(4, 6, 14, 0.94); backdrop-filter: blur(4px);
+  }
+
+  .controlsRow {
+    display: flex; align-items: center; justify-content: center; gap: 14px; z-index: 10; margin-top: 8px;
+  }
+  .dpad {
+    display: grid; grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 44px);
+    gap: 5px; justify-content: center;
+  }
+  .dpadBtn {
+    border-radius: 10px; cursor: pointer;
+    background: linear-gradient(135deg, rgba(103,214,255,0.22), rgba(167,139,250,0.14));
+    border: 2px solid rgba(103,214,255,0.45); color: #eafcff; font-size: 18px; font-weight: 900;
+    box-shadow: 0 0 14px rgba(103,214,255,0.3);
+    transition: transform 0.1s ease, background 0.1s ease;
+  }
+  .dpadBtn:active { transform: scale(0.92); background: rgba(103,214,255,0.4); }
+  .dpadUp { grid-column: 2; grid-row: 1; }
+  .dpadLeft { grid-column: 1; grid-row: 2; }
+  .dpadDown { grid-column: 2; grid-row: 2; }
+  .dpadRight { grid-column: 3; grid-row: 2; }
+
+  .pingBtn {
+    width: 74px; height: 74px; border-radius: 50%; cursor: pointer;
+    background: radial-gradient(circle, rgba(167,139,250,0.35), rgba(103,214,255,0.1));
+    border: 2px solid rgba(167,139,250,0.7); color: #f4ecff; font-size: 11px; font-weight: 900;
+    letter-spacing: 1px; box-shadow: 0 0 20px rgba(167,139,250,0.5);
+    transition: transform 0.1s ease, background 0.1s ease;
+  }
+  .pingBtn:active { transform: scale(0.92); }
+  .pingBtn:disabled { opacity: 0.4; }
+
+  .status { color: #8fa4b8; font-size: 11px; letter-spacing: 0.5px; height: 14px; z-index: 10; text-align: center; margin-top: 4px; }
+  .footer { position: relative; text-align: center; color: #0d0f14; font-size: 10px; z-index: 10; padding-bottom: 2px; }
+
+  @media (max-width: 480px) {
+    .hudValue { font-size: 13px; }
+    .btn { padding: 12px 28px; font-size: 15px; }
+    .subtitle { font-size: 11px; }
+    .fieldOuter { width: min(90vw, 340px); height: min(90vw, 340px); }
+    .dpad { grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(2, 42px); }
+    .pingBtn { width: 64px; height: 64px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HS_KEY = 'sonarDriftHighScore';
+const START_LIVES = 3;
+const START_ENERGY = 60;
+const PING_COST = 34;
+const PING_RADIUS = 5.2;
+const ALERT_MS = 4200;
+const FADE_MS = 3200;
+const AMBIENT_R = 1.35;
+const AMBIENT_MAX = 0.5;
+const REGEN_PER_SEC = 7;
+const ORB_ENERGY = 18;
+const COMBO_WINDOW_MS = 3000;
+const INVULN_MS = 1400;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function levelConfig(level) {
+  return {
+    size: clamp(9 + Math.floor((level - 1) / 2), 9, 15),
+    hunters: clamp(1 + Math.floor((level - 1) / 2), 1, 4),
+    orbs: clamp(5 + Math.floor((level - 1) / 2), 5, 10),
+    hunterInterval: clamp(480 - (level - 1) * 15, 260, 480),
+  };
+}
+
+function generateMaze(w, h) {
+  const cells = Array.from({ length: h }, () => Array.from({ length: w }, () => ({ n: true, s: true, e: true, w: true, visited: false })));
+  const stack = [[0, 0]];
+  cells[0][0].visited = true;
+  const opp = { n: 's', s: 'n', e: 'w', w: 'e' };
+  while (stack.length) {
+    const [x, y] = stack[stack.length - 1];
+    const options = [];
+    if (y > 0 && !cells[y - 1][x].visited) options.push(['n', x, y - 1]);
+    if (y < h - 1 && !cells[y + 1][x].visited) options.push(['s', x, y + 1]);
+    if (x > 0 && !cells[y][x - 1].visited) options.push(['w', x - 1, y]);
+    if (x < w - 1 && !cells[y][x + 1].visited) options.push(['e', x + 1, y]);
+    if (!options.length) { stack.pop(); continue; }
+    const [dir, nx, ny] = options[Math.floor(Math.random() * options.length)];
+    cells[y][x][dir] = false;
+    cells[ny][nx][opp[dir]] = false;
+    cells[ny][nx].visited = true;
+    stack.push([nx, ny]);
+  }
+  return cells;
+}
+
+function neighborsOf(cells, w, h, x, y) {
+  const c = cells[y][x];
+  const res = [];
+  if (!c.n && y > 0) res.push({ x, y: y - 1 });
+  if (!c.s && y < h - 1) res.push({ x, y: y + 1 });
+  if (!c.e && x < w - 1) res.push({ x: x + 1, y });
+  if (!c.w && x > 0) res.push({ x: x - 1, y });
+  return res;
+}
+
+function bfsDistances(cells, w, h, start) {
+  const dist = Array.from({ length: h }, () => new Array(w).fill(-1));
+  dist[start.y][start.x] = 0;
+  const queue = [start];
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const n of neighborsOf(cells, w, h, cur.x, cur.y)) {
+      if (dist[n.y][n.x] === -1) { dist[n.y][n.x] = dist[cur.y][cur.x] + 1; queue.push(n); }
+    }
+  }
+  return dist;
+}
+
+function bfsPath(cells, w, h, start, goal) {
+  const key = (x, y) => y * w + x;
+  const visited = new Set([key(start.x, start.y)]);
+  const prev = new Map();
+  const queue = [start];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur.x === goal.x && cur.y === goal.y) break;
+    for (const n of neighborsOf(cells, w, h, cur.x, cur.y)) {
+      const k = key(n.x, n.y);
+      if (!visited.has(k)) { visited.add(k); prev.set(k, cur); queue.push(n); }
+    }
+  }
+  const gk = key(goal.x, goal.y);
+  if (!visited.has(gk)) return [start];
+  const path = [goal];
+  let ck = gk;
+  const sk = key(start.x, start.y);
+  while (ck !== sk) {
+    const p = prev.get(ck);
+    if (!p) break;
+    path.push(p);
+    ck = key(p.x, p.y);
+  }
+  return path.reverse();
+}
+
+function generateLevel(level) {
+  const cfg = levelConfig(level);
+  const w = cfg.size, h = cfg.size;
+  const cells = generateMaze(w, h);
+  const start = { x: 0, y: 0 };
+  const dist = bfsDistances(cells, w, h, start);
+  let exit = { x: w - 1, y: h - 1 }, maxd = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (dist[y][x] > maxd) { maxd = dist[y][x]; exit = { x, y }; }
+
+  const pool = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if ((x === start.x && y === start.y) || (x === exit.x && y === exit.y)) continue;
+    pool.push({ x, y });
+  }
+  const shuffled = shuffle(pool);
+  const orbs = shuffled.slice(0, cfg.orbs).map(c => ({ x: c.x, y: c.y, collected: false }));
+  let rest = shuffled.slice(cfg.orbs).filter(c => dist[c.y][c.x] >= 3);
+  if (rest.length < cfg.hunters) rest = shuffle(pool);
+  const now = performance.now();
+  const hunters = rest.slice(0, cfg.hunters).map(c => ({
+    x: c.x, y: c.y, animFrom: { x: c.x, y: c.y }, animTo: { x: c.x, y: c.y },
+    animStart: now, animDuration: 1, lastStep: now + Math.random() * 300,
+    state: 'patrol', alertUntil: 0, targetX: 0, targetY: 0, prev: null,
+  }));
+
+  return {
+    w, h, cells, start, exit, orbs, hunters,
+    revealed: Array.from({ length: h }, () => new Array(w).fill(-Infinity)),
+    hunterInterval: cfg.hunterInterval,
+  };
+}
+
+function entityRenderPos(e, now) {
+  const t = clamp((now - e.animStart) / e.animDuration, 0, 1);
+  return { x: lerp(e.animFrom.x, e.animTo.x, t), y: lerp(e.animFrom.y, e.animTo.y, t) };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  };
+
+  const tone = useCallback((freq, duration, type, gainScale, freqEnd) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(gainScale, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration + 0.05);
+    } catch (e) {}
+  }, []);
+
+  const moveSound = useCallback(() => tone(180, 0.03, 'square', 0.03, 160), [tone]);
+  const bumpSound = useCallback(() => tone(100, 0.05, 'square', 0.05, 80), [tone]);
+  const pingSound = useCallback(() => tone(520, 0.35, 'sine', 0.1, 1400), [tone]);
+  const deniedSound = useCallback(() => tone(140, 0.08, 'square', 0.05, 100), [tone]);
+  const collectSound = useCallback((combo) => {
+    const base = 440 + Math.min(combo, 12) * 40;
+    tone(base, 0.12, 'triangle', 0.16, base * 1.8);
+  }, [tone]);
+  const levelSound = useCallback(() => {
+    tone(520, 0.1, 'square', 0.12, 880);
+    setTimeout(() => tone(760, 0.12, 'square', 0.12, 1180), 90);
+    setTimeout(() => tone(1040, 0.14, 'square', 0.12, 1400), 180);
+  }, [tone]);
+  const hitSound = useCallback(() => tone(320, 0.2, 'sawtooth', 0.16, 140), [tone]);
+  const overSound = useCallback(() => {
+    tone(300, 0.25, 'sawtooth', 0.2, 200);
+    setTimeout(() => tone(180, 0.35, 'sawtooth', 0.2, 80), 150);
+  }, [tone]);
+
+  return { moveSound, bumpSound, pingSound, deniedSound, collectSound, levelSound, hitSound, overSound };
+}
+
+function spawnBurst(arr, x, y, color, count, speedMin, speedMax, sizeMin, sizeMax, lifeMs) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = speedMin + Math.random() * (speedMax - speedMin);
+    arr.push({
+      x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      life: lifeMs, maxLife: lifeMs, color,
+      size: sizeMin + Math.random() * (sizeMax - sizeMin),
+    });
+  }
+}
+
+function App() {
+  const [phase, setPhase] = useState('start');
+  const [level, setLevelState] = useState(1);
+  const [score, setScoreState] = useState(0);
+  const [combo, setComboState] = useState(0);
+  const [comboPulse, setComboPulse] = useState(false);
+  const [lives, setLivesState] = useState(START_LIVES);
+  const [energy, setEnergyState] = useState(START_ENERGY);
+  const [best, setBest] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [flashKind, setFlashKind] = useState(null);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('Drift blind. Ping to see.');
+
+  const mazeRef = useRef(null);
+  const playerRef = useRef({ x: 0, y: 0, animFrom: { x: 0, y: 0 }, animTo: { x: 0, y: 0 }, animStart: 0, animDuration: 1 });
+  const scoreRef = useRef(0);
+  const bestRef = useRef(best);
+  const levelRef = useRef(1);
+  const comboRef = useRef(0);
+  const livesRef = useRef(START_LIVES);
+  const energyRef = useRef(START_ENERGY);
+  const lastCollectTimeRef = useRef(0);
+  const phaseRef = useRef('start');
+  const lastMoveRef = useRef(0);
+  const invulnUntilRef = useRef(0);
+  const ringsRef = useRef([]);
+  const particlesRef = useRef([]);
+  const lastEnergyDisplayed = useRef(START_ENERGY);
+  const lastFrameTimeRef = useRef(0);
+
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const dimsRef = useRef({ w: 300, h: 300 });
+  const drawDimsRef = useRef({ cellPx: 20, offsetX: 0, offsetY: 0 });
+  const rafRef = useRef(null);
+
+  const flashTimeoutRef = useRef(null);
+  const shakeTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+
+  const { moveSound, bumpSound, pingSound, deniedSound, collectSound, levelSound, hitSound, overSound } = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const gridToPixel = useCallback((gx, gy) => {
+    const { cellPx, offsetX, offsetY } = drawDimsRef.current;
+    return { x: offsetX + (gx + 0.5) * cellPx, y: offsetY + (gy + 0.5) * cellPx };
+  }, []);
+
+  const loadLevel = useCallback((lvl) => {
+    const data = generateLevel(lvl);
+    mazeRef.current = data;
+    playerRef.current = { x: 0, y: 0, animFrom: { x: 0, y: 0 }, animTo: { x: 0, y: 0 }, animStart: performance.now(), animDuration: 1 };
+    ringsRef.current = [];
+  }, []);
+
+  const startGame = useCallback(() => {
+    resizeCanvas();
+    levelRef.current = 1;
+    setLevelState(1);
+    scoreRef.current = 0; setScoreState(0);
+    comboRef.current = 0; setComboState(0);
+    livesRef.current = START_LIVES; setLivesState(START_LIVES);
+    energyRef.current = START_ENERGY; setEnergyState(START_ENERGY);
+    particlesRef.current = [];
+    invulnUntilRef.current = 0;
+    loadLevel(1);
+    setStatusMsg('Drift blind. Ping to see.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [resizeCanvas, loadLevel]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  const applyMove = useCallback((dirLetter, dx, dy) => {
+    if (phaseRef.current !== 'playing') return;
+    const now = performance.now();
+    if (now - lastMoveRef.current < 95) return;
+    const maze = mazeRef.current;
+    if (!maze) return;
+    const p = playerRef.current;
+    if (maze.cells[p.y][p.x][dirLetter]) {
+      bumpSound();
+      setShakeIt(true);
+      clearTimeout(shakeTimeoutRef.current);
+      shakeTimeoutRef.current = setTimeout(() => setShakeIt(false), 250);
+      return;
+    }
+    lastMoveRef.current = now;
+    const nx = p.x + dx, ny = p.y + dy;
+    p.animFrom = { x: p.x, y: p.y };
+    p.animTo = { x: nx, y: ny };
+    p.animStart = now;
+    p.animDuration = 110;
+    p.x = nx; p.y = ny;
+    moveSound();
+
+    const orb = maze.orbs.find(o => !o.collected && o.x === nx && o.y === ny);
+    if (orb) {
+      orb.collected = true;
+      const sinceLast = now - lastCollectTimeRef.current;
+      const nextCombo = sinceLast < COMBO_WINDOW_MS ? comboRef.current + 1 : 1;
+      comboRef.current = nextCombo;
+      lastCollectTimeRef.current = now;
+      setComboState(nextCombo);
+      setComboPulse(true);
+      clearTimeout(comboPulseTimeoutRef.current);
+      comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 350);
+      const gained = 20 * nextCombo;
+      scoreRef.current += gained;
+      setScoreState(scoreRef.current);
+      energyRef.current = Math.min(100, energyRef.current + ORB_ENERGY);
+      collectSound(nextCombo);
+      triggerFlash('good', 200);
+      const px = gridToPixel(nx, ny);
+      spawnBurst(particlesRef.current, px.x, px.y, '#2dd4bf', 14, 30, 120, 1.2, 3, 420);
+      setStatusMsg(nextCombo > 1 ? `Orb secured! Combo x${nextCombo}  +${gained}` : `Orb secured! +${gained}`);
+    }
+
+    if (nx === maze.exit.x && ny === maze.exit.y) {
+      const bonus = 150 + levelRef.current * 25;
+      scoreRef.current += bonus;
+      setScoreState(scoreRef.current);
+      if (scoreRef.current > bestRef.current) {
+        bestRef.current = scoreRef.current;
+        localStorage.setItem(HS_KEY, String(scoreRef.current));
+        setBest(scoreRef.current);
+      }
+      levelSound();
+      triggerFlash('level', 500);
+      energyRef.current = Math.min(100, energyRef.current + 30);
+      const nextLevel = levelRef.current + 1;
+      levelRef.current = nextLevel;
+      setLevelState(nextLevel);
+      setStatusMsg(`Level ${nextLevel}! +${bonus} bonus`);
+      loadLevel(nextLevel);
+    }
+  }, [bumpSound, moveSound, collectSound, levelSound, triggerFlash, gridToPixel, loadLevel]);
+
+  const firePing = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    if (energyRef.current < PING_COST) { deniedSound(); return; }
+    const maze = mazeRef.current;
+    if (!maze) return;
+    energyRef.current -= PING_COST;
+    const now = performance.now();
+    pingSound();
+    const p = entityRenderPos(playerRef.current, now);
+    ringsRef.current.push({ x: p.x, y: p.y, start: now, duration: 900, maxRadius: PING_RADIUS });
+    for (let y = 0; y < maze.h; y++) {
+      for (let x = 0; x < maze.w; x++) {
+        const d = Math.hypot(x - p.x, y - p.y);
+        if (d <= PING_RADIUS) maze.revealed[y][x] = now;
+      }
+    }
+    for (const h of maze.hunters) {
+      const hp = entityRenderPos(h, now);
+      const d = Math.hypot(hp.x - p.x, hp.y - p.y);
+      if (d <= PING_RADIUS) {
+        h.state = 'alert';
+        h.alertUntil = now + ALERT_MS;
+        h.targetX = Math.round(p.x);
+        h.targetY = Math.round(p.y);
+      }
+    }
+  }, [pingSound, deniedSound]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); applyMove('w', -1, 0); }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); applyMove('e', 1, 0); }
+      else if (e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); applyMove('n', 0, -1); }
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); applyMove('s', 0, 1); }
+      else if (e.code === 'Space') { e.preventDefault(); firePing(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [applyMove, firePing]);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+  }, []);
+
+  // Main render / simulation loop
+  useEffect(() => {
+    const stepHunterIfDue = (h, maze, now) => {
+      const interval = maze.hunterInterval;
+      if (now - h.lastStep < interval) return;
+      let next = { x: h.x, y: h.y };
+      if (h.state === 'alert' && now < h.alertUntil) {
+        const path = bfsPath(maze.cells, maze.w, maze.h, { x: h.x, y: h.y }, { x: h.targetX, y: h.targetY });
+        if (path.length > 1) next = path[1];
+      } else {
+        h.state = 'patrol';
+        const nbrs = neighborsOf(maze.cells, maze.w, maze.h, h.x, h.y);
+        let choices = h.prev ? nbrs.filter(n => !(n.x === h.prev.x && n.y === h.prev.y)) : nbrs;
+        if (!choices.length) choices = nbrs;
+        if (choices.length) next = choices[Math.floor(Math.random() * choices.length)];
+      }
+      h.animFrom = { x: h.x, y: h.y };
+      h.animTo = next;
+      h.animStart = now;
+      h.animDuration = Math.min(interval * 0.95, 420);
+      h.prev = { x: h.x, y: h.y };
+      h.x = next.x; h.y = next.y;
+      h.lastStep = now;
+    };
+
+    const registerHit = (now) => {
+      if (now < invulnUntilRef.current) return;
+      livesRef.current -= 1;
+      setLivesState(livesRef.current);
+      invulnUntilRef.current = now + INVULN_MS;
+      hitSound();
+      triggerFlash('bad', 400);
+      setShakeIt(true);
+      clearTimeout(shakeTimeoutRef.current);
+      shakeTimeoutRef.current = setTimeout(() => setShakeIt(false), 300);
+      playerRef.current = { x: 0, y: 0, animFrom: { x: 0, y: 0 }, animTo: { x: 0, y: 0 }, animStart: now, animDuration: 1 };
+      if (livesRef.current <= 0) {
+        phaseRef.current = 'over';
+        setPhase('over');
+        overSound();
+        setStatusMsg('Caught in the dark.');
+        if (scoreRef.current > bestRef.current) {
+          bestRef.current = scoreRef.current;
+          localStorage.setItem(HS_KEY, String(scoreRef.current));
+          setBest(scoreRef.current);
+        }
+      } else {
+        setStatusMsg('Caught! Back to the start.');
+      }
+    };
+
+    const draw = (now) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const { w, h } = dimsRef.current;
+      if (w < 5 || h < 5) return;
+      ctx.fillStyle = '#010103';
+      ctx.fillRect(0, 0, w, h);
+
+      const maze = mazeRef.current;
+      if (!maze) return;
+      const cellPx = Math.min(w / maze.w, h / maze.h);
+      const offsetX = (w - cellPx * maze.w) / 2;
+      const offsetY = (h - cellPx * maze.h) / 2;
+      drawDimsRef.current = { cellPx, offsetX, offsetY };
+
+      const playerPos = entityRenderPos(playerRef.current, now);
+
+      const brightnessAt = (x, y) => {
+        const revealedAt = maze.revealed[y][x];
+        const fade = revealedAt === -Infinity ? 0 : clamp(1 - (now - revealedAt) / FADE_MS, 0, 1);
+        const d = Math.hypot(x - playerPos.x, y - playerPos.y);
+        const ambient = clamp(1 - d / AMBIENT_R, 0, 1) * AMBIENT_MAX;
+        return Math.max(fade, ambient);
+      };
+
+      for (let y = 0; y < maze.h; y++) {
+        for (let x = 0; x < maze.w; x++) {
+          const b = brightnessAt(x, y);
+          if (b <= 0.015) continue;
+          const cx = offsetX + x * cellPx, cy = offsetY + y * cellPx;
+          ctx.fillStyle = `rgba(30,70,110,${0.18 * b})`;
+          ctx.fillRect(cx + 1, cy + 1, cellPx - 2, cellPx - 2);
+          const c = maze.cells[y][x];
+          ctx.strokeStyle = `rgba(103,214,255,${0.85 * b})`;
+          ctx.lineWidth = Math.max(1.5, cellPx * 0.08);
+          ctx.beginPath();
+          if (c.n) { ctx.moveTo(cx, cy); ctx.lineTo(cx + cellPx, cy); }
+          if (c.s) { ctx.moveTo(cx, cy + cellPx); ctx.lineTo(cx + cellPx, cy + cellPx); }
+          if (c.w) { ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + cellPx); }
+          if (c.e) { ctx.moveTo(cx + cellPx, cy); ctx.lineTo(cx + cellPx, cy + cellPx); }
+          ctx.stroke();
+
+          if (x === maze.exit.x && y === maze.exit.y) {
+            ctx.save();
+            ctx.globalAlpha = clamp(b + 0.15, 0, 1);
+            ctx.fillStyle = '#ffd23d';
+            ctx.shadowColor = '#ffd23d';
+            ctx.shadowBlur = 14;
+            ctx.beginPath();
+            ctx.arc(cx + cellPx / 2, cy + cellPx / 2, cellPx * 0.28, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+
+      for (const orb of maze.orbs) {
+        if (orb.collected) continue;
+        const b = brightnessAt(orb.x, orb.y);
+        if (b <= 0.1) continue;
+        const px = offsetX + (orb.x + 0.5) * cellPx, py = offsetY + (orb.y + 0.5) * cellPx;
+        const pulse = 0.75 + 0.25 * Math.sin(now / 220 + orb.x * 3 + orb.y * 5);
+        ctx.save();
+        ctx.globalAlpha = clamp(b, 0, 1);
+        ctx.fillStyle = '#2dd4bf';
+        ctx.shadowColor = '#2dd4bf';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(px, py, cellPx * 0.16 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      for (const hunt of maze.hunters) {
+        const hp = entityRenderPos(hunt, now);
+        const b = brightnessAt(Math.round(hp.x), Math.round(hp.y));
+        if (b <= 0.1) continue;
+        const px = offsetX + (hp.x + 0.5) * cellPx, py = offsetY + (hp.y + 0.5) * cellPx;
+        ctx.save();
+        ctx.globalAlpha = clamp(b + 0.2, 0, 1);
+        ctx.fillStyle = hunt.state === 'alert' ? '#ff4d6d' : '#ff8f6d';
+        ctx.shadowColor = hunt.state === 'alert' ? '#ff4d6d' : '#ff8f6d';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(px, py, cellPx * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        if (phaseRef.current === 'playing') {
+          const distToPlayer = Math.hypot(hp.x - playerPos.x, hp.y - playerPos.y);
+          if (distToPlayer < 0.55) registerHit(now);
+        }
+      }
+
+      // ping rings
+      ringsRef.current = ringsRef.current.filter(r => now - r.start < r.duration);
+      for (const r of ringsRef.current) {
+        const t = clamp((now - r.start) / r.duration, 0, 1);
+        const radiusPx = t * r.maxRadius * cellPx;
+        ctx.save();
+        ctx.globalAlpha = clamp(1 - t, 0, 1) * 0.7;
+        ctx.strokeStyle = '#a78bfa';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(offsetX + (r.x + 0.5) * cellPx, offsetY + (r.y + 0.5) * cellPx, radiusPx, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // particles
+      const particles = particlesRef.current;
+      for (const p of particles) {
+        p.x += p.vx * 0.016; p.y += p.vy * 0.016;
+        p.vx *= 0.94; p.vy *= 0.94; p.life -= 16;
+      }
+      particlesRef.current = particles.filter(p => p.life > 0);
+      for (const p of particlesRef.current) {
+        const a = clamp(p.life / p.maxLife, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+
+      // player
+      const ppx = offsetX + (playerPos.x + 0.5) * cellPx, ppy = offsetY + (playerPos.y + 0.5) * cellPx;
+      const flashing = now < invulnUntilRef.current && Math.floor(now / 120) % 2 === 0;
+      ctx.save();
+      ctx.globalAlpha = flashing ? 0.35 : 1;
+      ctx.fillStyle = '#67d6ff';
+      ctx.shadowColor = '#67d6ff';
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.arc(ppx, ppy, cellPx * 0.26, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+
+    const tick = (now) => {
+      if (!lastFrameTimeRef.current) lastFrameTimeRef.current = now;
+      const dt = (now - lastFrameTimeRef.current) / 1000;
+      lastFrameTimeRef.current = now;
+
+      if (phaseRef.current === 'playing') {
+        energyRef.current = clamp(energyRef.current + REGEN_PER_SEC * dt, 0, 100);
+        const ev = Math.round(energyRef.current);
+        if (ev !== lastEnergyDisplayed.current) {
+          lastEnergyDisplayed.current = ev;
+          setEnergyState(ev);
+        }
+        const maze = mazeRef.current;
+        if (maze) {
+          for (const h of maze.hunters) stepHunterIfDue(h, maze, now);
+        }
+      }
+      draw(now);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [hitSound, overSound, triggerFlash]);
+
+  const onFieldPointer = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    e.preventDefault();
+    firePing();
+  }, [firePing]);
+
+  const energyPct = clamp(energy, 0, 100);
+
+  return (
+    <div className="app">
+      <div className="bgGlow"></div>
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className="hudValue lives" data-testid="lives">{lives}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Energy</div>
+          <div className="hudValue energy" data-testid="energy">{energyPct}</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <div className="title">SONAR DRIFT</div>
+          <div className="subtitle">
+            You're blind in a pitch-black neon maze. Move with Arrow keys / WASD or the on-screen D-pad — you can only see a faint glow right around yourself. Press Space, click/tap the field, or hit PING to fire a sonar pulse that briefly lights up walls, glowing orbs, and prowling hunters within range, but it costs energy that regenerates over time (and refills faster when you grab orbs). A ping near a hunter alerts it to hunt your last known position, so ping with care. Collect orbs for a rising combo, reach the golden exit to advance to a bigger, darker maze, and dodge hunters in the dark — lose all three lives and your run ends. How deep can you drift?
+          </div>
+        </div>
+      )}
+
+      <div
+        className={"fieldOuter" + (shakeIt ? " shakeIt" : "")}
+        data-testid="play-field"
+        ref={fieldRef}
+        onMouseDown={onFieldPointer}
+        onTouchStart={onFieldPointer}
+      >
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 22 }}>LOST IN THE DARK</div>
+            <div className="hudValue" style={{ fontSize: 26 }}>{score}</div>
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <div className="controlsRow">
+          <div className="dpad">
+            <button className="dpadBtn dpadUp" data-testid="up-btn" onClick={() => applyMove('n', 0, -1)}>▲</button>
+            <button className="dpadBtn dpadLeft" data-testid="left-btn" onClick={() => applyMove('w', -1, 0)}>◀</button>
+            <button className="dpadBtn dpadDown" data-testid="down-btn" onClick={() => applyMove('s', 0, 1)}>▼</button>
+            <button className="dpadBtn dpadRight" data-testid="right-btn" onClick={() => applyMove('e', 1, 0)}>▶</button>
+          </div>
+          <button
+            className="pingBtn"
+            data-testid="ping-btn"
+            onClick={(e) => { e.stopPropagation(); firePing(); }}
+            onTouchStart={(e) => { e.stopPropagation(); }}
+          >PING</button>
+        </div>
+      )}
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
