@@ -4022,5 +4022,26 @@
     "file": "games/2026-09-29/index.html",
     "preview": "games/2026-09-29/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-09-30",
+    "name": "Sonar Drift",
+    "date": "2026-09-30",
+    "description": "You're blind in a pitch-black neon maze, able to see only a faint glow right around yourself. Move with Arrow keys / WASD or the on-screen D-pad, then press Space, click/tap the field, or hit the PING button to fire a sonar pulse that briefly lights up walls, glowing orbs, the golden exit, and any prowling hunters within range — but each ping drains energy that only slowly regenerates, so you can't just light the whole maze forever. A ping that reaches a hunter alerts it, and it will path straight for your last known position for a few seconds, so ping with care and keep moving. Collect orbs to build a rising combo and refill energy, reach the exit to advance into a bigger, darker maze with more hunters, and dodge every collision in the dark — lose all three lives and your run ends. How deep can you drift?",
+    "tagline": "Blind maze. One pulse of sight. Don't get caught in the dark.",
+    "tags": [
+      "maze",
+      "stealth",
+      "exploration",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Arrow keys / WASD, or the on-screen ▲◀▼▶ D-pad, to move through the maze; press Space, click/tap the field, or tap PING to fire a sonar pulse that briefly reveals walls, orbs, the exit, and hunters nearby",
+    "folder": "games/2026-09-30",
+    "file": "games/2026-09-30/index.html",
+    "preview": "games/2026-09-30/preview.png",
+    "rating": 4.3
   }
 ]
