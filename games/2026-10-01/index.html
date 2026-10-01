@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Beat Cascade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050208; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 0%, #1a0a28 0%, #0a0612 50%, #050208 100%);
+  }
+
+  .bgGlow {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.55;
+    background: radial-gradient(circle at 15% 10%, rgba(255,77,158,0.14), transparent 40%),
+                radial-gradient(circle at 85% 20%, rgba(103,214,255,0.14), transparent 40%),
+                radial-gradient(circle at 50% 95%, rgba(255,210,61,0.10), transparent 45%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 460px;
+    padding: 4px 8px; z-index: 15; gap: 2px; position: relative; flex-wrap: wrap;
+  }
+  .hudBox { text-align: center; min-width: 44px; }
+  .hudLabel { font-size: 8px; letter-spacing: 1.5px; color: #ff8fc9; text-transform: uppercase; }
+  .hudValue {
+    font-size: 17px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #ff4d9e, 0 0 20px #ff4d9e;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.best { color: #67d6ff; text-shadow: 0 0 10px #67d6ff, 0 0 20px #2a7fa0; }
+  .hudValue.lives { color: #7cff6b; text-shadow: 0 0 10px #7cff6b, 0 0 20px #7cff6b; }
+  .hudValue.pulse { animation: hudPulse 0.4s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 28px); font-weight: 900; letter-spacing: 3px; margin-top: 8px;
+    background: linear-gradient(90deg, #ff4d9e, #67d6ff, #ffd23d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(255,77,158,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(255,77,158,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(103,214,255,0.85)); } }
+
+  .subtitle { color: #d8c8d8; font-size: 12px; letter-spacing: 0.5px; text-align: center; max-width: 440px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 14px 38px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #ff4d9e, #67d6ff);
+    border: none; border-radius: 50px; color: #1a0612; cursor: pointer;
+    box-shadow: 0 0 20px rgba(255,77,158,0.7), 0 0 50px rgba(103,214,255,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(255,77,158,0.9), 0 0 70px rgba(103,214,255,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #67d6ff; font-size: 13px; text-shadow: 0 0 8px rgba(103,214,255,0.6); }
+
+  .fieldOuter {
+    position: relative; width: min(90vw, 360px); height: min(62vh, 480px); z-index: 5;
+    border-radius: 16px; overflow: hidden; border: 2px solid rgba(255,77,158,0.3);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 0 30px rgba(255,77,158,0.14);
+    background: #050108; touch-action: none;
+    margin-top: 4px;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  .gameCanvas { width: 100%; height: 100%; display: block; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.08s ease;
+  }
+  .flashOverlay.good { opacity: 0.22; background: #ffd23d; }
+  .flashOverlay.bad { opacity: 0.28; background: #ff3355; }
+  .flashOverlay.level { opacity: 0.3; background: #67d6ff; }
+
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(5,2,8,0.72); z-index: 20; text-align: center; padding: 20px;
+  }
+
+  .controlsRow {
+    display: flex; gap: 8px; width: min(90vw, 360px); margin-top: 6px; z-index: 15;
+  }
+  .laneBtn {
+    flex: 1; min-height: 52px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.25);
+    background: rgba(20,10,30,0.6); color: #fff; font-size: 16px; font-weight: 800;
+    letter-spacing: 1px; cursor: pointer; transition: transform 0.08s ease, box-shadow 0.08s ease;
+  }
+  .laneBtn:active { transform: scale(0.92); }
+  .laneBtn.lane0 { box-shadow: 0 0 14px rgba(255,77,158,0.5); border-color: #ff4d9e; }
+  .laneBtn.lane1 { box-shadow: 0 0 14px rgba(103,214,255,0.5); border-color: #67d6ff; }
+  .laneBtn.lane2 { box-shadow: 0 0 14px rgba(255,210,61,0.5); border-color: #ffd23d; }
+  .laneBtn.lane3 { box-shadow: 0 0 14px rgba(124,255,107,0.5); border-color: #7cff6b; }
+
+  .status { font-size: 12px; color: #c8b8d8; min-height: 16px; text-align: center; padding: 0 10px; z-index: 15; }
+  .footer { font-size: 9px; color: #5a4a68; letter-spacing: 1px; padding-bottom: 2px; z-index: 15; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect } = React;
+
+const HS_KEY = 'beatCascadeHighScore';
+const LANE_COLORS = ['#ff4d9e', '#67d6ff', '#ffd23d', '#7cff6b'];
+const LANE_KEYS = ['KeyD', 'KeyF', 'KeyJ', 'KeyK'];
+const LANE_LABELS = ['D', 'F', 'J', 'K'];
+const NUM_LANES = 4;
+const START_LIVES = 5;
+const MISS_WINDOW_MS = 230;
+const PERFECT_WINDOW_MS = 70;
+const LEVEL_UP_HITS = 14;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function spawnBurst(list, x, y, color, count, speed, spread, minSize, maxSize, life) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = speed * (0.4 + Math.random() * 0.8);
+    list.push({
+      x, y,
+      vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - spread * 0.1,
+      size: minSize + Math.random() * (maxSize - minSize),
+      color, life, maxLife: life,
+    });
+  }
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const noiseBufRef = useRef(null);
+
+  const ensure = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+      const ctx = ctxRef.current;
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.25, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      noiseBufRef.current = buf;
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const tone = useCallback((freq, dur, type, gainVal, when, freqEnd) => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const t0 = ctx.currentTime + (when || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t0 + dur);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(gainVal, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }, []);
+
+  const noise = useCallback((dur, gainVal) => {
+    const ctx = ctxRef.current;
+    if (!ctx || !noiseBufRef.current) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBufRef.current;
+    const gain = ctx.createGain();
+    const t0 = ctx.currentTime;
+    gain.gain.setValueAtTime(gainVal, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(gain).connect(ctx.destination);
+    src.start(t0);
+    src.stop(t0 + dur);
+  }, []);
+
+  return {
+    ensure,
+    perfectSound: (laneIdx) => { tone(440 + laneIdx * 60, 0.09, 'sine', 0.22, 0); tone(880 + laneIdx * 60, 0.12, 'sine', 0.14, 0.03); },
+    goodSound: (laneIdx) => tone(330 + laneIdx * 40, 0.1, 'triangle', 0.18, 0),
+    missSound: () => { noise(0.16, 0.25); tone(140, 0.18, 'sawtooth', 0.12, 0, 60); },
+    goldSound: () => { tone(660, 0.1, 'sine', 0.25, 0); tone(990, 0.1, 'sine', 0.2, 0.05); tone(1320, 0.14, 'sine', 0.16, 0.1); },
+    levelSound: () => { tone(523, 0.09, 'sine', 0.2, 0); tone(659, 0.09, 'sine', 0.2, 0.08); tone(784, 0.16, 'sine', 0.2, 0.16); },
+    overSound: () => { tone(392, 0.2, 'sawtooth', 0.18, 0, 196); },
+    deniedSound: () => tone(150, 0.06, 'square', 0.08, 0),
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start');
+  const [score, setScoreState] = useState(0);
+  const [level, setLevelState] = useState(1);
+  const [combo, setComboState] = useState(0);
+  const [lives, setLivesState] = useState(START_LIVES);
+  const [best, setBest] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [comboPulse, setComboPulse] = useState(false);
+  const [flashKind, setFlashKind] = useState(null);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('Hit the lanes in time with the beat.');
+  const [laneFlash, setLaneFlash] = useState([false, false, false, false]);
+
+  const phaseRef = useRef('start');
+  const scoreRef = useRef(0);
+  const levelRef = useRef(1);
+  const comboRef = useRef(0);
+  const livesRef = useRef(START_LIVES);
+  const bestRef = useRef(best);
+  const hitsSinceLevelRef = useRef(0);
+
+  const notesRef = useRef([]);
+  const particlesRef = useRef([]);
+  const nextSpawnRef = useRef(0);
+  const rafRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const dimsRef = useRef({ w: 0, h: 0 });
+  const flashTimeoutRef = useRef(null);
+  const shakeTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+  const laneFlashTimeoutsRef = useRef([null, null, null, null]);
+
+  const audio = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const triggerLaneFlash = useCallback((laneIdx) => {
+    setLaneFlash(prev => { const next = prev.slice(); next[laneIdx] = true; return next; });
+    clearTimeout(laneFlashTimeoutsRef.current[laneIdx]);
+    laneFlashTimeoutsRef.current[laneIdx] = setTimeout(() => {
+      setLaneFlash(prev => { const next = prev.slice(); next[laneIdx] = false; return next; });
+    }, 140);
+  }, []);
+
+  const levelParams = useCallback((lvl) => ({
+    spawnInterval: Math.max(300, 650 - lvl * 22),
+    travelDuration: Math.max(1050, 2100 - lvl * 60),
+    doubleChance: clamp(0.04 + lvl * 0.02, 0.04, 0.4),
+    goldChance: 0.08,
+  }), []);
+
+  const startGame = useCallback(() => {
+    audio.ensure();
+    resizeCanvas();
+    levelRef.current = 1; setLevelState(1);
+    scoreRef.current = 0; setScoreState(0);
+    comboRef.current = 0; setComboState(0);
+    livesRef.current = START_LIVES; setLivesState(START_LIVES);
+    hitsSinceLevelRef.current = 0;
+    notesRef.current = [];
+    particlesRef.current = [];
+    nextSpawnRef.current = performance.now() + 500;
+    setStatusMsg('Hit the lanes in time with the beat.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [audio, resizeCanvas]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  const endGame = useCallback(() => {
+    phaseRef.current = 'over';
+    setPhase('over');
+    audio.overSound();
+    setStatusMsg('Cascade broken.');
+    if (scoreRef.current > bestRef.current) {
+      bestRef.current = scoreRef.current;
+      localStorage.setItem(HS_KEY, String(scoreRef.current));
+      setBest(scoreRef.current);
+    }
+  }, [audio]);
+
+  const registerMiss = useCallback((isGold) => {
+    comboRef.current = 0;
+    setComboState(0);
+    livesRef.current -= 1;
+    setLivesState(livesRef.current);
+    audio.missSound();
+    triggerFlash('bad', 300);
+    setShakeIt(true);
+    clearTimeout(shakeTimeoutRef.current);
+    shakeTimeoutRef.current = setTimeout(() => setShakeIt(false), 300);
+    setStatusMsg(isGold ? 'Missed the gold note!' : 'Miss! Combo reset.');
+    if (livesRef.current <= 0) endGame();
+  }, [audio, triggerFlash, endGame]);
+
+  const registerHit = useCallback((note, judgment, now) => {
+    const nextCombo = comboRef.current + 1;
+    comboRef.current = nextCombo;
+    setComboState(nextCombo);
+    setComboPulse(true);
+    clearTimeout(comboPulseTimeoutRef.current);
+    comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 300);
+
+    const multiplier = 1 + Math.floor(nextCombo / 8) * 0.5;
+    let base = judgment === 'perfect' ? 100 : 50;
+    if (note.gold) base += 300;
+    const gained = Math.round(base * multiplier);
+    scoreRef.current += gained;
+    setScoreState(scoreRef.current);
+
+    if (note.gold) audio.goldSound();
+    else if (judgment === 'perfect') audio.perfectSound(note.lane);
+    else audio.goodSound(note.lane);
+
+    const { w, h } = dimsRef.current;
+    const laneW = w / NUM_LANES;
+    const hitLineY = h * 0.84;
+    const px = laneW * (note.lane + 0.5);
+    spawnBurst(particlesRef.current, px, hitLineY, note.gold ? '#ffd23d' : LANE_COLORS[note.lane], 16, 36, 140, 1.5, 3.5, 420);
+    triggerLaneFlash(note.lane);
+
+    hitsSinceLevelRef.current += 1;
+    setStatusMsg(note.gold ? `GOLD! +${gained}` : judgment === 'perfect' ? `Perfect! +${gained}` : `Good +${gained}`);
+
+    if (hitsSinceLevelRef.current >= LEVEL_UP_HITS) {
+      hitsSinceLevelRef.current = 0;
+      levelRef.current += 1;
+      setLevelState(levelRef.current);
+      audio.levelSound();
+      triggerFlash('level', 400);
+      setStatusMsg(`Level ${levelRef.current}! Beat speeds up.`);
+    }
+  }, [audio, triggerFlash, triggerLaneFlash]);
+
+  const hitLane = useCallback((laneIdx) => {
+    if (phaseRef.current !== 'playing') return;
+    const now = performance.now();
+    const candidates = notesRef.current.filter(n => n.lane === laneIdx && !n.judged);
+    if (!candidates.length) { audio.deniedSound(); triggerLaneFlash(laneIdx); return; }
+    candidates.sort((a, b) => Math.abs(now - a.hitTime) - Math.abs(now - b.hitTime));
+    const note = candidates[0];
+    const diff = Math.abs(now - note.hitTime);
+    if (diff > MISS_WINDOW_MS) { audio.deniedSound(); triggerLaneFlash(laneIdx); return; }
+    note.judged = true;
+    const judgment = diff <= PERFECT_WINDOW_MS ? 'perfect' : 'good';
+    registerHit(note, judgment, now);
+  }, [audio, registerHit, triggerLaneFlash]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      const idx = LANE_KEYS.indexOf(e.code);
+      if (idx !== -1) { e.preventDefault(); hitLane(idx); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [hitLane]);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+    laneFlashTimeoutsRef.current.forEach(t => clearTimeout(t));
+  }, []);
+
+  useEffect(() => {
+    const draw = (now) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const { w, h } = dimsRef.current;
+      if (w < 5 || h < 5) return;
+      ctx.fillStyle = '#050108';
+      ctx.fillRect(0, 0, w, h);
+
+      const laneW = w / NUM_LANES;
+      const hitLineY = h * 0.84;
+
+      for (let i = 0; i < NUM_LANES; i++) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(i * laneW, 0);
+        ctx.lineTo(i * laneW, h);
+        ctx.stroke();
+      }
+
+      for (let i = 0; i < NUM_LANES; i++) {
+        const cx = laneW * (i + 0.5);
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = LANE_COLORS[i];
+        ctx.lineWidth = 3;
+        ctx.shadowColor = LANE_COLORS[i];
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.moveTo(i * laneW + 4, hitLineY);
+        ctx.lineTo((i + 1) * laneW - 4, hitLineY);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (phaseRef.current === 'playing') {
+        if (now >= nextSpawnRef.current) {
+          const { spawnInterval, travelDuration, doubleChance, goldChance } = levelParams(levelRef.current);
+          const lanesToSpawn = [Math.floor(Math.random() * NUM_LANES)];
+          if (Math.random() < doubleChance) {
+            let second = Math.floor(Math.random() * NUM_LANES);
+            if (second === lanesToSpawn[0]) second = (second + 1) % NUM_LANES;
+            lanesToSpawn.push(second);
+          }
+          for (const lane of lanesToSpawn) {
+            notesRef.current.push({
+              lane,
+              spawnTime: now,
+              hitTime: now + travelDuration,
+              travelDuration,
+              judged: false,
+              gold: Math.random() < goldChance,
+            });
+          }
+          nextSpawnRef.current = now + spawnInterval;
+        }
+
+        for (const note of notesRef.current) {
+          if (!note.judged && now > note.hitTime + MISS_WINDOW_MS) {
+            note.judged = true;
+            registerMiss(note.gold);
+          }
+        }
+        notesRef.current = notesRef.current.filter(n => now - n.hitTime < MISS_WINDOW_MS + 60);
+      }
+
+      for (const note of notesRef.current) {
+        const progress = (now - note.spawnTime) / note.travelDuration;
+        const py = progress * hitLineY;
+        if (py < -20 || py > h + 20) continue;
+        const cx = laneW * (note.lane + 0.5);
+        const color = note.gold ? '#ffd23d' : LANE_COLORS[note.lane];
+        ctx.save();
+        ctx.globalAlpha = note.judged ? 0.25 : 1;
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = note.gold ? 20 : 12;
+        const size = Math.min(laneW * 0.32, 22);
+        ctx.beginPath();
+        ctx.arc(cx, py, size, 0, Math.PI * 2);
+        ctx.fill();
+        if (note.gold) {
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      const particles = particlesRef.current;
+      for (const p of particles) {
+        p.x += p.vx * 0.016; p.y += p.vy * 0.016;
+        p.vx *= 0.94; p.vy *= 0.94; p.life -= 16;
+      }
+      particlesRef.current = particles.filter(p => p.life > 0);
+      for (const p of particlesRef.current) {
+        const a = clamp(p.life / p.maxLife, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    };
+
+    const tick = (now) => {
+      draw(now);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [levelParams, registerMiss]);
+
+  const onFieldPointer = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    const field = fieldRef.current;
+    if (!field) return;
+    const rect = field.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const x = clientX - rect.left;
+    const laneIdx = clamp(Math.floor((x / rect.width) * NUM_LANES), 0, NUM_LANES - 1);
+    hitLane(laneIdx);
+  }, [hitLane]);
+
+  return (
+    <div className="app">
+      <div className="bgGlow"></div>
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className="hudValue lives" data-testid="lives">{lives}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Best</div>
+          <div className="hudValue best" data-testid="best">{best}</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <div className="title">BEAT CASCADE</div>
+          <div className="subtitle">
+            Glowing notes cascade down four neon lanes toward the hit line. Press D / F / J / K (lane matches the color), or tap/click the matching lane on screen or the on-screen buttons, right as each note crosses the line — nail the exact instant for a Perfect, or land it close for a Good. Chain hits without missing to build a rising combo multiplier, and catch a rare gold note for a huge bonus. Miss a note entirely and your combo resets and you lose one of five lives. Every {LEVEL_UP_HITS} clean hits levels you up, spawning notes faster and denser for a tighter read. How deep can you cascade?
+          </div>
+        </div>
+      )}
+
+      <div
+        className={"fieldOuter" + (shakeIt ? " shakeIt" : "")}
+        data-testid="play-field"
+        ref={fieldRef}
+        onMouseDown={onFieldPointer}
+        onTouchStart={onFieldPointer}
+      >
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 22 }}>CASCADE BROKEN</div>
+            <div className="hudValue" style={{ fontSize: 26 }}>{score}</div>
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <div className="controlsRow">
+          {LANE_LABELS.map((label, i) => (
+            <button
+              key={i}
+              className={"laneBtn lane" + i}
+              data-testid={"lane-" + i + "-btn"}
+              style={{ opacity: laneFlash[i] ? 1 : 0.85, transform: laneFlash[i] ? 'scale(0.92)' : 'scale(1)' }}
+              onClick={(e) => { e.stopPropagation(); hitLane(i); }}
+              onTouchStart={(e) => { e.stopPropagation(); hitLane(i); }}
+            >{label}</button>
+          ))}
+        </div>
+      )}
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

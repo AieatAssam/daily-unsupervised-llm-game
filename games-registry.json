@@ -4043,5 +4043,26 @@
     "file": "games/2026-09-30/index.html",
     "preview": "games/2026-09-30/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-01",
+    "name": "Beat Cascade",
+    "date": "2026-10-01",
+    "description": "Glowing notes cascade down four neon lanes toward a hit line, and your job is to nail each one the instant it crosses. Press D / F / J / K (each key owns a color-matched lane), or tap/click the matching lane on screen or the on-screen buttons, right as the note hits the line — land it dead-center for a Perfect, or close for a Good. Chain hits without missing to build a rising combo multiplier that boosts every payout, and catch a rare gold note for a huge bonus. Miss a note entirely and your combo resets and you lose one of five lives. Every 14 clean hits levels you up, spawning notes faster and denser for a tighter read. How deep can you cascade?",
+    "tagline": "Four lanes, one beat. Hit it right on the line.",
+    "tags": [
+      "rhythm",
+      "reflex",
+      "music",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "D / F / J / K keys (one per color-matched lane), or tap/click the matching lane on screen or the on-screen D/F/J/K buttons, timed to each falling note crossing the hit line",
+    "folder": "games/2026-10-01",
+    "file": "games/2026-10-01/index.html",
+    "preview": "games/2026-10-01/preview.png",
+    "rating": 4.2
   }
 ]
