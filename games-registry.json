@@ -4064,5 +4064,26 @@
     "file": "games/2026-10-01/index.html",
     "preview": "games/2026-10-01/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-10-02",
+    "name": "Ion Siege",
+    "date": "2026-10-02",
+    "description": "Hostile drones swarm in from every edge of a neon arena. Dodge the siege, snap auto-aimed shots at the nearest drone, and chain kills fast to build a rising combo multiplier before the swarm overwhelms you.",
+    "tagline": "Dodge the swarm. Snap the shot.",
+    "tags": [
+      "shooter",
+      "survival",
+      "arcade",
+      "twin-stick",
+      "reflex"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow keys / WASD to move, or drag anywhere in the field on touch; Space, click the field, or tap FIRE to snap an auto-aimed shot at the nearest drone",
+    "folder": "games/2026-10-02",
+    "file": "games/2026-10-02/index.html",
+    "preview": "games/2026-10-02/preview.png",
+    "rating": 4.3
   }
 ]
