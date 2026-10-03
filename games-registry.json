@@ -3964,7 +3964,7 @@
     "id": "2026-09-27",
     "name": "Neon Fusion",
     "date": "2026-09-27",
-    "description": "A neon merge-puzzle game: every glowing tile on a 4x4 grid slides at once in whichever direction you push, and matching values fuse into the next glowing number in a satisfying chain reaction. Use Arrow keys / WASD, the on-screen D-pad, or a swipe/drag directly on the board to shove the whole grid left, right, up, or down, banking a rising combo multiplier for consecutive fusing moves. Gold tiles pay out a huge bonus when fused into, but every level up cracks open a fixed glitch cell that permanently blocks part of the grid and never moves, squeezing your space tighter and tighter. Run out of legal moves and the grid locks for good — how high can you fuse before it does?",
+    "description": "A neon merge-puzzle game: every glowing tile on a 4x4 grid slides at once in whichever direction you push, and matching values fuse into the next glowing number in a satisfying chain reaction. Use Arrow keys / WASD, the on-screen D-pad, or a swipe/drag directly on the board to shove the whole grid left, right, up, or down, banking a rising combo multiplier for consecutive fusing moves. Gold tiles pay out a huge bonus when fused into, but every level up cracks open a fixed glitch cell that permanently blocks part of the grid and never moves, squeezing your space tighter and tighter. Run out of legal moves and the grid locks for good \u2014 how high can you fuse before it does?",
     "tagline": "Slide, merge, ascend.",
     "tags": [
       "puzzle",
@@ -3975,7 +3975,7 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Arrow keys / WASD, the on-screen ▲◀▼▶ D-pad, or a swipe/drag directly on the board to slide every tile in one direction at once",
+    "controls": "Arrow keys / WASD, the on-screen \u25b2\u25c0\u25bc\u25b6 D-pad, or a swipe/drag directly on the board to slide every tile in one direction at once",
     "folder": "games/2026-09-27",
     "file": "games/2026-09-27/index.html",
     "preview": "games/2026-09-27/preview.png",
@@ -3985,7 +3985,7 @@
     "id": "2026-09-28",
     "name": "Crate Shift",
     "date": "2026-09-28",
-    "description": "A neon sokoban-style puzzle-arcade game: every layout is a procedurally generated grid of walls, glowing crates, and dashed gold pads, guaranteed solvable by construction. Walk into a crate with Arrow keys / WASD or the on-screen D-pad to shove it one tile at a time, locking it in with a burst of particles the instant it lands on a pad, and chain fast consecutive locks into a rising combo multiplier for huge scores. Push a locked crate back off its pad and the combo resets, so plan your route before you shove. Clear every pad before the countdown hits zero to bank a time bonus and advance to a tighter, more crowded layout with less time on the clock — run out of time three times and it's game over. How deep can you shift?",
+    "description": "A neon sokoban-style puzzle-arcade game: every layout is a procedurally generated grid of walls, glowing crates, and dashed gold pads, guaranteed solvable by construction. Walk into a crate with Arrow keys / WASD or the on-screen D-pad to shove it one tile at a time, locking it in with a burst of particles the instant it lands on a pad, and chain fast consecutive locks into a rising combo multiplier for huge scores. Push a locked crate back off its pad and the combo resets, so plan your route before you shove. Clear every pad before the countdown hits zero to bank a time bonus and advance to a tighter, more crowded layout with less time on the clock \u2014 run out of time three times and it's game over. How deep can you shift?",
     "tagline": "Shove smart. Lock fast. Beat the clock.",
     "tags": [
       "puzzle",
@@ -3996,7 +3996,7 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "3 minutes",
-    "controls": "Arrow keys / WASD, or the on-screen ▲◀▼▶ D-pad, to walk into a crate and shove it one tile in that direction",
+    "controls": "Arrow keys / WASD, or the on-screen \u25b2\u25c0\u25bc\u25b6 D-pad, to walk into a crate and shove it one tile in that direction",
     "folder": "games/2026-09-28",
     "file": "games/2026-09-28/index.html",
     "preview": "games/2026-09-28/preview.png",
@@ -4006,7 +4006,7 @@
     "id": "2026-09-29",
     "name": "Neon Duelist",
     "date": "2026-09-29",
-    "description": "A neon turn-based card-duel gauntlet: you and a glowing rival trade blows across an endless string of one-on-one duels, each fought with a fresh hand of energy-cost cards. Click or tap a card, or press 1-4, to spend energy on a Strike, Slash, or Overload attack, throw up a Guard to blunt the counterattack, Mend back some HP, or cash in a rare gold Overcharge card for extra energy — chain damage across a turn without wasting one to build a rising combo multiplier. Click END TURN or press Space once you're done, or let the glowing timer bar run out and the turn resolves for you, triggering the rival's counterattack. Win a duel and a tougher rival immediately steps up with more HP and a harder-hitting attack, while your energy ceiling slowly grows to keep pace — let your HP hit zero and the gauntlet ends. How deep can you duel?",
+    "description": "A neon turn-based card-duel gauntlet: you and a glowing rival trade blows across an endless string of one-on-one duels, each fought with a fresh hand of energy-cost cards. Click or tap a card, or press 1-4, to spend energy on a Strike, Slash, or Overload attack, throw up a Guard to blunt the counterattack, Mend back some HP, or cash in a rare gold Overcharge card for extra energy \u2014 chain damage across a turn without wasting one to build a rising combo multiplier. Click END TURN or press Space once you're done, or let the glowing timer bar run out and the turn resolves for you, triggering the rival's counterattack. Win a duel and a tougher rival immediately steps up with more HP and a harder-hitting attack, while your energy ceiling slowly grows to keep pace \u2014 let your HP hit zero and the gauntlet ends. How deep can you duel?",
     "tagline": "Play your hand. Win the duel. Face the next one.",
     "tags": [
       "card-battler",
@@ -4027,7 +4027,7 @@
     "id": "2026-09-30",
     "name": "Sonar Drift",
     "date": "2026-09-30",
-    "description": "You're blind in a pitch-black neon maze, able to see only a faint glow right around yourself. Move with Arrow keys / WASD or the on-screen D-pad, then press Space, click/tap the field, or hit the PING button to fire a sonar pulse that briefly lights up walls, glowing orbs, the golden exit, and any prowling hunters within range — but each ping drains energy that only slowly regenerates, so you can't just light the whole maze forever. A ping that reaches a hunter alerts it, and it will path straight for your last known position for a few seconds, so ping with care and keep moving. Collect orbs to build a rising combo and refill energy, reach the exit to advance into a bigger, darker maze with more hunters, and dodge every collision in the dark — lose all three lives and your run ends. How deep can you drift?",
+    "description": "You're blind in a pitch-black neon maze, able to see only a faint glow right around yourself. Move with Arrow keys / WASD or the on-screen D-pad, then press Space, click/tap the field, or hit the PING button to fire a sonar pulse that briefly lights up walls, glowing orbs, the golden exit, and any prowling hunters within range \u2014 but each ping drains energy that only slowly regenerates, so you can't just light the whole maze forever. A ping that reaches a hunter alerts it, and it will path straight for your last known position for a few seconds, so ping with care and keep moving. Collect orbs to build a rising combo and refill energy, reach the exit to advance into a bigger, darker maze with more hunters, and dodge every collision in the dark \u2014 lose all three lives and your run ends. How deep can you drift?",
     "tagline": "Blind maze. One pulse of sight. Don't get caught in the dark.",
     "tags": [
       "maze",
@@ -4038,7 +4038,7 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "4 minutes",
-    "controls": "Arrow keys / WASD, or the on-screen ▲◀▼▶ D-pad, to move through the maze; press Space, click/tap the field, or tap PING to fire a sonar pulse that briefly reveals walls, orbs, the exit, and hunters nearby",
+    "controls": "Arrow keys / WASD, or the on-screen \u25b2\u25c0\u25bc\u25b6 D-pad, to move through the maze; press Space, click/tap the field, or tap PING to fire a sonar pulse that briefly reveals walls, orbs, the exit, and hunters nearby",
     "folder": "games/2026-09-30",
     "file": "games/2026-09-30/index.html",
     "preview": "games/2026-09-30/preview.png",
@@ -4048,7 +4048,7 @@
     "id": "2026-10-01",
     "name": "Beat Cascade",
     "date": "2026-10-01",
-    "description": "Glowing notes cascade down four neon lanes toward a hit line, and your job is to nail each one the instant it crosses. Press D / F / J / K (each key owns a color-matched lane), or tap/click the matching lane on screen or the on-screen buttons, right as the note hits the line — land it dead-center for a Perfect, or close for a Good. Chain hits without missing to build a rising combo multiplier that boosts every payout, and catch a rare gold note for a huge bonus. Miss a note entirely and your combo resets and you lose one of five lives. Every 14 clean hits levels you up, spawning notes faster and denser for a tighter read. How deep can you cascade?",
+    "description": "Glowing notes cascade down four neon lanes toward a hit line, and your job is to nail each one the instant it crosses. Press D / F / J / K (each key owns a color-matched lane), or tap/click the matching lane on screen or the on-screen buttons, right as the note hits the line \u2014 land it dead-center for a Perfect, or close for a Good. Chain hits without missing to build a rising combo multiplier that boosts every payout, and catch a rare gold note for a huge bonus. Miss a note entirely and your combo resets and you lose one of five lives. Every 14 clean hits levels you up, spawning notes faster and denser for a tighter read. How deep can you cascade?",
     "tagline": "Four lanes, one beat. Hit it right on the line.",
     "tags": [
       "rhythm",
@@ -4085,5 +4085,26 @@
     "file": "games/2026-10-02/index.html",
     "preview": "games/2026-10-02/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-03",
+    "name": "Prism Pop",
+    "date": "2026-10-03",
+    "description": "Aim a rainbow cannon at a hex cluster of neon bubbles drifting ever closer. Pop 3 or more of a color to clear them, let unsupported clusters fall for bonus points, and clear the board entirely for a huge score spike before a new row descends past the danger line.",
+    "tagline": "Aim true. Pop the prism.",
+    "tags": [
+      "puzzle",
+      "bubble-shooter",
+      "match-3",
+      "arcade",
+      "aiming"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Move the mouse or drag anywhere in the field, or Arrow keys / the \u25c0 \u25b6 buttons, to aim the cannon; Space, click/tap the field, or tap FIRE to launch a ball at the hex cluster",
+    "folder": "games/2026-10-03",
+    "file": "games/2026-10-03/index.html",
+    "preview": "games/2026-10-03/preview.png",
+    "rating": 4.4
   }
 ]
