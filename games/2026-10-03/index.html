@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Prism Pop</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #09040f; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 0%, #241236 0%, #0e0a1c 50%, #09040f 100%);
+  }
+
+  .bgGlow {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.55;
+    background: radial-gradient(circle at 10% 10%, rgba(255,61,240,0.14), transparent 40%),
+                radial-gradient(circle at 90% 15%, rgba(61,209,255,0.16), transparent 40%),
+                radial-gradient(circle at 50% 98%, rgba(79,255,176,0.12), transparent 45%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 420px;
+    padding: 4px 8px; z-index: 15; gap: 2px; position: relative; flex-wrap: wrap;
+  }
+  .hudBox { text-align: center; min-width: 44px; }
+  .hudLabel { font-size: 8px; letter-spacing: 1.5px; color: #e4a7ff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 17px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #ff3df0, 0 0 20px #ff3df0;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.best { color: #3dd1ff; text-shadow: 0 0 10px #3dd1ff, 0 0 20px #3dd1ff; }
+  .hudValue.pulse { animation: hudPulse 0.4s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 28px); font-weight: 900; letter-spacing: 3px; margin-top: 6px;
+    background: linear-gradient(90deg, #ff3df0, #3dd1ff, #4fffb0, #ffd23d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(255,61,240,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(255,61,240,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(61,209,255,0.85)); } }
+
+  .subtitle { color: #d8c8e8; font-size: 12px; letter-spacing: 0.5px; text-align: center; max-width: 440px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 14px 38px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #ff3df0, #3dd1ff);
+    border: none; border-radius: 50px; color: #0c0414; cursor: pointer;
+    box-shadow: 0 0 20px rgba(255,61,240,0.7), 0 0 50px rgba(61,209,255,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(255,61,240,0.9), 0 0 70px rgba(61,209,255,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #3dd1ff; font-size: 13px; text-shadow: 0 0 8px rgba(61,209,255,0.6); }
+
+  .fieldOuter {
+    position: relative; width: min(92vw, 380px); height: min(74vh, 560px); z-index: 5;
+    border-radius: 16px; overflow: hidden; border: 2px solid rgba(255,61,240,0.3);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 0 30px rgba(255,61,240,0.14);
+    background: #07030c; touch-action: none;
+    margin-top: 4px;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  .gameCanvas { width: 100%; height: 100%; display: block; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.08s ease;
+  }
+  .flashOverlay.good { opacity: 0.2; background: #4fffb0; }
+  .flashOverlay.bad { opacity: 0.3; background: #ff3355; }
+  .flashOverlay.level { opacity: 0.32; background: #ffd23d; }
+
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(7,3,12,0.75); z-index: 20; text-align: center; padding: 20px;
+  }
+
+  .controlsRow {
+    display: flex; gap: 10px; width: min(92vw, 380px); margin-top: 6px; z-index: 15; justify-content: center;
+  }
+  .fireBtn {
+    min-width: 120px; min-height: 52px; border-radius: 26px; border: 2px solid rgba(255,255,255,0.3);
+    background: linear-gradient(135deg, #ff3df0, #ff8f3d); color: #1a0608; font-size: 16px; font-weight: 900;
+    letter-spacing: 2px; cursor: pointer; box-shadow: 0 0 16px rgba(255,61,240,0.6);
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+  }
+  .fireBtn:active { transform: scale(0.92); }
+  .turnBtn {
+    min-width: 52px; min-height: 52px; border-radius: 26px; border: 2px solid rgba(255,255,255,0.25);
+    background: linear-gradient(135deg, #3dd1ff, #7b5aff); color: #061018; font-size: 18px; font-weight: 900;
+    cursor: pointer; box-shadow: 0 0 14px rgba(61,209,255,0.5);
+    transition: transform 0.08s ease;
+  }
+  .turnBtn:active { transform: scale(0.9); }
+  .hintRow { font-size: 10px; color: #a08bb8; text-align: center; padding: 0 10px; }
+
+  .status { font-size: 12px; color: #c8b8d8; min-height: 16px; text-align: center; padding: 0 10px; z-index: 15; }
+  .footer { font-size: 9px; color: #5a4a68; letter-spacing: 1px; padding-bottom: 2px; z-index: 15; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect } = React;
+
+const HS_KEY = 'prismPopHighScore';
+const PALETTE = ['#ff3df0', '#3dd1ff', '#4fffb0', '#ffd23d', '#ff5577'];
+const COLS = 8;
+const INIT_ROWS = 5;
+const BALL_SPEED = 520;
+const AIM_LIMIT = (75 * Math.PI) / 180;
+const UP = -Math.PI / 2;
+const ROT_SPEED = 2.6; // rad/s
+const LEVEL_SCORE_STEP = 350;
+const COMBO_WINDOW = 1; // combo resets only on a non-popping shot
+const MAX_MULT = 6;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+function normalizeAngle(a) { return ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; }
+function clampAim(angle) {
+  const diff = clamp(normalizeAngle(angle - UP), -AIM_LIMIT, AIM_LIMIT);
+  return UP + diff;
+}
+function colsForParity(p) { return p === 0 ? COLS : COLS - 1; }
+function makeEmptyRow(parity) { return { parity, cells: new Array(colsForParity(parity)).fill(null) }; }
+function randColor(active) { return active[Math.floor(Math.random() * active.length)]; }
+
+function initRows(count, active) {
+  const rows = [];
+  for (let i = 0; i < count; i++) {
+    const parity = i % 2;
+    const cols = colsForParity(parity);
+    const cells = [];
+    for (let c = 0; c < cols; c++) cells.push(randColor(active));
+    rows.push({ parity, cells });
+  }
+  return rows;
+}
+
+function ensureRow(rows, idx) {
+  while (rows.length <= idx) {
+    const parity = rows.length === 0 ? 0 : 1 - rows[rows.length - 1].parity;
+    rows.push(makeEmptyRow(parity));
+  }
+}
+
+function unshiftRow(rows, active) {
+  const parity = rows.length === 0 ? 0 : 1 - rows[0].parity;
+  const cols = colsForParity(parity);
+  const cells = [];
+  for (let c = 0; c < cols; c++) cells.push(randColor(active));
+  rows.unshift({ parity, cells });
+}
+
+const SQRT3 = Math.sqrt(3);
+
+function gridToXY(rowIdx, col, parity, R, topMargin) {
+  const x = parity === 0 ? R + col * 2 * R : 2 * R + col * 2 * R;
+  const y = topMargin + rowIdx * R * SQRT3;
+  return { x, y };
+}
+
+function neighborsOf(rowIdx, col, parity) {
+  if (parity === 0) {
+    return [
+      [rowIdx, col - 1], [rowIdx, col + 1],
+      [rowIdx - 1, col - 1], [rowIdx - 1, col],
+      [rowIdx + 1, col - 1], [rowIdx + 1, col],
+    ];
+  }
+  return [
+    [rowIdx, col - 1], [rowIdx, col + 1],
+    [rowIdx - 1, col], [rowIdx - 1, col + 1],
+    [rowIdx + 1, col], [rowIdx + 1, col + 1],
+  ];
+}
+
+function findSnapCell(rows, x, y, R, topMargin) {
+  const rowGuess = Math.max(0, Math.round((y - topMargin) / (R * SQRT3)));
+  ensureRow(rows, rowGuess + 2);
+  let best = null, bestD = Infinity;
+  for (let rr = Math.max(0, rowGuess - 2); rr <= rowGuess + 2; rr++) {
+    const row = rows[rr];
+    if (!row) continue;
+    for (let cc = 0; cc < row.cells.length; cc++) {
+      if (row.cells[cc] !== null) continue;
+      const p = gridToXY(rr, cc, row.parity, R, topMargin);
+      const d = dist(p.x, p.y, x, y);
+      if (d < bestD) { bestD = d; best = { row: rr, col: cc }; }
+    }
+  }
+  return best;
+}
+
+function floodSameColor(rows, startRow, startCol, color) {
+  const seen = new Set([`${startRow},${startCol}`]);
+  const stack = [[startRow, startCol]];
+  const group = [[startRow, startCol]];
+  while (stack.length) {
+    const [r, c] = stack.pop();
+    const row = rows[r];
+    if (!row) continue;
+    for (const [nr, nc] of neighborsOf(r, c, row.parity)) {
+      const key = `${nr},${nc}`;
+      if (seen.has(key)) continue;
+      const nrow = rows[nr];
+      if (!nrow || nc < 0 || nc >= nrow.cells.length) continue;
+      if (nrow.cells[nc] !== color) continue;
+      seen.add(key);
+      stack.push([nr, nc]);
+      group.push([nr, nc]);
+    }
+  }
+  return group;
+}
+
+function computeSupported(rows) {
+  const supported = new Set();
+  if (!rows[0]) return supported;
+  const stack = [];
+  for (let c = 0; c < rows[0].cells.length; c++) {
+    if (rows[0].cells[c] !== null) { supported.add(`0,${c}`); stack.push([0, c]); }
+  }
+  while (stack.length) {
+    const [r, c] = stack.pop();
+    const row = rows[r];
+    for (const [nr, nc] of neighborsOf(r, c, row.parity)) {
+      const key = `${nr},${nc}`;
+      if (supported.has(key)) continue;
+      const nrow = rows[nr];
+      if (!nrow || nc < 0 || nc >= nrow.cells.length) continue;
+      if (nrow.cells[nc] === null) continue;
+      supported.add(key);
+      stack.push([nr, nc]);
+    }
+  }
+  return supported;
+}
+
+function trimTrailingEmpty(rows) {
+  while (rows.length && rows[rows.length - 1].cells.every(c => c === null)) rows.pop();
+}
+
+function isBoardEmpty(rows) { return rows.length === 0; }
+
+function lowestOccupiedY(rows, R, topMargin) {
+  let maxY = -Infinity;
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    for (let c = 0; c < row.cells.length; c++) {
+      if (row.cells[c] === null) continue;
+      const p = gridToXY(r, c, row.parity, R, topMargin);
+      if (p.y > maxY) maxY = p.y;
+    }
+  }
+  return maxY;
+}
+
+function spawnBurst(list, x, y, color, count, speed, minSize, maxSize, life) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = speed * (0.4 + Math.random() * 0.8);
+    list.push({
+      x, y,
+      vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+      size: minSize + Math.random() * (maxSize - minSize),
+      color, life, maxLife: life,
+    });
+  }
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const noiseBufRef = useRef(null);
+
+  const ensure = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+      const ctx = ctxRef.current;
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.25, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      noiseBufRef.current = buf;
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const tone = useCallback((freq, dur, type, gainVal, when, freqEnd) => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const t0 = ctx.currentTime + (when || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t0 + dur);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(gainVal, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }, []);
+
+  const noise = useCallback((dur, gainVal) => {
+    const ctx = ctxRef.current;
+    if (!ctx || !noiseBufRef.current) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBufRef.current;
+    const gain = ctx.createGain();
+    const t0 = ctx.currentTime;
+    gain.gain.setValueAtTime(gainVal, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(gain).connect(ctx.destination);
+    src.start(t0);
+    src.stop(t0 + dur);
+  }, []);
+
+  return {
+    ensure,
+    shootSound: () => tone(880, 0.05, 'square', 0.09, 0, 640),
+    popSound: (mult) => { tone(440 + mult * 50, 0.08, 'sine', 0.18, 0); tone(880 + mult * 50, 0.1, 'sine', 0.13, 0.03); },
+    dropSound: () => tone(300, 0.1, 'sine', 0.1, 0, 220),
+    rowSound: () => { noise(0.14, 0.22); tone(140, 0.18, 'sawtooth', 0.12, 0, 90); },
+    clearSound: () => { tone(523, 0.09, 'sine', 0.2, 0); tone(659, 0.09, 'sine', 0.2, 0.08); tone(784, 0.09, 'sine', 0.2, 0.16); tone(1046, 0.14, 'sine', 0.2, 0.24); },
+    overSound: () => tone(392, 0.2, 'sawtooth', 0.18, 0, 150),
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start');
+  const [score, setScoreState] = useState(0);
+  const [level, setLevelState] = useState(1);
+  const [combo, setComboState] = useState(0);
+  const [best, setBest] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [comboPulse, setComboPulse] = useState(false);
+  const [flashKind, setFlashKind] = useState(null);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('Pop 3+ of a color.');
+
+  const phaseRef = useRef('start');
+  const scoreRef = useRef(0);
+  const levelRef = useRef(1);
+  const comboRef = useRef(0);
+  const bestRef = useRef(best);
+  const activeColorsRef = useRef(PALETTE.slice(0, 3));
+
+  const rowsRef = useRef([]);
+  const ballRef = useRef(null);
+  const nextColorRef = useRef(PALETTE[0]);
+  const curColorRef = useRef(PALETTE[0]);
+  const aimRef = useRef(UP);
+  const keysRef = useRef({ left: false, right: false });
+  const shotsSinceDropRef = useRef(0);
+  const particlesRef = useRef([]);
+  const fallingRef = useRef([]);
+  const rafRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const dimsRef = useRef({ w: 0, h: 0 });
+  const lastTimeRef = useRef(0);
+  const flashTimeoutRef = useRef(null);
+  const shakeTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+
+  const audio = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    const field = fieldRef.current;
+    let ro = null;
+    if (field && window.ResizeObserver) {
+      ro = new ResizeObserver(() => resizeCanvas());
+      ro.observe(field);
+    }
+    return () => {
+      window.removeEventListener('resize', resizeCanvas);
+      if (ro) ro.disconnect();
+    };
+  }, [resizeCanvas]);
+
+  const geom = useCallback(() => {
+    const { w, h } = dimsRef.current;
+    // Cap R by both width (columns must fit) and height (initial rows plus a
+    // generous shooter buffer must fit) so short/wide viewports — and a
+    // player stacking bubbles straight down from repeated same-spot shots —
+    // can't reach the danger line in just a couple of shots.
+    const R = clamp(Math.min(w / (COLS * 2), h / 14), 11, 26);
+    const topMargin = R * 1.3;
+    const shooterX = w / 2;
+    const shooterY = h - R * 1.6;
+    const dangerY = shooterY - R * 1.2;
+    return { R, topMargin, shooterX, shooterY, dangerY };
+  }, []);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const startGame = useCallback(() => {
+    audio.ensure();
+    resizeCanvas();
+    levelRef.current = 1; setLevelState(1);
+    scoreRef.current = 0; setScoreState(0);
+    comboRef.current = 0; setComboState(0);
+    activeColorsRef.current = PALETTE.slice(0, 3);
+    rowsRef.current = initRows(INIT_ROWS, activeColorsRef.current);
+    ballRef.current = null;
+    curColorRef.current = randColor(activeColorsRef.current);
+    nextColorRef.current = randColor(activeColorsRef.current);
+    aimRef.current = UP;
+    shotsSinceDropRef.current = 0;
+    particlesRef.current = [];
+    fallingRef.current = [];
+    setStatusMsg('Pop 3+ of a color.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [audio, resizeCanvas]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  const endGame = useCallback(() => {
+    phaseRef.current = 'over';
+    setPhase('over');
+    audio.overSound();
+    setStatusMsg('Ceiling breached.');
+    if (scoreRef.current > bestRef.current) {
+      bestRef.current = scoreRef.current;
+      localStorage.setItem(HS_KEY, String(scoreRef.current));
+      setBest(scoreRef.current);
+    }
+  }, [audio]);
+
+  const bumpCombo = useCallback((popped) => {
+    if (popped) comboRef.current = clamp(comboRef.current + 1, 0, MAX_MULT);
+    else comboRef.current = 0;
+    setComboState(comboRef.current);
+    setComboPulse(true);
+    clearTimeout(comboPulseTimeoutRef.current);
+    comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 300);
+  }, []);
+
+  const addScore = useCallback((amount) => {
+    scoreRef.current += amount;
+    setScoreState(scoreRef.current);
+    const newLevel = Math.floor(scoreRef.current / LEVEL_SCORE_STEP) + 1;
+    if (newLevel > levelRef.current) {
+      levelRef.current = newLevel;
+      setLevelState(newLevel);
+      activeColorsRef.current = PALETTE.slice(0, Math.min(PALETTE.length, 2 + newLevel));
+      audio.clearSound();
+      triggerFlash('level', 400);
+      setStatusMsg(`Level ${newLevel}! New colors in play.`);
+    }
+  }, [audio, triggerFlash]);
+
+  const resolveSettle = useCallback((row, col, color, R, topMargin) => {
+    const rows = rowsRef.current;
+    rows[row].cells[col] = color;
+    const group = floodSameColor(rows, row, col, color);
+    if (group.length >= 3) {
+      const mult = 1 + comboRef.current * 0.5;
+      const gained = Math.round(group.length * 15 * mult);
+      for (const [r, c] of group) {
+        const p = gridToXY(r, c, rows[r].parity, R, topMargin);
+        spawnBurst(particlesRef.current, p.x, p.y, color, 10, 90, 1.5, 3.2, 420);
+        rows[r].cells[c] = null;
+      }
+      audio.popSound(comboRef.current);
+      bumpCombo(true);
+      addScore(gained);
+      setStatusMsg(`Pop x${group.length}! +${gained}`);
+
+      const supported = computeSupported(rows);
+      let dropCount = 0;
+      for (let r = 0; r < rows.length; r++) {
+        for (let c = 0; c < rows[r].cells.length; c++) {
+          if (rows[r].cells[c] === null) continue;
+          if (supported.has(`${r},${c}`)) continue;
+          const p = gridToXY(r, c, rows[r].parity, R, topMargin);
+          fallingRef.current.push({ x: p.x, y: p.y, vy: 40 + Math.random() * 30, color: rows[r].cells[c], alpha: 1, r: R });
+          rows[r].cells[c] = null;
+          dropCount++;
+        }
+      }
+      if (dropCount > 0) {
+        audio.dropSound();
+        addScore(dropCount * 18);
+      }
+      trimTrailingEmpty(rows);
+      if (isBoardEmpty(rows)) {
+        audio.clearSound();
+        triggerFlash('level', 450);
+        addScore(250);
+        setStatusMsg('BOARD CLEARED! Bonus +250');
+        rowsRef.current = initRows(INIT_ROWS, activeColorsRef.current);
+      }
+    } else {
+      bumpCombo(false);
+      setStatusMsg('No match. Keep going.');
+    }
+  }, [audio, bumpCombo, addScore, triggerFlash]);
+
+  const fire = useCallback(() => {
+    if (phaseRef.current !== 'playing' || ballRef.current) return;
+    const { shooterX, shooterY } = geom();
+    const angle = aimRef.current;
+    ballRef.current = {
+      x: shooterX, y: shooterY,
+      vx: Math.cos(angle) * BALL_SPEED, vy: Math.sin(angle) * BALL_SPEED,
+      color: curColorRef.current,
+    };
+    audio.shootSound();
+    curColorRef.current = nextColorRef.current;
+    nextColorRef.current = randColor(activeColorsRef.current);
+
+    shotsSinceDropRef.current++;
+    const shotsPerDrop = Math.max(4, 9 - levelRef.current);
+    if (shotsSinceDropRef.current >= shotsPerDrop) {
+      shotsSinceDropRef.current = 0;
+      unshiftRow(rowsRef.current, activeColorsRef.current);
+      audio.rowSound();
+      triggerFlash('bad', 220);
+      setStatusMsg('New row descends!');
+    }
+  }, [geom, audio, triggerFlash]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'ArrowLeft') { keysRef.current.left = true; e.preventDefault(); }
+      else if (e.code === 'ArrowRight') { keysRef.current.right = true; e.preventDefault(); }
+      else if (e.code === 'Space') { e.preventDefault(); fire(); }
+    };
+    const onKeyUp = (e) => {
+      if (e.code === 'ArrowLeft') keysRef.current.left = false;
+      else if (e.code === 'ArrowRight') keysRef.current.right = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [fire]);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+  }, []);
+
+  useEffect(() => {
+    const draw = (now) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const { w, h } = dimsRef.current;
+      if (w < 5 || h < 5) return;
+      const dt = lastTimeRef.current ? Math.min(0.05, (now - lastTimeRef.current) / 1000) : 0.016;
+      lastTimeRef.current = now;
+      const { R, topMargin, shooterX, shooterY, dangerY } = geom();
+
+      ctx.fillStyle = '#07030c';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = 'rgba(255,61,240,0.05)';
+      ctx.lineWidth = 1;
+      const grid = 28;
+      for (let x = 0; x < w; x += grid) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+      for (let y = 0; y < h; y += grid) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+      const rows = rowsRef.current;
+
+      if (phaseRef.current === 'playing') {
+        if (keysRef.current.left) aimRef.current = clampAim(aimRef.current - ROT_SPEED * dt);
+        if (keysRef.current.right) aimRef.current = clampAim(aimRef.current + ROT_SPEED * dt);
+
+        if (ballRef.current) {
+          const b = ballRef.current;
+          b.x += b.vx * dt; b.y += b.vy * dt;
+          if (b.x < R) { b.x = R; b.vx = -b.vx; }
+          else if (b.x > w - R) { b.x = w - R; b.vx = -b.vx; }
+
+          let settled = false;
+          if (b.y <= topMargin) { settled = true; }
+          else {
+            for (let r = 0; r < rows.length && !settled; r++) {
+              const row = rows[r];
+              for (let c = 0; c < row.cells.length; c++) {
+                if (row.cells[c] === null) continue;
+                const p = gridToXY(r, c, row.parity, R, topMargin);
+                if (dist(p.x, p.y, b.x, b.y) <= R * 1.85) { settled = true; break; }
+              }
+            }
+          }
+          if (settled) {
+            const snap = findSnapCell(rows, b.x, Math.max(b.y, topMargin), R, topMargin);
+            if (snap) resolveSettle(snap.row, snap.col, b.color, R, topMargin);
+            ballRef.current = null;
+          }
+        }
+
+        const low = lowestOccupiedY(rows, R, topMargin);
+        if (low + R >= dangerY) endGame();
+      }
+
+      const particles = particlesRef.current;
+      for (const pt of particles) {
+        pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+        pt.vx *= 0.94; pt.vy *= 0.94; pt.life -= dt * 1000;
+      }
+      particlesRef.current = particles.filter(pt => pt.life > 0);
+
+      const falling = fallingRef.current;
+      for (const f of falling) {
+        f.vy += 260 * dt;
+        f.y += f.vy * dt;
+        f.alpha -= dt * 0.9;
+      }
+      fallingRef.current = falling.filter(f => f.alpha > 0 && f.y < h + 60);
+
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows[r];
+        for (let c = 0; c < row.cells.length; c++) {
+          const color = row.cells[c];
+          if (!color) continue;
+          const p = gridToXY(r, c, row.parity, R, topMargin);
+          ctx.save();
+          ctx.fillStyle = color;
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, R * 0.85, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      for (const f of fallingRef.current) {
+        ctx.save();
+        ctx.globalAlpha = clamp(f.alpha, 0, 1);
+        ctx.fillStyle = f.color;
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.r * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      for (const pt of particlesRef.current) {
+        const a = clamp(pt.life / pt.maxLife, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = pt.color;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+
+      if (phaseRef.current === 'playing') {
+        const angle = aimRef.current;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 7]);
+        ctx.beginPath();
+        ctx.moveTo(shooterX, shooterY);
+        ctx.lineTo(shooterX + Math.cos(angle) * R * 4, shooterY + Math.sin(angle) * R * 4);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = curColorRef.current;
+        ctx.shadowColor = curColorRef.current;
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        ctx.arc(shooterX, shooterY, R * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = nextColorRef.current;
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.arc(shooterX + R * 2.6, shooterY + R * 0.2, R * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (ballRef.current) {
+        const b = ballRef.current;
+        ctx.save();
+        ctx.fillStyle = b.color;
+        ctx.shadowColor = b.color;
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, R * 0.85, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,61,240,0.18)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, dangerY);
+      ctx.lineTo(w, dangerY);
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    const tick = (now) => {
+      draw(now);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [geom, resolveSettle, endGame]);
+
+  const fieldPointToLocal = useCallback((clientX, clientY) => {
+    const field = fieldRef.current;
+    if (!field) return { x: 0, y: 0 };
+    const rect = field.getBoundingClientRect();
+    return { x: clamp(clientX - rect.left, 0, rect.width), y: clamp(clientY - rect.top, 0, rect.height) };
+  }, []);
+
+  const aimAt = useCallback((clientX, clientY) => {
+    const { shooterX, shooterY } = geom();
+    const pt = fieldPointToLocal(clientX, clientY);
+    aimRef.current = clampAim(Math.atan2(pt.y - shooterY, pt.x - shooterX));
+  }, [fieldPointToLocal, geom]);
+
+  const onFieldMouseMove = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    aimAt(e.clientX, e.clientY);
+  }, [aimAt]);
+
+  const onFieldMouseDown = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    aimAt(e.clientX, e.clientY);
+    fire();
+  }, [aimAt, fire]);
+
+  const onFieldTouchStart = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    const t = e.touches[0];
+    aimAt(t.clientX, t.clientY);
+  }, [aimAt]);
+
+  const onFieldTouchMove = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    const t = e.touches[0];
+    aimAt(t.clientX, t.clientY);
+  }, [aimAt]);
+
+  const onFireBtn = useCallback((e) => {
+    e.stopPropagation();
+    if (phaseRef.current !== 'playing') return;
+    fire();
+  }, [fire]);
+
+  const onTurnBtn = useCallback((dir) => (e) => {
+    e.stopPropagation();
+    if (phaseRef.current !== 'playing') return;
+    aimRef.current = clampAim(aimRef.current + dir * 0.25);
+  }, []);
+
+  return (
+    <div className="app">
+      <div className="bgGlow"></div>
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Best</div>
+          <div className="hudValue best" data-testid="best">{best}</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <div className="title">PRISM POP</div>
+          <div className="subtitle">
+            Aim the color cannon by moving your mouse or dragging anywhere in the field, or rotate with Arrow keys. Fire with Space, a click/tap on the field, or the FIRE button to launch a ball at the hex cluster above. Match 3 or more of the same color to pop them — any bubbles left floating fall for a bonus. Clear the whole board for a big score boost. Every few shots a fresh row descends, so keep popping before the ceiling reaches the danger line.
+          </div>
+        </div>
+      )}
+
+      <div
+        className={"fieldOuter" + (shakeIt ? " shakeIt" : "")}
+        data-testid="play-field"
+        ref={fieldRef}
+        onMouseMove={onFieldMouseMove}
+        onMouseDown={onFieldMouseDown}
+        onTouchStart={onFieldTouchStart}
+        onTouchMove={onFieldTouchMove}
+      >
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 22 }}>CEILING BREACHED</div>
+            <div className="hudValue" style={{ fontSize: 26 }}>{score}</div>
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <div className="controlsRow">
+          <button className="turnBtn" data-testid="turn-left-btn" onClick={onTurnBtn(-1)} onTouchStart={onTurnBtn(-1)}>◀</button>
+          <button className="fireBtn" data-testid="fire-btn" onClick={onFireBtn} onTouchStart={onFireBtn}>FIRE</button>
+          <button className="turnBtn" data-testid="turn-right-btn" onClick={onTurnBtn(1)} onTouchStart={onTurnBtn(1)}>▶</button>
+        </div>
+      )}
+
+      <div className="status">{statusMsg}</div>
+      <div className="hintRow">Mouse/drag or arrows to aim · Space/click/FIRE to shoot</div>
+      <div className="footer">PRISM POP · NEON ARCADE</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
