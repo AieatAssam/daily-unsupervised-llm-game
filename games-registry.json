@@ -4106,5 +4106,26 @@
     "file": "games/2026-10-03/index.html",
     "preview": "games/2026-10-03/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-10-04",
+    "name": "Pulse Stack",
+    "date": "2026-10-04",
+    "description": "A glowing block swings back and forth above your tower. Tap, click, or press Space to drop it onto the block below — land it dead-center for a PERFECT snap that locks the width and builds your combo multiplier, or clip the edge and watch the block trim down to the overlap. Every few rows the swing speeds up, shrinking your margin for error until one bad drop sends the whole tower toppling.",
+    "tagline": "Snap it center. Stack it high.",
+    "tags": [
+      "arcade",
+      "tower-stacker",
+      "timing",
+      "precision",
+      "one-button"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap or click anywhere in the field, or press Space / Arrow Up / Enter, to drop the swinging block onto the stack",
+    "folder": "games/2026-10-04",
+    "file": "games/2026-10-04/index.html",
+    "preview": "games/2026-10-04/preview.png",
+    "rating": 4.2
   }
 ]

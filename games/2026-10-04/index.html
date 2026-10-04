@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Pulse Stack</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #060212; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 0%, #231238 0%, #0b0818 50%, #060212 100%);
+  }
+
+  .bgGlow {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.55;
+    background: radial-gradient(circle at 12% 12%, rgba(61,255,224,0.14), transparent 40%),
+                radial-gradient(circle at 88% 18%, rgba(255,61,196,0.14), transparent 40%),
+                radial-gradient(circle at 50% 98%, rgba(255,210,61,0.10), transparent 45%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 420px;
+    padding: 4px 8px; z-index: 15; gap: 2px; position: relative; flex-wrap: wrap;
+  }
+  .hudBox { text-align: center; min-width: 44px; }
+  .hudLabel { font-size: 8px; letter-spacing: 1.5px; color: #8fd8ff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 17px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #3dffe0, 0 0 20px #3dffe0;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.best { color: #ff3dc4; text-shadow: 0 0 10px #ff3dc4, 0 0 20px #ff3dc4; }
+  .hudValue.pulse { animation: hudPulse 0.4s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 28px); font-weight: 900; letter-spacing: 3px; margin-top: 6px;
+    background: linear-gradient(90deg, #3dffe0, #3dd1ff, #ff3dc4, #ffd23d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(61,255,224,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(61,255,224,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(255,61,196,0.85)); } }
+
+  .subtitle { color: #cfe6f5; font-size: 12px; letter-spacing: 0.5px; text-align: center; max-width: 440px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 14px 38px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #3dffe0, #3dd1ff);
+    border: none; border-radius: 50px; color: #061018; cursor: pointer;
+    box-shadow: 0 0 20px rgba(61,255,224,0.7), 0 0 50px rgba(61,209,255,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(61,255,224,0.9), 0 0 70px rgba(61,209,255,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ff3dc4; font-size: 13px; text-shadow: 0 0 8px rgba(255,61,196,0.6); }
+
+  .fieldOuter {
+    position: relative; width: min(92vw, 380px); height: min(76vh, 580px); z-index: 5;
+    border-radius: 16px; overflow: hidden; border: 2px solid rgba(61,255,224,0.3);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 0 30px rgba(61,255,224,0.14);
+    background: #07030c; touch-action: none;
+    margin-top: 4px;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  .gameCanvas { width: 100%; height: 100%; display: block; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.08s ease;
+  }
+  .flashOverlay.perfect { opacity: 0.28; background: #3dffe0; }
+  .flashOverlay.bad { opacity: 0.3; background: #ff3355; }
+  .flashOverlay.level { opacity: 0.32; background: #ffd23d; }
+
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(7,3,12,0.75); z-index: 20; text-align: center; padding: 20px;
+  }
+
+  .tapHint { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-size: 11px; color: #9fd8e8; z-index: 12; pointer-events: none; }
+
+  .status { font-size: 12px; color: #c8d8e8; min-height: 16px; text-align: center; padding: 0 10px; z-index: 15; }
+  .footer { font-size: 9px; color: #5a687a; letter-spacing: 1px; padding-bottom: 2px; z-index: 15; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect } = React;
+
+const HS_KEY = 'pulseStackHighScore';
+const PALETTE = ['#3dffe0', '#3dd1ff', '#ff3dc4', '#ffd23d', '#7bff5a'];
+const BASE_SPEED = 95; // px/s
+const SPEED_STEP = 5.5; // added per level
+const MAX_SPEED = 320;
+const PERFECT_TOL = 0.12; // fraction of block width considered "perfect"
+const BLOCK_H = 24;
+const MIN_WIDTH_RATIO = 0.16; // game over if block shrinks below this fraction of field width
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function spawnBurst(list, x, y, color, count, speed, minSize, maxSize, life) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = speed * (0.4 + Math.random() * 0.8);
+    list.push({
+      x, y,
+      vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+      size: minSize + Math.random() * (maxSize - minSize),
+      color, life, maxLife: life,
+    });
+  }
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+
+  const ensure = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const tone = useCallback((freq, dur, type, gainVal, when, freqEnd) => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const t0 = ctx.currentTime + (when || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t0 + dur);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(gainVal, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }, []);
+
+  return {
+    ensure,
+    dropSound: () => tone(300, 0.08, 'square', 0.1, 0, 220),
+    perfectSound: (mult) => { tone(660 + mult * 40, 0.09, 'sine', 0.2, 0); tone(990 + mult * 40, 0.1, 'sine', 0.15, 0.04); },
+    trimSound: () => tone(420, 0.07, 'triangle', 0.1, 0),
+    levelSound: () => { tone(523, 0.08, 'sine', 0.18, 0); tone(784, 0.08, 'sine', 0.18, 0.07); },
+    overSound: () => tone(220, 0.25, 'sawtooth', 0.2, 0, 90),
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start');
+  const [score, setScoreState] = useState(0);
+  const [level, setLevelState] = useState(1);
+  const [combo, setComboState] = useState(0);
+  const [best, setBest] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [comboPulse, setComboPulse] = useState(false);
+  const [flashKind, setFlashKind] = useState(null);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('Tap to drop the block.');
+
+  const phaseRef = useRef('start');
+  const scoreRef = useRef(0);
+  const levelRef = useRef(1);
+  const comboRef = useRef(0);
+  const bestRef = useRef(best);
+
+  const stackRef = useRef([]); // settled blocks: {x, w, color, y}
+  const movingRef = useRef(null); // current swinging block: {x, w, color, dir, speed}
+  const cameraYRef = useRef(0); // scroll offset so stack grows upward in view
+  const particlesRef = useRef([]);
+  const rafRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const dimsRef = useRef({ w: 0, h: 0 });
+  const lastTimeRef = useRef(0);
+  const flashTimeoutRef = useRef(null);
+  const shakeTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+
+  const audio = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    const field = fieldRef.current;
+    let ro = null;
+    if (field && window.ResizeObserver) {
+      ro = new ResizeObserver(() => resizeCanvas());
+      ro.observe(field);
+    }
+    return () => {
+      window.removeEventListener('resize', resizeCanvas);
+      if (ro) ro.disconnect();
+    };
+  }, [resizeCanvas]);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const triggerShake = useCallback(() => {
+    setShakeIt(true);
+    clearTimeout(shakeTimeoutRef.current);
+    shakeTimeoutRef.current = setTimeout(() => setShakeIt(false), 300);
+  }, []);
+
+  const spawnMovingBlock = useCallback(() => {
+    const { w } = dimsRef.current;
+    const top = stackRef.current[stackRef.current.length - 1];
+    const width = top ? top.w : Math.min(110, w * 0.42);
+    const speed = clamp(BASE_SPEED + (levelRef.current - 1) * SPEED_STEP, BASE_SPEED, MAX_SPEED);
+    const startFromLeft = Math.random() < 0.5;
+    movingRef.current = {
+      x: startFromLeft ? 0 : Math.max(0, w - width),
+      w: width,
+      color: PALETTE[(stackRef.current.length) % PALETTE.length],
+      dir: startFromLeft ? 1 : -1,
+      speed,
+    };
+  }, []);
+
+  const startGame = useCallback(() => {
+    audio.ensure();
+    resizeCanvas();
+    const { w } = dimsRef.current;
+    levelRef.current = 1; setLevelState(1);
+    scoreRef.current = 0; setScoreState(0);
+    comboRef.current = 0; setComboState(0);
+    const baseWidth = Math.min(120, w * 0.46 || 120);
+    stackRef.current = [{ x: (w || 300) / 2 - baseWidth / 2, w: baseWidth, color: PALETTE[0] }];
+    cameraYRef.current = 0;
+    particlesRef.current = [];
+    setStatusMsg('Tap to drop the block.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+    spawnMovingBlock();
+  }, [audio, resizeCanvas, spawnMovingBlock]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  const endGame = useCallback(() => {
+    phaseRef.current = 'over';
+    setPhase('over');
+    audio.overSound();
+    setStatusMsg('Stack toppled.');
+    if (scoreRef.current > bestRef.current) {
+      bestRef.current = scoreRef.current;
+      localStorage.setItem(HS_KEY, String(scoreRef.current));
+      setBest(scoreRef.current);
+    }
+  }, [audio]);
+
+  const bumpCombo = useCallback((perfect) => {
+    if (perfect) comboRef.current += 1;
+    else comboRef.current = 0;
+    setComboState(comboRef.current);
+    setComboPulse(true);
+    clearTimeout(comboPulseTimeoutRef.current);
+    comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 300);
+  }, []);
+
+  const addScore = useCallback((amount) => {
+    scoreRef.current += amount;
+    setScoreState(scoreRef.current);
+  }, []);
+
+  const drop = useCallback(() => {
+    if (phaseRef.current !== 'playing' || !movingRef.current) return;
+    const moving = movingRef.current;
+    const top = stackRef.current[stackRef.current.length - 1];
+    const movL = moving.x, movR = moving.x + moving.w;
+    const topL = top.x, topR = top.x + top.w;
+    const overlapL = Math.max(movL, topL);
+    const overlapR = Math.min(movR, topR);
+    const overlapW = overlapR - overlapL;
+
+    if (overlapW <= 1) {
+      // total miss
+      audio.overSound();
+      triggerShake();
+      spawnBurst(particlesRef.current, moving.x + moving.w / 2, 40, moving.color, 24, 140, 2, 4, 600);
+      endGame();
+      return;
+    }
+
+    const tolPx = top.w * PERFECT_TOL;
+    const isPerfect = Math.abs(movL - topL) <= tolPx && Math.abs(movR - topR) <= tolPx;
+
+    let newW = overlapW;
+    let newX = overlapL;
+    if (isPerfect) {
+      newW = top.w;
+      newX = topL;
+    }
+
+    const minWidth = Math.max(18, dimsRef.current.w * MIN_WIDTH_RATIO);
+    const newBlock = { x: newX, w: newW, color: moving.color };
+    stackRef.current.push(newBlock);
+    cameraYRef.current += BLOCK_H;
+
+    if (isPerfect) {
+      bumpCombo(true);
+      const mult = 1 + comboRef.current * 0.4;
+      const gained = Math.round(20 * mult);
+      addScore(gained);
+      audio.perfectSound(comboRef.current);
+      triggerFlash('perfect', 250);
+      setStatusMsg(`PERFECT! x${comboRef.current} +${gained}`);
+      spawnBurst(particlesRef.current, newX + newW / 2, 40, moving.color, 16, 90, 1.5, 3, 450);
+    } else {
+      bumpCombo(false);
+      addScore(10);
+      audio.dropSound();
+      // trimmed overhang particles
+      if (movL < topL) spawnBurst(particlesRef.current, movL + (topL - movL) / 2, 40, moving.color, 6, 70, 1, 2.2, 350);
+      if (movR > topR) spawnBurst(particlesRef.current, topR + (movR - topR) / 2, 40, moving.color, 6, 70, 1, 2.2, 350);
+      audio.trimSound();
+      setStatusMsg('Trimmed. Keep stacking.');
+    }
+
+    const newLevel = Math.floor(stackRef.current.length / 6) + 1;
+    if (newLevel > levelRef.current) {
+      levelRef.current = newLevel;
+      setLevelState(newLevel);
+      audio.levelSound();
+      triggerFlash('level', 350);
+      setStatusMsg(`Level ${newLevel}! Faster now.`);
+    }
+
+    if (newW < minWidth) {
+      triggerShake();
+      setTimeout(() => endGame(), 250);
+      movingRef.current = null;
+      return;
+    }
+
+    movingRef.current = null;
+    spawnMovingBlock();
+  }, [audio, bumpCombo, addScore, triggerFlash, triggerShake, endGame, spawnMovingBlock]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'Enter') { e.preventDefault(); drop(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [drop]);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+  }, []);
+
+  useEffect(() => {
+    const draw = (now) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const { w, h } = dimsRef.current;
+      if (w < 5 || h < 5) return;
+      const dt = lastTimeRef.current ? Math.min(0.05, (now - lastTimeRef.current) / 1000) : 0.016;
+      lastTimeRef.current = now;
+
+      ctx.fillStyle = '#07030c';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = 'rgba(61,255,224,0.05)';
+      ctx.lineWidth = 1;
+      const grid = 28;
+      for (let x = 0; x < w; x += grid) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+      for (let y = 0; y < h; y += grid) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+      if (phaseRef.current === 'playing' && movingRef.current) {
+        const moving = movingRef.current;
+        moving.x += moving.dir * moving.speed * dt;
+        if (moving.x <= 0) { moving.x = 0; moving.dir = 1; }
+        else if (moving.x + moving.w >= w) { moving.x = w - moving.w; moving.dir = -1; }
+      }
+
+      const particles = particlesRef.current;
+      for (const pt of particles) {
+        pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+        pt.vx *= 0.94; pt.vy *= 0.94; pt.life -= dt * 1000;
+      }
+      particlesRef.current = particles.filter(pt => pt.life > 0);
+
+      // draw stack from bottom of view upward; camera follows the top block
+      const baseY = h - BLOCK_H - 10;
+      const stack = stackRef.current;
+      const camShift = cameraYRef.current;
+      for (let i = 0; i < stack.length; i++) {
+        const b = stack[i];
+        const y = baseY - i * BLOCK_H + (camShift - (stack.length - 1) * BLOCK_H);
+        if (y < -BLOCK_H || y > h + BLOCK_H) continue;
+        ctx.save();
+        ctx.fillStyle = b.color;
+        ctx.shadowColor = b.color;
+        ctx.shadowBlur = 8;
+        ctx.fillRect(b.x, y, b.w, BLOCK_H - 2);
+        ctx.restore();
+      }
+
+      if (phaseRef.current === 'playing' && movingRef.current) {
+        const moving = movingRef.current;
+        const y = baseY - stack.length * BLOCK_H + (camShift - (stack.length - 1) * BLOCK_H);
+        ctx.save();
+        ctx.fillStyle = moving.color;
+        ctx.shadowColor = moving.color;
+        ctx.shadowBlur = 14;
+        ctx.fillRect(moving.x, y, moving.w, BLOCK_H - 2);
+        ctx.restore();
+
+        // guide line showing target alignment with block below
+        const top = stack[stack.length - 1];
+        const topY = y + BLOCK_H;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 5]);
+        ctx.beginPath();
+        ctx.moveTo(top.x, topY);
+        ctx.lineTo(top.x + top.w, topY);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      for (const pt of particlesRef.current) {
+        const a = clamp(pt.life / pt.maxLife, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = pt.color;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    };
+
+    const tick = (now) => {
+      draw(now);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, []);
+
+  const onFieldPress = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    e.preventDefault();
+    drop();
+  }, [drop]);
+
+  return (
+    <div className="app">
+      <div className="bgGlow"></div>
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{score}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Level</div>
+          <div className="hudValue" data-testid="level">{level}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Best</div>
+          <div className="hudValue best" data-testid="best">{best}</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <div className="title">PULSE STACK</div>
+          <div className="subtitle">
+            A glowing block swings back and forth above your tower. Tap, click, or press Space to drop it — land it dead-center on the block below for a PERFECT snap that locks the width and builds your combo multiplier. Off-center drops trim the block down to the overlap, shrinking your landing zone. Each level speeds up the swing. Miss the stack entirely, or trim down to nothing, and the tower topples.
+          </div>
+        </div>
+      )}
+
+      <div
+        className={"fieldOuter" + (shakeIt ? " shakeIt" : "")}
+        data-testid="play-field"
+        ref={fieldRef}
+        onMouseDown={onFieldPress}
+        onTouchStart={onFieldPress}
+      >
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+        {phase === 'playing' && (
+          <div className="tapHint">Tap anywhere to drop</div>
+        )}
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 22 }}>TOWER TOPPLED</div>
+            <div className="hudValue" style={{ fontSize: 26 }}>{score}</div>
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      <div className="status">{statusMsg}</div>
+      <div className="footer">PULSE STACK · NEON ARCADE</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
