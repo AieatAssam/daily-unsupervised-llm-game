@@ -4129,5 +4129,26 @@
     "preview": "games/2026-10-04/preview.png",
     "rating": 4.2,
     "broken": true
+  },
+  {
+    "id": "2026-10-05",
+    "name": "Neon Transit",
+    "date": "2026-10-05",
+    "description": "Three glowing lanes race toward you on an endless neon transit line. Switch lanes to dodge what you can't clear, leap over low hurdles, and slide under high beams — get the wrong action and you lose a life. Grab gold orbs for bonus score and chain clean dodges into a rising combo multiplier as the line gets faster and faster.",
+    "tagline": "Switch lanes. Jump. Duck. Survive the line.",
+    "tags": [
+      "endless-runner",
+      "reflex",
+      "lane-switching",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow Left/Right or A/D, or swipe left/right on the field, or tap the ◀ ▶ buttons, to switch lanes; Arrow Up / W / Space, tap/click the field, or tap JUMP to leap over low hurdles; Arrow Down / S or tap DUCK to slide under high beams",
+    "folder": "games/2026-10-05",
+    "file": "games/2026-10-05/index.html",
+    "preview": "games/2026-10-05/preview.png",
+    "rating": 4.3
   }
 ]

@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Neon Transit</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #06040f; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 0%, #15123a 0%, #0a0820 50%, #06040f 100%);
+  }
+
+  .bgGlow {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.55;
+    background: radial-gradient(circle at 15% 10%, rgba(255,61,181,0.14), transparent 40%),
+                radial-gradient(circle at 85% 15%, rgba(61,209,255,0.16), transparent 40%),
+                radial-gradient(circle at 50% 95%, rgba(123,90,255,0.14), transparent 45%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 440px;
+    padding: 4px 8px; z-index: 15; gap: 2px; position: relative; flex-wrap: wrap;
+  }
+  .hudBox { text-align: center; min-width: 44px; }
+  .hudLabel { font-size: 8px; letter-spacing: 1.5px; color: #8fd9ff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 17px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #3dd1ff, 0 0 20px #3dd1ff;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.best { color: #7b5aff; text-shadow: 0 0 10px #7b5aff, 0 0 20px #7b5aff; }
+  .hudValue.lives { color: #ff3da5; text-shadow: 0 0 10px #ff3da5, 0 0 20px #ff3da5; }
+  .hudValue.pulse { animation: hudPulse 0.35s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 28px); font-weight: 900; letter-spacing: 3px; margin-top: 8px;
+    background: linear-gradient(90deg, #ff3da5, #7b5aff, #3dd1ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(255,61,165,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(255,61,165,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(61,209,255,0.85)); } }
+
+  .subtitle { color: #c8d4e8; font-size: 12px; letter-spacing: 0.5px; text-align: center; max-width: 420px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 14px 38px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #ff3da5, #7b5aff);
+    border: none; border-radius: 50px; color: #060616; cursor: pointer;
+    box-shadow: 0 0 20px rgba(255,61,165,0.7), 0 0 50px rgba(123,90,255,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(255,61,165,0.9), 0 0 70px rgba(123,90,255,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #7b5aff; font-size: 13px; text-shadow: 0 0 8px rgba(123,90,255,0.6); }
+
+  .fieldOuter {
+    position: relative; width: min(92vw, 380px); height: min(66vh, 540px); z-index: 5;
+    border-radius: 16px; overflow: hidden; border: 2px solid rgba(255,61,165,0.3);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 0 30px rgba(255,61,165,0.14);
+    background: #04030c; touch-action: none;
+    margin-top: 4px;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  .gameCanvas { width: 100%; height: 100%; display: block; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.08s ease;
+  }
+  .flashOverlay.good { opacity: 0.2; background: #4fffb0; }
+  .flashOverlay.bad { opacity: 0.32; background: #ff3355; }
+  .flashOverlay.speed { opacity: 0.28; background: #7b5aff; }
+
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(4,3,12,0.75); z-index: 20; text-align: center; padding: 20px;
+  }
+
+  .controlsRow {
+    display: flex; gap: 8px; width: min(92vw, 380px); margin-top: 6px; z-index: 15; justify-content: center;
+  }
+  .ctrlBtn {
+    min-width: 56px; min-height: 48px; border-radius: 14px; border: 2px solid rgba(255,255,255,0.3);
+    background: linear-gradient(135deg, #3dd1ff, #7b5aff); color: #060616; font-size: 15px; font-weight: 900;
+    letter-spacing: 1px; cursor: pointer; box-shadow: 0 0 14px rgba(61,209,255,0.6);
+    transition: transform 0.08s ease, box-shadow 0.08s ease; flex: 1;
+  }
+  .ctrlBtn.jump { background: linear-gradient(135deg, #4fffb0, #3dd1ff); }
+  .ctrlBtn.duck { background: linear-gradient(135deg, #ffd23d, #ff8f3d); }
+  .ctrlBtn:active { transform: scale(0.92); }
+  .hintRow { font-size: 10px; color: #7389a8; text-align: center; padding: 0 10px; }
+
+  .status { font-size: 12px; color: #b8c8d8; min-height: 16px; text-align: center; padding: 0 10px; z-index: 15; }
+  .footer { font-size: 9px; color: #4a5a68; letter-spacing: 1px; padding-bottom: 2px; z-index: 15; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect } = React;
+
+const HS_KEY = 'neonTransitHighScore';
+const LANES = 3;
+const START_LIVES = 3;
+const JUMP_MS = 420;
+const DUCK_MS = 480;
+const INVULN_MS = 500;
+const COLLIDE_WINDOW = 28;
+const TILE_H = 46;
+const BASE_SCROLL = 230;
+const MAX_SCROLL = 600;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function spawnBurst(list, x, y, color, count, speed, minSize, maxSize, life) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = speed * (0.4 + Math.random() * 0.8);
+    list.push({
+      x, y,
+      vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+      size: minSize + Math.random() * (maxSize - minSize),
+      color, life, maxLife: life,
+    });
+  }
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const noiseBufRef = useRef(null);
+
+  const ensure = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+      const ctx = ctxRef.current;
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.25, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      noiseBufRef.current = buf;
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const tone = useCallback((freq, dur, type, gainVal, when, freqEnd) => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const t0 = ctx.currentTime + (when || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t0 + dur);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(gainVal, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }, []);
+
+  const noise = useCallback((dur, gainVal) => {
+    const ctx = ctxRef.current;
+    if (!ctx || !noiseBufRef.current) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBufRef.current;
+    const gain = ctx.createGain();
+    const t0 = ctx.currentTime;
+    gain.gain.setValueAtTime(gainVal, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(gain).connect(ctx.destination);
+    src.start(t0);
+    src.stop(t0 + dur);
+  }, []);
+
+  return {
+    ensure,
+    jumpSound: () => tone(520, 0.1, 'triangle', 0.16, 0, 720),
+    duckSound: () => tone(300, 0.1, 'triangle', 0.16, 0, 160),
+    laneSound: () => tone(600, 0.05, 'square', 0.08, 0),
+    orbSound: (combo) => { tone(660 + combo * 18, 0.08, 'sine', 0.2, 0); tone(990 + combo * 18, 0.1, 'sine', 0.14, 0.03); },
+    hitSound: () => { noise(0.2, 0.3); tone(120, 0.22, 'sawtooth', 0.16, 0, 50); },
+    speedSound: () => { tone(523, 0.08, 'sine', 0.18, 0); tone(784, 0.14, 'sine', 0.18, 0.08); },
+    overSound: () => { tone(392, 0.22, 'sawtooth', 0.18, 0, 180); },
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start');
+  const [score, setScoreState] = useState(0);
+  const [combo, setComboState] = useState(0);
+  const [lives, setLivesState] = useState(START_LIVES);
+  const [best, setBest] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [comboPulse, setComboPulse] = useState(false);
+  const [flashKind, setFlashKind] = useState(null);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('Weave the transit lanes.');
+
+  const phaseRef = useRef('start');
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const livesRef = useRef(START_LIVES);
+  const bestRef = useRef(best);
+  const nextSpeedMilestoneRef = useRef(500);
+
+  const laneRef = useRef(1);
+  const playerXRef = useRef(0);
+  const jumpStartRef = useRef(-1);
+  const duckUntilRef = useRef(0);
+  const invulnUntilRef = useRef(0);
+
+  const obstaclesRef = useRef([]);
+  const particlesRef = useRef([]);
+  const scrollSpeedRef = useRef(BASE_SCROLL);
+  const nextSpawnRef = useRef(0);
+  const nextOrbRef = useRef(0);
+  const lastFrameRef = useRef(0);
+  const swipeRef = useRef({ active: false, x: 0, y: 0 });
+
+  const rafRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const dimsRef = useRef({ w: 0, h: 0 });
+  const flashTimeoutRef = useRef(null);
+  const shakeTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+
+  const audio = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const startGame = useCallback(() => {
+    audio.ensure();
+    resizeCanvas();
+    scoreRef.current = 0; setScoreState(0);
+    comboRef.current = 0; setComboState(0);
+    livesRef.current = START_LIVES; setLivesState(START_LIVES);
+    laneRef.current = 1;
+    playerXRef.current = 0;
+    jumpStartRef.current = -1;
+    duckUntilRef.current = 0;
+    invulnUntilRef.current = 0;
+    obstaclesRef.current = [];
+    particlesRef.current = [];
+    scrollSpeedRef.current = BASE_SCROLL;
+    nextSpeedMilestoneRef.current = 500;
+    const now = performance.now();
+    nextSpawnRef.current = now + 900;
+    nextOrbRef.current = now + 1400;
+    lastFrameRef.current = now;
+    setStatusMsg('Weave the transit lanes.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [audio, resizeCanvas]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  const endGame = useCallback(() => {
+    phaseRef.current = 'over';
+    setPhase('over');
+    audio.overSound();
+    setStatusMsg('Line terminated.');
+    const finalScore = Math.floor(scoreRef.current);
+    if (finalScore > bestRef.current) {
+      bestRef.current = finalScore;
+      localStorage.setItem(HS_KEY, String(finalScore));
+      setBest(finalScore);
+    }
+  }, [audio]);
+
+  const takeHit = useCallback((now) => {
+    invulnUntilRef.current = now + INVULN_MS;
+    livesRef.current -= 1;
+    setLivesState(livesRef.current);
+    comboRef.current = 0; setComboState(0);
+    audio.hitSound();
+    triggerFlash('bad', 260);
+    setShakeIt(true);
+    clearTimeout(shakeTimeoutRef.current);
+    shakeTimeoutRef.current = setTimeout(() => setShakeIt(false), 300);
+    setStatusMsg('Hit! Combo lost.');
+    if (livesRef.current <= 0) endGame();
+  }, [audio, triggerFlash, endGame]);
+
+  const registerGood = useCallback((kind, px, py, now) => {
+    comboRef.current += 1;
+    setComboState(comboRef.current);
+    setComboPulse(true);
+    clearTimeout(comboPulseTimeoutRef.current);
+    comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 280);
+
+    const mult = clamp(1 + Math.floor(comboRef.current / 5) * 0.5, 1, 3.5);
+    const gained = kind === 'orb' ? Math.round(18 * mult) : Math.round(8 * mult);
+    scoreRef.current += gained;
+    setScoreState(scoreRef.current);
+    if (kind === 'orb') {
+      audio.orbSound(comboRef.current);
+      spawnBurst(particlesRef.current, px, py, '#ffd23d', 12, 80, 1.5, 3.2, 380);
+      setStatusMsg(`Orb +${gained} x${mult.toFixed(1)}`);
+    } else {
+      spawnBurst(particlesRef.current, px, py, '#4fffb0', 8, 60, 1.2, 2.6, 300);
+      setStatusMsg(kind === 'jump' ? `Clean jump! +${gained}` : `Clean duck! +${gained}`);
+    }
+
+    if (scoreRef.current >= nextSpeedMilestoneRef.current) {
+      nextSpeedMilestoneRef.current += 500;
+      scrollSpeedRef.current = clamp(scrollSpeedRef.current + 35, BASE_SCROLL, MAX_SCROLL);
+      audio.speedSound();
+      triggerFlash('speed', 350);
+      setStatusMsg('Line speeding up!');
+    }
+  }, [audio, triggerFlash]);
+
+  const doJump = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    if (jumpStartRef.current >= 0) return;
+    jumpStartRef.current = performance.now();
+    audio.jumpSound();
+  }, [audio]);
+
+  const doDuck = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    duckUntilRef.current = performance.now() + DUCK_MS;
+    audio.duckSound();
+  }, [audio]);
+
+  const changeLane = useCallback((dir) => {
+    if (phaseRef.current !== 'playing') return;
+    const next = clamp(laneRef.current + dir, 0, LANES - 1);
+    if (next !== laneRef.current) {
+      laneRef.current = next;
+      audio.laneSound();
+    }
+  }, [audio]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); changeLane(-1); }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); changeLane(1); }
+      else if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') { e.preventDefault(); doJump(); }
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); doDuck(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [changeLane, doJump, doDuck]);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+  }, []);
+
+  useEffect(() => {
+    const draw = (now) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const { w, h } = dimsRef.current;
+      if (w < 5 || h < 5) return;
+      const dt = Math.min(0.05, (now - lastFrameRef.current) / 1000 || 0);
+      lastFrameRef.current = now;
+
+      ctx.fillStyle = '#04030c';
+      ctx.fillRect(0, 0, w, h);
+
+      const laneW = w / LANES;
+      const playerY = h * 0.82;
+
+      // scrolling lane dividers
+      ctx.strokeStyle = 'rgba(123,90,255,0.18)';
+      ctx.lineWidth = 2;
+      for (let i = 1; i < LANES; i++) {
+        ctx.beginPath();
+        ctx.moveTo(laneW * i, 0);
+        ctx.lineTo(laneW * i, h);
+        ctx.stroke();
+      }
+      const scrollOffset = (now * 0.001 * scrollSpeedRef.current) % 40;
+      ctx.strokeStyle = 'rgba(61,209,255,0.06)';
+      ctx.lineWidth = 1;
+      for (let y = -40 + scrollOffset; y < h; y += 40) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+
+      const playing = phaseRef.current === 'playing';
+
+      if (playing) {
+        const speed = scrollSpeedRef.current;
+
+        if (now >= nextSpawnRef.current) {
+          const count = scoreRef.current > 800 && Math.random() < 0.35 ? 2 : 1;
+          const lanesUsed = new Set();
+          for (let i = 0; i < count; i++) {
+            let lane = Math.floor(Math.random() * LANES);
+            let tries = 0;
+            while (lanesUsed.has(lane) && tries < 5) { lane = Math.floor(Math.random() * LANES); tries++; }
+            if (lanesUsed.size < LANES - 1) lanesUsed.add(lane);
+            const type = Math.random() < 0.5 ? 'low' : 'high';
+            obstaclesRef.current.push({ lane, type, y: -TILE_H, resolved: false, kind: 'obstacle' });
+          }
+          const base = clamp(900 - scoreRef.current * 0.25, 420, 900);
+          nextSpawnRef.current = now + base + Math.random() * 200;
+        }
+
+        if (now >= nextOrbRef.current) {
+          const lane = Math.floor(Math.random() * LANES);
+          obstaclesRef.current.push({ lane, type: 'orb', y: -TILE_H, resolved: false, kind: 'orb' });
+          nextOrbRef.current = now + 1100 + Math.random() * 900;
+        }
+
+        for (const o of obstaclesRef.current) {
+          o.y += speed * dt;
+        }
+
+        const playerLane = laneRef.current;
+        const jumping = jumpStartRef.current >= 0;
+        let jumpProgress = 0;
+        if (jumping) {
+          jumpProgress = (now - jumpStartRef.current) / JUMP_MS;
+          if (jumpProgress >= 1) { jumpStartRef.current = -1; jumpProgress = 0; }
+        }
+        const jumpActive = jumping && jumpProgress > 0.08 && jumpProgress < 0.92;
+        const ducking = now < duckUntilRef.current;
+        const invuln = now < invulnUntilRef.current;
+
+        for (const o of obstaclesRef.current) {
+          if (o.resolved) continue;
+          const dyAbs = Math.abs(o.y - playerY);
+          if (dyAbs < COLLIDE_WINDOW) {
+            if (o.lane === playerLane) {
+              if (o.kind === 'orb') {
+                o.resolved = true;
+                registerGood('orb', laneW * (playerLane + 0.5), playerY, now);
+              } else if (o.type === 'low') {
+                if (jumpActive) { o.resolved = true; registerGood('jump', laneW * (playerLane + 0.5), playerY, now); }
+                else if (!invuln) { o.resolved = true; takeHit(now); }
+              } else if (o.type === 'high') {
+                if (ducking) { o.resolved = true; registerGood('duck', laneW * (playerLane + 0.5), playerY, now); }
+                else if (!invuln) { o.resolved = true; takeHit(now); }
+              }
+            }
+          } else if (o.y - playerY > COLLIDE_WINDOW && !o.resolved) {
+            o.resolved = true;
+            if (o.kind === 'obstacle' && o.lane !== playerLane) {
+              scoreRef.current += 2;
+              setScoreState(scoreRef.current);
+            }
+          }
+        }
+        obstaclesRef.current = obstaclesRef.current.filter(o => o.y < h + TILE_H);
+
+        scoreRef.current += speed * dt * 0.05;
+        setScoreState(Math.floor(scoreRef.current));
+
+        const targetX = laneW * (playerLane + 0.5);
+        playerXRef.current += (targetX - playerXRef.current) * Math.min(1, dt * 10);
+      }
+
+      // particles
+      const particles = particlesRef.current;
+      for (const pt of particles) {
+        pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+        pt.vx *= 0.94; pt.vy *= 0.94; pt.life -= dt * 1000;
+      }
+      particlesRef.current = particles.filter(pt => pt.life > 0);
+
+      // draw obstacles
+      for (const o of obstaclesRef.current) {
+        const cx = laneW * (o.lane + 0.5);
+        const tileW = laneW * 0.72;
+        ctx.save();
+        if (o.kind === 'orb') {
+          ctx.fillStyle = '#ffd23d';
+          ctx.shadowColor = '#ffd23d';
+          ctx.shadowBlur = 16;
+          ctx.beginPath();
+          ctx.arc(cx, o.y, 11, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (o.type === 'low') {
+          ctx.fillStyle = '#ff5577';
+          ctx.shadowColor = '#ff5577';
+          ctx.shadowBlur = 14;
+          ctx.fillRect(cx - tileW / 2, o.y + 4, tileW, TILE_H * 0.4);
+        } else {
+          ctx.fillStyle = '#9d6bff';
+          ctx.shadowColor = '#9d6bff';
+          ctx.shadowBlur = 14;
+          ctx.fillRect(cx - tileW / 2, o.y - TILE_H * 0.44, tileW, TILE_H * 0.4);
+        }
+        ctx.restore();
+      }
+
+      for (const pt of particlesRef.current) {
+        const a = clamp(pt.life / pt.maxLife, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = pt.color;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+
+      // player
+      if (playing || phaseRef.current === 'over') {
+        const px = playerXRef.current || laneW * 1.5;
+        const jumping = jumpStartRef.current >= 0;
+        let jumpOffset = 0;
+        if (jumping) {
+          const jp = clamp((now - jumpStartRef.current) / JUMP_MS, 0, 1);
+          jumpOffset = -Math.sin(jp * Math.PI) * 46;
+        }
+        const ducking = now < duckUntilRef.current;
+        const py = playerY + jumpOffset;
+        const squash = ducking ? 0.5 : 1;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.scale(1, squash);
+        const flashing = now < invulnUntilRef.current && Math.floor(now / 80) % 2 === 0;
+        ctx.fillStyle = flashing ? 'rgba(61,209,255,0.4)' : '#3dd1ff';
+        ctx.shadowColor = '#3dd1ff';
+        ctx.shadowBlur = 18;
+        const R = 16;
+        ctx.beginPath();
+        ctx.moveTo(0, -R);
+        ctx.lineTo(R * 0.8, 0);
+        ctx.lineTo(0, R);
+        ctx.lineTo(-R * 0.8, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    };
+
+    const tick = (now) => {
+      draw(now);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [registerGood, takeHit]);
+
+  const onFieldTouchStart = useCallback((e) => {
+    if (phaseRef.current !== 'playing') return;
+    const t = e.touches[0];
+    swipeRef.current = { active: true, x: t.clientX, y: t.clientY };
+  }, []);
+
+  const onFieldTouchEnd = useCallback((e) => {
+    if (phaseRef.current !== 'playing' || !swipeRef.current.active) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - swipeRef.current.x;
+    const dy = t.clientY - swipeRef.current.y;
+    swipeRef.current.active = false;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
+      changeLane(dx > 0 ? 1 : -1);
+    } else if (Math.abs(dy) > 30) {
+      if (dy < 0) doJump(); else doDuck();
+    } else {
+      doJump();
+    }
+  }, [changeLane, doJump, doDuck]);
+
+  const onFieldClick = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    doJump();
+  }, [doJump]);
+
+  const btnHandler = useCallback((fn) => (e) => { e.stopPropagation(); e.preventDefault(); fn(); }, []);
+
+  return (
+    <div className="app">
+      <div className="bgGlow"></div>
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{Math.floor(score)}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Combo</div>
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Lives</div>
+          <div className="hudValue lives" data-testid="lives">{lives}</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudLabel">Best</div>
+          <div className="hudValue best" data-testid="best">{best}</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <div className="title">NEON TRANSIT</div>
+          <div className="subtitle">
+            Three glowing lanes race toward you. Press Arrow Left/Right or A/D, or swipe left/right on the field, to switch lanes. Press Arrow Up / W / Space, tap/click the field, or tap JUMP to leap over a low hurdle. Press Arrow Down / S or tap DUCK to slide under a high beam. Grab gold orbs for bonus score, chain clean dodges for a rising combo, and dodge the wrong way and you lose a life. The line only gets faster.
+          </div>
+        </div>
+      )}
+
+      <div
+        className={"fieldOuter" + (shakeIt ? " shakeIt" : "")}
+        data-testid="play-field"
+        ref={fieldRef}
+        onClick={onFieldClick}
+        onTouchStart={onFieldTouchStart}
+        onTouchEnd={onFieldTouchEnd}
+      >
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 22 }}>LINE TERMINATED</div>
+            <div className="hudValue" style={{ fontSize: 26 }}>{Math.floor(score)}</div>
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      {phase === 'playing' && (
+        <div className="controlsRow">
+          <button className="ctrlBtn" data-testid="left-btn" onClick={btnHandler(() => changeLane(-1))} onTouchStart={btnHandler(() => changeLane(-1))}>◀</button>
+          <button className="ctrlBtn jump" data-testid="jump-btn" onClick={btnHandler(doJump)} onTouchStart={btnHandler(doJump)}>JUMP</button>
+          <button className="ctrlBtn duck" data-testid="duck-btn" onClick={btnHandler(doDuck)} onTouchStart={btnHandler(doDuck)}>DUCK</button>
+          <button className="ctrlBtn" data-testid="right-btn" onClick={btnHandler(() => changeLane(1))} onTouchStart={btnHandler(() => changeLane(1))}>▶</button>
+        </div>
+      )}
+
+      <div className="status">{statusMsg}</div>
+      <div className="hintRow">Arrows/WASD or swipe to switch lanes · Up/Space jump · Down duck</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
