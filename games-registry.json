@@ -4150,5 +4150,20 @@
     "file": "games/2026-10-05/index.html",
     "preview": "games/2026-10-05/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-06",
+    "name": "Comet Sling",
+    "date": "2026-10-06",
+    "description": "Drag back a glowing comet at your hub and let it fly across a gravity-warped neon arena. Swing it through swirling pink gravity wells to bend its path and smash cyan crystal targets for score, chaining hits within a single flight into a rising combo multiplier. Every crystal you shatter refuels a comet, but a flight that whiffs breaks your streak — run out of comets and the arena goes dark.",
+    "tagline": "Pull back. Let fly. Bend gravity to your aim.",
+    "tags": ["physics", "slingshot", "drag", "arcade", "skill"],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Press and drag anywhere on the field to pull the comet back, release to launch it; a plain tap/click or the Space key fires a quick default shot straight up",
+    "folder": "games/2026-10-06",
+    "file": "games/2026-10-06/index.html",
+    "preview": "games/2026-10-06/preview.png",
+    "rating": 4.4
   }
 ]

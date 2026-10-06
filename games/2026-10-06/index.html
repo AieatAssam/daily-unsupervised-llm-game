@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Comet Sling</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #060414; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 0%, #19123f 0%, #0b0822 50%, #060414 100%);
+  }
+
+  .bgGlow {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.55;
+    background: radial-gradient(circle at 20% 15%, rgba(255,205,61,0.12), transparent 40%),
+                radial-gradient(circle at 80% 20%, rgba(61,220,255,0.14), transparent 40%),
+                radial-gradient(circle at 50% 95%, rgba(255,61,181,0.14), transparent 45%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 440px;
+    padding: 4px 8px; z-index: 15; gap: 2px; position: relative; flex-wrap: wrap;
+  }
+  .hudBox { text-align: center; min-width: 44px; }
+  .hudLabel { font-size: 8px; letter-spacing: 1.5px; color: #8fd9ff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 17px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #3dd1ff, 0 0 20px #3dd1ff;
+  }
+  .hudValue.combo { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 22px #b3860a; }
+  .hudValue.best { color: #7b5aff; text-shadow: 0 0 10px #7b5aff, 0 0 20px #7b5aff; }
+  .hudValue.ammo { color: #ff8f3d; text-shadow: 0 0 10px #ff8f3d, 0 0 20px #ff8f3d; }
+  .hudValue.pulse { animation: hudPulse 0.35s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 28px); font-weight: 900; letter-spacing: 3px; margin-top: 8px;
+    background: linear-gradient(90deg, #ffd23d, #ff3da5, #3dd1ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(255,210,61,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(255,210,61,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(61,209,255,0.85)); } }
+
+  .subtitle { color: #c8d4e8; font-size: 12px; letter-spacing: 0.5px; text-align: center; max-width: 420px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 14px 38px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #ffd23d, #ff3da5);
+    border: none; border-radius: 50px; color: #060616; cursor: pointer;
+    box-shadow: 0 0 20px rgba(255,210,61,0.7), 0 0 50px rgba(255,61,165,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(255,210,61,0.9), 0 0 70px rgba(255,61,165,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #7b5aff; font-size: 13px; text-shadow: 0 0 8px rgba(123,90,255,0.6); }
+
+  .fieldOuter {
+    position: relative; width: min(92vw, 380px); height: min(66vh, 540px); z-index: 5;
+    border-radius: 16px; overflow: hidden; border: 2px solid rgba(255,210,61,0.3);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 0 30px rgba(255,210,61,0.14);
+    background: #04030c; touch-action: none;
+    margin-top: 4px;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  .gameCanvas { width: 100%; height: 100%; display: block; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.08s ease;
+  }
+  .flashOverlay.good { opacity: 0.22; background: #4fffb0; }
+  .flashOverlay.bad { opacity: 0.3; background: #ff3355; }
+  .flashOverlay.level { opacity: 0.26; background: #7b5aff; }
+
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(4,3,12,0.75); z-index: 20; text-align: center; padding: 20px;
+  }
+
+  .status { font-size: 12px; color: #b8c8d8; min-height: 16px; text-align: center; padding: 0 10px; z-index: 15; }
+  .hintRow { font-size: 10px; color: #7389a8; text-align: center; padding: 0 10px; }
+  .footer { font-size: 9px; color: #4a5a68; letter-spacing: 1px; padding-bottom: 2px; z-index: 15; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect } = React;
+
+const HS_KEY = 'cometSlingHighScore';
+const START_AMMO = 5;
+const MAX_AMMO = 8;
+const COMET_R = 9;
+const MIN_PULL = 18;
+const MAX_PULL = 100;
+const MIN_LAUNCH_SPEED = 230;
+const MAX_LAUNCH_SPEED = 620;
+const PULL_POWER = 4.6;
+const FLIGHT_STOP_SPEED = 42;
+const FLIGHT_MAX_MS = 9000;
+const WALL_DAMP = 0.82;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist2(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; }
+
+function spawnBurst(list, x, y, color, count, speed, minSize, maxSize, life) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = speed * (0.4 + Math.random() * 0.8);
+    list.push({
+      x, y,
+      vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+      size: minSize + Math.random() * (maxSize - minSize),
+      color, life, maxLife: life,
+    });
+  }
+}
+
+function difficultyFor(score) {
+  const level = score < 150 ? 0 : score < 400 ? 1 : score < 800 ? 2 : 3;
+  return {
+    crystalsTarget: Math.min(6, 3 + level),
+    wellsTarget: score < 220 ? 1 : score < 650 ? 2 : 3,
+  };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const noiseBufRef = useRef(null);
+
+  const ensure = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+      const ctx = ctxRef.current;
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.25, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      noiseBufRef.current = buf;
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const tone = useCallback((freq, dur, type, gainVal, when, freqEnd) => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const t0 = ctx.currentTime + (when || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t0 + dur);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(gainVal, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }, []);
+
+  const noise = useCallback((dur, gainVal) => {
+    const ctx = ctxRef.current;
+    if (!ctx || !noiseBufRef.current) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBufRef.current;
+    const gain = ctx.createGain();
+    const t0 = ctx.currentTime;
+    gain.gain.setValueAtTime(gainVal, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(gain).connect(ctx.destination);
+    src.start(t0);
+    src.stop(t0 + dur);
+  }, []);
+
+  return {
+    ensure,
+    launchSound: () => tone(220, 0.14, 'sawtooth', 0.14, 0, 480),
+    hitSound: (combo) => { tone(680 + combo * 20, 0.09, 'sine', 0.2, 0); tone(1020 + combo * 20, 0.12, 'sine', 0.14, 0.03); },
+    wellSound: () => tone(140, 0.08, 'triangle', 0.08, 0),
+    fizzleSound: () => tone(300, 0.26, 'sawtooth', 0.12, 0, 90),
+    levelSound: () => { tone(523, 0.08, 'sine', 0.18, 0); tone(784, 0.14, 'sine', 0.18, 0.08); },
+    overSound: () => tone(392, 0.24, 'sawtooth', 0.18, 0, 160),
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start');
+  const [score, setScoreState] = useState(0);
+  const [combo, setComboState] = useState(0);
+  const [ammo, setAmmoState] = useState(START_AMMO);
+  const [best, setBest] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [comboPulse, setComboPulse] = useState(false);
+  const [flashKind, setFlashKind] = useState(null);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('Pull back and let fly.');
+
+  const phaseRef = useRef('start');
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const ammoRef = useRef(START_AMMO);
+  const bestRef = useRef(best);
+  const nextLevelMilestoneRef = useRef(220);
+
+  const cometRef = useRef({ x: 0, y: 0, vx: 0, vy: 0, inFlight: false, flightStart: 0, hits: 0 });
+  const wellsRef = useRef([]);
+  const crystalsRef = useRef([]);
+  const particlesRef = useRef([]);
+  const dragRef = useRef({ active: false, x: 0, y: 0 });
+  const lastFrameRef = useRef(0);
+
+  const rafRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const dimsRef = useRef({ w: 0, h: 0 });
+  const flashTimeoutRef = useRef(null);
+  const shakeTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+
+  const audio = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const hubPos = useCallback(() => {
+    const { w, h } = dimsRef.current;
+    return { x: w / 2, y: h - 36 };
+  }, []);
+
+  const randomPos = useCallback((minSep, avoid) => {
+    const { w, h } = dimsRef.current;
+    const hub = hubPos();
+    for (let tries = 0; tries < 30; tries++) {
+      const x = 24 + Math.random() * Math.max(1, w - 48);
+      const y = 24 + Math.random() * Math.max(1, h - 90);
+      if (dist2(x, y, hub.x, hub.y) < 90 * 90) continue;
+      let ok = true;
+      for (const p of avoid) {
+        if (dist2(x, y, p.x, p.y) < minSep * minSep) { ok = false; break; }
+      }
+      if (ok) return { x, y };
+    }
+    return { x: 24 + Math.random() * Math.max(1, w - 48), y: 24 + Math.random() * Math.max(1, h - 90) };
+  }, [hubPos]);
+
+  const ensureWells = useCallback((target) => {
+    const wells = wellsRef.current;
+    while (wells.length < target) {
+      const pos = randomPos(70, [...wells, ...crystalsRef.current]);
+      wells.push({ x: pos.x, y: pos.y, strength: 20000 + Math.random() * 6000, radius: 22, spin: Math.random() * Math.PI * 2 });
+    }
+  }, [randomPos]);
+
+  const ensureCrystals = useCallback((target) => {
+    const crystals = crystalsRef.current;
+    while (crystals.length < target) {
+      const pos = randomPos(55, [...wellsRef.current, ...crystals]);
+      crystals.push({ x: pos.x, y: pos.y, baseX: pos.x, baseY: pos.y, r: 13, phase: Math.random() * Math.PI * 2, glow: 1 });
+    }
+  }, [randomPos]);
+
+  const startGame = useCallback(() => {
+    audio.ensure();
+    resizeCanvas();
+    scoreRef.current = 0; setScoreState(0);
+    comboRef.current = 0; setComboState(0);
+    ammoRef.current = START_AMMO; setAmmoState(START_AMMO);
+    nextLevelMilestoneRef.current = 220;
+    const hub = hubPos();
+    cometRef.current = { x: hub.x, y: hub.y, vx: 0, vy: 0, inFlight: false, flightStart: 0, hits: 0 };
+    wellsRef.current = [];
+    crystalsRef.current = [];
+    particlesRef.current = [];
+    ensureWells(1);
+    ensureCrystals(3);
+    dragRef.current = { active: false, x: 0, y: 0 };
+    lastFrameRef.current = performance.now();
+    setStatusMsg('Pull back and let fly.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [audio, resizeCanvas, hubPos, ensureWells, ensureCrystals]);
+
+  const endGame = useCallback(() => {
+    phaseRef.current = 'over';
+    setPhase('over');
+    audio.overSound();
+    setStatusMsg('Out of comets.');
+    const finalScore = Math.floor(scoreRef.current);
+    if (finalScore > bestRef.current) {
+      bestRef.current = finalScore;
+      localStorage.setItem(HS_KEY, String(finalScore));
+      setBest(finalScore);
+    }
+  }, [audio]);
+
+  const launchComet = useCallback((vx, vy) => {
+    if (phaseRef.current !== 'playing') return;
+    const comet = cometRef.current;
+    if (comet.inFlight || ammoRef.current <= 0) return;
+    ammoRef.current -= 1; setAmmoState(ammoRef.current);
+    comet.vx = vx; comet.vy = vy;
+    comet.inFlight = true;
+    comet.flightStart = performance.now();
+    comet.hits = 0;
+    audio.launchSound();
+    setStatusMsg('Comet away!');
+  }, [audio]);
+
+  const releaseDrag = useCallback(() => {
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+    if (phaseRef.current !== 'playing' || cometRef.current.inFlight || ammoRef.current <= 0) return;
+    const hub = hubPos();
+    const dx = hub.x - dragRef.current.x;
+    const dy = hub.y - dragRef.current.y;
+    const pullDist = Math.hypot(dx, dy);
+    let vx, vy;
+    if (pullDist < MIN_PULL) {
+      vx = 0; vy = -MIN_LAUNCH_SPEED;
+    } else {
+      const speed = clamp(pullDist * PULL_POWER, MIN_LAUNCH_SPEED, MAX_LAUNCH_SPEED);
+      vx = (dx / pullDist) * speed;
+      vy = (dy / pullDist) * speed;
+    }
+    launchComet(vx, vy);
+  }, [hubPos, launchComet]);
+
+  const launchDefault = useCallback(() => {
+    if (phaseRef.current !== 'playing' || cometRef.current.inFlight || ammoRef.current <= 0) return;
+    launchComet((Math.random() - 0.5) * 120, -MIN_LAUNCH_SPEED - 40);
+  }, [launchComet]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'Space') { e.preventDefault(); launchDefault(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [launchDefault]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+  }, []);
+
+  const registerHit = useCallback((crystal, now) => {
+    comboRef.current += 1;
+    setComboState(comboRef.current);
+    setComboPulse(true);
+    clearTimeout(comboPulseTimeoutRef.current);
+    comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 280);
+
+    const mult = clamp(1 + Math.floor(comboRef.current / 3) * 0.5, 1, 4);
+    const gained = Math.round(15 * mult);
+    scoreRef.current += gained;
+    setScoreState(Math.floor(scoreRef.current));
+    cometRef.current.hits += 1;
+    ammoRef.current = clamp(ammoRef.current + 1, 0, MAX_AMMO);
+    setAmmoState(ammoRef.current);
+
+    audio.hitSound(comboRef.current);
+    spawnBurst(particlesRef.current, crystal.x, crystal.y, '#3dd1ff', 14, 90, 1.5, 3.2, 420);
+    triggerFlash('good', 180);
+    setStatusMsg(`Crystal shattered +${gained} x${mult.toFixed(1)}`);
+
+    const idx = crystalsRef.current.indexOf(crystal);
+    if (idx >= 0) crystalsRef.current.splice(idx, 1);
+
+    if (scoreRef.current >= nextLevelMilestoneRef.current) {
+      nextLevelMilestoneRef.current += 220;
+      audio.levelSound();
+      triggerFlash('level', 320);
+      setStatusMsg('More gravity. More targets.');
+    }
+
+    const diff = difficultyFor(scoreRef.current);
+    ensureWells(diff.wellsTarget);
+    ensureCrystals(diff.crystalsTarget);
+  }, [audio, triggerFlash, ensureWells, ensureCrystals]);
+
+  const endFlight = useCallback((now) => {
+    const comet = cometRef.current;
+    comet.inFlight = false;
+    const hub = hubPos();
+    comet.x = hub.x; comet.y = hub.y; comet.vx = 0; comet.vy = 0;
+    spawnBurst(particlesRef.current, comet.x, comet.y, '#ffd23d', 10, 70, 1.2, 2.6, 320);
+    if (comet.hits === 0) {
+      comboRef.current = 0; setComboState(0);
+      audio.fizzleSound();
+      setShakeIt(true);
+      clearTimeout(shakeTimeoutRef.current);
+      shakeTimeoutRef.current = setTimeout(() => setShakeIt(false), 300);
+      setStatusMsg('Fizzled out. Combo lost.');
+    } else {
+      setStatusMsg(`Flight complete: ${comet.hits} hit${comet.hits > 1 ? 's' : ''}!`);
+    }
+    if (ammoRef.current <= 0) endGame();
+  }, [hubPos, audio, endGame]);
+
+  useEffect(() => {
+    const draw = (now) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const { w, h } = dimsRef.current;
+      if (w < 5 || h < 5) return;
+      const dt = Math.min(0.033, (now - lastFrameRef.current) / 1000 || 0);
+      lastFrameRef.current = now;
+
+      ctx.fillStyle = '#04030c';
+      ctx.fillRect(0, 0, w, h);
+
+      const scrollOffset = (now * 0.04) % 40;
+      ctx.strokeStyle = 'rgba(123,90,255,0.1)';
+      ctx.lineWidth = 1;
+      for (let y = -40 + scrollOffset; y < h; y += 40) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+      for (let x = -40 + scrollOffset; x < w; x += 40) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+
+      const playing = phaseRef.current === 'playing';
+      const hub = hubPos();
+      const comet = cometRef.current;
+
+      if (playing) {
+        // gravity wells
+        for (const well of wellsRef.current) {
+          well.spin += dt * 1.4;
+        }
+
+        // crystal bobbing
+        for (const c of crystalsRef.current) {
+          c.x = c.baseX + Math.sin(now * 0.0016 + c.phase) * 4;
+          c.y = c.baseY + Math.cos(now * 0.0013 + c.phase) * 4;
+        }
+
+        if (comet.inFlight) {
+          for (const well of wellsRef.current) {
+            const dx = well.x - comet.x, dy = well.y - comet.y;
+            const d2 = dx * dx + dy * dy + 400;
+            const d = Math.sqrt(d2);
+            const force = well.strength / d2;
+            comet.vx += (force * dx / d) * dt;
+            comet.vy += (force * dy / d) * dt;
+          }
+
+          comet.vx *= 0.999; comet.vy *= 0.999;
+          comet.x += comet.vx * dt;
+          comet.y += comet.vy * dt;
+
+          if (comet.x < COMET_R) { comet.x = COMET_R; comet.vx = Math.abs(comet.vx) * WALL_DAMP; }
+          else if (comet.x > w - COMET_R) { comet.x = w - COMET_R; comet.vx = -Math.abs(comet.vx) * WALL_DAMP; }
+          if (comet.y < COMET_R) { comet.y = COMET_R; comet.vy = Math.abs(comet.vy) * WALL_DAMP; }
+          else if (comet.y > h - COMET_R) { comet.y = h - COMET_R; comet.vy = -Math.abs(comet.vy) * WALL_DAMP; }
+
+          if (Math.random() < 0.6) {
+            spawnBurst(particlesRef.current, comet.x, comet.y, '#ffd23d', 1, 20, 1, 2, 260);
+          }
+
+          for (const c of [...crystalsRef.current]) {
+            if (dist2(comet.x, comet.y, c.x, c.y) < (COMET_R + c.r) * (COMET_R + c.r)) {
+              registerHit(c, now);
+            }
+          }
+
+          const speed = Math.hypot(comet.vx, comet.vy);
+          if (speed < FLIGHT_STOP_SPEED || now - comet.flightStart > FLIGHT_MAX_MS) {
+            endFlight(now);
+          }
+        } else if (dragRef.current.active) {
+          comet.x = dragRef.current.x;
+          comet.y = dragRef.current.y;
+        } else {
+          comet.x = hub.x; comet.y = hub.y;
+        }
+      }
+
+      // particles
+      const particles = particlesRef.current;
+      for (const pt of particles) {
+        pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+        pt.vx *= 0.94; pt.vy *= 0.94; pt.life -= dt * 1000;
+      }
+      particlesRef.current = particles.filter(pt => pt.life > 0);
+
+      // draw hub
+      ctx.save();
+      const hubPulse = 0.5 + 0.5 * Math.sin(now * 0.004);
+      ctx.strokeStyle = `rgba(255,210,61,${0.4 + hubPulse * 0.3})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(hub.x, hub.y, 16 + hubPulse * 2, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+
+      // draw wells
+      for (const well of wellsRef.current) {
+        ctx.save();
+        const grad = ctx.createRadialGradient(well.x, well.y, 2, well.x, well.y, well.radius * 2.2);
+        grad.addColorStop(0, 'rgba(255,61,181,0.55)');
+        grad.addColorStop(1, 'rgba(255,61,181,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(well.x, well.y, well.radius * 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.translate(well.x, well.y);
+        ctx.rotate(well.spin);
+        ctx.strokeStyle = '#ff3da5';
+        ctx.shadowColor = '#ff3da5';
+        ctx.shadowBlur = 10;
+        ctx.lineWidth = 2;
+        for (let a = 0; a < 3; a++) {
+          ctx.beginPath();
+          ctx.arc(0, 0, well.radius * 0.7, (a * Math.PI * 2) / 3, (a * Math.PI * 2) / 3 + 1.4);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // draw crystals
+      for (const c of crystalsRef.current) {
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        ctx.rotate(now * 0.001 + c.phase);
+        ctx.fillStyle = '#3dd1ff';
+        ctx.shadowColor = '#3dd1ff';
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.moveTo(0, -c.r); ctx.lineTo(c.r, 0); ctx.lineTo(0, c.r); ctx.lineTo(-c.r, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+
+      // draw particles
+      for (const pt of particlesRef.current) {
+        const a = clamp(pt.life / pt.maxLife, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = pt.color;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+
+      // aim line
+      if (playing && dragRef.current.active && !comet.inFlight) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(comet.x, comet.y);
+        ctx.lineTo(hub.x + (hub.x - comet.x) * 1.4, hub.y + (hub.y - comet.y) * 1.4);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // draw comet
+      if (playing || phaseRef.current === 'over') {
+        ctx.save();
+        ctx.fillStyle = '#ffd23d';
+        ctx.shadowColor = '#ffd23d';
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.arc(comet.x, comet.y, COMET_R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    };
+
+    const tick = (now) => {
+      draw(now);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [registerHit, endFlight, hubPos]);
+
+  const posFromEvent = useCallback((e) => {
+    const field = fieldRef.current;
+    const rect = field.getBoundingClientRect();
+    const touch = e.touches && e.touches[0];
+    const clientX = touch ? touch.clientX : e.clientX;
+    const clientY = touch ? touch.clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }, []);
+
+  const clampToPull = useCallback((x, y) => {
+    const hub = hubPos();
+    const dx = x - hub.x, dy = y - hub.y;
+    const d = Math.hypot(dx, dy);
+    if (d <= MAX_PULL || d === 0) return { x, y };
+    const scale = MAX_PULL / d;
+    return { x: hub.x + dx * scale, y: hub.y + dy * scale };
+  }, [hubPos]);
+
+  const onPointerDown = useCallback((e) => {
+    if (phaseRef.current !== 'playing' || cometRef.current.inFlight || ammoRef.current <= 0) return;
+    e.preventDefault();
+    const p = clampToPull(...Object.values(posFromEvent(e)));
+    dragRef.current = { active: true, x: p.x, y: p.y };
+  }, [posFromEvent, clampToPull]);
+
+  const onPointerMove = useCallback((e) => {
+    if (!dragRef.current.active) return;
+    e.preventDefault();
+    const p = clampToPull(...Object.values(posFromEvent(e)));
+    dragRef.current.x = p.x; dragRef.current.y = p.y;
+  }, [posFromEvent, clampToPull]);
+
+  const onPointerUp = useCallback((e) => {
+    if (!dragRef.current.active) return;
+    e.preventDefault();
+    releaseDrag();
+  }, [releaseDrag]);
+
+  return (
+    <div className="app">
+      <div className="bgGlow"></div>
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{Math.floor(score)}</div>
+        </div>
+        <div className="hudBox">
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+          <div className="hudLabel">Combo</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudValue ammo" data-testid="ammo">{ammo}</div>
+          <div className="hudLabel">Comets</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudValue best" data-testid="best">{best}</div>
+          <div className="hudLabel">Best</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <div className="title">COMET SLING</div>
+          <div className="subtitle">
+            Press and drag from the field to pull your comet back, then release to sling it across the arena. Swing it through pink gravity wells to bend its path and smash the cyan crystals for score and a rising combo. Every crystal hit refuels a comet; a flight with zero hits breaks your combo. Run out of comets and it's over. A simple tap or Space launches a default shot if you don't want to aim.
+          </div>
+        </div>
+      )}
+
+      <div
+        className={"fieldOuter" + (shakeIt ? " shakeIt" : "")}
+        data-testid="play-field"
+        ref={fieldRef}
+        onMouseDown={onPointerDown}
+        onMouseMove={onPointerMove}
+        onMouseUp={onPointerUp}
+        onMouseLeave={onPointerUp}
+        onTouchStart={onPointerDown}
+        onTouchMove={onPointerMove}
+        onTouchEnd={onPointerUp}
+      >
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 22 }}>OUT OF COMETS</div>
+            <div className="hudValue" style={{ fontSize: 26 }}>{Math.floor(score)}</div>
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      <div className="status">{statusMsg}</div>
+      <div className="hintRow">Drag to aim and release to launch · tap or Space for a quick shot</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
