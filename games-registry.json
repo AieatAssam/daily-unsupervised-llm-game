@@ -4112,7 +4112,7 @@
     "id": "2026-10-04",
     "name": "Pulse Stack",
     "date": "2026-10-04",
-    "description": "A glowing block swings back and forth above your tower. Tap, click, or press Space to drop it onto the block below — land it dead-center for a PERFECT snap that locks the width and builds your combo multiplier, or clip the edge and watch the block trim down to the overlap. Every few rows the swing speeds up, shrinking your margin for error until one bad drop sends the whole tower toppling.",
+    "description": "A glowing block swings back and forth above your tower. Tap, click, or press Space to drop it onto the block below \u2014 land it dead-center for a PERFECT snap that locks the width and builds your combo multiplier, or clip the edge and watch the block trim down to the overlap. Every few rows the swing speeds up, shrinking your margin for error until one bad drop sends the whole tower toppling.",
     "tagline": "Snap it center. Stack it high.",
     "tags": [
       "arcade",
@@ -4134,7 +4134,7 @@
     "id": "2026-10-05",
     "name": "Neon Transit",
     "date": "2026-10-05",
-    "description": "Three glowing lanes race toward you on an endless neon transit line. Switch lanes to dodge what you can't clear, leap over low hurdles, and slide under high beams — get the wrong action and you lose a life. Grab gold orbs for bonus score and chain clean dodges into a rising combo multiplier as the line gets faster and faster.",
+    "description": "Three glowing lanes race toward you on an endless neon transit line. Switch lanes to dodge what you can't clear, leap over low hurdles, and slide under high beams \u2014 get the wrong action and you lose a life. Grab gold orbs for bonus score and chain clean dodges into a rising combo multiplier as the line gets faster and faster.",
     "tagline": "Switch lanes. Jump. Duck. Survive the line.",
     "tags": [
       "endless-runner",
@@ -4145,7 +4145,7 @@
     ],
     "difficulty": "medium",
     "avgPlayTime": "2 minutes",
-    "controls": "Arrow Left/Right or A/D, or swipe left/right on the field, or tap the ◀ ▶ buttons, to switch lanes; Arrow Up / W / Space, tap/click the field, or tap JUMP to leap over low hurdles; Arrow Down / S or tap DUCK to slide under high beams",
+    "controls": "Arrow Left/Right or A/D, or swipe left/right on the field, or tap the \u25c0 \u25b6 buttons, to switch lanes; Arrow Up / W / Space, tap/click the field, or tap JUMP to leap over low hurdles; Arrow Down / S or tap DUCK to slide under high beams",
     "folder": "games/2026-10-05",
     "file": "games/2026-10-05/index.html",
     "preview": "games/2026-10-05/preview.png",
@@ -4155,9 +4155,15 @@
     "id": "2026-10-06",
     "name": "Comet Sling",
     "date": "2026-10-06",
-    "description": "Drag back a glowing comet at your hub and let it fly across a gravity-warped neon arena. Swing it through swirling pink gravity wells to bend its path and smash cyan crystal targets for score, chaining hits within a single flight into a rising combo multiplier. Every crystal you shatter refuels a comet, but a flight that whiffs breaks your streak — run out of comets and the arena goes dark.",
+    "description": "Drag back a glowing comet at your hub and let it fly across a gravity-warped neon arena. Swing it through swirling pink gravity wells to bend its path and smash cyan crystal targets for score, chaining hits within a single flight into a rising combo multiplier. Every crystal you shatter refuels a comet, but a flight that whiffs breaks your streak \u2014 run out of comets and the arena goes dark.",
     "tagline": "Pull back. Let fly. Bend gravity to your aim.",
-    "tags": ["physics", "slingshot", "drag", "arcade", "skill"],
+    "tags": [
+      "physics",
+      "slingshot",
+      "drag",
+      "arcade",
+      "skill"
+    ],
     "difficulty": "medium",
     "avgPlayTime": "2 minutes",
     "controls": "Press and drag anywhere on the field to pull the comet back, release to launch it; a plain tap/click or the Space key fires a quick default shot straight up",
@@ -4165,5 +4171,26 @@
     "file": "games/2026-10-06/index.html",
     "preview": "games/2026-10-06/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-10-07",
+    "name": "Gravity Flux",
+    "date": "2026-10-07",
+    "description": "Tap, click, or press Space to flip gravity and send your glowing probe arcing between the magenta ceiling and cyan floor of a neon corridor. Flip early to dodge obstacles jutting from whichever surface you're clinging to, and glide through the open middle to snag glowing flux cores for a rising combo multiplier. Clip an obstacle and a shield breaks while your combo resets \u2014 lose all three shields and the circuit fries. The corridor scrolls faster and obstacles come denser the longer you survive. How far can you flux?",
+    "tagline": "One button. Two surfaces. Flip or fry.",
+    "tags": [
+      "reflex",
+      "gravity",
+      "one-button",
+      "arcade",
+      "endless"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap or click the field, or press Space, to flip gravity and arc the probe between ceiling and floor",
+    "folder": "games/2026-10-07",
+    "file": "games/2026-10-07/index.html",
+    "preview": "games/2026-10-07/preview.png",
+    "rating": 4.3
   }
 ]

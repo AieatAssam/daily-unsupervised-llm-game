@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Gravity Flux</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05030f; font-family: 'Segoe UI', system-ui, sans-serif; touch-action: none; }
+  #root { width: 100%; height: 100%; }
+
+  .app {
+    width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; overflow: hidden; gap: 4px; padding: 6px 0;
+    background: radial-gradient(circle at 50% 0%, #1a0f3f 0%, #0a0722 50%, #05030f 100%);
+  }
+
+  .bgGlow {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.55;
+    background: radial-gradient(circle at 15% 20%, rgba(123,90,255,0.14), transparent 40%),
+                radial-gradient(circle at 85% 15%, rgba(57,255,136,0.12), transparent 40%),
+                radial-gradient(circle at 50% 95%, rgba(255,61,181,0.12), transparent 45%);
+  }
+
+  .hud {
+    display: flex; justify-content: space-around; width: 100%; max-width: 460px;
+    padding: 4px 8px; z-index: 15; gap: 2px; position: relative; flex-wrap: wrap;
+  }
+  .hudBox { text-align: center; min-width: 44px; }
+  .hudLabel { font-size: 8px; letter-spacing: 1.5px; color: #9fa8ff; text-transform: uppercase; }
+  .hudValue {
+    font-size: 17px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 10px #7b5aff, 0 0 20px #7b5aff;
+  }
+  .hudValue.combo { color: #39ff88; text-shadow: 0 0 10px #39ff88, 0 0 22px #1a8f4e; }
+  .hudValue.best { color: #ffd23d; text-shadow: 0 0 10px #ffd23d, 0 0 20px #ffd23d; }
+  .hudValue.lives { color: #ff3da5; text-shadow: 0 0 10px #ff3da5, 0 0 20px #ff3da5; }
+  .hudValue.pulse { animation: hudPulse 0.35s ease; }
+  @keyframes hudPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.5; transform: scale(1.3);} }
+
+  .title {
+    font-size: clamp(18px, 5vw, 28px); font-weight: 900; letter-spacing: 3px; margin-top: 8px;
+    background: linear-gradient(90deg, #7b5aff, #39ff88, #ff3da5);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 12px rgba(123,90,255,0.6));
+    animation: titlePulse 2.4s ease-in-out infinite;
+    text-align: center;
+  }
+  @keyframes titlePulse { 0%,100% { filter: drop-shadow(0 0 12px rgba(123,90,255,0.6)); } 50% { filter: drop-shadow(0 0 26px rgba(57,255,136,0.85)); } }
+
+  .subtitle { color: #c8d4e8; font-size: 12px; letter-spacing: 0.5px; text-align: center; max-width: 420px; line-height: 1.5; padding: 0 12px; }
+
+  .btn {
+    padding: 14px 38px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(135deg, #7b5aff, #39ff88);
+    border: none; border-radius: 50px; color: #060616; cursor: pointer;
+    box-shadow: 0 0 20px rgba(123,90,255,0.7), 0 0 50px rgba(57,255,136,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 30px rgba(123,90,255,0.9), 0 0 70px rgba(57,255,136,0.5); }
+  .btn:active { transform: scale(0.96); }
+
+  .highscoreLine { color: #ffd23d; font-size: 13px; text-shadow: 0 0 8px rgba(255,210,61,0.6); }
+
+  .fieldOuter {
+    position: relative; width: min(92vw, 420px); height: min(60vh, 460px); z-index: 5;
+    border-radius: 16px; overflow: hidden; border: 2px solid rgba(123,90,255,0.3);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 0 30px rgba(123,90,255,0.14);
+    background: #04030c; touch-action: none;
+    margin-top: 4px;
+  }
+  .fieldOuter.shakeIt { animation: shakeKf 0.3s ease; }
+  @keyframes shakeKf {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-5px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  .gameCanvas { width: 100%; height: 100%; display: block; }
+
+  .flashOverlay {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.08s ease;
+  }
+  .flashOverlay.good { opacity: 0.2; background: #39ff88; }
+  .flashOverlay.bad { opacity: 0.32; background: #ff3355; }
+  .flashOverlay.level { opacity: 0.26; background: #7b5aff; }
+
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(4,3,12,0.75); z-index: 20; text-align: center; padding: 20px;
+  }
+
+  .status { font-size: 12px; color: #b8c8d8; min-height: 16px; text-align: center; padding: 0 10px; z-index: 15; }
+  .hintRow { font-size: 10px; color: #7389a8; text-align: center; padding: 0 10px; }
+  .footer { font-size: 9px; color: #4a5a68; letter-spacing: 1px; padding-bottom: 2px; z-index: 15; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect } = React;
+
+const HS_KEY = 'gravityFluxHighScore';
+const START_LIVES = 3;
+const PLAYER_R = 9;
+const BASE_SPEED = 170;
+const MAX_SPEED = 420;
+const GRAVITY = 2200;
+const INVULN_MS = 900;
+const PLAYER_X_FRAC = 0.28;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function spawnBurst(list, x, y, color, count, speed, minSize, maxSize, life) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = speed * (0.4 + Math.random() * 0.8);
+    list.push({
+      x, y,
+      vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+      size: minSize + Math.random() * (maxSize - minSize),
+      color, life, maxLife: life,
+    });
+  }
+}
+
+function speedForScore(score) {
+  return clamp(BASE_SPEED + score * 0.35, BASE_SPEED, MAX_SPEED);
+}
+
+function gapForScore(score) {
+  return clamp(1.55 - score * 0.0012, 0.78, 1.55);
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+
+  const ensure = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const tone = useCallback((freq, dur, type, gainVal, when, freqEnd) => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const t0 = ctx.currentTime + (when || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t0 + dur);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(gainVal, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }, []);
+
+  return {
+    ensure,
+    flipSound: () => tone(340, 0.1, 'sawtooth', 0.14, 0, 620),
+    orbSound: (combo) => { tone(700 + combo * 18, 0.08, 'sine', 0.18, 0); tone(1050 + combo * 18, 0.1, 'sine', 0.12, 0.03); },
+    hitSound: () => tone(180, 0.28, 'sawtooth', 0.22, 0, 60),
+    levelSound: () => { tone(523, 0.08, 'sine', 0.16, 0); tone(784, 0.14, 'sine', 0.16, 0.08); },
+    overSound: () => tone(300, 0.3, 'sawtooth', 0.2, 0, 90),
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('start');
+  const [score, setScoreState] = useState(0);
+  const [combo, setComboState] = useState(0);
+  const [lives, setLivesState] = useState(START_LIVES);
+  const [best, setBest] = useState(() => parseInt(localStorage.getItem(HS_KEY) || '0', 10));
+  const [comboPulse, setComboPulse] = useState(false);
+  const [flashKind, setFlashKind] = useState(null);
+  const [shakeIt, setShakeIt] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('Tap or press Space to flip gravity.');
+
+  const phaseRef = useRef('start');
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const livesRef = useRef(START_LIVES);
+  const bestRef = useRef(best);
+  const nextLevelMilestoneRef = useRef(200);
+
+  const playerRef = useRef({ y: 0, vy: 0, gDir: 1, invuln: 0 });
+  const obstaclesRef = useRef([]);
+  const orbsRef = useRef([]);
+  const particlesRef = useRef([]);
+  const spawnTimerRef = useRef(0);
+  const lastFrameRef = useRef(0);
+  const distanceRef = useRef(0);
+
+  const rafRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fieldRef = useRef(null);
+  const dimsRef = useRef({ w: 0, h: 0 });
+  const flashTimeoutRef = useRef(null);
+  const shakeTimeoutRef = useRef(null);
+  const comboPulseTimeoutRef = useRef(null);
+
+  const audio = useAudio();
+
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dimsRef.current = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [resizeCanvas]);
+
+  const triggerFlash = useCallback((kind, ms) => {
+    setFlashKind(kind);
+    clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashKind(null), ms);
+  }, []);
+
+  const wallMargin = useCallback(() => 22, []);
+
+  const startGame = useCallback(() => {
+    audio.ensure();
+    resizeCanvas();
+    const { h } = dimsRef.current;
+    const margin = wallMargin();
+    scoreRef.current = 0; setScoreState(0);
+    comboRef.current = 0; setComboState(0);
+    livesRef.current = START_LIVES; setLivesState(START_LIVES);
+    nextLevelMilestoneRef.current = 200;
+    distanceRef.current = 0;
+    playerRef.current = { y: h - margin, vy: 0, gDir: 1, invuln: 0 };
+    obstaclesRef.current = [];
+    orbsRef.current = [];
+    particlesRef.current = [];
+    spawnTimerRef.current = 0.6;
+    lastFrameRef.current = performance.now();
+    setStatusMsg('Tap or press Space to flip gravity.');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+  }, [audio, resizeCanvas, wallMargin]);
+
+  const endGame = useCallback(() => {
+    phaseRef.current = 'over';
+    setPhase('over');
+    audio.overSound();
+    setStatusMsg('Circuit fried.');
+    const finalScore = Math.floor(scoreRef.current);
+    if (finalScore > bestRef.current) {
+      bestRef.current = finalScore;
+      localStorage.setItem(HS_KEY, String(finalScore));
+      setBest(finalScore);
+    }
+  }, [audio]);
+
+  const doFlip = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    const p = playerRef.current;
+    p.gDir *= -1;
+    audio.flipSound();
+    const { w } = dimsRef.current;
+    const px = w * PLAYER_X_FRAC;
+    spawnBurst(particlesRef.current, px, p.y, '#7b5aff', 8, 60, 1, 2.4, 300);
+  }, [audio]);
+
+  const startGameRef = useRef(null);
+  useEffect(() => { startGameRef.current = startGame; }, [startGame]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (phaseRef.current !== 'playing') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGameRef.current && startGameRef.current(); }
+        return;
+      }
+      if (e.code === 'Space') { e.preventDefault(); doFlip(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [doFlip]);
+
+  useEffect(() => () => {
+    clearTimeout(flashTimeoutRef.current);
+    clearTimeout(shakeTimeoutRef.current);
+    clearTimeout(comboPulseTimeoutRef.current);
+  }, []);
+
+  const registerOrb = useCallback((orb) => {
+    comboRef.current += 1;
+    setComboState(comboRef.current);
+    setComboPulse(true);
+    clearTimeout(comboPulseTimeoutRef.current);
+    comboPulseTimeoutRef.current = setTimeout(() => setComboPulse(false), 280);
+
+    const mult = clamp(1 + Math.floor(comboRef.current / 5) * 0.5, 1, 4);
+    const gained = Math.round(12 * mult);
+    scoreRef.current += gained;
+    setScoreState(Math.floor(scoreRef.current));
+
+    audio.orbSound(comboRef.current);
+    spawnBurst(particlesRef.current, orb.x, orb.y, '#39ff88', 12, 85, 1.4, 3, 380);
+    triggerFlash('good', 150);
+    setStatusMsg(`Flux core +${gained} x${mult.toFixed(1)}`);
+
+    const idx = orbsRef.current.indexOf(orb);
+    if (idx >= 0) orbsRef.current.splice(idx, 1);
+
+    if (scoreRef.current >= nextLevelMilestoneRef.current) {
+      nextLevelMilestoneRef.current += 200;
+      audio.levelSound();
+      triggerFlash('level', 300);
+      setStatusMsg('Overdrive rising.');
+    }
+  }, [audio, triggerFlash]);
+
+  const registerHit = useCallback(() => {
+    const p = playerRef.current;
+    if (p.invuln > 0) return;
+    p.invuln = INVULN_MS;
+    livesRef.current -= 1;
+    setLivesState(livesRef.current);
+    comboRef.current = 0; setComboState(0);
+    audio.hitSound();
+    triggerFlash('bad', 220);
+    setShakeIt(true);
+    clearTimeout(shakeTimeoutRef.current);
+    shakeTimeoutRef.current = setTimeout(() => setShakeIt(false), 300);
+    const { w } = dimsRef.current;
+    spawnBurst(particlesRef.current, w * PLAYER_X_FRAC, p.y, '#ff3355', 16, 100, 1.6, 3.4, 420);
+    if (livesRef.current <= 0) {
+      endGame();
+    } else {
+      setStatusMsg('Hit! Shields down to ' + livesRef.current);
+    }
+  }, [audio, triggerFlash, endGame]);
+
+  const spawnObstacle = useCallback(() => {
+    const { w, h } = dimsRef.current;
+    const margin = wallMargin();
+    const side = Math.random() < 0.5 ? 'floor' : 'ceiling';
+    const reach = h * (0.32 + Math.random() * 0.2);
+    const width = 20 + Math.random() * 14;
+    obstaclesRef.current.push({ x: w + width, width, side, reach, passed: false });
+  }, [wallMargin]);
+
+  const spawnOrb = useCallback(() => {
+    const { w, h } = dimsRef.current;
+    const midY = h / 2 + (Math.random() - 0.5) * h * 0.22;
+    orbsRef.current.push({ x: w + 20, y: midY, r: 8, phase: Math.random() * Math.PI * 2 });
+  }, []);
+
+  useEffect(() => {
+    const draw = (now) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const { w, h } = dimsRef.current;
+      if (w < 5 || h < 5) return;
+      const dt = Math.min(0.033, (now - lastFrameRef.current) / 1000 || 0);
+      lastFrameRef.current = now;
+
+      ctx.fillStyle = '#04030c';
+      ctx.fillRect(0, 0, w, h);
+
+      const margin = wallMargin();
+      const scrollOffset = (now * 0.05) % 40;
+      ctx.strokeStyle = 'rgba(123,90,255,0.08)';
+      ctx.lineWidth = 1;
+      for (let x = -40 + scrollOffset; x < w; x += 40) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+
+      const playing = phaseRef.current === 'playing';
+      const player = playerRef.current;
+      const px = w * PLAYER_X_FRAC;
+
+      if (playing) {
+        const speed = speedForScore(scoreRef.current);
+        distanceRef.current += speed * dt * 0.1;
+        scoreRef.current += speed * dt * 0.1;
+        setScoreState(Math.floor(scoreRef.current));
+
+        player.vy += GRAVITY * player.gDir * dt;
+        player.y += player.vy * dt;
+        const ceilY = margin, floorY = h - margin;
+        if (player.y <= ceilY) { player.y = ceilY; if (player.vy < 0) player.vy = 0; }
+        if (player.y >= floorY) { player.y = floorY; if (player.vy > 0) player.vy = 0; }
+        if (player.invuln > 0) player.invuln -= dt * 1000;
+
+        spawnTimerRef.current -= dt;
+        if (spawnTimerRef.current <= 0) {
+          spawnObstacle();
+          spawnTimerRef.current = gapForScore(scoreRef.current);
+          if (Math.random() < 0.55) spawnOrb();
+        }
+
+        const speedPx = speed;
+        for (const ob of obstaclesRef.current) {
+          ob.x -= speedPx * dt;
+          if (!ob.passed && ob.x + ob.width < px) {
+            ob.passed = true;
+          }
+          const rectX0 = ob.x, rectX1 = ob.x + ob.width;
+          let rectY0, rectY1;
+          if (ob.side === 'floor') { rectY0 = floorY - ob.reach; rectY1 = floorY + 8; }
+          else { rectY0 = ceilY - 8; rectY1 = ceilY + ob.reach; }
+          const closestX = clamp(px, rectX0, rectX1);
+          const closestY = clamp(player.y, rectY0, rectY1);
+          const dx = px - closestX, dy = player.y - closestY;
+          if (dx * dx + dy * dy < PLAYER_R * PLAYER_R) {
+            registerHit();
+          }
+        }
+        obstaclesRef.current = obstaclesRef.current.filter(ob => ob.x + ob.width > -10);
+
+        for (const orb of orbsRef.current) {
+          orb.x -= speedPx * dt;
+          orb.y += Math.sin(now * 0.003 + orb.phase) * 0.3;
+          const dx = px - orb.x, dy = player.y - orb.y;
+          if (dx * dx + dy * dy < (PLAYER_R + orb.r) * (PLAYER_R + orb.r)) {
+            registerOrb(orb);
+          }
+        }
+        orbsRef.current = orbsRef.current.filter(o => o.x > -20);
+      }
+
+      const particles = particlesRef.current;
+      for (const pt of particles) {
+        pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+        pt.vx *= 0.94; pt.vy *= 0.94; pt.life -= dt * 1000;
+      }
+      particlesRef.current = particles.filter(pt => pt.life > 0);
+
+      // walls
+      ctx.save();
+      const ceilGrad = ctx.createLinearGradient(0, 0, 0, margin);
+      ceilGrad.addColorStop(0, 'rgba(255,61,181,0.5)');
+      ceilGrad.addColorStop(1, 'rgba(255,61,181,0)');
+      ctx.fillStyle = ceilGrad;
+      ctx.fillRect(0, 0, w, margin);
+      const floorGrad = ctx.createLinearGradient(0, h - margin, 0, h);
+      floorGrad.addColorStop(0, 'rgba(61,209,255,0)');
+      floorGrad.addColorStop(1, 'rgba(61,209,255,0.5)');
+      ctx.fillStyle = floorGrad;
+      ctx.fillRect(0, h - margin, w, margin);
+      ctx.strokeStyle = '#ff3da5'; ctx.shadowColor = '#ff3da5'; ctx.shadowBlur = 8; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, margin); ctx.lineTo(w, margin); ctx.stroke();
+      ctx.strokeStyle = '#3dd1ff'; ctx.shadowColor = '#3dd1ff';
+      ctx.beginPath(); ctx.moveTo(0, h - margin); ctx.lineTo(w, h - margin); ctx.stroke();
+      ctx.restore();
+
+      // obstacles
+      for (const ob of obstaclesRef.current) {
+        ctx.save();
+        const isFloor = ob.side === 'floor';
+        const color = isFloor ? '#3dd1ff' : '#ff3da5';
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 12;
+        if (isFloor) {
+          ctx.fillRect(ob.x, h - margin - ob.reach, ob.width, ob.reach);
+        } else {
+          ctx.fillRect(ob.x, margin, ob.width, ob.reach);
+        }
+        ctx.restore();
+      }
+
+      // orbs
+      for (const orb of orbsRef.current) {
+        ctx.save();
+        ctx.translate(orb.x, orb.y);
+        ctx.rotate(now * 0.002 + orb.phase);
+        ctx.fillStyle = '#39ff88';
+        ctx.shadowColor = '#39ff88';
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.moveTo(0, -orb.r); ctx.lineTo(orb.r, 0); ctx.lineTo(0, orb.r); ctx.lineTo(-orb.r, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+
+      // particles
+      for (const pt of particlesRef.current) {
+        const a = clamp(pt.life / pt.maxLife, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = pt.color;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+
+      // player
+      if (playing || phaseRef.current === 'over') {
+        ctx.save();
+        const blinking = player.invuln > 0 && Math.floor(now / 90) % 2 === 0;
+        ctx.globalAlpha = blinking ? 0.35 : 1;
+        ctx.fillStyle = '#ffd23d';
+        ctx.shadowColor = '#ffd23d';
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.arc(px, player.y, PLAYER_R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    };
+
+    const tick = (now) => {
+      draw(now);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [registerHit, registerOrb, spawnObstacle, spawnOrb, wallMargin]);
+
+  const onFieldPointer = useCallback((e) => {
+    e.preventDefault();
+    if (phaseRef.current !== 'playing') return;
+    doFlip();
+  }, [doFlip]);
+
+  return (
+    <div className="app">
+      <div className="bgGlow"></div>
+      <div className="hud">
+        <div className="hudBox">
+          <div className="hudLabel">Score</div>
+          <div className="hudValue" data-testid="score">{Math.floor(score)}</div>
+        </div>
+        <div className="hudBox">
+          <div className={"hudValue combo" + (comboPulse ? " pulse" : "")} data-testid="combo">x{combo}</div>
+          <div className="hudLabel">Combo</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudValue lives" data-testid="lives">{lives}</div>
+          <div className="hudLabel">Shields</div>
+        </div>
+        <div className="hudBox">
+          <div className="hudValue best" data-testid="best">{best}</div>
+          <div className="hudLabel">Best</div>
+        </div>
+      </div>
+
+      {phase !== 'playing' && (
+        <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <div className="title">GRAVITY FLUX</div>
+          <div className="subtitle">
+            Tap, click, or press Space to flip gravity and send your probe arcing between the magenta ceiling and cyan floor of the neon corridor. Flip early to avoid obstacles jutting from whichever surface you're clinging to, and glide through the middle to snag glowing flux cores for a rising combo. Clip an obstacle and a shield breaks and your combo resets — lose all three shields and the circuit fries. How far can you flux?
+          </div>
+        </div>
+      )}
+
+      <div
+        className={"fieldOuter" + (shakeIt ? " shakeIt" : "")}
+        data-testid="play-field"
+        ref={fieldRef}
+        onMouseDown={onFieldPointer}
+        onTouchStart={onFieldPointer}
+      >
+        <canvas className="gameCanvas" data-testid="canvas" ref={canvasRef}></canvas>
+        <div className={"flashOverlay" + (flashKind ? " " + flashKind : "")}></div>
+
+        {phase === 'start' && (
+          <div className="overlay">
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>START</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div className="overlay">
+            <div className="title" style={{ marginTop: 0, fontSize: 22 }}>CIRCUIT FRIED</div>
+            <div className="hudValue" style={{ fontSize: 26 }}>{Math.floor(score)}</div>
+            <div className="highscoreLine">Best: {best}</div>
+            <button className="btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>RETRY</button>
+          </div>
+        )}
+      </div>
+
+      <div className="status">{statusMsg}</div>
+      <div className="hintRow">Tap / click / Space to flip gravity</div>
+      <div className="footer">Neon Game Arcade</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
