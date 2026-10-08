@@ -4192,5 +4192,26 @@
     "file": "games/2026-10-07/index.html",
     "preview": "games/2026-10-07/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-08",
+    "name": "Ring Warden",
+    "date": "2026-10-08",
+    "description": "A fragile neon core pulses at the center of your arena while glowing shards streak in from every direction along fixed radial lines. Drag anywhere on the field, swipe, or press Arrow keys / A-D to rotate your defense ring and intercept each shard right as it reaches the ring's radius — land it inside the arc and the shard shatters into particles, pays out, and builds a rising combo multiplier. Gold shards are rarer and pay triple. Miss one and it slips past to the core, cracking a shield and resetting your combo — lose all three shields and the core burns out. Shards come faster and denser the longer you hold the line. How long can you guard the core?",
+    "tagline": "360 degrees of incoming. One ring to hold them all.",
+    "tags": [
+      "reflex",
+      "rotation",
+      "defense",
+      "arcade",
+      "endless"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Drag/swipe the field, or press Arrow keys / A-D, to rotate the defense ring and block incoming shards",
+    "folder": "games/2026-10-08",
+    "file": "games/2026-10-08/index.html",
+    "preview": "games/2026-10-08/preview.png",
+    "rating": 4.2
   }
 ]
