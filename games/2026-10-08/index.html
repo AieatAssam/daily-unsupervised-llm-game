@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Ring Warden</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 20%, #140a2a 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(255,0,200,0.08), rgba(0,230,255,0.08), rgba(170,0,255,0.08));
+    background-size: 400% 400%;
+    animation: drift 14s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 8px 4px;
+    z-index: 5;
+    gap: 6px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 22px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+  }
+  canvas {
+    display: block;
+    touch-action: none;
+    border-radius: 16px;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.72);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 34px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    color: #fff;
+    text-shadow: 0 0 20px #ff57e6, 0 0 40px #4ff2ff;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 14px;
+    max-width: 440px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #ff57e6, #4ff2ff);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .controls-row {
+    position: relative;
+    z-index: 5;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    padding: 10px 10px 16px;
+  }
+  .ctrl-btn {
+    flex: 1;
+    max-width: 150px;
+    min-height: 52px;
+    border-radius: 14px;
+    border: 1px solid rgba(79,242,255,0.5);
+    background: rgba(10, 6, 24, 0.6);
+    color: #4ff2ff;
+    font-size: 24px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 0 14px rgba(79,242,255,0.25) inset;
+  }
+  .ctrl-btn:active { background: rgba(79,242,255,0.3); }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 11px;
+    text-align: center;
+    padding-bottom: 6px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback } = React;
+
+const CORE_R = 28;
+const RING_R_RATIO = 0.46; // fraction of min(canvas dim)/2
+const RING_HALF_ARC = 0.34; // radians, ~19.5deg half width
+const SPAWN_R_RATIO = 0.98;
+const HIGH_SCORE_KEY = 'ringWardenHighScore';
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return {
+    deflect: () => beep(660, 0.12, 'square', 0.07),
+    gold: () => beep(980, 0.18, 'triangle', 0.09),
+    hit: () => beep(130, 0.3, 'sawtooth', 0.12),
+    levelup: () => beep(880, 0.22, 'sine', 0.08),
+    gameover: () => beep(90, 0.5, 'sawtooth', 0.12),
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const bgCanvasRef = useRef(null);
+  const [dims, setDims] = useState({ w: 600, h: 600 });
+  const [phase, setPhase] = useState('idle'); // idle | playing | over
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  });
+  const audio = useAudio();
+
+  const stateRef = useRef({
+    ringAngle: -Math.PI / 2,
+    targetAngle: -Math.PI / 2,
+    shards: [],
+    particles: [],
+    lastSpawn: 0,
+    spawnInterval: 1400,
+    shardSpeed: 90, // px/sec radial
+    level: 1,
+    blocksSinceLevel: 0,
+    score: 0,
+    combo: 0,
+    lives: 3,
+    running: false,
+    keyLeft: false,
+    keyRight: false,
+    dragging: false,
+    shake: 0,
+    flash: 0,
+    coreHue: 0,
+  });
+
+  // Resize handling
+  useEffect(() => {
+    function resize() {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const w = wrap.clientWidth;
+      const h = wrap.clientHeight;
+      const size = Math.max(220, Math.min(w, h));
+      setDims({ w: size, h: size });
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  // Keyboard
+  useEffect(() => {
+    function down(e) {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') stateRef.current.keyLeft = true;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') stateRef.current.keyRight = true;
+      if (e.code === 'Space' && stateRef.current.running === false) {
+        start();
+      }
+    }
+    function up(e) {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') stateRef.current.keyLeft = false;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') stateRef.current.keyRight = false;
+    }
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+    // eslint-disable-next-line
+  }, []);
+
+  const pointerToAngle = useCallback((clientX, clientY) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    return Math.atan2(clientY - cy, clientX - cx);
+  }, []);
+
+  const handlePointerDown = useCallback((e) => {
+    const st = stateRef.current;
+    st.dragging = true;
+    const point = e.touches ? e.touches[0] : e;
+    const a = pointerToAngle(point.clientX, point.clientY);
+    if (a != null) st.targetAngle = a;
+  }, [pointerToAngle]);
+
+  const handlePointerMove = useCallback((e) => {
+    const st = stateRef.current;
+    if (!st.dragging) return;
+    const point = e.touches ? e.touches[0] : e;
+    const a = pointerToAngle(point.clientX, point.clientY);
+    if (a != null) st.targetAngle = a;
+  }, [pointerToAngle]);
+
+  const handlePointerUp = useCallback(() => {
+    stateRef.current.dragging = false;
+  }, []);
+
+  function normalizeAngleDiff(a, b) {
+    let d = a - b;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  function spawnShard() {
+    const st = stateRef.current;
+    const angle = Math.random() * Math.PI * 2;
+    const isGold = st.blocksSinceLevel > 0 && Math.random() < 0.18;
+    st.shards.push({
+      angle,
+      r: null, // set at draw time based on canvas
+      rNorm: 1, // normalized 1 -> 0 travels to center
+      gold: isGold,
+      hue: isGold ? 48 : (Math.random() < 0.5 ? 185 : 320),
+      dead: false,
+      deflected: false,
+      deflectT: 0,
+    });
+  }
+
+  function spawnParticles(x, y, hue, count) {
+    const st = stateRef.current;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 60 + Math.random() * 160;
+      st.particles.push({
+        x, y,
+        vx: Math.cos(a) * spd,
+        vy: Math.sin(a) * spd,
+        life: 0.5 + Math.random() * 0.4,
+        maxLife: 0.5 + Math.random() * 0.4,
+        hue,
+      });
+    }
+  }
+
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(null);
+
+  function endGame() {
+    const st = stateRef.current;
+    st.running = false;
+    setPhase('over');
+    audio.gameover();
+    const hs = Math.max(st.score, parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10));
+    localStorage.setItem(HIGH_SCORE_KEY, String(hs));
+    setHighScore(hs);
+  }
+
+  function step(ts) {
+    const st = stateRef.current;
+    if (!st.running) return;
+    if (lastTsRef.current == null) lastTsRef.current = ts;
+    let dt = (ts - lastTsRef.current) / 1000;
+    if (dt > 0.05) dt = 0.05;
+    lastTsRef.current = ts;
+
+    // rotate ring
+    const keySpeed = 2.6; // rad/sec
+    if (st.keyLeft) st.targetAngle -= keySpeed * dt;
+    if (st.keyRight) st.targetAngle += keySpeed * dt;
+    let diff = normalizeAngleDiff(st.targetAngle, st.ringAngle);
+    st.ringAngle += diff * Math.min(1, dt * 14);
+
+    const canvas = canvasRef.current;
+    const size = canvas ? canvas.width / (window.devicePixelRatio || 1) : 600;
+    const cx = size / 2, cy = size / 2;
+    const ringR = size / 2 * RING_R_RATIO;
+    const spawnR = size / 2 * SPAWN_R_RATIO;
+
+    // spawn
+    st.lastSpawn += dt * 1000;
+    if (st.lastSpawn >= st.spawnInterval) {
+      st.lastSpawn = 0;
+      spawnShard();
+    }
+
+    // update shards
+    for (const s of st.shards) {
+      if (s.dead) continue;
+      if (s.r == null) s.r = spawnR;
+      if (s.deflected) {
+        s.deflectT += dt;
+        s.r += st.shardSpeed * 2.4 * dt;
+        if (s.r > spawnR * 1.3) s.dead = true;
+        continue;
+      }
+      s.r -= st.shardSpeed * dt;
+      if (s.r <= ringR + 2 && s.r > ringR - 14 && !s.checked) {
+        s.checked = true;
+        const d = Math.abs(normalizeAngleDiff(s.angle, st.ringAngle));
+        if (d <= RING_HALF_ARC) {
+          // deflected!
+          s.deflected = true;
+          const base = s.gold ? 30 : 10;
+          const gained = Math.round(base * (1 + st.combo * 0.15));
+          st.score += gained;
+          st.combo += 1;
+          st.blocksSinceLevel += 1;
+          setScore(st.score);
+          setCombo(st.combo);
+          const px = cx + Math.cos(s.angle) * ringR;
+          const py = cy + Math.sin(s.angle) * ringR;
+          spawnParticles(px, py, s.hue, s.gold ? 18 : 10);
+          if (s.gold) audio.gold(); else audio.deflect();
+          if (st.blocksSinceLevel >= 8) {
+            st.blocksSinceLevel = 0;
+            st.level += 1;
+            st.spawnInterval = Math.max(420, st.spawnInterval * 0.88);
+            st.shardSpeed = Math.min(360, st.shardSpeed * 1.09);
+            audio.levelup();
+          }
+        }
+      }
+      if (!s.deflected && s.r <= CORE_R) {
+        s.dead = true;
+        st.lives -= 1;
+        st.combo = 0;
+        st.shake = 0.4;
+        st.flash = 1;
+        setLives(st.lives);
+        setCombo(0);
+        spawnParticles(cx, cy, 0, 14);
+        audio.hit();
+        if (st.lives <= 0) {
+          endGame();
+        }
+      }
+    }
+    st.shards = st.shards.filter(s => !s.dead);
+
+    // particles
+    for (const p of st.particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.92;
+      p.vy *= 0.92;
+      p.life -= dt;
+    }
+    st.particles = st.particles.filter(p => p.life > 0);
+
+    if (st.shake > 0) st.shake = Math.max(0, st.shake - dt * 1.5);
+    if (st.flash > 0) st.flash = Math.max(0, st.flash - dt * 2.5);
+    st.coreHue += dt * 60;
+
+    draw();
+    rafRef.current = requestAnimationFrame(step);
+  }
+
+  function draw() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const size = canvas.width / dpr;
+    const st = stateRef.current;
+    const cx = size / 2, cy = size / 2;
+    const ringR = size / 2 * RING_R_RATIO;
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, size, size);
+
+    // shake offset
+    let ox = 0, oy = 0;
+    if (st.shake > 0) {
+      ox = (Math.random() - 0.5) * st.shake * 16;
+      oy = (Math.random() - 0.5) * st.shake * 16;
+    }
+    ctx.translate(ox, oy);
+
+    // background — pre-rendered once per resize onto an offscreen canvas,
+    // blitted here instead of re-stroking ~9 arcs every frame.
+    if (bgCanvasRef.current) {
+      ctx.drawImage(bgCanvasRef.current, -20, -20);
+    }
+
+    // shards
+    for (const s of st.shards) {
+      const r = s.r == null ? size / 2 * SPAWN_R_RATIO : s.r;
+      const x = cx + Math.cos(s.angle) * r;
+      const y = cy + Math.sin(s.angle) * r;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(s.angle + Math.PI / 2);
+      const hue = s.hue;
+      const sz = s.gold ? 11 : 8;
+      // cheap glow: soft halo fill behind the shard instead of shadowBlur (costly per-shard)
+      ctx.fillStyle = `hsla(${hue},100%,70%,0.25)`;
+      ctx.beginPath();
+      ctx.arc(0, 0, sz * 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `hsl(${hue},100%,${s.gold ? 65 : 60}%)`;
+      ctx.beginPath();
+      ctx.moveTo(0, -sz);
+      ctx.lineTo(sz * 0.7, sz * 0.7);
+      ctx.lineTo(-sz * 0.7, sz * 0.7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // ring (defense arc) — layered strokes fake the glow, no shadowBlur (costly every frame)
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(st.ringAngle);
+    ctx.strokeStyle = 'rgba(79,242,255,0.3)';
+    ctx.lineWidth = 20;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, ringR, -RING_HALF_ARC, RING_HALF_ARC);
+    ctx.stroke();
+    ctx.strokeStyle = '#4ff2ff';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(0, 0, ringR, -RING_HALF_ARC, RING_HALF_ARC);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, ringR, -RING_HALF_ARC, RING_HALF_ARC);
+    ctx.stroke();
+    ctx.restore();
+
+    // core — radial gradient glow baked into the fill, no shadowBlur
+    const pulse = 1 + Math.sin(st.coreHue * 0.05) * 0.08;
+    ctx.save();
+    ctx.translate(cx, cy);
+    const haloGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, CORE_R * pulse * 2.2);
+    haloGrad.addColorStop(0, 'rgba(255,87,230,0.35)');
+    haloGrad.addColorStop(1, 'rgba(255,87,230,0)');
+    ctx.fillStyle = haloGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, CORE_R * pulse * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, CORE_R * pulse);
+    grad.addColorStop(0, '#fff');
+    grad.addColorStop(0.4, '#ff57e6');
+    grad.addColorStop(1, '#4b0070');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, CORE_R * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // particles (no shadowBlur — cheap flat glow via a slightly oversized translucent dot)
+    ctx.save();
+    for (const p of st.particles) {
+      const alpha = Math.max(0, p.life / p.maxLife);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `hsl(${p.hue},100%,65%)`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // flash overlay on hit
+    if (st.flash > 0) {
+      ctx.fillStyle = `rgba(255,40,80,${st.flash * 0.35})`;
+      ctx.fillRect(-20, -20, size + 40, size + 40);
+    }
+
+    ctx.restore();
+  }
+
+  function start() {
+    const st = stateRef.current;
+    st.ringAngle = -Math.PI / 2;
+    st.targetAngle = -Math.PI / 2;
+    st.shards = [];
+    st.particles = [];
+    st.lastSpawn = 0;
+    st.spawnInterval = 1400;
+    st.shardSpeed = 90;
+    st.level = 1;
+    st.blocksSinceLevel = 0;
+    st.score = 0;
+    st.combo = 0;
+    st.lives = 3;
+    st.shake = 0;
+    st.flash = 0;
+    st.running = true;
+    lastTsRef.current = null;
+    setScore(0);
+    setCombo(0);
+    setLives(3);
+    setPhase('playing');
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(step);
+  }
+
+  useEffect(() => {
+    // canvas sizing with DPR
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = dims.w * dpr;
+    canvas.height = dims.h * dpr;
+    canvas.style.width = dims.w + 'px';
+    canvas.style.height = dims.h + 'px';
+
+    // pre-render the static background (base fill + concentric rings) once;
+    // the per-frame draw() just blits this instead of re-stroking every frame
+    const size = dims.w;
+    const bg = document.createElement('canvas');
+    bg.width = size + 40;
+    bg.height = size + 40;
+    const bctx = bg.getContext('2d');
+    bctx.fillStyle = '#060310';
+    bctx.fillRect(0, 0, bg.width, bg.height);
+    const cx = size / 2 + 20, cy = size / 2 + 20;
+    bctx.strokeStyle = 'rgba(79,242,255,0.07)';
+    bctx.lineWidth = 1;
+    for (let r = 40; r < size / 2; r += 36) {
+      bctx.beginPath();
+      bctx.arc(cx, cy, r, 0, Math.PI * 2);
+      bctx.stroke();
+    }
+    bctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    bctx.beginPath();
+    bctx.arc(cx, cy, size / 2 * SPAWN_R_RATIO, 0, Math.PI * 2);
+    bctx.stroke();
+    bgCanvasRef.current = bg;
+
+    draw();
+    // eslint-disable-next-line
+  }, [dims]);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  return (
+    <div className="app">
+      <div className="bg-grad" />
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{combo}</span></div>
+        <div className="hud-item">Shields<span className="hud-value lives-val" data-testid="lives">{lives}</span></div>
+      </div>
+      <div className="field-wrap" ref={wrapRef} data-testid="play-field"
+        onMouseDown={handlePointerDown}
+        onMouseMove={handlePointerMove}
+        onMouseUp={handlePointerUp}
+        onMouseLeave={handlePointerUp}
+        onTouchStart={handlePointerDown}
+        onTouchMove={handlePointerMove}
+        onTouchEnd={handlePointerUp}
+      >
+        <canvas ref={canvasRef} data-testid="canvas" />
+        {phase !== 'playing' && (
+          <div className="overlay">
+            {phase === 'idle' && (
+              <React.Fragment>
+                <h1 className="title">RING WARDEN</h1>
+                <p className="subtitle">
+                  Drag, swipe, press Arrow keys / A-D to rotate your neon ring.
+                  Block shards flying in from every direction before they reach your core.
+                  Gold shards pay triple. Miss three and the core burns out.
+                </p>
+                <button className="start-btn" data-testid="start-btn" onClick={start}>START</button>
+                <p className="highscore-line">High Score: {highScore}</p>
+              </React.Fragment>
+            )}
+            {phase === 'over' && (
+              <React.Fragment>
+                <h1 className="title">CORE BURNED OUT</h1>
+                <p className="finalscore">Score: <b>{score}</b></p>
+                <p className="highscore-line">High Score: {highScore}</p>
+                <button className="start-btn" data-testid="start-btn" onClick={start}>RESTART</button>
+              </React.Fragment>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="controls-row">
+        <button
+          className="ctrl-btn"
+          data-testid="rotate-left-btn"
+          onMouseDown={() => { stateRef.current.keyLeft = true; }}
+          onMouseUp={() => { stateRef.current.keyLeft = false; }}
+          onMouseLeave={() => { stateRef.current.keyLeft = false; }}
+          onTouchStart={(e) => { e.preventDefault(); stateRef.current.keyLeft = true; }}
+          onTouchEnd={(e) => { e.preventDefault(); stateRef.current.keyLeft = false; }}
+        >&#8634;</button>
+        <button
+          className="ctrl-btn"
+          data-testid="rotate-right-btn"
+          onMouseDown={() => { stateRef.current.keyRight = true; }}
+          onMouseUp={() => { stateRef.current.keyRight = false; }}
+          onMouseLeave={() => { stateRef.current.keyRight = false; }}
+          onTouchStart={(e) => { e.preventDefault(); stateRef.current.keyRight = true; }}
+          onTouchEnd={(e) => { e.preventDefault(); stateRef.current.keyRight = false; }}
+        >&#8635;</button>
+      </div>
+      <p className="hint">Drag the field or tap the arrows to rotate the ring &middot; Arrow keys / A-D also work</p>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
