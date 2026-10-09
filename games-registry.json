@@ -4213,5 +4213,26 @@
     "file": "games/2026-10-08/index.html",
     "preview": "games/2026-10-08/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-10-09",
+    "name": "Lexicon Flux",
+    "date": "2026-10-09",
+    "description": "A target word glows above a scattered bank of neon letter tiles mixed with decoy letters that don't belong. Click or tap the real letters in the correct order before the timer bar burns out to spell the word, chaining correct picks into a rising combo multiplier while a wrong tile breaks your streak and drains precious time. Complete a word for a speed bonus and a tougher one spawns — longer words, more decoys, and a tighter clock as your level climbs. Run out of lives and the circuit fries.",
+    "tagline": "Spell it fast. Dodge the decoys.",
+    "tags": [
+      "word",
+      "puzzle",
+      "reflex",
+      "arcade",
+      "typing"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap the glowing letter tiles in order to spell the target word, or press the matching letter key on a keyboard",
+    "folder": "games/2026-10-09",
+    "file": "games/2026-10-09/index.html",
+    "preview": "games/2026-10-09/preview.png",
+    "rating": 4.2
   }
 ]

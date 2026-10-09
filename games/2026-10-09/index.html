@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Lexicon Flux</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 15%, #140a2a 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(255,0,200,0.08), rgba(0,230,255,0.08), rgba(170,0,255,0.08));
+    background-size: 400% 400%;
+    animation: drift 14s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 8px 4px;
+    z-index: 5;
+    gap: 6px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 20px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #9dff8f; text-shadow: 0 0 10px #9dff8f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+    gap: 14px;
+  }
+  canvas.fx-canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .timer-bar-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    height: 10px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden;
+    box-shadow: 0 0 10px rgba(79,242,255,0.2) inset;
+    z-index: 4;
+  }
+  .timer-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4ff2ff, #ff57e6);
+    box-shadow: 0 0 10px rgba(255,87,230,0.6);
+  }
+  .word-display {
+    position: relative;
+    z-index: 4;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .letter-box {
+    width: 38px;
+    height: 44px;
+    border-radius: 8px;
+    border: 2px solid rgba(255,255,255,0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 800;
+    color: rgba(255,255,255,0.25);
+  }
+  .letter-box.filled {
+    color: #9dff8f;
+    border-color: #9dff8f;
+    text-shadow: 0 0 12px #9dff8f;
+    box-shadow: 0 0 14px rgba(157,255,143,0.35) inset;
+  }
+  .tile-grid {
+    position: relative;
+    z-index: 4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    max-width: 520px;
+  }
+  .tile-btn {
+    width: 54px;
+    height: 54px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 12px;
+    border: 2px solid rgba(79,242,255,0.5);
+    background: rgba(10,6,24,0.7);
+    color: #4ff2ff;
+    font-size: 22px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 0 14px rgba(79,242,255,0.25) inset, 0 0 10px rgba(79,242,255,0.2);
+    transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+  }
+  .tile-btn:active { transform: scale(0.9); }
+  .tile-btn.used {
+    opacity: 0.18;
+    pointer-events: none;
+    border-color: rgba(157,255,143,0.3);
+  }
+  .tile-btn.wrong {
+    background: rgba(255,59,59,0.35);
+    border-color: #ff3b3b;
+    color: #fff;
+    animation: shake 0.3s ease;
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.78);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #ff57e6, 0 0 40px #4ff2ff;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 14px;
+    max-width: 440px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #ff57e6, #4ff2ff);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 11px;
+    text-align: center;
+    padding: 4px 10px 10px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'lexiconFluxHighScore';
+
+const WORDS = [
+  'NEON','GRID','GLOW','BOLT','SPIN','WARP','BEAM','FLUX','CORE','ECHO','VOID','ZOOM','LOOP','NOVA',
+  'ORBIT','PULSE','LASER','PRISM','PHASE','SPARK','LIGHT','SONIC','VIVID','RADAR','QUARK','COMET','DRIFT','SHARD',
+  'CHARGE','PLASMA','SIGNAL','MATRIX','NEBULA','VORTEX','METEOR','GALAXY','PHOTON','ROCKET','ENERGY','MAGNET','CYBORG','BEACON','MODULE',
+  'VOLTAGE','CIRCUIT','REACTOR','QUANTUM','CRYSTAL','GRAVITY','TURBINE','ANDROID','CAPSULE','IMPULSE',
+  'SPECTRUM','ASTEROID','HOLOGRAM','STARDUST',
+];
+
+function getWordLenRange(level) {
+  if (level <= 2) return [4, 4];
+  if (level <= 4) return [4, 5];
+  if (level <= 6) return [5, 6];
+  if (level <= 9) return [6, 7];
+  return [6, 8];
+}
+
+function getDecoyCount(level) {
+  if (level <= 2) return 0;
+  if (level <= 4) return 1;
+  if (level <= 6) return 2;
+  if (level <= 8) return 3;
+  return 4;
+}
+
+function getMaxTime(level, wordLen) {
+  return Math.max(3200, 2600 + wordLen * 850 - (level - 1) * 220);
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function pickDecoyChar(excludeSet) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let c;
+  let guard = 0;
+  do {
+    c = alphabet[Math.floor(Math.random() * alphabet.length)];
+    guard++;
+  } while (excludeSet.has(c) && guard < 50);
+  return c;
+}
+
+function buildTiles(word, decoyCount) {
+  const letters = word.split('');
+  const usedChars = new Set(letters);
+  const decoys = [];
+  for (let i = 0; i < decoyCount; i++) decoys.push(pickDecoyChar(usedChars));
+  const combined = shuffle([...letters, ...decoys]);
+  return combined.map((ch, i) => ({ id: i, char: ch, used: false, wrong: false }));
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return {
+    correct: (combo) => beep(420 + Math.min(combo, 20) * 16, 0.1, 'sine', 0.08),
+    wrong: () => beep(140, 0.18, 'sawtooth', 0.1),
+    levelup: () => { beep(660, 0.12, 'triangle', 0.09); setTimeout(() => beep(880, 0.16, 'triangle', 0.09), 90); },
+    hit: () => beep(130, 0.3, 'sawtooth', 0.12),
+    gameover: () => beep(90, 0.5, 'sawtooth', 0.12),
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [dims, setDims] = useState({ w: 480, h: 300 });
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: 3, level: 1,
+    word: '', progress: 0, tiles: [], highScore: initialHigh,
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const barRef = useRef(null);
+  const timeRef = useRef({ left: 1, max: 1 });
+  const lastWordRef = useRef('');
+  const particlesRef = useRef([]);
+  const hadParticlesRef = useRef(false);
+  const audio = useAudio();
+
+  const pickNextWord = useCallback((level) => {
+    const [min, max] = getWordLenRange(level);
+    let pool = WORDS.filter(w => w.length >= min && w.length <= max && w !== lastWordRef.current);
+    if (pool.length === 0) pool = WORDS.filter(w => w.length >= min && w.length <= max);
+    if (pool.length === 0) pool = WORDS;
+    const w = pool[Math.floor(Math.random() * pool.length)];
+    lastWordRef.current = w;
+    return w;
+  }, []);
+
+  const spawnParticles = useCallback((clientX, clientY, color, count) => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    for (let i = 0; i < (count || 14); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 60 + Math.random() * 160;
+      particlesRef.current.push({
+        x, y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        life: 500 + Math.random() * 300,
+        maxLife: 800,
+        color,
+        size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const spawnBurst = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, '#9dff8f', 40);
+  }, [spawnParticles]);
+
+  const handleTileClick = useCallback((tileId, clientX, clientY) => {
+    setUi(prev => {
+      if (prev.phase !== 'playing') return prev;
+      const tile = prev.tiles.find(t => t.id === tileId);
+      if (!tile || tile.used) return prev;
+      const needed = prev.word[prev.progress];
+      if (tile.char === needed) {
+        const newProgress = prev.progress + 1;
+        const newCombo = prev.combo + 1;
+        const mult = 1 + Math.floor(newCombo / 5);
+        const gained = (12 + prev.level * 2) * mult;
+        spawnParticles(clientX, clientY, '#4ff2ff', 10);
+        audio.correct(newCombo);
+        timeRef.current.left = Math.min(timeRef.current.left + 150, timeRef.current.max);
+
+        if (newProgress === prev.word.length) {
+          audio.levelup();
+          spawnBurst();
+          const bonus = Math.round((timeRef.current.left / timeRef.current.max) * 80) + prev.word.length * 8;
+          const newLevel = prev.level + 1;
+          const nw = pickNextWord(newLevel);
+          const decoys = getDecoyCount(newLevel);
+          const mt = getMaxTime(newLevel, nw.length);
+          timeRef.current = { left: mt, max: mt };
+          return {
+            ...prev,
+            score: prev.score + gained + bonus,
+            combo: newCombo,
+            level: newLevel,
+            word: nw,
+            progress: 0,
+            tiles: buildTiles(nw, decoys),
+          };
+        }
+
+        const newTiles = prev.tiles.map(t => t.id === tileId ? { ...t, used: true } : t);
+        return { ...prev, score: prev.score + gained, combo: newCombo, progress: newProgress, tiles: newTiles };
+      } else {
+        spawnParticles(clientX, clientY, '#ff3b3b', 10);
+        audio.wrong();
+        timeRef.current.left = Math.max(300, timeRef.current.left - 700);
+        const newTiles = prev.tiles.map(t => t.id === tileId ? { ...t, wrong: true } : t);
+        setTimeout(() => {
+          setUi(p2 => ({ ...p2, tiles: p2.tiles.map(t => t.id === tileId ? { ...t, wrong: false } : t) }));
+        }, 300);
+        return { ...prev, combo: 0, tiles: newTiles };
+      }
+    });
+  }, [audio, pickNextWord, spawnParticles, spawnBurst]);
+
+  const handleTimeout = useCallback(() => {
+    setUi(prev => {
+      if (prev.phase !== 'playing') return prev;
+      audio.hit();
+      const newLives = prev.lives - 1;
+      if (newLives <= 0) {
+        const newHigh = Math.max(prev.score, prev.highScore);
+        localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+        audio.gameover();
+        return { ...prev, lives: 0, phase: 'over', highScore: newHigh, combo: 0 };
+      }
+      const nw = pickNextWord(prev.level);
+      const decoys = getDecoyCount(prev.level);
+      const mt = getMaxTime(prev.level, nw.length);
+      timeRef.current = { left: mt, max: mt };
+      return { ...prev, lives: newLives, combo: 0, word: nw, progress: 0, tiles: buildTiles(nw, decoys) };
+    });
+  }, [audio, pickNextWord]);
+
+  const startGame = useCallback(() => {
+    const lvl = 1;
+    const nw = pickNextWord(lvl);
+    const decoys = getDecoyCount(lvl);
+    const mt = getMaxTime(lvl, nw.length);
+    timeRef.current = { left: mt, max: mt };
+    particlesRef.current = [];
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: 3, level: lvl,
+      word: nw, progress: 0, tiles: buildTiles(nw, decoys),
+    }));
+  }, [pickNextWord]);
+
+  // keyboard support
+  useEffect(() => {
+    function onKey(e) {
+      const key = e.key.toUpperCase();
+      if (!/^[A-Z]$/.test(key)) return;
+      const cur = uiRef.current;
+      if (cur.phase !== 'playing') return;
+      const needed = cur.word[cur.progress];
+      let target = cur.tiles.find(t => !t.used && t.char === needed && t.char === key);
+      if (!target) target = cur.tiles.find(t => !t.used && t.char === key);
+      if (target) {
+        const rect = wrapRef.current ? wrapRef.current.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+        handleTileClick(target.id, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleTileClick]);
+
+  // resize tracking for canvas
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        setDims({ w: r.width, h: r.height });
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  // main rAF loop: timer + particles
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    let frame = 0;
+    const loop = (t) => {
+      const dt = Math.min(50, t - last);
+      last = t;
+      frame++;
+
+      if (uiRef.current.phase === 'playing') {
+        timeRef.current.left -= dt;
+        if (timeRef.current.left <= 0) {
+          timeRef.current.left = 0;
+          handleTimeout();
+        }
+      }
+
+      if (barRef.current) {
+        const r = timeRef.current.max > 0 ? Math.max(0, Math.min(100, (timeRef.current.left / timeRef.current.max) * 100)) : 100;
+        barRef.current.style.width = r + '%';
+      }
+
+      const canvas = canvasRef.current;
+      const parts = particlesRef.current;
+      if (canvas && (parts.length > 0 || hadParticlesRef.current)) {
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          p.life -= dt;
+          if (p.life <= 0) { parts.splice(i, 1); continue; }
+          p.x += p.vx * (dt / 1000);
+          p.y += p.vy * (dt / 1000);
+          p.vy += 220 * (dt / 1000);
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.beginPath();
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = alpha;
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        hadParticlesRef.current = parts.length > 0;
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [handleTimeout]);
+
+  const dpr = 1;
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" ref={wrapRef} data-testid="play-field">
+        <canvas
+          className="fx-canvas"
+          ref={canvasRef}
+          data-testid="canvas"
+          width={Math.max(1, Math.round(dims.w * dpr))}
+          height={Math.max(1, Math.round(dims.h * dpr))}
+          style={{ width: '100%', height: '100%' }}
+        ></canvas>
+
+        <div className="timer-bar-wrap">
+          <div className="timer-bar-fill" ref={barRef} style={{ width: '100%' }}></div>
+        </div>
+
+        <div className="word-display" data-testid="word-display">
+          {ui.word.split('').map((ch, i) => (
+            <div key={i} className={'letter-box' + (i < ui.progress ? ' filled' : '')}>
+              {i < ui.progress ? ch : ''}
+            </div>
+          ))}
+        </div>
+
+        <div className="tile-grid" data-testid="tile-grid">
+          {ui.tiles.map(tile => (
+            <button
+              key={tile.id}
+              data-testid="letter-tile"
+              className={'tile-btn' + (tile.used ? ' used' : '') + (tile.wrong ? ' wrong' : '')}
+              onClick={(e) => handleTileClick(tile.id, e.clientX || 0, e.clientY || 0)}
+            >
+              {tile.char}
+            </button>
+          ))}
+        </div>
+
+        {ui.phase !== 'playing' && (
+          <div className="overlay">
+            {ui.phase === 'idle' && (
+              <React.Fragment>
+                <h1 className="title">LEXICON FLUX</h1>
+                <p className="subtitle">Click the glowing letters in order to spell the word before the bar burns out. Watch for decoy letters that don't belong — a wrong click breaks your combo and drains time!</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+              </React.Fragment>
+            )}
+            {ui.phase === 'over' && (
+              <React.Fragment>
+                <h1 className="title">CIRCUIT FRIED</h1>
+                <p className="finalscore">Score: <b>{ui.score}</b></p>
+                <p className="highscore-line">High Score: {ui.highScore}</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>PLAY AGAIN</button>
+              </React.Fragment>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="hint">Click/tap letters in order, or press the matching letter key · Build the word before time runs out</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
