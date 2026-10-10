@@ -4234,5 +4234,26 @@
     "file": "games/2026-10-09/index.html",
     "preview": "games/2026-10-09/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-10-10",
+    "name": "Chroma Coup",
+    "date": "2026-10-10",
+    "description": "Place a glowing tile to sandwich the opponent's discs between two of yours and flip the whole line to your color on a 6x6 neon board. Clear each board with more tiles than your AI rival before the per-move timer burns out, chaining big 3+ flip captures into a rising combo multiplier. Lose a round and a shield cracks; hesitate past the timer and it cracks too. Clear boards fast enough and waves escalate with a sharper time limit and a smarter, greedier opponent.",
+    "tagline": "Place to flip. Flip to conquer the board.",
+    "tags": [
+      "strategy",
+      "board-game",
+      "capture",
+      "turn-based",
+      "puzzle"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap a board cell, or move the highlighted cursor with Arrow keys and press Space/Enter, to place a tile and flip every enemy tile it sandwiches",
+    "folder": "games/2026-10-10",
+    "file": "games/2026-10-10/index.html",
+    "preview": "games/2026-10-10/preview.png",
+    "rating": 4.3
   }
 ]
