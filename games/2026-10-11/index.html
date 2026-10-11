@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Echo Vault</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 15%, #140a2a 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(255,0,200,0.08), rgba(0,230,255,0.08), rgba(170,0,255,0.08));
+    background-size: 400% 400%;
+    animation: drift 14s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 8px 4px;
+    z-index: 5;
+    gap: 6px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 20px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #9dff8f; text-shadow: 0 0 10px #9dff8f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+    gap: 10px;
+  }
+  canvas.fx-canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .timer-bar-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    height: 8px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden;
+    box-shadow: 0 0 10px rgba(79,242,255,0.2) inset;
+    z-index: 4;
+  }
+  .timer-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4ff2ff, #ff57e6);
+    box-shadow: 0 0 10px rgba(255,87,230,0.6);
+  }
+  .banner {
+    position: relative;
+    z-index: 4;
+    min-height: 18px;
+    color: #ffd84f;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px rgba(255,216,79,0.6);
+    text-align: center;
+    transition: opacity 0.3s ease;
+  }
+  .dial-wrap {
+    position: relative;
+    z-index: 4;
+    width: min(74vw, 300px);
+    height: min(74vw, 300px);
+    margin: 4px auto;
+    border-radius: 50%;
+    touch-action: none;
+  }
+  .dial-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 3px solid rgba(79,242,255,0.3);
+    box-shadow: 0 0 22px rgba(79,242,255,0.18) inset, 0 0 14px rgba(79,242,255,0.15);
+    background: rgba(8,5,20,0.5);
+  }
+  .dial-glow {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    pointer-events: none;
+    box-shadow: 0 0 20px 4px rgba(79,242,255,0.25);
+    transition: box-shadow 0.08s linear;
+  }
+  .pivot {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .marker-dot {
+    position: absolute;
+    top: 3px;
+    left: 50%;
+    width: 18px;
+    height: 18px;
+    margin-left: -9px;
+    border-radius: 50%;
+    background: #4ff2ff;
+    box-shadow: 0 0 10px #4ff2ff, 0 0 18px rgba(79,242,255,0.6);
+    transition: background 0.1s linear, box-shadow 0.1s linear;
+  }
+  .target-dot {
+    position: absolute;
+    top: 3px;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin-left: -10px;
+    border-radius: 50%;
+    background: #ffd84f;
+    box-shadow: 0 0 14px #ffd84f, 0 0 26px rgba(255,216,79,0.7);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  .lock-btn {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 88px; height: 88px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, #ff57e6, #4ff2ff);
+    color: #05020a;
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    box-shadow: 0 0 25px rgba(79,242,255,0.5), 0 0 40px rgba(255,87,230,0.35);
+    touch-action: none;
+  }
+  .lock-btn:active { transform: translate(-50%, -50%) scale(0.93); }
+  .lock-btn:disabled { opacity: 0.5; cursor: default; }
+  .heat-readout {
+    position: relative;
+    z-index: 4;
+    min-height: 16px;
+    color: #9fd8ff;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-align: center;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.78);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #ff57e6, 0 0 40px #4ff2ff;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 14px;
+    max-width: 440px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #ff57e6, #4ff2ff);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 11px;
+    text-align: center;
+    padding: 4px 10px 10px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'echoVaultHighScore';
+const ROT_SPEED = 160; // degrees per second via held arrow keys
+const MIN_HALF_WIDTH = 9;
+const START_HALF_WIDTH = 38;
+const HALF_WIDTH_STEP = 2.4;
+const TIMER_START = 9000;
+const TIMER_MIN = 3500;
+const TIMER_STEP = 420;
+
+function normalizeAngle(a) {
+  let n = a % 360;
+  if (n < 0) n += 360;
+  return n;
+}
+
+function angularDiff(a, b) {
+  let d = Math.abs(a - b) % 360;
+  if (d > 180) d = 360 - d;
+  return d;
+}
+
+function angleFromPoint(cx, cy, x, y) {
+  const dx = x - cx;
+  const dy = y - cy;
+  let deg = Math.atan2(dx, -dy) * (180 / Math.PI);
+  return normalizeAngle(deg);
+}
+
+function timerMaxForLevel(level) {
+  return Math.max(TIMER_MIN, TIMER_START - (level - 1) * TIMER_STEP);
+}
+
+function generateTarget(level) {
+  return {
+    angle: Math.random() * 360,
+    halfWidth: Math.max(MIN_HALF_WIDTH, START_HALF_WIDTH - (level - 1) * HALF_WIDTH_STEP),
+  };
+}
+
+function heatColor(heat) {
+  // interpolate from cold blue (#4ff2ff) to hot red-orange (#ff5050)
+  const r = Math.round(79 + (255 - 79) * heat);
+  const g = Math.round(242 + (80 - 242) * heat);
+  const b = Math.round(255 + (80 - 255) * heat);
+  return `rgb(${r},${g},${b})`;
+}
+
+function heatLabel(heat) {
+  if (heat >= 0.82) return 'BURNING!';
+  if (heat >= 0.55) return 'HOT';
+  if (heat >= 0.3) return 'WARM';
+  return 'COLD';
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const toneRef = useRef(null);
+
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const ensureTone = useCallback(() => {
+    if (toneRef.current) return toneRef.current;
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 160;
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      toneRef.current = { osc, gain };
+    } catch (e) { /* audio unavailable */ }
+    return toneRef.current;
+  }, [getCtx]);
+
+  const updateTone = useCallback((heat, active) => {
+    const tone = toneRef.current;
+    if (!tone) return;
+    try {
+      const ctx = ctxRef.current;
+      const now = ctx.currentTime;
+      const freq = active ? (150 + heat * 560) : 150;
+      const vol = active ? (0.012 + heat * 0.06) : 0.0001;
+      tone.osc.frequency.value = freq;
+      tone.gain.gain.value = vol;
+    } catch (e) { /* ignore */ }
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return {
+    ensureTone,
+    updateTone,
+    crack: (precision) => {
+      beep(520 + precision * 260, 0.14, 'triangle', 0.1);
+      setTimeout(() => beep(760 + precision * 260, 0.18, 'triangle', 0.1), 90);
+    },
+    wrong: () => beep(140, 0.3, 'sawtooth', 0.1),
+    tick: () => beep(900, 0.04, 'square', 0.03),
+    gameover: () => beep(90, 0.5, 'sawtooth', 0.12),
+    levelup: () => beep(660, 0.1, 'triangle', 0.08),
+  };
+}
+
+function App() {
+  const fieldWrapRef = useRef(null);
+  const dialWrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const barRef = useRef(null);
+  const pivotRef = useRef(null);
+  const glowRef = useRef(null);
+  const markerDotRef = useRef(null);
+  const targetDotRef = useRef(null);
+  const heatTextRef = useRef(null);
+  const lastVisualRef = useRef(0);
+  const [dims, setDims] = useState({ w: 480, h: 300 });
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: 3, level: 1,
+    busy: false, banner: '', highScore: initialHigh,
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const markerAngleRef = useRef(0);
+  const targetRef = useRef(generateTarget(1));
+  const timeRef = useRef({ left: 1, max: 1 });
+  const roundBusyRef = useRef(false);
+  const keysRef = useRef({ left: false, right: false });
+  const draggingRef = useRef(false);
+  const particlesRef = useRef([]);
+  const hadParticlesRef = useRef(false);
+  const audio = useAudio();
+
+  const spawnParticles = useCallback((x, y, color, count) => {
+    for (let i = 0; i < (count || 16); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 50 + Math.random() * 150;
+      particlesRef.current.push({
+        x, y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        life: 450 + Math.random() * 300,
+        maxLife: 750,
+        color,
+        size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const burstPoint = useCallback((angleDeg) => {
+    const wrap = fieldWrapRef.current;
+    const dial = dialWrapRef.current;
+    if (!wrap || !dial) return { x: 0, y: 0 };
+    const wrapRect = wrap.getBoundingClientRect();
+    const dialRect = dial.getBoundingClientRect();
+    const cx = (dialRect.left - wrapRect.left) + dialRect.width / 2;
+    const cy = (dialRect.top - wrapRect.top) + dialRect.height / 2;
+    const r = dialRect.width / 2 - 14;
+    const rad = angleDeg * Math.PI / 180;
+    return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
+  }, []);
+
+  const startGame = useCallback(() => {
+    particlesRef.current = [];
+    markerAngleRef.current = Math.random() * 360;
+    targetRef.current = generateTarget(1);
+    const tmax = timerMaxForLevel(1);
+    timeRef.current = { left: tmax, max: tmax };
+    roundBusyRef.current = false;
+    audio.ensureTone();
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: 3, level: 1,
+      busy: false, banner: '',
+    }));
+  }, [audio]);
+
+  const nextRound = useCallback(() => {
+    const level = uiRef.current.level;
+    targetRef.current = generateTarget(level);
+    const tmax = timerMaxForLevel(level);
+    timeRef.current = { left: tmax, max: tmax };
+    roundBusyRef.current = false;
+    if (targetDotRef.current) targetDotRef.current.style.opacity = '0';
+    setUi(prev => (prev.phase === 'playing' ? { ...prev, busy: false, banner: '' } : prev));
+  }, []);
+
+  const finishAttempt = useCallback((success, precision, failBanner) => {
+    const angle = normalizeAngle(markerAngleRef.current);
+    const target = targetRef.current;
+    if (targetDotRef.current) {
+      targetDotRef.current.style.transform = 'rotate(' + target.angle + 'deg)';
+      targetDotRef.current.style.opacity = '1';
+    }
+    const pt = burstPoint(angle);
+    if (success) {
+      audio.crack(precision);
+      spawnParticles(pt.x, pt.y, '#ffd84f', 14);
+      setUi(prev => {
+        const gained = Math.round((60 + precision * 90) * (1 + prev.combo * 0.15));
+        audio.levelup();
+        return {
+          ...prev, score: prev.score + gained, combo: prev.combo + 1,
+          level: prev.level + 1, busy: true, banner: 'VAULT CRACKED +' + gained,
+        };
+      });
+    } else {
+      audio.wrong();
+      spawnParticles(pt.x, pt.y, '#ff5050', 12);
+      setUi(prev => {
+        const newLives = prev.lives - 1;
+        if (newLives <= 0) {
+          const newHigh = Math.max(prev.score, prev.highScore);
+          localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+          audio.gameover();
+          return { ...prev, lives: 0, phase: 'over', highScore: newHigh, busy: true, banner: '' };
+        }
+        return { ...prev, lives: newLives, combo: 0, busy: true, banner: failBanner };
+      });
+    }
+    setTimeout(() => {
+      if (uiRef.current.phase === 'playing') nextRound();
+    }, 900);
+  }, [audio, burstPoint, spawnParticles, nextRound]);
+
+  const handleLock = useCallback(() => {
+    if (uiRef.current.phase !== 'playing' || roundBusyRef.current) return;
+    roundBusyRef.current = true;
+    const angle = normalizeAngle(markerAngleRef.current);
+    const target = targetRef.current;
+    const d = angularDiff(angle, target.angle);
+    const success = d <= target.halfWidth;
+    const precision = success ? Math.max(0, 1 - d / Math.max(1, target.halfWidth)) : 0;
+    finishAttempt(success, precision, 'WRONG COMBINATION');
+  }, [finishAttempt]);
+
+  const handleTimeout = useCallback(() => {
+    if (uiRef.current.phase !== 'playing' || roundBusyRef.current) return;
+    roundBusyRef.current = true;
+    finishAttempt(false, 0, 'TOO SLOW');
+  }, [finishAttempt]);
+
+  // pointer drag rotation
+  useEffect(() => {
+    function onDown(e) {
+      if (uiRef.current.phase !== 'playing' || roundBusyRef.current) return;
+      if (e.target.closest && e.target.closest('.lock-btn')) return;
+      const dial = dialWrapRef.current;
+      if (!dial) return;
+      draggingRef.current = true;
+      const rect = dial.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const pt = e.touches ? e.touches[0] : e;
+      markerAngleRef.current = angleFromPoint(cx, cy, pt.clientX, pt.clientY);
+    }
+    function onMove(e) {
+      if (!draggingRef.current) return;
+      const dial = dialWrapRef.current;
+      if (!dial) return;
+      const rect = dial.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const pt = e.touches ? e.touches[0] : e;
+      markerAngleRef.current = angleFromPoint(cx, cy, pt.clientX, pt.clientY);
+    }
+    function onUp() { draggingRef.current = false; }
+    const dial = dialWrapRef.current;
+    if (dial) {
+      dial.addEventListener('pointerdown', onDown);
+      dial.addEventListener('touchstart', onDown, { passive: true });
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('touchend', onUp);
+    return () => {
+      if (dial) {
+        dial.removeEventListener('pointerdown', onDown);
+        dial.removeEventListener('touchstart', onDown);
+      }
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('touchend', onUp);
+    };
+  }, []);
+
+  // keyboard support
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (e.code === 'ArrowLeft') { e.preventDefault(); keysRef.current.left = true; }
+      else if (e.code === 'ArrowRight') { e.preventDefault(); keysRef.current.right = true; }
+      else if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        if (cur.phase === 'idle' || cur.phase === 'over') startGame();
+        else handleLock();
+      }
+    }
+    function onKeyUp(e) {
+      if (e.code === 'ArrowLeft') keysRef.current.left = false;
+      else if (e.code === 'ArrowRight') keysRef.current.right = false;
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [startGame, handleLock]);
+
+  // resize tracking for canvas
+  useEffect(() => {
+    function updateDims() {
+      if (fieldWrapRef.current) {
+        const r = fieldWrapRef.current.getBoundingClientRect();
+        setDims({ w: r.width, h: r.height });
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  // main rAF loop: rotation, feedback, timer, particles
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(50, t - last);
+      last = t;
+
+      const cur = uiRef.current;
+      const active = cur.phase === 'playing' && !roundBusyRef.current;
+
+      if (active) {
+        if (keysRef.current.left) markerAngleRef.current -= ROT_SPEED * (dt / 1000);
+        if (keysRef.current.right) markerAngleRef.current += ROT_SPEED * (dt / 1000);
+      } else if (cur.phase !== 'playing') {
+        markerAngleRef.current += dt * 0.015;
+      }
+      markerAngleRef.current = normalizeAngle(markerAngleRef.current);
+
+      if (pivotRef.current) {
+        pivotRef.current.style.transform = 'rotate(' + markerAngleRef.current + 'deg)';
+      }
+
+      let heat = 0;
+      if (active) {
+        const d = angularDiff(markerAngleRef.current, targetRef.current.angle);
+        heat = Math.max(0, Math.min(1, 1 - d / 95));
+      }
+      if (t - lastVisualRef.current > 150) {
+        lastVisualRef.current = t;
+        audio.updateTone(heat, active);
+        const color = heatColor(heat);
+        if (glowRef.current) {
+          const intensity = 10 + heat * 18;
+          glowRef.current.style.boxShadow = '0 0 ' + intensity + 'px ' + (3 + heat * 5) + 'px ' + color;
+        }
+        if (markerDotRef.current) {
+          markerDotRef.current.style.background = color;
+          markerDotRef.current.style.boxShadow = '0 0 ' + (6 + heat * 10) + 'px ' + color;
+        }
+        if (heatTextRef.current) {
+          heatTextRef.current.textContent = active ? heatLabel(heat) : (cur.phase === 'playing' ? 'LOCKED' : '—');
+        }
+      }
+
+      if (active) {
+        timeRef.current.left -= dt;
+        if (timeRef.current.left <= 0) {
+          timeRef.current.left = 0;
+          handleTimeout();
+        }
+      }
+      if (barRef.current) {
+        const ratio = timeRef.current.max > 0 ? Math.max(0, Math.min(100, (timeRef.current.left / timeRef.current.max) * 100)) : 100;
+        barRef.current.style.width = ratio + '%';
+      }
+
+      const canvas = canvasRef.current;
+      const parts = particlesRef.current;
+      if (canvas && (parts.length > 0 || hadParticlesRef.current)) {
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          p.life -= dt;
+          if (p.life <= 0) { parts.splice(i, 1); continue; }
+          p.x += p.vx * (dt / 1000);
+          p.y += p.vy * (dt / 1000);
+          p.vy += 160 * (dt / 1000);
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.beginPath();
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = alpha;
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        hadParticlesRef.current = parts.length > 0;
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [audio, handleTimeout]);
+
+  const dpr = 1;
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" ref={fieldWrapRef} data-testid="play-field">
+        <canvas
+          className="fx-canvas"
+          ref={canvasRef}
+          data-testid="canvas"
+          width={Math.max(1, Math.round(dims.w * dpr))}
+          height={Math.max(1, Math.round(dims.h * dpr))}
+          style={{ width: '100%', height: '100%' }}
+        ></canvas>
+
+        <div className="timer-bar-wrap">
+          <div className="timer-bar-fill" ref={barRef} style={{ width: '100%' }}></div>
+        </div>
+
+        <div className="banner" data-testid="banner" style={{ opacity: ui.banner ? 1 : 0 }}>{ui.banner || ' '}</div>
+
+        <div className="dial-wrap" ref={dialWrapRef} data-testid="dial">
+          <div className="dial-glow" ref={glowRef}></div>
+          <div className="dial-ring"></div>
+          <div className="pivot" ref={pivotRef}>
+            <div className="marker-dot" ref={markerDotRef}></div>
+          </div>
+          <div className="pivot" ref={targetDotRef} style={{ opacity: 0 }}>
+            <div className="target-dot"></div>
+          </div>
+          <button
+            className="lock-btn"
+            data-testid="lock-btn"
+            disabled={ui.phase !== 'playing' || ui.busy}
+            onClick={handleLock}
+          >LOCK</button>
+        </div>
+
+        <div className="heat-readout" data-testid="heat" ref={heatTextRef}>—</div>
+
+        {ui.phase !== 'playing' && (
+          <div className="overlay">
+            {ui.phase === 'idle' && (
+              <React.Fragment>
+                <h1 className="title">ECHO VAULT</h1>
+                <p className="subtitle">A hidden combination lies hidden somewhere around the dial. Drag it or use the arrow keys to rotate — the glow and pitch rise as you close in. Lock it in with the button, click, or Space while you're inside the hot zone. Guess wrong or stall too long and a shield cracks. Each crack narrows the hidden zone and quickens the clock.</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                <p className="highscore-line">High Score: {ui.highScore}</p>
+              </React.Fragment>
+            )}
+            {ui.phase === 'over' && (
+              <React.Fragment>
+                <h1 className="title">VAULT SEALED</h1>
+                <p className="finalscore">Score: <b>{ui.score}</b></p>
+                <p className="highscore-line">High Score: {ui.highScore}</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>PLAY AGAIN</button>
+              </React.Fragment>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="hint">Drag the dial or Arrow keys to rotate &middot; follow the glow/pitch to find the hidden zone &middot; LOCK, click, or Space to crack it</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
