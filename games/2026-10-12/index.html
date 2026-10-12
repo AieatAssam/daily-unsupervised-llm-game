@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Odd Signal</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 15%, #140a2a 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(255,0,200,0.08), rgba(0,230,255,0.08), rgba(170,0,255,0.08));
+    background-size: 400% 400%;
+    animation: drift 14s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 8px 4px;
+    z-index: 5;
+    gap: 6px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 20px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #9dff8f; text-shadow: 0 0 10px #9dff8f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+    gap: 10px;
+  }
+  canvas.fx-canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .timer-bar-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    height: 8px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden;
+    box-shadow: 0 0 10px rgba(79,242,255,0.2) inset;
+    z-index: 4;
+  }
+  .timer-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4ff2ff, #ff57e6);
+    box-shadow: 0 0 10px rgba(255,87,230,0.6);
+  }
+  .banner {
+    position: relative;
+    z-index: 4;
+    min-height: 18px;
+    color: #ffd84f;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px rgba(255,216,79,0.6);
+    text-align: center;
+    transition: opacity 0.3s ease;
+  }
+  .tile-grid {
+    position: relative;
+    z-index: 4;
+    display: grid;
+    gap: 6px;
+    width: min(92vw, 420px);
+    aspect-ratio: 1 / 1;
+    margin: 0 auto;
+  }
+  @keyframes dotIn {
+    0% { transform: scale(0); opacity: 0.4; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes tileWrong {
+    0%, 100% { transform: scale(1); }
+    30% { transform: scale(0.85) rotate(-4deg); }
+    60% { transform: scale(1.05) rotate(3deg); }
+  }
+  @keyframes tileCorrect {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.35); }
+    100% { transform: scale(0); }
+  }
+  .signal-tile {
+    position: relative;
+    border-radius: 50%;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: block;
+  }
+  .signal-tile .dot {
+    position: absolute;
+    inset: 8%;
+    border-radius: 50%;
+    animation: dotIn 0.3s ease-out backwards;
+  }
+  .signal-tile.wrong .dot {
+    animation: tileWrong 0.4s ease;
+    background: #ff3b3b !important;
+    box-shadow: 0 0 12px #ff3b3b !important;
+  }
+  .signal-tile.correct .dot {
+    animation: tileCorrect 0.4s ease forwards;
+  }
+  .signal-tile:disabled { cursor: default; }
+  .signal-tile.cursor-focus {
+    box-shadow: 0 0 0 3px #ffd84f, 0 0 14px rgba(255,216,79,0.6);
+    border-radius: 50%;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.78);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #ff57e6, 0 0 40px #4ff2ff;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 14px;
+    max-width: 440px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #ff57e6, #4ff2ff);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 11px;
+    text-align: center;
+    padding: 4px 10px 10px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'oddSignalHighScore';
+const GRID_START = 3;
+const GRID_MAX = 6;
+const DELTA_START = 46;
+const DELTA_MIN = 11;
+const DELTA_STEP = 5;
+const TIMER_START = 5200;
+const TIMER_MIN = 1900;
+const TIMER_STEP = 260;
+const LEVEL_UP_EVERY = 4;
+
+function makeRound(gridSize, deltaHue) {
+  const n = gridSize * gridSize;
+  const oddIndex = Math.floor(Math.random() * n);
+  const baseHue = Math.floor(Math.random() * 360);
+  const sign = Math.random() < 0.5 ? 1 : -1;
+  const oddHue = (baseHue + sign * deltaHue + 360) % 360;
+  const isGold = Math.random() < 0.15;
+  const delays = Array.from({ length: n }, () => Math.random() * 0.18);
+  return { gridSize, oddIndex, baseHue, oddHue, isGold, delays, n };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return {
+    correct: (combo) => beep(360 + Math.min(combo, 14) * 24, 0.1, 'triangle', 0.08),
+    gold: () => { beep(660, 0.1, 'triangle', 0.09); setTimeout(() => beep(990, 0.14, 'triangle', 0.09), 80); },
+    wrong: () => beep(140, 0.18, 'square', 0.08),
+    timeout: () => beep(110, 0.22, 'sawtooth', 0.09),
+    levelup: () => { beep(520, 0.1, 'triangle', 0.08); setTimeout(() => beep(780, 0.14, 'triangle', 0.08), 90); },
+    gameover: () => beep(90, 0.5, 'sawtooth', 0.12),
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const gridWrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const barRef = useRef(null);
+  const [dims, setDims] = useState({ w: 480, h: 300 });
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', round: makeRound(GRID_START, DELTA_START), score: 0, combo: 0,
+    lives: 3, level: 1, gridSize: GRID_START, deltaHue: DELTA_START, timerMax: TIMER_START,
+    correctTotal: 0, busy: false, cursor: 0, flashIndex: -1, flashKind: '',
+    banner: '', highScore: initialHigh,
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const timeRef = useRef({ left: 1, max: 1 });
+  const busyRef = useRef(false);
+  const particlesRef = useRef([]);
+  const hadParticlesRef = useRef(false);
+  const audio = useAudio();
+
+  const spawnParticles = useCallback((x, y, color, count) => {
+    for (let i = 0; i < (count || 16); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 50 + Math.random() * 150;
+      particlesRef.current.push({
+        x, y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        life: 450 + Math.random() * 300,
+        maxLife: 750,
+        color,
+        size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const getTileCenter = useCallback((index, gridSize) => {
+    const wrap = wrapRef.current;
+    const grid = gridWrapRef.current;
+    if (!wrap || !grid) return { x: 0, y: 0 };
+    const wrapRect = wrap.getBoundingClientRect();
+    const gridRect = grid.getBoundingClientRect();
+    const r = Math.floor(index / gridSize);
+    const c = index % gridSize;
+    const cellW = gridRect.width / gridSize;
+    const cellH = gridRect.height / gridSize;
+    return {
+      x: (gridRect.left - wrapRect.left) + cellW * (c + 0.5),
+      y: (gridRect.top - wrapRect.top) + cellH * (r + 0.5),
+    };
+  }, []);
+
+  const startGame = useCallback(() => {
+    particlesRef.current = [];
+    timeRef.current = { left: TIMER_START, max: TIMER_START };
+    busyRef.current = false;
+    setUi(prev => ({
+      ...prev, phase: 'playing', round: makeRound(GRID_START, DELTA_START), score: 0, combo: 0,
+      lives: 3, level: 1, gridSize: GRID_START, deltaHue: DELTA_START, timerMax: TIMER_START,
+      correctTotal: 0, busy: false, cursor: 0, flashIndex: -1, flashKind: '', banner: '',
+    }));
+  }, []);
+
+  const nextRound = useCallback((gridSize, deltaHue, timerMax) => {
+    timeRef.current = { left: timerMax, max: timerMax };
+    busyRef.current = false;
+    setUi(prev => ({
+      ...prev, round: makeRound(gridSize, deltaHue), busy: false,
+      flashIndex: -1, flashKind: '', cursor: Math.min(prev.cursor, gridSize * gridSize - 1),
+    }));
+  }, []);
+
+  const handleCorrect = useCallback((index) => {
+    busyRef.current = true;
+    const cur = uiRef.current;
+    const center = getTileCenter(index, cur.gridSize);
+    const goldBonus = cur.round.isGold;
+    spawnParticles(center.x, center.y, goldBonus ? '#ffd84f' : '#4ff2ff', goldBonus ? 26 : 16);
+    const newCombo = cur.combo + 1;
+    if (goldBonus) audio.gold(); else audio.correct(newCombo);
+
+    setUi(prev => {
+      const mult = 1 + newCombo * 0.2;
+      const base = 10 * (prev.round.isGold ? 3 : 1);
+      const gained = Math.round(base * mult);
+      const newCorrectTotal = prev.correctTotal + 1;
+      const levelUp = newCorrectTotal % LEVEL_UP_EVERY === 0;
+      const newGridSize = levelUp ? Math.min(GRID_MAX, prev.gridSize + 1) : prev.gridSize;
+      const newDelta = levelUp ? Math.max(DELTA_MIN, prev.deltaHue - DELTA_STEP) : prev.deltaHue;
+      const newTimerMax = levelUp ? Math.max(TIMER_MIN, prev.timerMax - TIMER_STEP) : prev.timerMax;
+      const newLevel = levelUp ? prev.level + 1 : prev.level;
+      if (levelUp) audio.levelup();
+      return {
+        ...prev, score: prev.score + gained, combo: newCombo, correctTotal: newCorrectTotal,
+        gridSize: newGridSize, deltaHue: newDelta, timerMax: newTimerMax, level: newLevel,
+        busy: true, flashIndex: index, flashKind: 'correct',
+        banner: (goldBonus ? 'GOLD READ +' : 'CLEAN READ +') + gained + (levelUp ? ' — GRID EXPANDED' : ''),
+      };
+    });
+    setTimeout(() => {
+      const s = uiRef.current;
+      nextRound(s.gridSize, s.deltaHue, s.timerMax);
+    }, 380);
+  }, [audio, getTileCenter, nextRound, spawnParticles]);
+
+  const handleWrong = useCallback((index) => {
+    busyRef.current = true;
+    const cur = uiRef.current;
+    const center = getTileCenter(index, cur.gridSize);
+    spawnParticles(center.x, center.y, '#ff3b3b', 12);
+    audio.wrong();
+    setUi(prev => {
+      const newLives = prev.lives - 1;
+      if (newLives <= 0) {
+        const newHigh = Math.max(prev.score, prev.highScore);
+        localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+        audio.gameover();
+        return { ...prev, lives: 0, phase: 'over', highScore: newHigh, combo: 0, flashIndex: index, flashKind: 'wrong' };
+      }
+      return { ...prev, lives: newLives, combo: 0, busy: true, flashIndex: index, flashKind: 'wrong', banner: 'MISCUE — SHIELD CRACKED' };
+    });
+    setTimeout(() => {
+      const s = uiRef.current;
+      if (s.phase === 'playing') nextRound(s.gridSize, s.deltaHue, s.timerMax);
+    }, 450);
+  }, [audio, getTileCenter, nextRound, spawnParticles]);
+
+  const handleTileActivate = useCallback((index) => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing' || busyRef.current) return;
+    if (index === cur.round.oddIndex) handleCorrect(index);
+    else handleWrong(index);
+  }, [handleCorrect, handleWrong]);
+
+  const handleTimeout = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing' || busyRef.current) return;
+    busyRef.current = true;
+    audio.timeout();
+    setUi(prev => {
+      const newLives = prev.lives - 1;
+      if (newLives <= 0) {
+        const newHigh = Math.max(prev.score, prev.highScore);
+        localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+        audio.gameover();
+        return { ...prev, lives: 0, phase: 'over', highScore: newHigh, combo: 0 };
+      }
+      return { ...prev, lives: newLives, combo: 0, busy: true, banner: 'TOO SLOW — SHIELD CRACKED' };
+    });
+    setTimeout(() => {
+      const s = uiRef.current;
+      if (s.phase === 'playing') nextRound(s.gridSize, s.deltaHue, s.timerMax);
+    }, 450);
+  }, [audio, nextRound]);
+
+  const moveCursor = useCallback((delta) => {
+    setUi(prev => {
+      if (prev.phase !== 'playing') return prev;
+      const n = prev.gridSize * prev.gridSize;
+      const next = ((prev.cursor + delta) % n + n) % n;
+      return { ...prev, cursor: next };
+    });
+  }, []);
+
+  const moveCursor2D = useCallback((dr, dc) => {
+    setUi(prev => {
+      if (prev.phase !== 'playing') return prev;
+      const g = prev.gridSize;
+      const r = Math.floor(prev.cursor / g);
+      const c = prev.cursor % g;
+      const nr = Math.max(0, Math.min(g - 1, r + dr));
+      const nc = Math.max(0, Math.min(g - 1, c + dc));
+      return { ...prev, cursor: nr * g + nc };
+    });
+  }, []);
+
+  // keyboard support
+  useEffect(() => {
+    function onKey(e) {
+      const cur = uiRef.current;
+      if (e.code === 'ArrowUp') { e.preventDefault(); moveCursor2D(-1, 0); }
+      else if (e.code === 'ArrowDown') { e.preventDefault(); moveCursor2D(1, 0); }
+      else if (e.code === 'ArrowLeft') { e.preventDefault(); moveCursor2D(0, -1); }
+      else if (e.code === 'ArrowRight') { e.preventDefault(); moveCursor2D(0, 1); }
+      else if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        if (cur.phase === 'idle' || cur.phase === 'over') startGame();
+        else handleTileActivate(cur.cursor);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [moveCursor2D, handleTileActivate, startGame]);
+
+  // resize tracking for canvas
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        setDims({ w: r.width, h: r.height });
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  // main rAF loop: timer countdown + particle fx
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(50, t - last);
+      last = t;
+
+      const cur = uiRef.current;
+      if (cur.phase === 'playing' && !busyRef.current) {
+        timeRef.current.left -= dt;
+        if (timeRef.current.left <= 0) {
+          timeRef.current.left = 0;
+          handleTimeout();
+        }
+      }
+
+      if (barRef.current) {
+        const ratio = timeRef.current.max > 0 ? Math.max(0, Math.min(100, (timeRef.current.left / timeRef.current.max) * 100)) : 100;
+        barRef.current.style.width = ratio + '%';
+      }
+
+      const canvas = canvasRef.current;
+      const parts = particlesRef.current;
+      if (canvas && (parts.length > 0 || hadParticlesRef.current)) {
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          p.life -= dt;
+          if (p.life <= 0) { parts.splice(i, 1); continue; }
+          p.x += p.vx * (dt / 1000);
+          p.y += p.vy * (dt / 1000);
+          p.vy += 180 * (dt / 1000);
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.beginPath();
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = alpha;
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        hadParticlesRef.current = parts.length > 0;
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [handleTimeout]);
+
+  const dpr = 1;
+  const round = ui.round;
+  const tiles = Array.from({ length: round.n }, (_, i) => i);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" ref={wrapRef} data-testid="play-field">
+        <canvas
+          className="fx-canvas"
+          ref={canvasRef}
+          data-testid="canvas"
+          width={Math.max(1, Math.round(dims.w * dpr))}
+          height={Math.max(1, Math.round(dims.h * dpr))}
+          style={{ width: '100%', height: '100%' }}
+        ></canvas>
+
+        <div className="timer-bar-wrap">
+          <div className="timer-bar-fill" ref={barRef} style={{ width: '100%' }}></div>
+        </div>
+
+        <div className="banner" data-testid="banner" style={{ opacity: ui.banner ? 1 : 0 }}>{ui.banner || ' '}</div>
+
+        <div
+          className="tile-grid"
+          ref={gridWrapRef}
+          data-testid="board"
+          style={{ gridTemplateColumns: 'repeat(' + round.gridSize + ', 1fr)' }}
+        >
+          {ui.phase !== 'idle' && tiles.map(i => {
+            const hue = i === round.oddIndex ? round.oddHue : round.baseHue;
+            const isCursor = ui.cursor === i;
+            const isFlash = ui.flashIndex === i;
+            const flashCls = isFlash && ui.flashKind === 'wrong' ? ' wrong' : (isFlash && ui.flashKind === 'correct' ? ' correct' : '');
+            return (
+              <button
+                key={i}
+                data-testid="board-cell"
+                className={'signal-tile' + flashCls + (isCursor ? ' cursor-focus' : '')}
+                disabled={ui.phase !== 'playing' || ui.busy}
+                onClick={() => handleTileActivate(i)}
+              >
+                <span
+                  className="dot"
+                  style={{
+                    background: 'radial-gradient(circle at 35% 30%, hsl(' + hue + ',95%,80%), hsl(' + hue + ',85%,55%) 55%, hsl(' + hue + ',80%,25%) 100%)',
+                    boxShadow: '0 0 8px hsl(' + hue + ',90%,60%)',
+                    animationDelay: round.delays[i] + 's',
+                  }}
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        {ui.phase !== 'playing' && (
+          <div className="overlay">
+            {ui.phase === 'idle' && (
+              <React.Fragment>
+                <h1 className="title">ODD SIGNAL</h1>
+                <p className="subtitle">Every node in the grid glows the same hue except one — tap the flickering outlier before the decode timer burns out. Chain clean reads for a rising combo multiplier, catch rare gold outliers for triple points, and a miscue or timeout cracks a shield. The grid grows and the hue gap narrows as you level up — lose all three shields and the circuit goes dark.</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                <p className="highscore-line">High Score: {ui.highScore}</p>
+              </React.Fragment>
+            )}
+            {ui.phase === 'over' && (
+              <React.Fragment>
+                <h1 className="title">SIGNAL LOST</h1>
+                <p className="finalscore">Score: <b>{ui.score}</b></p>
+                <p className="highscore-line">High Score: {ui.highScore}</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>PLAY AGAIN</button>
+              </React.Fragment>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="hint">Click/tap the odd-hued node &middot; Arrow keys move the cursor, Space/Enter selects &middot; Gold outliers pay triple</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

@@ -4203,7 +4203,7 @@
     "id": "2026-10-08",
     "name": "Ring Warden",
     "date": "2026-10-08",
-    "description": "A fragile neon core pulses at the center of your arena while glowing shards streak in from every direction along fixed radial lines. Drag anywhere on the field, swipe, or press Arrow keys / A-D to rotate your defense ring and intercept each shard right as it reaches the ring's radius — land it inside the arc and the shard shatters into particles, pays out, and builds a rising combo multiplier. Gold shards are rarer and pay triple. Miss one and it slips past to the core, cracking a shield and resetting your combo — lose all three shields and the core burns out. Shards come faster and denser the longer you hold the line. How long can you guard the core?",
+    "description": "A fragile neon core pulses at the center of your arena while glowing shards streak in from every direction along fixed radial lines. Drag anywhere on the field, swipe, or press Arrow keys / A-D to rotate your defense ring and intercept each shard right as it reaches the ring's radius \u2014 land it inside the arc and the shard shatters into particles, pays out, and builds a rising combo multiplier. Gold shards are rarer and pay triple. Miss one and it slips past to the core, cracking a shield and resetting your combo \u2014 lose all three shields and the core burns out. Shards come faster and denser the longer you hold the line. How long can you guard the core?",
     "tagline": "360 degrees of incoming. One ring to hold them all.",
     "tags": [
       "reflex",
@@ -4224,7 +4224,7 @@
     "id": "2026-10-09",
     "name": "Lexicon Flux",
     "date": "2026-10-09",
-    "description": "A target word glows above a scattered bank of neon letter tiles mixed with decoy letters that don't belong. Click or tap the real letters in the correct order before the timer bar burns out to spell the word, chaining correct picks into a rising combo multiplier while a wrong tile breaks your streak and drains precious time. Complete a word for a speed bonus and a tougher one spawns — longer words, more decoys, and a tighter clock as your level climbs. Run out of lives and the circuit fries.",
+    "description": "A target word glows above a scattered bank of neon letter tiles mixed with decoy letters that don't belong. Click or tap the real letters in the correct order before the timer bar burns out to spell the word, chaining correct picks into a rising combo multiplier while a wrong tile breaks your streak and drains precious time. Complete a word for a speed bonus and a tougher one spawns \u2014 longer words, more decoys, and a tighter clock as your level climbs. Run out of lives and the circuit fries.",
     "tagline": "Spell it fast. Dodge the decoys.",
     "tags": [
       "word",
@@ -4261,5 +4261,26 @@
     "file": "games/2026-10-10/index.html",
     "preview": "games/2026-10-10/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-12",
+    "name": "Odd Signal",
+    "date": "2026-10-12",
+    "description": "Every node in a neon grid glows the same hue except one \u2014 tap the flickering outlier before the decode timer burns out. Chain clean reads into a rising combo multiplier, catch rare gold outliers for triple points, and a miscue or timeout cracks a shield. The grid grows and the hue gap narrows as you level up, forcing sharper color reads under pressure \u2014 lose all three shields and the circuit goes dark.",
+    "tagline": "Spot the flicker. Tap it fast.",
+    "tags": [
+      "reflex",
+      "puzzle",
+      "color",
+      "reaction",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap the odd-hued node, or move the highlighted cursor with Arrow keys and press Space/Enter to select it",
+    "folder": "games/2026-10-12",
+    "file": "games/2026-10-12/index.html",
+    "preview": "games/2026-10-12/preview.png",
+    "rating": 4.2
   }
 ]
