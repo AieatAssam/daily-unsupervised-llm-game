@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Gate Drift</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 10%, #10082a 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(0,230,255,0.08), rgba(255,0,200,0.08), rgba(120,0,255,0.08));
+    background-size: 400% 400%;
+    animation: drift 14s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 8px 4px;
+    z-index: 5;
+    gap: 6px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 20px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #9dff8f; text-shadow: 0 0 10px #9dff8f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+  }
+  canvas.game-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    border-radius: 10px;
+    box-shadow: 0 0 30px rgba(79,242,255,0.15) inset;
+  }
+  .steer-row {
+    position: absolute;
+    bottom: 10px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 14px;
+    z-index: 6;
+    pointer-events: none;
+  }
+  .steer-btn {
+    pointer-events: auto;
+    width: 64px;
+    height: 56px;
+    border-radius: 14px;
+    border: 1px solid rgba(79,242,255,0.4);
+    background: rgba(10,6,26,0.55);
+    color: #4ff2ff;
+    font-size: 26px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 14px rgba(79,242,255,0.25);
+    user-select: none;
+  }
+  .steer-btn.active {
+    background: rgba(79,242,255,0.25);
+    box-shadow: 0 0 20px rgba(79,242,255,0.6);
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.78);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4ff2ff, 0 0 40px #ff57e6;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 14px;
+    max-width: 440px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4ff2ff, #ff57e6);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 11px;
+    text-align: center;
+    padding: 4px 10px 10px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'gateDriftHighScore';
+const ACCEL = 2600;
+const DAMPING = 0.991;
+const WALL_BOUNCE = 0.35;
+const TILT_RATE = 6.5;
+const SPEED_START = 150;
+const SPEED_STEP = 12;
+const SPEED_MAX = 420;
+const GAPW_START = 150;
+const GAPW_MIN = 78;
+const GAPW_STEP = 6;
+const SPAWN_START = 1450;
+const SPAWN_MIN = 820;
+const SPAWN_STEP = 45;
+const LEVEL_UP_EVERY = 5;
+const GATE_THICK = 16;
+const BALL_RADIUS = 13;
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return {
+    pass: (combo) => beep(360 + Math.min(combo, 16) * 22, 0.09, 'triangle', 0.08),
+    orb: () => { beep(720, 0.08, 'triangle', 0.08); setTimeout(() => beep(1040, 0.1, 'triangle', 0.08), 60); },
+    crash: () => beep(110, 0.3, 'sawtooth', 0.11),
+    wall: () => beep(200, 0.06, 'square', 0.05),
+    levelup: () => { beep(520, 0.1, 'triangle', 0.08); setTimeout(() => beep(780, 0.14, 'triangle', 0.08), 90); },
+    gameover: () => beep(85, 0.5, 'sawtooth', 0.12),
+  };
+}
+
+function makeGate(fieldW, gapW, id) {
+  const margin = 20;
+  const gapX = margin + Math.random() * Math.max(10, fieldW - margin * 2 - gapW);
+  const hasOrb = Math.random() < 0.6;
+  return {
+    id, y: -GATE_THICK, gapX, gapW, resolved: false,
+    hasOrb, orbTaken: false,
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [dims, setDims] = useState({ w: 480, h: 560 });
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: 3, level: 1, highScore: initialHigh,
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+
+  const leftHeldRef = useRef(false);
+  const rightHeldRef = useRef(false);
+  const [leftActive, setLeftActive] = useState(false);
+  const [rightActive, setRightActive] = useState(false);
+
+  const gameRef = useRef({
+    ball: { x: 240, vx: 0 },
+    tilt: 0,
+    gates: [],
+    orbs: [],
+    particles: [],
+    nextId: 1,
+    spawnTimer: 0,
+    speed: SPEED_START,
+    gapW: GAPW_START,
+    spawnInterval: SPAWN_START,
+    passCount: 0,
+    shake: 0,
+    flash: 0,
+  });
+
+  const spawnParticles = useCallback((x, y, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 70) return;
+    for (let i = 0; i < (count || 14); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 120) + Math.random() * (spread || 120);
+      parts.push({
+        x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 400 + Math.random() * 300, maxLife: 700, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const resetRun = useCallback((w) => {
+    const g = gameRef.current;
+    g.ball = { x: w / 2, vx: 0 };
+    g.tilt = 0;
+    g.gates = [];
+    g.orbs = [];
+    g.particles = [];
+    g.nextId = 1;
+    g.spawnTimer = 0;
+    g.speed = SPEED_START;
+    g.gapW = GAPW_START;
+    g.spawnInterval = SPAWN_START;
+    g.passCount = 0;
+    g.shake = 0;
+    g.flash = 0;
+  }, []);
+
+  const startGame = useCallback(() => {
+    resetRun(dims.w);
+    setUi(prev => ({ ...prev, phase: 'playing', score: 0, combo: 0, lives: 3, level: 1 }));
+  }, [resetRun, dims.w]);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  // keyboard
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { leftHeldRef.current = true; setLeftActive(true); e.preventDefault(); }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { rightHeldRef.current = true; setRightActive(true); e.preventDefault(); }
+      else if (e.code === 'Space' || e.code === 'Enter') {
+        const cur = uiRef.current;
+        if (cur.phase === 'idle' || cur.phase === 'over') startGame();
+        e.preventDefault();
+      }
+    }
+    function onKeyUp(e) {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { leftHeldRef.current = false; setLeftActive(false); }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { rightHeldRef.current = false; setRightActive(false); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [startGame]);
+
+  // resize tracking
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        setDims({ w: r.width, h: r.height });
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  // field tap/drag steering: left half of field = steer left, right half = steer right
+  const handleFieldPointer = useCallback((clientX) => {
+    if (uiRef.current.phase !== 'playing') return;
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    const rel = clientX - rect.left;
+    if (rel < rect.width / 2) {
+      leftHeldRef.current = true; rightHeldRef.current = false;
+      setLeftActive(true); setRightActive(false);
+    } else {
+      rightHeldRef.current = true; leftHeldRef.current = false;
+      setRightActive(true); setLeftActive(false);
+    }
+  }, []);
+
+  const clearFieldPointer = useCallback(() => {
+    leftHeldRef.current = false; rightHeldRef.current = false;
+    setLeftActive(false); setRightActive(false);
+  }, []);
+
+  // main loop
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.05, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = dims.w, h = dims.h;
+      const ballY = h * 0.76;
+
+      if (cur.phase === 'playing') {
+        const target = leftHeldRef.current ? -1 : (rightHeldRef.current ? 1 : 0);
+        g.tilt += (target - g.tilt) * Math.min(1, TILT_RATE * dt);
+
+        g.ball.vx += g.tilt * ACCEL * dt;
+        g.ball.vx *= Math.pow(DAMPING, dt * 60);
+        g.ball.x += g.ball.vx * dt;
+
+        if (g.ball.x < BALL_RADIUS) {
+          g.ball.x = BALL_RADIUS; g.ball.vx = -g.ball.vx * WALL_BOUNCE; audio.wall();
+        } else if (g.ball.x > w - BALL_RADIUS) {
+          g.ball.x = w - BALL_RADIUS; g.ball.vx = -g.ball.vx * WALL_BOUNCE; audio.wall();
+        }
+
+        g.spawnTimer += dt * 1000;
+        if (g.spawnTimer >= g.spawnInterval) {
+          g.spawnTimer = 0;
+          g.gates.push(makeGate(w, g.gapW, g.nextId++));
+        }
+
+        for (const gate of g.gates) {
+          gate.y += g.speed * dt;
+          if (!gate.resolved && gate.y + GATE_THICK / 2 >= ballY) {
+            gate.resolved = true;
+            const inGap = (g.ball.x - BALL_RADIUS) >= gate.gapX && (g.ball.x + BALL_RADIUS) <= (gate.gapX + gate.gapW);
+            if (inGap) {
+              const newCombo = cur.combo + 1;
+              const mult = 1 + newCombo * 0.15;
+              const gained = Math.round(12 * mult);
+              g.passCount += 1;
+              audio.pass(newCombo);
+              spawnParticles(g.ball.x, ballY, '#4ff2ff', 12, 90);
+              let leveledUp = false;
+              setUi(prev => {
+                const newLevel = (g.passCount % LEVEL_UP_EVERY === 0) ? prev.level + 1 : prev.level;
+                leveledUp = newLevel !== prev.level;
+                return { ...prev, score: prev.score + gained, combo: newCombo, level: newLevel };
+              });
+              if (g.passCount % LEVEL_UP_EVERY === 0) {
+                g.speed = Math.min(SPEED_MAX, g.speed + SPEED_STEP);
+                g.gapW = Math.max(GAPW_MIN, g.gapW - GAPW_STEP);
+                g.spawnInterval = Math.max(SPAWN_MIN, g.spawnInterval - SPAWN_STEP);
+                audio.levelup();
+              }
+            } else {
+              audio.crash();
+              g.shake = 1;
+              g.flash = 1;
+              spawnParticles(g.ball.x, ballY, '#ff3b3b', 20, 160);
+              setUi(prev => {
+                const newLives = prev.lives - 1;
+                return { ...prev, combo: 0, lives: Math.max(0, newLives) };
+              });
+              if (cur.lives - 1 <= 0) {
+                setTimeout(() => endGame(), 60);
+              }
+            }
+          }
+        }
+        g.gates = g.gates.filter(gt => gt.y < h + GATE_THICK * 2);
+
+        if (g.orbs.length === 0 && Math.random() < dt * 0.35) {
+          g.orbs.push({
+            x: BALL_RADIUS + Math.random() * (w - BALL_RADIUS * 2),
+            y: -20, taken: false,
+          });
+        }
+        for (const orb of g.orbs) {
+          orb.y += g.speed * 0.9 * dt;
+          if (!orb.taken && Math.abs(orb.y - ballY) < 16 && Math.abs(orb.x - g.ball.x) < BALL_RADIUS + 12) {
+            orb.taken = true;
+            audio.orb();
+            spawnParticles(orb.x, orb.y, '#ffd84f', 16, 100);
+            setUi(prev => ({ ...prev, score: prev.score + 25 }));
+          }
+        }
+        g.orbs = g.orbs.filter(o => !o.taken && o.y < h + 30);
+      }
+
+      // render
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const dpr = 1;
+        const cw = Math.max(1, Math.round(w * dpr));
+        const ch = Math.max(1, Math.round(h * dpr));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+
+        g.shake *= 0.9;
+        if (g.shake > 0.01) {
+          const shakeX = (Math.random() - 0.5) * g.shake * 10;
+          const shakeY = (Math.random() - 0.5) * g.shake * 10;
+          ctx.translate(shakeX, shakeY);
+        }
+
+        ctx.fillStyle = 'rgba(5,2,10,1)';
+        ctx.fillRect(-20, -20, w + 40, h + 40);
+
+        // lane guides
+        ctx.strokeStyle = 'rgba(79,242,255,0.08)';
+        ctx.lineWidth = 1;
+        for (let i = 1; i < 4; i++) {
+          ctx.beginPath();
+          ctx.moveTo(w * i / 4, 0);
+          ctx.lineTo(w * i / 4, h);
+          ctx.stroke();
+        }
+
+        // gates
+        for (const gate of g.gates) {
+          ctx.fillStyle = gate.resolved ? 'rgba(79,242,255,0.25)' : '#ff2fd6';
+          ctx.fillRect(0, gate.y - GATE_THICK / 2, gate.gapX, GATE_THICK);
+          ctx.fillRect(gate.gapX + gate.gapW, gate.y - GATE_THICK / 2, w - (gate.gapX + gate.gapW), GATE_THICK);
+        }
+
+        // orbs (cheap flat glow: oversized translucent halo behind solid dot, no shadowBlur)
+        for (const orb of g.orbs) {
+          if (orb.taken) continue;
+          ctx.fillStyle = 'rgba(255,216,79,0.3)';
+          ctx.beginPath();
+          ctx.arc(orb.x, orb.y, 15, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffd84f';
+          ctx.beginPath();
+          ctx.arc(orb.x, orb.y, 9, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // particles
+        const parts = g.particles;
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          p.life -= dt * 1000;
+          if (p.life <= 0) { parts.splice(i, 1); continue; }
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vy += 220 * dt;
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        // ball (cheap flat glow, no shadowBlur)
+        if (cur.phase !== 'idle') {
+          const bx = g.ball.x, by = ballY;
+          ctx.fillStyle = 'rgba(79,242,255,0.28)';
+          ctx.beginPath();
+          ctx.arc(bx, by, BALL_RADIUS + 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#4ff2ff';
+          ctx.beginPath();
+          ctx.arc(bx, by, BALL_RADIUS, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(bx - 4, by - 4, BALL_RADIUS * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        g.flash *= 0.88;
+        if (g.flash > 0.02) {
+          ctx.fillStyle = 'rgba(255,40,40,' + (g.flash * 0.35) + ')';
+          ctx.fillRect(-20, -20, w + 40, h + 40);
+        }
+
+        ctx.restore();
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [dims.w, dims.h, audio, endGame, spawnParticles]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div
+        className="field-wrap"
+        ref={wrapRef}
+        data-testid="play-field"
+        onPointerDown={(e) => { if (ui.phase === 'playing') e.preventDefault(); handleFieldPointer(e.clientX); }}
+        onPointerMove={(e) => { if (e.buttons === 1 || e.pressure > 0) handleFieldPointer(e.clientX); }}
+        onPointerUp={clearFieldPointer}
+        onPointerLeave={clearFieldPointer}
+        onPointerCancel={clearFieldPointer}
+      >
+        <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+
+        <div className="steer-row">
+          <div
+            className={'steer-btn' + (leftActive ? ' active' : '')}
+            data-testid="steer-left"
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); leftHeldRef.current = true; setLeftActive(true); }}
+            onPointerUp={(e) => { e.stopPropagation(); leftHeldRef.current = false; setLeftActive(false); }}
+            onPointerLeave={(e) => { e.stopPropagation(); leftHeldRef.current = false; setLeftActive(false); }}
+          >◀</div>
+          <div
+            className={'steer-btn' + (rightActive ? ' active' : '')}
+            data-testid="steer-right"
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); rightHeldRef.current = true; setRightActive(true); }}
+            onPointerUp={(e) => { e.stopPropagation(); rightHeldRef.current = false; setRightActive(false); }}
+            onPointerLeave={(e) => { e.stopPropagation(); rightHeldRef.current = false; setRightActive(false); }}
+          >▶</div>
+        </div>
+
+        {ui.phase !== 'playing' && (
+          <div className="overlay">
+            {ui.phase === 'idle' && (
+              <React.Fragment>
+                <h1 className="title">GATE DRIFT</h1>
+                <p className="subtitle">Steer a drifting marble down a neon chute lined with gates. Hold left/right to tilt and lean the marble through each gap — overcorrect and you'll slam the wall, undercorrect and you'll crash the gate. Clean passes chain into a rising combo multiplier, gold orbs pay bonus score, and the chute speeds up with narrower gaps the deeper you drift. Lose all three shields and the run ends.</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                <p className="highscore-line">High Score: {ui.highScore}</p>
+              </React.Fragment>
+            )}
+            {ui.phase === 'over' && (
+              <React.Fragment>
+                <h1 className="title">CRASHED OUT</h1>
+                <p className="finalscore">Score: <b>{ui.score}</b></p>
+                <p className="highscore-line">High Score: {ui.highScore}</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>DRIFT AGAIN</button>
+              </React.Fragment>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="hint">Hold Arrow Left/Right or A/D, or hold the left/right half of the field (or the ◀ ▶ buttons), to tilt and steer the marble through each gate</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
