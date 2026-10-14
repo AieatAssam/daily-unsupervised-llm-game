@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Echo Vault</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 10%, #150a30 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(0,230,255,0.08), rgba(255,0,200,0.08), rgba(120,0,255,0.08));
+    background-size: 400% 400%;
+    animation: drift 14s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 8px 4px;
+    z-index: 5;
+    gap: 6px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 20px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #9dff8f; text-shadow: 0 0 10px #9dff8f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+  }
+  .ring-stage {
+    position: relative;
+    width: min(88vw, 72vh, 420px);
+    height: min(88vw, 72vh, 420px);
+    max-width: 100%;
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    border-radius: 50%;
+  }
+  .status-core {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 36%;
+    height: 36%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(79,242,255,0.14), rgba(10,6,26,0.9) 70%);
+    border: 1px solid rgba(79,242,255,0.35);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 6px;
+    pointer-events: none;
+  }
+  .status-text {
+    color: #cfefff;
+    font-size: clamp(10px, 2.4vmin, 14px);
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+  .status-sub {
+    color: #7fb8d8;
+    font-size: clamp(8px, 1.8vmin, 11px);
+    margin-top: 3px;
+  }
+  .pad {
+    position: absolute;
+    width: clamp(46px, 15vmin, 64px);
+    height: clamp(46px, 15vmin, 64px);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px solid rgba(255,255,255,0.18);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: box-shadow 0.12s ease, transform 0.08s ease;
+    padding: 0;
+    background: radial-gradient(circle at 35% 30%, var(--c2), var(--c1) 60%, #0a0618 100%);
+  }
+  .pad .pad-dot {
+    width: 34%;
+    height: 34%;
+    border-radius: 50%;
+    background: #fff;
+    opacity: 0.25;
+  }
+  .pad.pressed { transform: translate(-50%, -50%) scale(0.9); }
+  .pad.seq {
+    box-shadow: 0 0 22px 6px var(--c1), 0 0 44px 10px var(--c1);
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+  .pad.seq .pad-dot { opacity: 1; background: #fff; }
+  .pad.ghost {
+    box-shadow: 0 0 10px 2px rgba(200,210,230,0.35);
+    border-color: rgba(220,230,255,0.4);
+  }
+  .pad.ghost .pad-dot { opacity: 0.5; background: #cfe0ff; }
+  .pad.correct {
+    box-shadow: 0 0 26px 8px #9dff8f, 0 0 50px 14px #9dff8f;
+  }
+  .pad.correct .pad-dot { opacity: 1; background: #d8ffd0; }
+  .pad.wrong {
+    box-shadow: 0 0 26px 8px #ff3b3b, 0 0 50px 14px #ff3b3b;
+  }
+  .pad.wrong .pad-dot { opacity: 1; background: #ffd0d0; }
+  .pad-label {
+    position: absolute;
+    bottom: -16px;
+    font-size: 9px;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 1px;
+    pointer-events: none;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.82);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4ff2ff, 0 0 40px #ff57e6;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 14px;
+    max-width: 440px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4ff2ff, #ff57e6);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 11px;
+    text-align: center;
+    padding: 4px 10px 10px;
+    opacity: 0.75;
+  }
+  .banner {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'echoVaultHighScore';
+const PAD_COUNT = 6;
+const PAD_HUES = [190, 320, 48, 140, 22, 268];
+const PAD_FREQS = [392.0, 440.0, 523.25, 587.33, 659.25, 783.99];
+const START_LIVES = 5;
+const START_SEQ_LEN = 3;
+const MAX_SEQ_LEN = 18;
+const STEP_GAP = 150;
+const LOCK_MS = 260;
+const FLASH_DISPLAY = 'auto';
+
+function hslStr(h, s, l) { return 'hsl(' + h + ',' + s + '%,' + l + '%)'; }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return {
+    pad: (idx, strong) => beep(PAD_FREQS[idx % PAD_FREQS.length], strong ? 0.26 : 0.18, 'triangle', strong ? 0.1 : 0.07),
+    ghost: () => beep(1400, 0.03, 'square', 0.015),
+    correct: (combo) => beep(600 + Math.min(combo, 14) * 24, 0.08, 'triangle', 0.07),
+    wrong: () => beep(100, 0.35, 'sawtooth', 0.12),
+    success: () => { beep(520, 0.1, 'triangle', 0.08); setTimeout(() => beep(780, 0.1, 'triangle', 0.08), 90); setTimeout(() => beep(1040, 0.16, 'triangle', 0.08), 180); },
+    gameover: () => beep(85, 0.5, 'sawtooth', 0.12),
+  };
+}
+
+function randPad(exclude) {
+  let p = Math.floor(Math.random() * PAD_COUNT);
+  if (exclude != null && PAD_COUNT > 1) {
+    while (p === exclude) p = Math.floor(Math.random() * PAD_COUNT);
+  }
+  return p;
+}
+
+function buildRound(seqLen, level) {
+  const sequence = [];
+  let prev = -1;
+  for (let i = 0; i < seqLen; i++) {
+    const p = randPad(prev === -1 ? null : (Math.random() < 0.5 ? prev : null));
+    sequence.push(p);
+    prev = p;
+  }
+  const interval = Math.max(430, 760 - level * 22);
+  const displayDur = Math.round(interval * 0.6);
+  const events = [];
+  for (let i = 0; i < sequence.length; i++) {
+    events.push({ t: i * interval, pad: sequence[i], ghost: false, fired: false });
+  }
+  const decoyCount = Math.min(Math.floor(level / 2), 4);
+  for (let i = 0; i < decoyCount; i++) {
+    const stepBefore = Math.floor(Math.random() * sequence.length);
+    const t = stepBefore * interval - interval * 0.42;
+    if (t > 40) {
+      events.push({ t, pad: randPad(sequence[stepBefore]), ghost: true, fired: false });
+    }
+  }
+  events.sort((a, b) => a.t - b.t);
+  const totalDuration = (sequence.length - 1) * interval + displayDur + 260;
+  return { sequence, events, interval, displayDur, totalDuration };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [dims, setDims] = useState({ w: 320, h: 320 });
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', sub: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    seqLen: START_SEQ_LEN, highScore: initialHigh,
+    flashPad: -1, flashKind: '', statusText: '', banner: '',
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const [pressed, setPressed] = useState(-1);
+
+  const audio = useAudio();
+
+  const gameRef = useRef({
+    sequence: [], events: [], inputIndex: 0, watchElapsed: 0,
+    totalDuration: 0, nextActionAt: Infinity, nextAction: null,
+    lockUntil: 0, particles: [], ringAngle: 0, sparkles: [],
+  });
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 90) return;
+    for (let i = 0; i < (count || 14); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 90) + Math.random() * (spread || 90);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 400 + Math.random() * 300, maxLife: 700, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const startRound = useCallback((seqLen, level) => {
+    const round = buildRound(seqLen, level);
+    const g = gameRef.current;
+    g.sequence = round.sequence;
+    g.events = round.events;
+    g.inputIndex = 0;
+    g.watchElapsed = 0;
+    g.totalDuration = round.totalDuration;
+    g.nextActionAt = Infinity;
+    g.nextAction = null;
+    setUi(prev => ({
+      ...prev, sub: 'watch', flashPad: -1, flashKind: '',
+      statusText: 'WATCH', banner: '',
+    }));
+  }, []);
+
+  const startGame = useCallback(() => {
+    const g = gameRef.current;
+    g.particles = [];
+    g.lockUntil = 0;
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: START_LIVES,
+      level: 1, seqLen: START_SEQ_LEN, banner: '',
+    }));
+    startRound(START_SEQ_LEN, 1);
+  }, [startRound]);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', sub: 'idle', highScore: newHigh }));
+  }, [audio]);
+
+  const handlePadTap = useCallback((idx, clientX, clientY) => {
+    setPressed(idx);
+    setTimeout(() => setPressed(p => (p === idx ? -1 : p)), 140);
+
+    const cur = uiRef.current;
+    const g = gameRef.current;
+    if (cur.phase !== 'playing' || cur.sub !== 'input') return;
+    const now = performance.now();
+    if (now < g.lockUntil) return;
+    g.lockUntil = now + LOCK_MS;
+
+    const expected = g.sequence[g.inputIndex];
+    const stage = wrapRef.current ? wrapRef.current.getBoundingClientRect() : null;
+    const px = stage ? clientX - stage.left : dims.w / 2;
+    const py = stage ? clientY - stage.top : dims.h / 2;
+
+    if (idx === expected) {
+      g.inputIndex += 1;
+      audio.correct(cur.combo);
+      spawnParticles(px, py, hslStr(PAD_HUES[idx], 90, 60), 10, 90);
+      const finished = g.inputIndex >= g.sequence.length;
+      setUi(prev => {
+        const newCombo = prev.combo + 1;
+        const mult = 1 + newCombo * 0.12;
+        let gained = Math.round(16 * mult);
+        let nextState = {
+          ...prev, combo: newCombo, flashPad: idx, flashKind: 'correct',
+        };
+        if (finished) {
+          gained += 40 + prev.level * 10;
+          nextState = {
+            ...nextState, score: prev.score + gained, sub: 'success',
+            statusText: 'VAULT OPEN', banner: 'SEQUENCE CLEARED',
+          };
+        } else {
+          nextState = { ...nextState, score: prev.score + gained };
+        }
+        return nextState;
+      });
+      if (finished) {
+        audio.success();
+        const g2 = gameRef.current;
+        g2.nextActionAt = now + 900;
+        g2.nextAction = 'success';
+      }
+    } else {
+      audio.wrong();
+      spawnParticles(px, py, '#ff3b3b', 16, 130);
+      setUi(prev => {
+        const newLives = prev.lives - 1;
+        if (newLives <= 0) {
+          return { ...prev, lives: 0, combo: 0, flashPad: idx, flashKind: 'wrong', sub: 'fail', banner: 'VAULT CRACKED' };
+        }
+        return { ...prev, lives: newLives, combo: 0, flashPad: idx, flashKind: 'wrong', sub: 'fail', banner: 'MISCUE — SHIELD CRACKED' };
+      });
+      const g2 = gameRef.current;
+      if (cur.lives - 1 <= 0) {
+        g2.nextActionAt = now + 700;
+        g2.nextAction = 'gameover';
+      } else {
+        g2.nextActionAt = now + 700;
+        g2.nextAction = 'retry';
+      }
+    }
+  }, [audio, spawnParticles, dims.w, dims.h]);
+
+  // keyboard: digits 1-6 map to pads
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (e.code === 'Space' || e.code === 'Enter') {
+        if (cur.phase === 'idle' || cur.phase === 'over') { startGame(); e.preventDefault(); }
+        return;
+      }
+      const m = e.code.match(/^Digit([1-6])$/);
+      if (m) {
+        const idx = parseInt(m[1], 10) - 1;
+        const stage = wrapRef.current ? wrapRef.current.getBoundingClientRect() : null;
+        const cx = stage ? stage.left + stage.width / 2 : 0;
+        const cy = stage ? stage.top + stage.height / 2 : 0;
+        handlePadTap(idx, cx, cy);
+        e.preventDefault();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, handlePadTap]);
+
+  // resize tracking
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        setDims({ w: r.width, h: r.height });
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  // main loop: ambient fx always running + sequence scheduler
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.05, (t - last) / 1000);
+      last = t;
+      const now = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = dims.w, h = dims.h;
+      const cx = w / 2, cy = h / 2;
+
+      g.ringAngle += dt * 0.25;
+
+      if (cur.phase === 'playing' && cur.sub === 'watch') {
+        g.watchElapsed += dt * 1000;
+        for (const ev of g.events) {
+          if (!ev.fired && g.watchElapsed >= ev.t) {
+            ev.fired = true;
+            if (ev.ghost) {
+              audio.ghost();
+              setUi(prev => (prev.sub === 'watch' ? { ...prev, flashPad: ev.pad, flashKind: 'ghost' } : prev));
+            } else {
+              audio.pad(ev.pad, true);
+              setUi(prev => (prev.sub === 'watch' ? { ...prev, flashPad: ev.pad, flashKind: 'seq' } : prev));
+            }
+          }
+        }
+        if (g.watchElapsed >= g.totalDuration) {
+          setUi(prev => (prev.sub === 'watch'
+            ? { ...prev, sub: 'input', flashPad: -1, flashKind: '', statusText: 'YOUR TURN', banner: '' }
+            : prev));
+        }
+      }
+
+      if (cur.phase === 'playing' && (cur.sub === 'success' || cur.sub === 'fail') && now >= g.nextActionAt) {
+        g.nextActionAt = Infinity;
+        const action = g.nextAction;
+        g.nextAction = null;
+        if (action === 'success') {
+          setUi(prev => {
+            const newLevel = prev.level + 1;
+            const newSeqLen = Math.min(MAX_SEQ_LEN, prev.seqLen + 1);
+            setTimeout(() => startRound(newSeqLen, newLevel), 0);
+            return { ...prev, level: newLevel, seqLen: newSeqLen };
+          });
+        } else if (action === 'retry') {
+          const cur2 = uiRef.current;
+          setTimeout(() => startRound(cur2.seqLen, cur2.level), 0);
+        } else if (action === 'gameover') {
+          endGame();
+        }
+      }
+
+      // ambient sparkles
+      if (g.sparkles.length < 10 && Math.random() < dt * 2.2) {
+        const ang = Math.random() * Math.PI * 2;
+        const rad = Math.min(w, h) * (0.32 + Math.random() * 0.16);
+        g.sparkles.push({
+          x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad,
+          life: 900 + Math.random() * 600, maxLife: 1500, hue: PAD_HUES[Math.floor(Math.random() * PAD_HUES.length)],
+        });
+      }
+
+      // render
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        // rotating outer ring
+        const outerR = Math.min(w, h) * 0.46;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(g.ringAngle);
+        ctx.strokeStyle = 'rgba(79,242,255,0.18)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, outerR, 0, Math.PI * 1.5);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,87,230,0.14)';
+        ctx.beginPath();
+        ctx.arc(0, 0, outerR * 0.92, Math.PI * 0.3, Math.PI * 1.9);
+        ctx.stroke();
+        ctx.restore();
+
+        // inner track circle
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.min(w, h) * 0.34, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // sparkles
+        const spk = g.sparkles;
+        for (let i = spk.length - 1; i >= 0; i--) {
+          const s = spk[i];
+          s.life -= dt * 1000;
+          if (s.life <= 0) { spk.splice(i, 1); continue; }
+          const alpha = Math.max(0, s.life / s.maxLife) * 0.5;
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = hslStr(s.hue, 90, 70);
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        // particles
+        const parts = g.particles;
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          p.life -= dt * 1000;
+          if (p.life <= 0) { parts.splice(i, 1); continue; }
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vy += 160 * dt;
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [dims.w, dims.h, audio, endGame, startRound]);
+
+  const padPositions = [];
+  for (let i = 0; i < PAD_COUNT; i++) {
+    const ang = -Math.PI / 2 + (i * 2 * Math.PI) / PAD_COUNT;
+    const radiusPct = 40;
+    padPositions.push({
+      left: 50 + Math.cos(ang) * radiusPct,
+      top: 50 + Math.sin(ang) * radiusPct,
+    });
+  }
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div className="ring-stage" ref={wrapRef}>
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+
+          <div className="status-core">
+            <div className="status-text" data-testid="status">{ui.phase === 'playing' ? ui.statusText : '—'}</div>
+            <div className="status-sub">Round {ui.seqLen - START_SEQ_LEN + 1} · Len {ui.seqLen}</div>
+          </div>
+
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+
+          {ui.phase !== 'idle' && padPositions.map((pos, i) => {
+            const isFlash = ui.flashPad === i;
+            const cls = ['pad'];
+            if (pressed === i) cls.push('pressed');
+            if (isFlash && ui.flashKind) cls.push(ui.flashKind);
+            return (
+              <button
+                key={i}
+                className={cls.join(' ')}
+                data-testid="vault-pad"
+                data-pad-index={i}
+                style={{
+                  left: pos.left + '%', top: pos.top + '%',
+                  '--c1': hslStr(PAD_HUES[i], 85, 30),
+                  '--c2': hslStr(PAD_HUES[i], 90, 62),
+                }}
+                onPointerDown={(e) => { e.preventDefault(); handlePadTap(i, e.clientX, e.clientY); }}
+              >
+                <span className="pad-dot"></span>
+                <span className="pad-label">{i + 1}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {ui.phase !== 'playing' && (
+          <div className="overlay">
+            {ui.phase === 'idle' && (
+              <React.Fragment>
+                <h1 className="title">ECHO VAULT</h1>
+                <p className="subtitle">A ring of six glowing pads flashes a growing sequence around the vault dial — ghostly decoy pulses flicker among them to throw off your memory. Watch closely, then tap the real pads back in the exact order to crack the next layer. Chain correct rounds into a rising combo multiplier, but a wrong tap cracks a shield — lose all five and the vault slams shut.</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                <p className="highscore-line">High Score: {ui.highScore}</p>
+              </React.Fragment>
+            )}
+            {ui.phase === 'over' && (
+              <React.Fragment>
+                <h1 className="title">VAULT SEALED</h1>
+                <p className="finalscore">Score: <b>{ui.score}</b></p>
+                <p className="highscore-line">High Score: {ui.highScore}</p>
+                <button className="start-btn" data-testid="start-btn" onClick={startGame}>CRACK AGAIN</button>
+              </React.Fragment>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="hint">Watch the flashing pads, then click/tap them (or press number keys 1-6) in the same order to repeat the sequence</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

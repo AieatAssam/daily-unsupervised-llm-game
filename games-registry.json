@@ -4303,5 +4303,26 @@
     "file": "games/2026-10-13/index.html",
     "preview": "games/2026-10-13/preview.png",
     "rating": 4.1
+  },
+  {
+    "id": "2026-10-14",
+    "name": "Echo Vault",
+    "date": "2026-10-14",
+    "description": "A ring of six glowing pads flashes a growing sequence around a neon vault dial — ghostly decoy pulses flicker among the real ones to throw off your memory. Watch closely, then tap the pads back in the exact order to crack the next layer, chaining correct rounds into a rising combo multiplier. A wrong tap cracks a shield and the sequence resets at the same length; a cleared sequence grows by one pad and speeds up its playback. Lose all five shields and the vault slams shut for good.",
+    "tagline": "Watch the echoes. Repeat the code.",
+    "tags": [
+      "memory",
+      "sequence",
+      "puzzle",
+      "reflex",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click/tap the glowing pads, or press number keys 1-6, in the same order they flashed to repeat the growing sequence",
+    "folder": "games/2026-10-14",
+    "file": "games/2026-10-14/index.html",
+    "preview": "games/2026-10-14/preview.png",
+    "rating": 4.2
   }
 ]
