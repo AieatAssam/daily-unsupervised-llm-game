@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Pulse Lock</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow-x: hidden; background: #050108; }
+  #root { width: 100%; min-height: 100vh; }
+
+  @keyframes bgShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .app {
+    position: relative;
+    min-height: 100vh;
+    width: 100%;
+    background: linear-gradient(120deg, #05010c, #130a2a, #06111f, #1a0520);
+    background-size: 300% 300%;
+    animation: bgShift 14s ease infinite;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color: #e8f6ff;
+    padding: 10px 10px 18px;
+    overflow-x: hidden;
+  }
+
+  .hud {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin: 4px 0 8px;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    z-index: 3;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    background: rgba(10, 6, 24, 0.55);
+    border: 1px solid rgba(0, 255, 230, 0.25);
+    border-radius: 10px;
+    padding: 6px 4px;
+    box-shadow: 0 0 12px rgba(0, 255, 230, 0.08) inset;
+  }
+  .hud-label { opacity: 0.6; font-size: 9px; text-transform: uppercase; }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    text-shadow: 0 0 8px currentColor;
+  }
+  .hud-score { color: #52ffe0; }
+  .hud-combo { color: #ff6bf5; }
+  .hud-lives { color: #ff4f6d; }
+  .hud-level { color: #ffd84f; }
+
+  .title-row {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    margin-top: 6px;
+    background: linear-gradient(90deg, #52ffe0, #ff6bf5, #52ffe0);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 24px rgba(82, 255, 224, 0.4);
+  }
+  .subtitle {
+    font-size: 11px;
+    opacity: 0.6;
+    letter-spacing: 0.12em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+
+  .play-field {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    flex: 1;
+    min-height: 360px;
+    border-radius: 18px;
+    border: 1px solid rgba(82, 255, 224, 0.2);
+    background: radial-gradient(ellipse at center, rgba(20, 8, 40, 0.6), rgba(2, 1, 6, 0.9));
+    box-shadow: 0 0 30px rgba(82, 255, 224, 0.08) inset, 0 0 40px rgba(255, 107, 245, 0.06);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px;
+  }
+
+  canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+  @keyframes dialGlowPulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+  .dial-area {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    width: 90px;
+    min-height: 220px;
+    margin-top: 20px;
+    border-radius: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    background: linear-gradient(180deg, rgba(255, 79, 109, 0.08), rgba(82, 255, 224, 0.08));
+    box-shadow: 0 0 22px rgba(255, 107, 245, 0.15) inset;
+    overflow: hidden;
+  }
+  .dial-area::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    box-shadow: 0 0 22px rgba(82, 255, 224, 0.2) inset;
+    animation: dialGlowPulse 2.4s ease-in-out infinite;
+    will-change: opacity;
+  }
+  .target-zone {
+    position: absolute;
+    left: 0;
+    right: 0;
+    background: rgba(82, 255, 224, 0.28);
+    border-top: 2px solid #52ffe0;
+    border-bottom: 2px solid #52ffe0;
+    box-shadow: 0 0 18px rgba(82, 255, 224, 0.5) inset;
+  }
+  .dial-marker {
+    position: absolute;
+    left: -8px;
+    right: -8px;
+    height: 14px;
+    transform: translateY(50%);
+    background: #ff6bf5;
+    border-radius: 7px;
+    box-shadow: 0 0 16px 4px #ff6bf5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: #0a0314;
+  }
+  .dial-marker.locked-good { background: #52ffe0; box-shadow: 0 0 20px 6px #52ffe0; }
+  .dial-marker.locked-bad { background: #ff4f6d; box-shadow: 0 0 20px 6px #ff4f6d; }
+
+  .controls-row {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    max-width: 480px;
+    margin-top: 12px;
+  }
+  .ctrl-btn {
+    flex: 1;
+    min-height: 54px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(20, 10, 36, 0.7);
+    color: #e8f6ff;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .ctrl-btn:active { transform: scale(0.96); }
+  .ctrl-up, .ctrl-down { color: #52ffe0; border-color: rgba(82, 255, 224, 0.4); box-shadow: 0 0 14px rgba(82, 255, 224, 0.15); }
+  .ctrl-lock {
+    color: #ff6bf5;
+    border-color: rgba(255, 107, 245, 0.5);
+    box-shadow: 0 0 18px rgba(255, 107, 245, 0.25);
+    flex: 1.4;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(4, 1, 10, 0.78);
+    text-align: center;
+    padding: 20px;
+    border-radius: 18px;
+  }
+  .overlay h2 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: 0.1em;
+    color: #52ffe0;
+    text-shadow: 0 0 16px rgba(82, 255, 224, 0.6);
+  }
+  .overlay p {
+    margin: 0;
+    font-size: 12px;
+    opacity: 0.75;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+  .start-btn {
+    padding: 14px 34px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    border-radius: 14px;
+    border: none;
+    min-height: 48px;
+    background: linear-gradient(90deg, #52ffe0, #ff6bf5);
+    color: #0a0314;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(255, 107, 245, 0.4);
+  }
+  .start-btn:active { transform: scale(0.96); }
+  .high-score-line { font-size: 12px; color: #ffd84f; letter-spacing: 0.08em; }
+
+  @media (max-width: 420px) {
+    .title-row { font-size: 20px; }
+    .dial-area { width: 70px; min-height: 180px; }
+    .play-field { min-height: 320px; padding: 8px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'pulseLockHighScore';
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function makeRound(level) {
+  const half = Math.max(6, 18 - level * 1.3);
+  const center = 15 + Math.random() * 70;
+  const lo = clamp(center - half, 2, 98);
+  const hi = clamp(center + half, 2, 98);
+  const duration = Math.max(1300, 3400 - level * 160);
+  return { lo, hi, duration };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const ensure = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    return ctxRef.current;
+  };
+  const beep = (freq, dur, type = 'sine', gain = 0.12) => {
+    try {
+      const ctx = ensure();
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      g.gain.value = gain;
+      osc.connect(g);
+      g.connect(ctx.destination);
+      const now = ctx.currentTime;
+      g.gain.setValueAtTime(gain, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  };
+  const apiRef = useRef(null);
+  if (!apiRef.current) {
+    apiRef.current = {
+      success: () => { beep(660, 0.12, 'triangle', 0.14); beep(990, 0.14, 'sine', 0.1); },
+      fail: () => { beep(160, 0.28, 'sawtooth', 0.12); },
+      tick: () => { beep(420, 0.03, 'square', 0.03); },
+      gameover: () => { beep(220, 0.1, 'sawtooth', 0.12); setTimeout(() => beep(120, 0.3, 'sawtooth', 0.12), 120); },
+    };
+  }
+  return apiRef.current;
+}
+
+function App() {
+  const [phase, setPhase] = useState('idle'); // idle | playing | gameover
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [lives, setLives] = useState(5);
+  const [level, setLevel] = useState(1);
+  const [round, setRound] = useState(() => makeRound(1));
+  const [lockFlash, setLockFlash] = useState(null); // 'good' | 'bad' | null
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+
+  const canvasRef = useRef(null);
+  const dialMarkerRef = useRef(null);
+  const dialRef = useRef(50);
+  const roundRef = useRef(round);
+  const phaseRef = useRef(phase);
+  const livesRef = useRef(lives);
+  const comboRef = useRef(combo);
+  const levelRef = useRef(level);
+  const scoreRef = useRef(score);
+  const successCountRef = useRef(0);
+  const timeLeftRef = useRef(round.duration);
+  const holdRef = useRef({ up: false, down: false });
+  const particlesRef = useRef([]);
+  const rafRef = useRef(null);
+  const lastTsRef = useRef(null);
+  const timePctRef = useRef(100);
+  const lockHandledRef = useRef(false);
+  const lockCooldownRef = useRef(0);
+  const startGameRef = useRef(() => {});
+  const audio = useAudio();
+
+  useEffect(() => { roundRef.current = round; }, [round]);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { livesRef.current = lives; }, [lives]);
+  useEffect(() => { comboRef.current = combo; }, [combo]);
+  useEffect(() => { levelRef.current = level; }, [level]);
+  useEffect(() => { scoreRef.current = score; }, [score]);
+
+  const saveHighScore = useCallback((val) => {
+    setHighScore((prev) => {
+      const next = Math.max(prev, val);
+      localStorage.setItem(HIGH_SCORE_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  const spawnParticles = (good) => {
+    const color = good ? '82,255,224' : '255,79,109';
+    const n = good ? 26 : 16;
+    for (let i = 0; i < n; i++) {
+      particlesRef.current.push({
+        x: 0.5, y: clamp(dialRef.current / 100, 0, 1),
+        vx: (Math.random() - 0.5) * 3.2,
+        vy: (Math.random() - 0.5) * 3.2,
+        life: 1, color,
+        size: 2 + Math.random() * 3,
+      });
+    }
+  };
+
+  const newRound = useCallback((lvl) => {
+    const r = makeRound(lvl);
+    roundRef.current = r;
+    setRound(r);
+    timeLeftRef.current = r.duration;
+    timePctRef.current = 100;
+    setLockFlash(null);
+  }, []);
+
+  const doMiss = useCallback(() => {
+    setLockFlash('bad');
+    comboRef.current = 0;
+    setCombo(0);
+    audio.fail();
+    const nextLives = livesRef.current - 1;
+    livesRef.current = nextLives;
+    setLives(nextLives);
+    if (nextLives <= 0) {
+      phaseRef.current = 'gameover';
+      setPhase('gameover');
+      saveHighScore(scoreRef.current);
+      audio.gameover();
+    } else {
+      newRound(levelRef.current);
+    }
+  }, [audio, newRound, saveHighScore]);
+
+  const doSuccess = useCallback(() => {
+    setLockFlash('good');
+    audio.success();
+    spawnParticles(true);
+    const gain = 10 + comboRef.current * 2;
+    const nextScore = scoreRef.current + gain;
+    scoreRef.current = nextScore;
+    setScore(nextScore);
+    comboRef.current += 1;
+    setCombo(comboRef.current);
+    successCountRef.current += 1;
+    if (nextScore > highScore) saveHighScore(nextScore);
+    let nextLevel = levelRef.current;
+    if (successCountRef.current % 3 === 0) {
+      nextLevel = levelRef.current + 1;
+      levelRef.current = nextLevel;
+      setLevel(nextLevel);
+    }
+    newRound(nextLevel);
+  }, [audio, highScore, newRound, saveHighScore]);
+
+  const attemptLock = useCallback(() => {
+    const now = performance.now();
+    if (now - lockCooldownRef.current < 150) return;
+    lockCooldownRef.current = now;
+    if (phaseRef.current === 'gameover') { startGameRef.current(); return; }
+    if (phaseRef.current !== 'playing') return;
+    const r = roundRef.current;
+    const v = dialRef.current;
+    if (v >= r.lo && v <= r.hi) doSuccess(); else { spawnParticles(false); doMiss(); }
+  }, [doSuccess, doMiss]);
+
+  const syncDialDOM = (val) => {
+    const el = dialMarkerRef.current;
+    if (el) {
+      el.style.bottom = val + '%';
+      el.textContent = String(Math.round(val));
+    }
+  };
+
+  const step = useCallback((dv) => {
+    if (phaseRef.current === 'gameover') { startGameRef.current(); return; }
+    if (phaseRef.current !== 'playing') return;
+    const next = clamp(dialRef.current + dv, 0, 100);
+    dialRef.current = next;
+    syncDialDOM(next);
+  }, []);
+
+  const startGame = () => {
+    setScore(0); scoreRef.current = 0;
+    setCombo(0); comboRef.current = 0;
+    setLives(5); livesRef.current = 5;
+    setLevel(1); levelRef.current = 1;
+    successCountRef.current = 0;
+    dialRef.current = 50;
+    syncDialDOM(50);
+    particlesRef.current = [];
+    setPhase('playing'); phaseRef.current = 'playing';
+    newRound(1);
+  };
+  startGameRef.current = startGame;
+
+  // main loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    const resize = () => {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const tick = (ts) => {
+      if (lastTsRef.current == null) lastTsRef.current = ts;
+      const dt = Math.min(48, ts - lastTsRef.current);
+      lastTsRef.current = ts;
+
+      if (phaseRef.current === 'playing') {
+        const speed = 0.045; // units per ms while held
+        if (holdRef.current.up) step(speed * dt);
+        if (holdRef.current.down) step(-speed * dt);
+
+        timeLeftRef.current -= dt;
+        const r = roundRef.current;
+        timePctRef.current = clamp((timeLeftRef.current / r.duration) * 100, 0, 100);
+        if (timeLeftRef.current <= 0) {
+          doMiss();
+        }
+      }
+
+      // timer bar + particle bursts only — kept minimal so it stays light under CPU contention
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(0, 0, w, 6);
+      ctx.fillStyle = '#52ffe0';
+      ctx.fillRect(0, 0, w * (timePctRef.current / 100), 6);
+
+      if (particlesRef.current.length > 0) {
+        particlesRef.current = particlesRef.current.filter((p) => p.life > 0);
+        particlesRef.current.forEach((p) => {
+          p.x += p.vx * (dt / 60) * 0.02;
+          p.y += p.vy * (dt / 60) * 0.02;
+          p.life -= dt / 700;
+          ctx.beginPath();
+          ctx.fillStyle = `rgba(${p.color},${Math.max(0, p.life)})`;
+          ctx.arc(p.x * w, (1 - p.y) * h, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resize);
+    };
+  }, [doMiss, step]);
+
+  // keyboard controls
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.repeat) {
+        if (e.code === 'Space') e.preventDefault();
+        return;
+      }
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+        holdRef.current.up = true;
+        step(6);
+      } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        holdRef.current.down = true;
+        step(-6);
+      } else if (e.code === 'Space') {
+        e.preventDefault();
+        if (!lockHandledRef.current) {
+          lockHandledRef.current = true;
+          attemptLock();
+        }
+      }
+    };
+    const onKeyUp = (e) => {
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') holdRef.current.up = false;
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') holdRef.current.down = false;
+      else if (e.code === 'Space') lockHandledRef.current = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [step, attemptLock]);
+
+  const holdStart = (dir) => (e) => {
+    e.preventDefault();
+    holdRef.current[dir] = true;
+    step(dir === 'up' ? 6 : -6);
+  };
+  const holdEnd = (dir) => () => { holdRef.current[dir] = false; };
+
+  const dialMarkerClass = 'dial-marker' + (lockFlash === 'good' ? ' locked-good' : lockFlash === 'bad' ? ' locked-bad' : '');
+
+  return (
+    <div className="app">
+      <div className="title-row">PULSE LOCK</div>
+      <div className="subtitle">Tune the signal. Lock the frequency.</div>
+
+      <div className="hud">
+        <div className="hud-item"><div className="hud-label">Score</div><div className="hud-value hud-score" data-testid="score">{score}</div></div>
+        <div className="hud-item"><div className="hud-label">Combo</div><div className="hud-value hud-combo" data-testid="combo">x{combo}</div></div>
+        <div className="hud-item"><div className="hud-label">Lives</div><div className="hud-value hud-lives" data-testid="lives">{lives}</div></div>
+        <div className="hud-item"><div className="hud-label">Level</div><div className="hud-value hud-level" data-testid="level">{level}</div></div>
+      </div>
+
+      <div className="play-field" data-testid="play-field">
+        <canvas ref={canvasRef} data-testid="canvas"></canvas>
+
+        <div className="dial-area" data-testid="dial-area">
+          <div
+            className="target-zone"
+            data-testid="target-zone"
+            style={{ bottom: round.lo + '%', height: (round.hi - round.lo) + '%' }}
+          ></div>
+          <div
+            ref={dialMarkerRef}
+            className={dialMarkerClass}
+            data-testid="dial-value"
+            style={{ bottom: '50%' }}
+          >50</div>
+        </div>
+
+        {phase === 'idle' && (
+          <div className="overlay">
+            <h2>PULSE LOCK</h2>
+            <p>Use UP/DOWN (or ▲▼) to tune the glowing marker into the neon target zone, then LOCK (Space) before time runs out. Chain locks for combo multipliers — misses cost a life.</p>
+            <div className="high-score-line">HIGH SCORE: {highScore}</div>
+            <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        )}
+
+        {phase === 'gameover' && (
+          <div className="overlay">
+            <h2>SIGNAL LOST</h2>
+            <p>Final score: {score}</p>
+            <div className="high-score-line">HIGH SCORE: {highScore}</div>
+            <button className="start-btn" data-testid="start-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        )}
+      </div>
+
+      <div className="controls-row">
+        <button
+          className="ctrl-btn ctrl-down"
+          data-testid="dial-down"
+          onMouseDown={holdStart('down')}
+          onMouseUp={holdEnd('down')}
+          onMouseLeave={holdEnd('down')}
+          onTouchStart={holdStart('down')}
+          onTouchEnd={holdEnd('down')}
+        >▼ DOWN</button>
+        <button
+          className="ctrl-btn ctrl-lock"
+          data-testid="lock-btn"
+          onMouseDown={(e) => { e.preventDefault(); attemptLock(); }}
+          onTouchStart={(e) => { e.preventDefault(); attemptLock(); }}
+        >LOCK</button>
+        <button
+          className="ctrl-btn ctrl-up"
+          data-testid="dial-up"
+          onMouseDown={holdStart('up')}
+          onMouseUp={holdEnd('up')}
+          onMouseLeave={holdEnd('up')}
+          onTouchStart={holdStart('up')}
+          onTouchEnd={holdEnd('up')}
+        >▲ UP</button>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

@@ -4324,5 +4324,26 @@
     "file": "games/2026-10-14/index.html",
     "preview": "games/2026-10-14/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-10-15",
+    "name": "Pulse Lock",
+    "date": "2026-10-15",
+    "description": "A neon signal pulses up and down a vertical frequency dial while a glowing target band drifts to a new random position every round. Tune the marker into the band with UP/DOWN before the timer bar burns out, then slam LOCK to catch it — chain clean locks for a rising combo multiplier and climbing score. Lock outside the band, or let the timer expire, and a shield cracks; crack all five and the signal is lost for good. Each cleared lock tightens the band and speeds up the clock.",
+    "tagline": "Tune the signal. Lock the frequency.",
+    "tags": [
+      "timing",
+      "precision",
+      "arcade",
+      "reflex",
+      "score-attack"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Press Up/Down arrows (or tap the UP/DOWN buttons) to tune the dial into the glowing target zone, then press Space or tap LOCK before the timer runs out",
+    "folder": "games/2026-10-15",
+    "file": "games/2026-10-15/index.html",
+    "preview": "games/2026-10-15/preview.png",
+    "rating": 4.3
   }
 ]
