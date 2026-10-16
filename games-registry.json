@@ -4324,5 +4324,26 @@
     "file": "games/2026-10-14/index.html",
     "preview": "games/2026-10-14/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-10-16",
+    "name": "Photon Ricochet",
+    "date": "2026-10-16",
+    "description": "A photon launcher sits fixed at the bottom of a sealed neon arena. Drag from it to aim, release to fire a bolt that ricochets off the walls, and thread the shot into drifting cyan orbs to build a rising combo multiplier. Red hazard orbs lurk among them — graze one and a shield cracks. Bolts that bounce out their limit or coast past their fuse without a hit snap the combo clean. Clearing hits speeds up the level: faster orbs, tighter bounce limits, more hazards crowding the field. Lose all three shields and the grid goes dark.",
+    "tagline": "Aim. Ricochet. Don't graze red.",
+    "tags": [
+      "aiming",
+      "physics",
+      "arcade",
+      "reflex",
+      "precision"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Drag from the launcher to aim, then release to fire a photon bolt, or press Arrow keys / A-D to rotate aim and Space to fire",
+    "folder": "games/2026-10-16",
+    "file": "games/2026-10-16/index.html",
+    "preview": "games/2026-10-16/preview.png",
+    "rating": 4.3
   }
 ]
