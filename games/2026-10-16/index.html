@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Photon Ricochet</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 10%, #150a30 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(0,230,255,0.08), rgba(255,0,200,0.08), rgba(120,0,255,0.08));
+    background-size: 400% 400%;
+    animation: drift 14s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .flash-overlay {
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 85%, rgba(255,40,40,0.0), rgba(255,40,40,0.0));
+    pointer-events: none;
+    z-index: 4;
+    transition: background 0.1s ease;
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 8px 4px;
+    z-index: 5;
+    gap: 6px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 20px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #9dff8f; text-shadow: 0 0 10px #9dff8f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+  }
+  .arena-stage {
+    position: relative;
+    width: min(92vw, 480px);
+    aspect-ratio: 3 / 4;
+    max-height: 100%;
+    border-radius: 18px;
+    border: 1px solid rgba(79,242,255,0.22);
+    box-shadow: inset 0 0 40px rgba(79,242,255,0.08), 0 0 30px rgba(120,0,255,0.12);
+    overflow: hidden;
+    touch-action: none;
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .aim-readout {
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #cfefff;
+    font-size: 11px;
+    letter-spacing: 1px;
+    opacity: 0.6;
+    z-index: 3;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .banner {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.86);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4ff2ff, 0 0 40px #ff57e6;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 14px;
+    max-width: 420px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4ff2ff, #ff57e6);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 11px;
+    text-align: center;
+    padding: 4px 10px 10px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'photonRicochetHighScore';
+const START_SHIELDS = 3;
+const BOLT_SPEED = 420;
+const BOLT_LIFETIME_MS = 3400;
+const MAX_BOLTS = 4;
+const AIM_MIN = -75;
+const AIM_MAX = 75;
+const GOOD_HUE = 188;
+const HAZARD_HUE = 6;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function hslStr(h, s, l) { return 'hsl(' + h + ',' + s + '%,' + l + '%)'; }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    launch: () => beep(620, 0.1, 'triangle', 0.07, 980),
+    bounce: () => beep(900, 0.05, 'square', 0.025),
+    good: (combo) => beep(540 + Math.min(combo, 16) * 28, 0.14, 'triangle', 0.09),
+    hazard: () => beep(160, 0.4, 'sawtooth', 0.14, 50),
+    miss: () => beep(220, 0.12, 'sine', 0.05, 120),
+    levelup: () => { beep(520, 0.1, 'triangle', 0.08); setTimeout(() => beep(780, 0.12, 'triangle', 0.08), 90); setTimeout(() => beep(1040, 0.16, 'triangle', 0.08), 180); },
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function randRange(a, b) { return a + Math.random() * (b - a); }
+
+function maxBouncesForLevel(level) { return Math.max(4, 9 - Math.floor(level / 2)); }
+function targetRadiusForLevel(level) { return Math.max(16, 30 - level * 1.1); }
+function targetSpeedForLevel(level) { return Math.min(170, 46 + level * 9); }
+function goodCountForLevel(level) { return Math.min(4, 1 + Math.floor(level / 3)); }
+function hazardCountForLevel(level) { return Math.min(3, Math.floor((level - 1) / 2)); }
+
+function spawnOrb(type, level, w, h, launcher) {
+  const r = targetRadiusForLevel(level);
+  let x, y;
+  let tries = 0;
+  do {
+    x = randRange(r + 6, w - r - 6);
+    y = randRange(r + 6, h * 0.62);
+    tries++;
+  } while (Math.hypot(x - launcher.x, y - launcher.y) < h * 0.3 && tries < 12);
+  const speed = targetSpeedForLevel(level) * (type === 'hazard' ? 1.15 : 1);
+  const ang = randRange(0, Math.PI * 2);
+  return {
+    id: Math.random().toString(36).slice(2),
+    type, x, y, r,
+    vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+    hue: type === 'hazard' ? HAZARD_HUE : GOOD_HUE + Math.random() * 40 - 20,
+    pulse: Math.random() * Math.PI * 2,
+  };
+}
+
+function reconfigureOrbs(orbs, level, w, h, launcher) {
+  const wantGood = goodCountForLevel(level);
+  const wantHazard = hazardCountForLevel(level);
+  let good = orbs.filter(o => o.type === 'good');
+  let hazard = orbs.filter(o => o.type === 'hazard');
+  while (good.length < wantGood) good.push(spawnOrb('good', level, w, h, launcher));
+  while (good.length > wantGood) good.pop();
+  while (hazard.length < wantHazard) hazard.push(spawnOrb('hazard', level, w, h, launcher));
+  while (hazard.length > wantHazard) hazard.pop();
+  return good.concat(hazard);
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const aimRef = useRef(null);
+  const [dims, setDims] = useState({ w: 320, h: 420 });
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, shields: START_SHIELDS, level: 1,
+    highScore: initialHigh, banner: '', flash: 0,
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  useEffect(() => {
+    if (ui.score > ui.highScore) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(ui.score));
+      setUi(prev => (prev.score > prev.highScore ? { ...prev, highScore: prev.score } : prev));
+    }
+  }, [ui.score]);
+
+  const audio = useAudio();
+
+  const gameRef = useRef({
+    bolts: [], orbs: [], particles: [], aiming: false, aimDeg: 0,
+    launcher: { x: 160, y: 380 }, lastBounceSound: 0, bannerClearAt: 0, flashDecay: 0,
+  });
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 70) return;
+    for (let i = 0; i < (count || 14); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 90) + Math.random() * (spread || 90);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 400 + Math.random() * 300, maxLife: 700, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const showBanner = useCallback((text, ms) => {
+    gameRef.current.bannerClearAt = performance.now() + (ms || 900);
+    setUi(prev => ({ ...prev, banner: text }));
+  }, []);
+
+  const startGame = useCallback(() => {
+    const g = gameRef.current;
+    g.bolts = [];
+    g.particles = [];
+    g.aiming = false;
+    g.aimDeg = 0;
+    g.orbs = reconfigureOrbs([], 1, dims.w, dims.h, g.launcher);
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, shields: START_SHIELDS,
+      level: 1, banner: '', flash: 0,
+    }));
+  }, [dims.w, dims.h]);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const fireBolt = useCallback((angleDeg) => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    const g = gameRef.current;
+    if (g.bolts.length >= MAX_BOLTS) return;
+    const rad = (angleDeg * Math.PI) / 180;
+    const speed = BOLT_SPEED;
+    g.bolts.push({
+      x: g.launcher.x, y: g.launcher.y - 10,
+      vx: Math.sin(rad) * speed, vy: -Math.cos(rad) * speed,
+      bounces: 0, born: performance.now(), trail: [], hue: 55,
+    });
+    audio.launch();
+  }, [audio]);
+
+  const angleFromPoint = useCallback((px, py) => {
+    const g = gameRef.current;
+    const dx = px - g.launcher.x;
+    let dy = py - g.launcher.y;
+    if (dy > -10) dy = -10;
+    let deg = Math.atan2(dx, -dy) * 180 / Math.PI;
+    return clamp(deg, AIM_MIN, AIM_MAX);
+  }, []);
+
+  const pointerToLocal = useCallback((clientX, clientY) => {
+    const stage = wrapRef.current ? wrapRef.current.getBoundingClientRect() : null;
+    if (!stage) return { x: 0, y: 0 };
+    return { x: clientX - stage.left, y: clientY - stage.top };
+  }, []);
+
+  const handlePointerDown = useCallback((e) => {
+    if (uiRef.current.phase !== 'playing') return;
+    e.preventDefault();
+    const g = gameRef.current;
+    g.aiming = true;
+    const p = pointerToLocal(e.clientX, e.clientY);
+    g.aimDeg = angleFromPoint(p.x, p.y);
+  }, [pointerToLocal, angleFromPoint]);
+
+  const handlePointerMove = useCallback((e) => {
+    const g = gameRef.current;
+    if (!g.aiming) return;
+    const p = pointerToLocal(e.clientX, e.clientY);
+    g.aimDeg = angleFromPoint(p.x, p.y);
+  }, [pointerToLocal, angleFromPoint]);
+
+  const handlePointerUp = useCallback((e) => {
+    const g = gameRef.current;
+    if (!g.aiming) return;
+    g.aiming = false;
+    const p = pointerToLocal(e.clientX, e.clientY);
+    g.aimDeg = angleFromPoint(p.x, p.y);
+    fireBolt(g.aimDeg);
+  }, [pointerToLocal, angleFromPoint, fireBolt]);
+
+  useEffect(() => {
+    function onMove(e) { handlePointerMove(e); }
+    function onUp(e) { handlePointerUp(e); }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [handlePointerMove, handlePointerUp]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        if (cur.phase === 'idle' || cur.phase === 'over') { startGame(); return; }
+        if (cur.phase === 'playing') { fireBolt(g.aimDeg); }
+        return;
+      }
+      if (cur.phase !== 'playing') return;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+        e.preventDefault();
+        g.aimDeg = clamp(g.aimDeg - 6, AIM_MIN, AIM_MAX);
+      } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+        e.preventDefault();
+        g.aimDeg = clamp(g.aimDeg + 6, AIM_MIN, AIM_MAX);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, fireBolt]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        setDims({ w: r.width, h: r.height });
+        gameRef.current.launcher = { x: r.width / 2, y: r.height - 26 };
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  const resolveMiss = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.combo > 0) {
+      setUi(prev => ({ ...prev, combo: 0 }));
+      showBanner('MISS', 500);
+    }
+    audio.miss();
+  }, [audio, showBanner]);
+
+  const resolveGoodHit = useCallback((orb) => {
+    const prevCombo = uiRef.current.combo;
+    spawnParticles(orb.x, orb.y, hslStr(orb.hue, 90, 62), 10, 110);
+    audio.good(prevCombo);
+    setUi(prev => {
+      const newCombo = prev.combo + 1;
+      const mult = 1 + newCombo * 0.15;
+      const gained = Math.round(12 * mult);
+      const newScore = prev.score + gained;
+      let newLevel = prev.level;
+      if (newCombo % 5 === 0) newLevel += 1;
+      if (newLevel !== prev.level) {
+        setTimeout(() => {
+          const gg = gameRef.current;
+          gg.orbs = reconfigureOrbs(gg.orbs, newLevel, dims.w, dims.h, gg.launcher);
+        }, 0);
+        audio.levelup();
+        return { ...prev, score: newScore, combo: newCombo, level: newLevel, banner: 'LEVEL ' + newLevel };
+      }
+      return { ...prev, score: newScore, combo: newCombo };
+    });
+    gameRef.current.bannerClearAt = performance.now() + 700;
+  }, [audio, spawnParticles, dims.w, dims.h]);
+
+  const resolveHazardHit = useCallback((orb) => {
+    spawnParticles(orb.x, orb.y, '#ff3b3b', 12, 140);
+    audio.hazard();
+    const g = gameRef.current;
+    g.flashDecay = 1;
+    setUi(prev => {
+      const newShields = prev.shields - 1;
+      if (newShields <= 0) {
+        setTimeout(() => endGame(), 0);
+        return { ...prev, shields: 0, combo: 0, banner: 'SHIELD LOST' };
+      }
+      return { ...prev, shields: newShields, combo: 0, banner: 'SHIELD LOST' };
+    });
+    gameRef.current.bannerClearAt = performance.now() + 700;
+  }, [audio, spawnParticles, endGame]);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.05, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = dims.w, h = dims.h;
+
+      if (cur.phase === 'playing') {
+        const maxB = maxBouncesForLevel(cur.level);
+        for (let i = g.bolts.length - 1; i >= 0; i--) {
+          const b = g.bolts[i];
+          b.trail.push({ x: b.x, y: b.y });
+          if (b.trail.length > 6) b.trail.shift();
+          b.x += b.vx * dt;
+          b.y += b.vy * dt;
+          let bounced = false;
+          if (b.x < 6) { b.x = 6; b.vx = Math.abs(b.vx); bounced = true; }
+          else if (b.x > w - 6) { b.x = w - 6; b.vx = -Math.abs(b.vx); bounced = true; }
+          if (b.y < 6) { b.y = 6; b.vy = Math.abs(b.vy); bounced = true; }
+          else if (b.y > h - 6) { b.y = h - 6; b.vy = -Math.abs(b.vy); bounced = true; }
+          if (bounced) {
+            b.bounces += 1;
+            const now = t;
+            if (now - g.lastBounceSound > 55) { audio.bounce(); g.lastBounceSound = now; }
+          }
+
+          let consumed = false;
+          for (let j = g.orbs.length - 1; j >= 0 && !consumed; j--) {
+            const orb = g.orbs[j];
+            const d = Math.hypot(b.x - orb.x, b.y - orb.y);
+            if (d < orb.r + 6) {
+              consumed = true;
+              if (orb.type === 'good') {
+                resolveGoodHit(orb);
+                const nl = Math.max(1, cur.level);
+                g.orbs[j] = spawnOrb('good', nl, w, h, g.launcher);
+              } else {
+                resolveHazardHit(orb);
+                const nl = Math.max(1, cur.level);
+                g.orbs[j] = spawnOrb('hazard', nl, w, h, g.launcher);
+              }
+            }
+          }
+          if (consumed || b.bounces > maxB || t - b.born > BOLT_LIFETIME_MS) {
+            if (!consumed) resolveMiss();
+            g.bolts.splice(i, 1);
+          }
+        }
+
+        for (const orb of g.orbs) {
+          orb.x += orb.vx * dt;
+          orb.y += orb.vy * dt;
+          orb.pulse += dt * 3;
+          if (orb.x < orb.r) { orb.x = orb.r; orb.vx = Math.abs(orb.vx); }
+          else if (orb.x > w - orb.r) { orb.x = w - orb.r; orb.vx = -Math.abs(orb.vx); }
+          if (orb.y < orb.r) { orb.y = orb.r; orb.vy = Math.abs(orb.vy); }
+          else if (orb.y > h * 0.72) { orb.y = h * 0.72; orb.vy = -Math.abs(orb.vy); }
+        }
+
+        if (g.bannerClearAt && t > g.bannerClearAt) {
+          g.bannerClearAt = 0;
+          setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+        }
+      }
+
+      if (aimRef.current) aimRef.current.textContent = 'AIM ' + Math.round(g.aimDeg) + '°';
+
+      if (g.flashDecay > 0) {
+        g.flashDecay = Math.max(0, g.flashDecay - dt * 2.2);
+      }
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 140 * dt;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        if (!g.gridCanvas || g.gridW !== cw || g.gridH !== ch) {
+          const gc = document.createElement('canvas');
+          gc.width = cw; gc.height = ch;
+          const gctx = gc.getContext('2d');
+          gctx.strokeStyle = 'rgba(79,242,255,0.07)';
+          gctx.lineWidth = 1;
+          for (let gx = 0; gx < cw; gx += 36) {
+            gctx.beginPath(); gctx.moveTo(gx, 0); gctx.lineTo(gx, ch); gctx.stroke();
+          }
+          for (let gy = 0; gy < ch; gy += 36) {
+            gctx.beginPath(); gctx.moveTo(0, gy); gctx.lineTo(cw, gy); gctx.stroke();
+          }
+          g.gridCanvas = gc; g.gridW = cw; g.gridH = ch;
+        }
+        ctx.drawImage(g.gridCanvas, 0, 0);
+
+        if (g.flashDecay > 0) {
+          ctx.fillStyle = 'rgba(255,40,40,' + (g.flashDecay * 0.28) + ')';
+          ctx.fillRect(0, 0, w, h);
+        }
+
+        const launcher = g.launcher;
+        if (cur.phase === 'playing') {
+          const rad = (g.aimDeg * Math.PI) / 180;
+          const dx = Math.sin(rad), dy = -Math.cos(rad);
+          ctx.save();
+          ctx.setLineDash([6, 8]);
+          ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(launcher.x, launcher.y - 10);
+          ctx.lineTo(launcher.x + dx * h * 0.42, launcher.y - 10 + dy * h * 0.42);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        ctx.save();
+        ctx.translate(launcher.x, launcher.y);
+        const rad2 = (g.aimDeg * Math.PI) / 180;
+        ctx.rotate(rad2);
+        ctx.fillStyle = 'rgba(255,216,79,0.3)';
+        ctx.beginPath();
+        ctx.moveTo(0, -26);
+        ctx.lineTo(-18, 15);
+        ctx.lineTo(18, 15);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#ffd84f';
+        ctx.beginPath();
+        ctx.moveTo(0, -18);
+        ctx.lineTo(-12, 10);
+        ctx.lineTo(12, 10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        for (const orb of g.orbs) {
+          const pulse = 1 + Math.sin(orb.pulse) * 0.08;
+          const col = orb.type === 'hazard' ? hslStr(orb.hue, 85, 55) : hslStr(orb.hue, 85, 60);
+          ctx.save();
+          ctx.globalAlpha = 0.28;
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          ctx.arc(orb.x, orb.y, orb.r * pulse * 1.6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          ctx.arc(orb.x, orb.y, orb.r * pulse, 0, Math.PI * 2);
+          ctx.fill();
+          if (orb.type === 'hazard') {
+            ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+            ctx.lineWidth = 2;
+            const s = orb.r * 0.5;
+            ctx.beginPath();
+            ctx.moveTo(orb.x - s, orb.y - s); ctx.lineTo(orb.x + s, orb.y + s);
+            ctx.moveTo(orb.x + s, orb.y - s); ctx.lineTo(orb.x - s, orb.y + s);
+            ctx.stroke();
+          } else {
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.beginPath();
+            ctx.arc(orb.x - orb.r * 0.25, orb.y - orb.r * 0.25, orb.r * 0.28, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+
+        for (const b of g.bolts) {
+          for (let k = 0; k < b.trail.length; k++) {
+            const tp = b.trail[k];
+            const alpha = (k / b.trail.length) * 0.5;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = '#fff6c8';
+            ctx.beginPath();
+            ctx.arc(tp.x, tp.y, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 0.3;
+          ctx.fillStyle = '#ffe68a';
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, 9, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#fff6c8';
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [dims.w, dims.h, audio, resolveGoodHit, resolveHazardHit, resolveMiss]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="flash-overlay"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Shields<span className="hud-value lives-val" data-testid="lives">{ui.shields}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div
+          className="arena-stage"
+          ref={wrapRef}
+          data-testid="launcher"
+          onPointerDown={handlePointerDown}
+        >
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+          <div className="aim-readout" data-testid="aim-angle" ref={aimRef}>AIM 0°</div>
+
+          {ui.phase !== 'playing' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">PHOTON RICOCHET</h1>
+                  <p className="subtitle">Drag from the launcher to aim, then release to fire a photon bolt that ricochets off the neon walls. Strike the cyan orbs to build your combo multiplier — but graze a red hazard orb and a shield cracks. Bolts that bounce out or time out without a hit snap your combo. Lose all three shields and the grid goes dark.</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">GRID DARK</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>FIRE AGAIN</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="hint">Drag to aim and release to fire, or press Arrow keys / A-D to rotate aim and Space to fire the photon bolt</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
