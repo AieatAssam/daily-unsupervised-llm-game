@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Domino Drift</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 10%, #150a30 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(0,230,255,0.08), rgba(255,200,0,0.08), rgba(120,0,255,0.08));
+    background-size: 400% 400%;
+    animation: drift 14s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 8px 2px;
+    z-index: 5;
+    gap: 4px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #9dff8f; text-shadow: 0 0 10px #9dff8f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 4px 10px;
+    gap: 8px;
+  }
+  .grid-stage {
+    position: relative;
+    width: min(88vw, 360px);
+    aspect-ratio: 5 / 6;
+    max-height: 62%;
+    border-radius: 14px;
+    border: 1px solid rgba(79,242,255,0.22);
+    box-shadow: inset 0 0 40px rgba(79,242,255,0.08), 0 0 30px rgba(120,0,255,0.12);
+    overflow: hidden;
+    touch-action: none;
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .banner {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .controls-row {
+    position: relative;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: 56px 64px 56px;
+    grid-template-rows: 48px 48px 48px;
+    gap: 6px;
+    align-items: center;
+    justify-items: center;
+  }
+  .dpad-btn, .ignite-btn {
+    border: none;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 800;
+    cursor: pointer;
+    min-width: 48px;
+    min-height: 44px;
+    width: 100%;
+    height: 100%;
+    color: #05020a;
+    background: linear-gradient(135deg, #4ff2ff, #8a7bff);
+    box-shadow: 0 0 14px rgba(79,242,255,0.5);
+    transition: transform 0.1s ease;
+  }
+  .dpad-btn:active, .ignite-btn:active { transform: scale(0.9); }
+  .ignite-btn {
+    grid-row: 2; grid-column: 2;
+    background: linear-gradient(135deg, #ffd84f, #ff57e6);
+    box-shadow: 0 0 18px rgba(255, 216, 79, 0.6);
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+  .ignite-btn:disabled { opacity: 0.4; cursor: default; }
+  .readout-row {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    gap: 16px;
+    color: #9fd8ff;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  .readout-row b { color: #fff; }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.92);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4ff2ff, 0 0 40px #ffd84f;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 13px;
+    max-width: 380px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4ff2ff, #ff57e6);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 10px;
+    text-align: center;
+    padding: 2px 10px 8px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'dominoDriftHighScore';
+const COLS = 5;
+const ROWS = 6;
+const SOURCE = { r: ROWS - 1, c: 2 };
+const START_LIVES = 3;
+const TOP_BAR_H = 14;
+const DIR_ORDER = ['up', 'right', 'down', 'left'];
+const DIRS = {
+  up: { dr: -1, dc: 0, icon: '↑' },
+  down: { dr: 1, dc: 0, icon: '↓' },
+  left: { dr: 0, dc: -1, icon: '←' },
+  right: { dr: 0, dc: 1, icon: '→' },
+};
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function randInt(a, b) { return Math.floor(a + Math.random() * (b - a + 1)); }
+function keyOf(r, c) { return r + ',' + c; }
+
+function manhattan(a, b) { return Math.abs(a.r - b.r) + Math.abs(a.c - b.c); }
+
+function generateTarget() {
+  let r, c;
+  do {
+    r = randInt(0, ROWS - 3);
+    c = randInt(0, COLS - 1);
+  } while (r === SOURCE.r && c === SOURCE.c);
+  return { r, c };
+}
+
+function budgetForLevel(level, dist) {
+  const slack = Math.max(0, 3 - level);
+  return clamp(dist - 1 + slack, 1, COLS * ROWS);
+}
+
+function timeLimitForLevel(level) {
+  return Math.max(4800, 9500 - level * 450);
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    place: () => beep(520, 0.06, 'triangle', 0.06, 640),
+    remove: () => beep(340, 0.07, 'triangle', 0.05, 220),
+    rotate: () => beep(760, 0.04, 'square', 0.03),
+    deny: () => beep(140, 0.1, 'sawtooth', 0.06),
+    ignite: () => beep(300, 0.18, 'sawtooth', 0.08, 700),
+    hop: () => beep(880, 0.03, 'sine', 0.03),
+    success: (combo) => { beep(560 + Math.min(combo, 14) * 30, 0.16, 'triangle', 0.09); setTimeout(() => beep(840 + Math.min(combo, 14) * 30, 0.14, 'triangle', 0.07), 90); },
+    fail: () => beep(160, 0.4, 'sawtooth', 0.14, 50),
+    levelup: () => { beep(520, 0.1, 'triangle', 0.08); setTimeout(() => beep(780, 0.12, 'triangle', 0.08), 90); setTimeout(() => beep(1040, 0.16, 'triangle', 0.08), 180); },
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function buildInitialGame() {
+  const target = generateTarget();
+  const dist = manhattan(SOURCE, target);
+  const budget = budgetForLevel(1, dist);
+  return {
+    target, budget, tiles: new Map(), particles: [],
+    timeLimitMs: timeLimitForLevel(1), timeLeftMs: timeLimitForLevel(1),
+    igniteAnim: null, resolving: false, dims: { w: 300, h: 360 },
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    highScore: initialHigh, banner: '', currentDir: 'up', tilesLeft: 0, tileBudget: 0,
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+  const gameRef = useRef(buildInitialGame());
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 60) return;
+    for (let i = 0; i < (count || 12); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 70) + Math.random() * (spread || 70);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 400 + Math.random() * 300, maxLife: 700, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const showBanner = useCallback((text, ms) => {
+    gameRef.current.bannerClearAt = performance.now() + (ms || 1000);
+    setUi(prev => ({ ...prev, banner: text }));
+  }, []);
+
+  const setupRound = useCallback((level) => {
+    const g = gameRef.current;
+    const target = generateTarget();
+    const dist = manhattan(SOURCE, target);
+    const budget = budgetForLevel(level, dist);
+    g.target = target;
+    g.budget = budget;
+    g.tiles = new Map();
+    g.timeLimitMs = timeLimitForLevel(level);
+    g.timeLeftMs = g.timeLimitMs;
+    g.igniteAnim = null;
+    g.resolving = false;
+    setUi(prev => ({ ...prev, tilesLeft: budget, tileBudget: budget }));
+  }, []);
+
+  const startGame = useCallback(() => {
+    setupRound(1);
+    setUi(prev => ({
+      ...prev, phase: 'placing', score: 0, combo: 0, lives: START_LIVES,
+      level: 1, banner: '', currentDir: 'up',
+    }));
+  }, [setupRound]);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const resolveAndAdvance = useCallback((result) => {
+    const cur = uiRef.current;
+    const g = gameRef.current;
+    if (result.ok) {
+      audio.success(cur.combo);
+      const newCombo = cur.combo + 1;
+      const mult = 1 + newCombo * 0.12;
+      const gained = Math.round((16 + cur.level * 3) * mult) + Math.round(g.timeLeftMs / 250);
+      let newLevel = cur.level;
+      if (newCombo % 3 === 0) { newLevel += 1; audio.levelup(); }
+      setupRound(newLevel);
+      setUi(prev => ({
+        ...prev, phase: 'placing', score: prev.score + gained, combo: newCombo,
+        level: newLevel, banner: newLevel !== cur.level ? 'LEVEL ' + newLevel : 'SIGNAL LOCKED +' + gained,
+        currentDir: 'up',
+      }));
+    } else {
+      audio.fail();
+      const newLives = cur.lives - 1;
+      if (newLives <= 0) {
+        setUi(prev => ({ ...prev, lives: 0, combo: 0, banner: result.reason || 'SIGNAL LOST', phase: 'placing' }));
+        setTimeout(() => endGame(), 0);
+      } else {
+        setupRound(cur.level);
+        setUi(prev => ({
+          ...prev, phase: 'placing', lives: newLives, combo: 0,
+          banner: result.reason || 'SIGNAL LOST', currentDir: 'up',
+        }));
+      }
+    }
+    gameRef.current.bannerClearAt = performance.now() + 1100;
+  }, [audio, setupRound, endGame]);
+
+  const runIgnite = useCallback(() => {
+    const cur = uiRef.current;
+    const g = gameRef.current;
+    if (cur.phase !== 'placing' || g.resolving) return;
+    g.resolving = true;
+    audio.ignite();
+    let pos = { r: SOURCE.r, c: SOURCE.c };
+    let dir = 'up';
+    const path = [{ ...pos }];
+    let result = null;
+    for (let i = 0; i < 40; i++) {
+      const d = DIRS[dir];
+      const nr = pos.r + d.dr, nc = pos.c + d.dc;
+      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) { result = { ok: false, reason: 'OUT OF BOUNDS' }; break; }
+      pos = { r: nr, c: nc };
+      path.push({ ...pos });
+      if (pos.r === g.target.r && pos.c === g.target.c) { result = { ok: true }; break; }
+      const tileDir = g.tiles.get(keyOf(pos.r, pos.c));
+      if (tileDir) { dir = tileDir; } else { result = { ok: false, reason: 'SIGNAL LOST' }; break; }
+    }
+    if (!result) result = { ok: false, reason: 'LOOP DETECTED' };
+    g.igniteAnim = { path, result, idx: 0, timer: 0, stepMs: 110 };
+    setUi(prev => ({ ...prev, phase: 'igniting', banner: '' }));
+  }, [audio]);
+
+  const placeOrRemoveTile = useCallback((r, c) => {
+    const cur = uiRef.current;
+    const g = gameRef.current;
+    if (cur.phase !== 'placing') return;
+    if ((r === SOURCE.r && c === SOURCE.c) || (r === g.target.r && c === g.target.c)) return;
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+    const key = keyOf(r, c);
+    if (g.tiles.has(key)) {
+      g.tiles.delete(key);
+      audio.remove();
+      setUi(prev => ({ ...prev, tilesLeft: prev.tilesLeft + 1 }));
+    } else if (cur.tilesLeft > 0) {
+      g.tiles.set(key, cur.currentDir);
+      audio.place();
+      setUi(prev => ({ ...prev, tilesLeft: prev.tilesLeft - 1 }));
+    } else {
+      audio.deny();
+      showBanner('NO TILES LEFT', 600);
+    }
+  }, [audio, showBanner]);
+
+  const setDirDirect = useCallback((dir) => {
+    audio.rotate();
+    setUi(prev => (prev.currentDir === dir ? prev : { ...prev, currentDir: dir }));
+  }, [audio]);
+
+  const rotateDir = useCallback(() => {
+    setUi(prev => {
+      const idx = DIR_ORDER.indexOf(prev.currentDir);
+      return { ...prev, currentDir: DIR_ORDER[(idx + 1) % DIR_ORDER.length] };
+    });
+    audio.rotate();
+  }, [audio]);
+
+  const pointerToCell = useCallback((clientX, clientY) => {
+    const stage = wrapRef.current ? wrapRef.current.getBoundingClientRect() : null;
+    if (!stage) return null;
+    const lx = clientX - stage.left, ly = clientY - stage.top;
+    const usableH = stage.height - TOP_BAR_H;
+    const cellSize = Math.min(stage.width / COLS, usableH / ROWS);
+    const gw = cellSize * COLS, gh = cellSize * ROWS;
+    const offX = (stage.width - gw) / 2, offY = TOP_BAR_H + (usableH - gh) / 2;
+    const c = Math.floor((lx - offX) / cellSize);
+    const r = Math.floor((ly - offY) / cellSize);
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return null;
+    return { r, c };
+  }, []);
+
+  const handleStagePointerDown = useCallback((e) => {
+    if (uiRef.current.phase !== 'placing') return;
+    e.preventDefault();
+    const cell = pointerToCell(e.clientX, e.clientY);
+    if (cell) placeOrRemoveTile(cell.r, cell.c);
+  }, [pointerToCell, placeOrRemoveTile]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        if (cur.phase === 'idle' || cur.phase === 'over') { startGame(); return; }
+        if (cur.phase === 'placing') { runIgnite(); }
+        return;
+      }
+      if (cur.phase !== 'placing') return;
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); setDirDirect('up'); }
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); setDirDirect('down'); }
+      else if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); setDirDirect('left'); }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); setDirDirect('right'); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, runIgnite, setDirDirect]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        gameRef.current.dims = { w: r.width, h: r.height };
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.05, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = g.dims.w, h = g.dims.h;
+
+      if (cur.phase === 'placing' && !g.resolving) {
+        g.timeLeftMs -= dt * 1000;
+        if (g.timeLeftMs <= 0) {
+          g.timeLeftMs = 0;
+          g.resolving = true;
+          resolveAndAdvance({ ok: false, reason: 'TIME UP' });
+        }
+      }
+
+      if (cur.phase === 'igniting' && g.igniteAnim) {
+        const anim = g.igniteAnim;
+        anim.timer += dt * 1000;
+        const newIdx = Math.min(anim.path.length - 1, Math.floor(anim.timer / anim.stepMs));
+        if (newIdx > anim.idx) {
+          anim.idx = newIdx;
+          audio.hop();
+          const p = anim.path[anim.idx];
+          const usableH = h - TOP_BAR_H;
+          const cellSize = Math.min(w / COLS, usableH / ROWS);
+          const gw = cellSize * COLS, gh = cellSize * ROWS;
+          const offX = (w - gw) / 2, offY = TOP_BAR_H + (usableH - gh) / 2;
+          spawnParticles(offX + (p.c + 0.5) * cellSize, offY + (p.r + 0.5) * cellSize, '#fff6c8', 6, 60);
+        }
+        if (anim.timer > anim.path.length * anim.stepMs + 260) {
+          const result = anim.result;
+          g.igniteAnim = null;
+          resolveAndAdvance(result);
+        }
+      }
+
+      if (g.bannerClearAt && t > g.bannerClearAt) {
+        g.bannerClearAt = 0;
+        setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+      }
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 100 * dt;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas && w > 0 && h > 0) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        const usableH = h - TOP_BAR_H;
+        const cellSize = Math.min(w / COLS, usableH / ROWS);
+        const gw = cellSize * COLS, gh = cellSize * ROWS;
+        const offX = (w - gw) / 2, offY = TOP_BAR_H + (usableH - gh) / 2;
+
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const x = offX + c * cellSize, y = offY + r * cellSize;
+            ctx.strokeStyle = 'rgba(79,242,255,0.14)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 2, y + 2, cellSize - 4, cellSize - 4);
+          }
+        }
+
+        if (cur.phase === 'placing' && g.timeLimitMs > 0) {
+          const frac = clamp(g.timeLeftMs / g.timeLimitMs, 0, 1);
+          const barColor = frac < 0.3 ? '#ff5050' : '#4ff2ff';
+          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+          ctx.fillRect(offX, 4, gw, 5);
+          ctx.fillStyle = barColor;
+          ctx.fillRect(offX, 4, gw * frac, 5);
+        }
+
+        function drawArrowTile(cx, cy, size, dir, fillCol, glow) {
+          ctx.save();
+          ctx.globalAlpha = glow ? 0.9 : 0.75;
+          ctx.fillStyle = fillCol;
+          ctx.beginPath();
+          ctx.roundRect ? ctx.roundRect(cx - size * 0.38, cy - size * 0.38, size * 0.76, size * 0.76, 6) :
+            ctx.rect(cx - size * 0.38, cy - size * 0.38, size * 0.76, size * 0.76);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#05020a';
+          ctx.font = 'bold ' + Math.round(size * 0.42) + 'px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(DIRS[dir].icon, cx, cy + 1);
+          ctx.restore();
+        }
+
+        for (const [key, dir] of g.tiles.entries()) {
+          const [r, c] = key.split(',').map(Number);
+          const cx = offX + (c + 0.5) * cellSize, cy = offY + (r + 0.5) * cellSize;
+          drawArrowTile(cx, cy, cellSize, dir, '#6fe3ff', false);
+        }
+
+        const srcCx = offX + (SOURCE.c + 0.5) * cellSize, srcCy = offY + (SOURCE.r + 0.5) * cellSize;
+        const pulse1 = 1 + Math.sin(t / 200) * 0.06;
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#ff57e6';
+        ctx.beginPath();
+        ctx.arc(srcCx, srcCy, cellSize * 0.5 * pulse1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        drawArrowTile(srcCx, srcCy, cellSize, 'up', '#ff57e6', true);
+
+        const tgtCx = offX + (g.target.c + 0.5) * cellSize, tgtCy = offY + (g.target.r + 0.5) * cellSize;
+        const pulse2 = 1 + Math.sin(t / 160) * 0.12;
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = '#ffd84f';
+        ctx.beginPath();
+        ctx.arc(tgtCx, tgtCy, cellSize * 0.5 * pulse2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#ffd84f';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(tgtCx, tgtCy, cellSize * 0.3, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        if (cur.phase === 'igniting' && g.igniteAnim) {
+          const anim = g.igniteAnim;
+          for (let i = 0; i <= anim.idx && i < anim.path.length; i++) {
+            const p = anim.path[i];
+            const px = offX + (p.c + 0.5) * cellSize, py = offY + (p.r + 0.5) * cellSize;
+            const age = anim.idx - i;
+            ctx.save();
+            ctx.globalAlpha = Math.max(0.15, 1 - age * 0.25);
+            ctx.fillStyle = '#fff6c8';
+            ctx.beginPath();
+            ctx.arc(px, py, cellSize * 0.22, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(offX + p.x, offY + p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [audio, resolveAndAdvance, spawnParticles]);
+
+  const dirIcon = DIRS[ui.currentDir].icon;
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div
+          className="grid-stage"
+          ref={wrapRef}
+          data-testid="grid"
+          onPointerDown={handleStagePointerDown}
+        >
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+
+          {ui.phase !== 'placing' && ui.phase !== 'igniting' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">DOMINO DRIFT</h1>
+                  <p className="subtitle">A signal pulses up from the generator. Lay directional tiles across the grid to guide it into the glowing gold target before the timer burns out. Each clean lock builds your combo and speeds up the next wave; a lost signal or empty tank of tiles costs a life.</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">GRID DARK</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>DRIFT AGAIN</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="readout-row">
+          <span>Dir: <b data-testid="dir-readout">{dirIcon}</b></span>
+          <span>Tiles: <b data-testid="tiles-left">{ui.tilesLeft}/{ui.tileBudget}</b></span>
+        </div>
+
+        <div className="controls-row">
+          <button
+            className="dpad-btn"
+            data-testid="dir-up-btn"
+            style={{ gridRow: 1, gridColumn: 2 }}
+            onPointerDown={(e) => { e.preventDefault(); setDirDirect('up'); }}
+          >&uarr;</button>
+          <button
+            className="dpad-btn"
+            data-testid="dir-left-btn"
+            style={{ gridRow: 2, gridColumn: 1 }}
+            onPointerDown={(e) => { e.preventDefault(); setDirDirect('left'); }}
+          >&larr;</button>
+          <button
+            className="ignite-btn"
+            data-testid="ignite-btn"
+            disabled={ui.phase !== 'placing'}
+            onPointerDown={(e) => { e.preventDefault(); runIgnite(); }}
+          >FIRE</button>
+          <button
+            className="dpad-btn"
+            data-testid="dir-right-btn"
+            style={{ gridRow: 2, gridColumn: 3 }}
+            onPointerDown={(e) => { e.preventDefault(); setDirDirect('right'); }}
+          >&rarr;</button>
+          <button
+            className="dpad-btn"
+            data-testid="dir-down-btn"
+            style={{ gridRow: 3, gridColumn: 2 }}
+            onPointerDown={(e) => { e.preventDefault(); setDirDirect('down'); }}
+          >&darr;</button>
+        </div>
+      </div>
+
+      <div className="hint">Tap a direction, then tap a grid cell to place a tile (tap again to pull it back) — guide the signal to the gold target and hit FIRE before time runs out. Arrow keys set direction, Space fires.</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
