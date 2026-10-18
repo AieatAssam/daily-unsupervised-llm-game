@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Gravity Flux</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020c; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 0%, #1a0b32 0%, #05020c 55%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(0,230,255,0.08), rgba(255,0,200,0.08), rgba(120,60,255,0.1));
+    background-size: 400% 400%;
+    animation: drift 16s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 8px 2px;
+    z-index: 5;
+    gap: 4px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #9dff8f; text-shadow: 0 0 10px #9dff8f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 4px 10px 10px;
+  }
+  .play-field {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(100,220,255,0.25), 0 0 30px rgba(80,0,255,0.25);
+    background: #060212;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: pointer;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    z-index: 10;
+    background: rgba(3,1,10,0.72);
+    backdrop-filter: blur(2px);
+    text-align: center;
+    padding: 16px;
+  }
+  .title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    color: #7df9ff;
+    text-shadow: 0 0 18px #4ff2ff, 0 0 36px #a85bff;
+    margin: 0;
+  }
+  .subtitle {
+    color: #cfefff;
+    font-size: 13px;
+    opacity: 0.85;
+    max-width: 280px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  .big-score {
+    font-size: 40px;
+    font-weight: 800;
+    color: #ff57e6;
+    text-shadow: 0 0 20px #ff57e6;
+    margin: 0;
+  }
+  .best-score {
+    color: #ffd84f;
+    font-size: 13px;
+    text-shadow: 0 0 10px #ffd84f;
+    margin: 0;
+  }
+  button.start-btn {
+    pointer-events: auto;
+    background: linear-gradient(135deg, #ff2fd6, #4ff2ff);
+    border: none;
+    color: #05020c;
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: 1px;
+    padding: 14px 34px;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(255,47,214,0.6), 0 0 40px rgba(79,242,255,0.3);
+    min-height: 48px;
+    min-width: 48px;
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .hint {
+    color: #8fa8c8;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = 'gravityFluxHighScore';
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const ensure = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const tone = useCallback((freq, dur, type, gain, slideTo) => {
+    try {
+      const ctx = ensure();
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, ctx.currentTime + dur);
+      g.gain.setValueAtTime(gain || 0.15, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [ensure]);
+
+  return {
+    flip: () => tone(420, 0.12, 'sine', 0.12, 260),
+    orb: () => tone(760, 0.14, 'triangle', 0.14, 1080),
+    crash: () => tone(140, 0.32, 'sawtooth', 0.22, 55),
+    levelUp: () => tone(500, 0.26, 'square', 0.1, 980),
+    unlock: ensure,
+  };
+}
+
+function randRange(a, b) { return a + Math.random() * (b - a); }
+
+function createGame() {
+  return {
+    phase: 'ready',
+    player: { y: 0, vy: 0, gravityDir: 1 },
+    spikes: [],
+    orbs: [],
+    particles: [],
+    score: 0,
+    combo: 0,
+    lives: 3,
+    level: 1,
+    distance: 0,
+    spawnTimer: 0,
+    invuln: 0,
+    flash: 0,
+    shake: 0,
+    elapsed: 0,
+  };
+}
+
+function App() {
+  const canvasRef = React.useRef(null);
+  const fieldRef = React.useRef(null);
+  const gameRef = React.useRef(createGame());
+  const sound = useAudio();
+
+  const [hud, setHud] = useState({ score: 0, combo: 0, lives: 3, level: 1 });
+  const [phase, setPhase] = useState('ready');
+  const [bestScore, setBestScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [finalScore, setFinalScore] = useState(0);
+
+  const dimsRef = useRef({ w: 400, h: 600, dpr: 1 });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const field = fieldRef.current;
+    const resize = () => {
+      const rect = field.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.max(240, Math.floor(rect.width));
+      const h = Math.max(300, Math.floor(rect.height));
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      dimsRef.current = { w, h, dpr };
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(field);
+    window.addEventListener('resize', resize);
+    return () => { ro.disconnect(); window.removeEventListener('resize', resize); };
+  }, []);
+
+  const startGame = useCallback(() => {
+    sound.unlock();
+    const g = createGame();
+    g.phase = 'playing';
+    const { h } = dimsRef.current;
+    g.player.y = h / 2;
+    g.player.vy = 0;
+    g.player.gravityDir = 1;
+    gameRef.current = g;
+    setPhase('playing');
+    setHud({ score: 0, combo: 0, lives: 3, level: 1 });
+  }, [sound]);
+
+  const flip = useCallback(() => {
+    const g = gameRef.current;
+    if (g.phase !== 'playing') return;
+    g.player.gravityDir *= -1;
+    g.player.vy *= 0.25;
+    sound.flip();
+    for (let i = 0; i < 8; i++) {
+      g.particles.push({
+        x: dimsRef.current.w * 0.22, y: g.player.y,
+        vx: randRange(-60, -10), vy: randRange(-80, 80),
+        life: 0.4, maxLife: 0.4, color: '#7df9ff', size: randRange(1.5, 3),
+      });
+    }
+  }, [sound]);
+
+  const handlePointer = useCallback((e) => {
+    e.preventDefault();
+    if (gameRef.current.phase === 'playing') flip();
+  }, [flip]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+        e.preventDefault();
+        if (gameRef.current.phase === 'playing') flip();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [flip]);
+
+  useEffect(() => {
+    let raf = null;
+    let last = performance.now();
+    let hudAccum = 0;
+
+    const loop = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const g = gameRef.current;
+      const { w, h, dpr } = dimsRef.current;
+      const ctx = canvasRef.current.getContext('2d');
+
+      if (g.phase === 'playing') {
+        g.elapsed += dt;
+        g.level = 1 + Math.floor(g.score / 150);
+        const speed = Math.min(360, 150 + g.level * 22);
+        const spikeH = Math.min(h * 0.52, h * (0.18 + g.level * 0.022));
+        const spawnGap = Math.max(1.0, 1.9 - g.level * 0.07);
+
+        const gravityAccel = h * 2.1;
+        const maxFall = h * 1.25;
+        g.player.vy += gravityAccel * g.player.gravityDir * dt;
+        g.player.vy = Math.max(-maxFall, Math.min(maxFall, g.player.vy));
+        g.player.y += g.player.vy * dt;
+
+        const r = Math.max(9, Math.min(16, w * 0.032));
+        if (g.invuln <= 0) {
+          if (g.player.y - r <= 0 || g.player.y + r >= h) {
+            g.player.y = Math.max(r, Math.min(h - r, g.player.y));
+            g.player.vy = 0;
+            crash(g, sound);
+          }
+        }
+        g.player.y = Math.max(r, Math.min(h - r, g.player.y));
+
+        g.spawnTimer -= dt;
+        if (g.spawnTimer <= 0) {
+          g.spawnTimer = spawnGap;
+          const side = Math.random() < 0.5 ? 'top' : 'bottom';
+          g.spikes.push({ x: w + 30, side, height: spikeH, id: Math.random(), scored: false });
+          if (Math.random() < 0.6) {
+            const safeMargin = spikeH + 30;
+            const oy = randRange(safeMargin, h - safeMargin);
+            g.orbs.push({ x: w + 30, y: oy, id: Math.random(), taken: false, pulse: 0 });
+          }
+        }
+
+        const playerX = w * 0.22;
+        for (const s of g.spikes) {
+          s.x -= speed * dt;
+          const sw = Math.max(18, w * 0.06);
+          if (!s.scored && s.x < playerX - sw) { s.scored = true; g.score += 4; }
+          if (g.invuln <= 0 && Math.abs(s.x - playerX) < sw / 2 + r * 0.6) {
+            if (s.side === 'top' && g.player.y - r < s.height) crash(g, sound);
+            else if (s.side === 'bottom' && g.player.y + r > h - s.height) crash(g, sound);
+          }
+        }
+        g.spikes = g.spikes.filter(s => s.x > -60);
+
+        for (const o of g.orbs) {
+          o.x -= speed * dt;
+          o.pulse += dt * 6;
+          if (!o.taken && Math.hypot(o.x - playerX, o.y - g.player.y) < r + 10) {
+            o.taken = true;
+            g.combo += 1;
+            g.score += Math.round(10 * (1 + g.combo * 0.15));
+            sound.orb();
+            for (let i = 0; i < 10; i++) {
+              g.particles.push({
+                x: o.x, y: o.y, vx: randRange(-40, 40), vy: randRange(-40, 40),
+                life: 0.5, maxLife: 0.5, color: '#ffd84f', size: randRange(1.5, 3.5),
+              });
+            }
+          }
+        }
+        g.orbs = g.orbs.filter(o => o.x > -40);
+
+        g.score += speed * dt * 0.08;
+        g.distance += speed * dt;
+
+        if (g.invuln > 0) g.invuln -= dt;
+        if (g.flash > 0) g.flash -= dt * 2.5;
+        if (g.shake > 0) g.shake -= dt * 3;
+
+        for (const p of g.particles) {
+          p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+        }
+        g.particles = g.particles.filter(p => p.life > 0);
+
+        if (g.lives <= 0) {
+          g.phase = 'gameover';
+          const finalS = Math.floor(g.score);
+          setFinalScore(finalS);
+          setBestScore(prev => {
+            const best = Math.max(prev, finalS);
+            localStorage.setItem(HIGH_SCORE_KEY, String(best));
+            return best;
+          });
+          setPhase('gameover');
+        }
+
+        hudAccum += dt;
+        if (hudAccum > 0.1) {
+          hudAccum = 0;
+          setHud({
+            score: Math.floor(g.score),
+            combo: g.combo,
+            lives: g.lives,
+            level: g.level,
+          });
+        }
+      } else {
+        for (const p of g.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+        g.particles = g.particles.filter(p => p.life > 0);
+      }
+
+      render(ctx, g, w, h, dpr);
+      raf = requestAnimationFrame(loop);
+    };
+
+    raf = requestAnimationFrame(loop);
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  }, [sound]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad" />
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{hud.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{hud.combo}x</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{hud.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{hud.level}</span></div>
+      </div>
+      <div className="field-wrap">
+        <div className="play-field" data-testid="play-field" ref={fieldRef}>
+          <canvas
+            ref={canvasRef}
+            data-testid="canvas"
+            onPointerDown={handlePointer}
+          />
+          {phase !== 'playing' && (
+            <div className="overlay">
+              {phase === 'ready' && (
+                <React.Fragment>
+                  <h1 className="title">GRAVITY FLUX</h1>
+                  <p className="subtitle">Tap, click, or press Space to flip gravity. Dodge the neon spikes, grab orbs for combo, survive as long as you can.</p>
+                  {bestScore > 0 && <p className="best-score" data-testid="best-score">Best: {bestScore}</p>}
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                  <p className="hint">Space / Tap / Click to flip</p>
+                </React.Fragment>
+              )}
+              {phase === 'gameover' && (
+                <React.Fragment>
+                  <h1 className="title">SIGNAL LOST</h1>
+                  <p className="big-score" data-testid="final-score">{finalScore}</p>
+                  <p className="best-score" data-testid="best-score">Best: {bestScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>RETRY</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function crash(g, sound) {
+  if (g.invuln > 0) return;
+  g.lives -= 1;
+  g.combo = 0;
+  g.invuln = 1.1;
+  g.flash = 1;
+  g.shake = 1;
+  sound.crash();
+  for (let i = 0; i < 16; i++) {
+    g.particles.push({
+      x: g.lastPlayerX || 0, y: g.player.y,
+      vx: randRange(-120, 40), vy: randRange(-120, 120),
+      life: 0.6, maxLife: 0.6, color: '#ff4d6d', size: randRange(2, 4),
+    });
+  }
+}
+
+function render(ctx, g, w, h, dpr) {
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const shakeX = g.shake > 0 ? randRange(-4, 4) * g.shake : 0;
+  const shakeY = g.shake > 0 ? randRange(-4, 4) * g.shake : 0;
+  ctx.translate(shakeX, shakeY);
+
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, '#0c0520');
+  grad.addColorStop(1, '#030108');
+  ctx.fillStyle = grad;
+  ctx.fillRect(-10, -10, w + 20, h + 20);
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(80,180,255,0.07)';
+  ctx.lineWidth = 1;
+  const gridOffset = (g.distance || 0) % 40;
+  for (let x = w - gridOffset; x > -40; x -= 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let y = 0; y < h; y += 40) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = '#4ff2ff';
+  ctx.shadowColor = '#4ff2ff';
+  ctx.shadowBlur = 12;
+  ctx.fillRect(0, 0, w, 4);
+  ctx.fillRect(0, h - 4, w, 4);
+  ctx.shadowBlur = 0;
+
+  for (const s of g.spikes) {
+    ctx.save();
+    const grad2 = ctx.createLinearGradient(0, 0, 0, s.side === 'top' ? s.height : -s.height);
+    const col = s.side === 'top' ? '#ff2fd6' : '#a85bff';
+    ctx.fillStyle = col;
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 16;
+    const sw = Math.max(18, w * 0.06);
+    ctx.beginPath();
+    if (s.side === 'top') {
+      ctx.moveTo(s.x - sw / 2, 0);
+      ctx.lineTo(s.x + sw / 2, 0);
+      ctx.lineTo(s.x, s.height);
+    } else {
+      ctx.moveTo(s.x - sw / 2, h);
+      ctx.lineTo(s.x + sw / 2, h);
+      ctx.lineTo(s.x, h - s.height);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  for (const o of g.orbs) {
+    if (o.taken) continue;
+    const pulse = 1 + Math.sin(o.pulse) * 0.18;
+    ctx.save();
+    ctx.fillStyle = '#ffd84f';
+    ctx.shadowColor = '#ffd84f';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 7 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const playerX = w * 0.22;
+  g.lastPlayerX = playerX;
+  const r = Math.max(9, Math.min(16, w * 0.032));
+
+  for (const p of g.particles) {
+    const a = Math.max(0, p.life / p.maxLife);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (g.phase === 'playing' || g.phase === 'gameover') {
+    const flicker = g.invuln > 0 ? (Math.floor(g.invuln * 20) % 2 === 0) : true;
+    if (flicker) {
+      ctx.save();
+      ctx.fillStyle = '#4ff2ff';
+      ctx.shadowColor = '#7df9ff';
+      ctx.shadowBlur = 22;
+      ctx.beginPath();
+      ctx.arc(playerX, g.player.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = '#05020c';
+      const dir = g.player.gravityDir;
+      ctx.beginPath();
+      ctx.moveTo(playerX, g.player.y - dir * r * 0.9);
+      ctx.lineTo(playerX - 4, g.player.y - dir * r * 0.2);
+      ctx.lineTo(playerX + 4, g.player.y - dir * r * 0.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  if (g.flash > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.5, g.flash * 0.5);
+    ctx.fillStyle = '#ff2040';
+    ctx.fillRect(-10, -10, w + 20, h + 20);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
