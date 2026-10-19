@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Breach Ward</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 10%, #150a30 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(0,230,255,0.08), rgba(255,0,200,0.08), rgba(120,0,255,0.08));
+    background-size: 400% 400%;
+    animation: drift 14s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .flash-overlay {
+    position: absolute; inset: 0;
+    background: rgba(255,40,40,0);
+    pointer-events: none;
+    z-index: 4;
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 8px 4px;
+    z-index: 5;
+    gap: 6px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 20px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #9dff8f; text-shadow: 0 0 10px #9dff8f; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+  }
+  .ring-stage {
+    position: relative;
+    width: min(88vw, 440px);
+    aspect-ratio: 1 / 1;
+    max-height: 100%;
+    border-radius: 50%;
+    touch-action: none;
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .banner {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .overlay {
+    position: absolute;
+    inset: -6vh -6vw;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.9);
+    border-radius: 50%;
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4ff2ff, 0 0 40px #ff57e6;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 13px;
+    max-width: 320px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4ff2ff, #ff57e6);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+    margin: 0;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+    margin: 0;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 11px;
+    text-align: center;
+    padding: 4px 10px 10px;
+    opacity: 0.75;
+    max-width: 480px;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'breachWardHighScore';
+const START_LIVES = 3;
+const N_SEGMENTS = 12;
+const SEG_SPAN = (Math.PI * 2) / N_SEGMENTS;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function hslStr(h, s, l, a) { return 'hsla(' + h + ',' + s + '%,' + l + '%,' + (a == null ? 1 : a) + ')'; }
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    seal: (combo) => beep(540 + Math.min(combo, 18) * 26, 0.12, 'triangle', 0.09),
+    rupture: () => beep(150, 0.42, 'sawtooth', 0.15, 45),
+    levelup: () => { beep(520, 0.1, 'triangle', 0.08); setTimeout(() => beep(780, 0.12, 'triangle', 0.08), 90); setTimeout(() => beep(1040, 0.16, 'triangle', 0.08), 180); },
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function fillDurationForLevel(level) { return Math.max(1500, 4400 - level * 220); }
+function spawnIntervalForLevel(level) { return Math.max(480, 1500 - level * 65); }
+function maxConcurrentForLevel(level) { return Math.min(4, 1 + Math.floor(level / 3)); }
+function sealsPerLevel() { return 6; }
+
+function makeSegments() {
+  const segs = [];
+  for (let i = 0; i < N_SEGMENTS; i++) {
+    segs.push({ state: 'idle', health: 0, flash: 0 });
+  }
+  return segs;
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [dims, setDims] = useState({ w: 320, h: 320 });
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    highScore: initialHigh, banner: '',
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+
+  const gameRef = useRef({
+    segments: makeSegments(),
+    particles: [],
+    selector: 0,
+    timeSinceSpawn: 0,
+    seals: 0,
+    bannerClearAt: 0,
+    flashDecay: 0,
+    corePulse: 0,
+    stars: [],
+    starsW: 0,
+    starsH: 0,
+  });
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 90) return;
+    for (let i = 0; i < (count || 14); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 90) + Math.random() * (spread || 90);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 400 + Math.random() * 300, maxLife: 700, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const showBanner = useCallback((text, ms) => {
+    gameRef.current.bannerClearAt = performance.now() + (ms || 900);
+    setUi(prev => ({ ...prev, banner: text }));
+  }, []);
+
+  const startGame = useCallback(() => {
+    const g = gameRef.current;
+    g.segments = makeSegments();
+    g.particles = [];
+    g.selector = 0;
+    g.timeSinceSpawn = 0;
+    g.seals = 0;
+    g.flashDecay = 0;
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: START_LIVES,
+      level: 1, banner: '',
+    }));
+  }, []);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const segCenter = useCallback((idx, w, h) => {
+    const cx = w / 2, cy = h / 2;
+    const R2 = Math.min(w, h) / 2 * 0.92;
+    const R1 = R2 * 0.62;
+    const mid = (R1 + R2) / 2;
+    const ang = -Math.PI / 2 + (idx + 0.5) * SEG_SPAN;
+    return { x: cx + Math.cos(ang) * mid, y: cy + Math.sin(ang) * mid };
+  }, []);
+
+  const resolveSeal = useCallback((idx) => {
+    const g = gameRef.current;
+    const seg = g.segments[idx];
+    if (!seg || seg.state !== 'breaching') return;
+    const healthAtSeal = seg.health;
+    const { x, y } = segCenter(idx, dims.w, dims.h);
+    seg.state = 'sealed';
+    seg.flash = 1;
+    seg.health = 0;
+    spawnParticles(x, y, hslStr(170, 90, 62), 12, 120);
+    const prevCombo = uiRef.current.combo;
+    audio.seal(prevCombo);
+    g.seals += 1;
+    setUi(prev => {
+      const newCombo = prev.combo + 1;
+      const bonus = Math.round(60 * (1 - healthAtSeal / 100));
+      const mult = 1 + newCombo * 0.12;
+      const gained = Math.round((20 + bonus) * mult);
+      const newScore = prev.score + gained;
+      const newLevel = 1 + Math.floor(g.seals / sealsPerLevel());
+      if (newLevel !== prev.level) {
+        audio.levelup();
+        return { ...prev, score: newScore, combo: newCombo, level: newLevel, banner: 'WARD LEVEL ' + newLevel };
+      }
+      return { ...prev, score: newScore, combo: newCombo };
+    });
+    g.bannerClearAt = performance.now() + 700;
+  }, [audio, spawnParticles, segCenter, dims.w, dims.h]);
+
+  const resolveRupture = useCallback((idx) => {
+    const g = gameRef.current;
+    const seg = g.segments[idx];
+    const { x, y } = segCenter(idx, dims.w, dims.h);
+    seg.state = 'ruptured';
+    seg.flash = 1;
+    spawnParticles(x, y, '#ff3b3b', 14, 140);
+    audio.rupture();
+    g.flashDecay = 1;
+    setUi(prev => {
+      const newLives = prev.lives - 1;
+      if (newLives <= 0) {
+        setTimeout(() => endGame(), 0);
+        return { ...prev, lives: 0, combo: 0, banner: 'BREACH!' };
+      }
+      return { ...prev, lives: newLives, combo: 0, banner: 'BREACH!' };
+    });
+    g.bannerClearAt = performance.now() + 700;
+  }, [audio, spawnParticles, segCenter, endGame, dims.w, dims.h]);
+
+  const attemptSeal = useCallback((idx) => {
+    if (uiRef.current.phase !== 'playing') return;
+    resolveSeal(idx);
+  }, [resolveSeal]);
+
+  const pointerToSegment = useCallback((clientX, clientY) => {
+    const stage = wrapRef.current ? wrapRef.current.getBoundingClientRect() : null;
+    if (!stage) return -1;
+    const px = clientX - stage.left, py = clientY - stage.top;
+    const cx = stage.width / 2, cy = stage.height / 2;
+    const dx = px - cx, dy = py - cy;
+    const dist = Math.hypot(dx, dy);
+    const R2 = Math.min(stage.width, stage.height) / 2 * 0.92;
+    const R1 = R2 * 0.62;
+    if (dist < R1 - 24 || dist > R2 + 24) return -1;
+    let ang = Math.atan2(dy, dx) + Math.PI / 2;
+    ang = ((ang % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    return Math.floor(ang / SEG_SPAN);
+  }, []);
+
+  const handlePointerDown = useCallback((e) => {
+    if (uiRef.current.phase !== 'playing') return;
+    const idx = pointerToSegment(e.clientX, e.clientY);
+    if (idx >= 0) {
+      gameRef.current.selector = idx;
+      attemptSeal(idx);
+    }
+  }, [pointerToSegment, attemptSeal]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        if (cur.phase === 'idle' || cur.phase === 'over') { startGame(); return; }
+        if (cur.phase === 'playing') { attemptSeal(g.selector); }
+        return;
+      }
+      if (cur.phase !== 'playing') return;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+        e.preventDefault();
+        g.selector = (g.selector - 1 + N_SEGMENTS) % N_SEGMENTS;
+      } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+        e.preventDefault();
+        g.selector = (g.selector + 1) % N_SEGMENTS;
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, attemptSeal]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        setDims({ w: r.width, h: r.height });
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.05, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = dims.w, h = dims.h;
+
+      if (cur.phase === 'playing') {
+        g.timeSinceSpawn += dt * 1000;
+        const spawnInterval = spawnIntervalForLevel(cur.level);
+        const maxConcurrent = maxConcurrentForLevel(cur.level);
+        const breachingCount = g.segments.filter(s => s.state === 'breaching').length;
+        if (g.timeSinceSpawn >= spawnInterval && breachingCount < maxConcurrent) {
+          const idleIdx = [];
+          for (let i = 0; i < N_SEGMENTS; i++) if (g.segments[i].state === 'idle') idleIdx.push(i);
+          if (idleIdx.length) {
+            const pick = idleIdx[Math.floor(Math.random() * idleIdx.length)];
+            g.segments[pick].state = 'breaching';
+            g.segments[pick].health = 0;
+            g.timeSinceSpawn = 0;
+          }
+        }
+
+        const fillDur = fillDurationForLevel(cur.level);
+        for (let i = 0; i < N_SEGMENTS; i++) {
+          const seg = g.segments[i];
+          if (seg.state === 'breaching') {
+            seg.health += (dt * 1000 / fillDur) * 100;
+            if (seg.health >= 100) {
+              seg.health = 100;
+              resolveRupture(i);
+            }
+          } else if (seg.state === 'sealed' || seg.state === 'ruptured') {
+            seg.flash = Math.max(0, seg.flash - dt * 2.6);
+            if (seg.flash <= 0) seg.state = 'idle';
+          }
+        }
+
+        if (g.bannerClearAt && t > g.bannerClearAt) {
+          g.bannerClearAt = 0;
+          setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+        }
+      }
+
+      if (g.flashDecay > 0) g.flashDecay = Math.max(0, g.flashDecay - dt * 2.2);
+      g.corePulse += dt * 2.2;
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 140 * dt;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas && w > 0 && h > 0) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+        const bgWash = 0.025 + 0.02 * (0.5 + 0.5 * Math.sin(g.corePulse * 0.7));
+        ctx.fillStyle = 'rgba(79,242,255,' + bgWash + ')';
+        ctx.fillRect(0, 0, w, h);
+
+        if (g.stars.length === 0 || g.starsW !== cw || g.starsH !== ch) {
+          const stars = [];
+          for (let i = 0; i < 22; i++) {
+            stars.push({
+              x: Math.random() * cw, y: Math.random() * ch,
+              r: 0.6 + Math.random() * 1.4, phase: Math.random() * Math.PI * 2,
+              speed: 1.2 + Math.random() * 1.8,
+            });
+          }
+          g.stars = stars; g.starsW = cw; g.starsH = ch;
+        }
+        for (const s of g.stars) {
+          const a = 0.12 + 0.18 * (0.5 + 0.5 * Math.sin(g.corePulse * s.speed + s.phase));
+          ctx.globalAlpha = a;
+          ctx.fillStyle = '#9fe8ff';
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        const cx = w / 2, cy = h / 2;
+        const R2 = Math.min(w, h) / 2 * 0.92;
+        const R1 = R2 * 0.62;
+
+        if (g.flashDecay > 0) {
+          ctx.fillStyle = 'rgba(255,40,40,' + (g.flashDecay * 0.25) + ')';
+          ctx.fillRect(0, 0, w, h);
+        }
+
+        for (let i = 0; i < N_SEGMENTS; i++) {
+          const seg = g.segments[i];
+          const a0 = -Math.PI / 2 + i * SEG_SPAN + 0.03;
+          const a1 = -Math.PI / 2 + (i + 1) * SEG_SPAN - 0.03;
+          let fill, alpha;
+          if (seg.state === 'breaching') {
+            const hue = 40 - (seg.health / 100) * 40;
+            fill = hslStr(hue, 90, 55);
+            alpha = 0.55 + (seg.health / 100) * 0.4;
+          } else if (seg.state === 'sealed') {
+            fill = hslStr(170, 90, 62);
+            alpha = 0.3 + seg.flash * 0.6;
+          } else if (seg.state === 'ruptured') {
+            fill = '#ff2a2a';
+            alpha = 0.25 + seg.flash * 0.55;
+          } else {
+            fill = hslStr(195, 60, 35);
+            alpha = 0.3;
+          }
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = fill;
+          ctx.beginPath();
+          ctx.arc(cx, cy, R2, a0, a1);
+          ctx.arc(cx, cy, R1, a1, a0, true);
+          ctx.closePath();
+          ctx.fill();
+          if (seg.state === 'breaching') {
+            ctx.globalAlpha = 0.9;
+            ctx.strokeStyle = fill;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+
+          if (i === g.selector && cur.phase === 'playing') {
+            ctx.globalAlpha = 0.9;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(cx, cy, R2 + 3, a0, a1);
+            ctx.arc(cx, cy, R1 - 3, a1, a0, true);
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = 1;
+
+        const coreR = R1 * 0.72 * (1 + Math.sin(g.corePulse) * 0.05);
+        const lifeColor = cur.lives >= 3 ? '#4ff2ff' : cur.lives === 2 ? '#ffd84f' : '#ff5a5a';
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = lifeColor;
+        ctx.beginPath();
+        ctx.arc(cx, cy, coreR * 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        ctx.arc(cx, cy, coreR * 1.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = lifeColor;
+        ctx.beginPath();
+        ctx.arc(cx, cy, coreR * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [dims.w, dims.h, resolveRupture]);
+
+  useEffect(() => {
+    if (ui.score > ui.highScore) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(ui.score));
+      setUi(prev => (prev.score > prev.highScore ? { ...prev, highScore: prev.score } : prev));
+    }
+  }, [ui.score]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="flash-overlay"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div
+          className="ring-stage"
+          ref={wrapRef}
+          data-testid="ring"
+          onPointerDown={handlePointerDown}
+        >
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+
+          {ui.phase !== 'playing' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">BREACH WARD</h1>
+                  <p className="subtitle">Cracks flare up around the shield ring and spread hot before they rupture. Tap a flaring segment to seal it fast for a bigger bonus and a rising combo. Let one burn out and the core takes a hit — lose all three and the ward collapses.</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">WARD DOWN</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>SEAL AGAIN</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="hint">Tap a flaring crack on the ring to seal it, or press Arrow Left/Right to move the selector and Space/Enter to seal it</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
