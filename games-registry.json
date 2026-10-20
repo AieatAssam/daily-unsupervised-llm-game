@@ -4366,5 +4366,26 @@
     "file": "games/2026-10-17/index.html",
     "preview": "games/2026-10-17/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-10-20",
+    "name": "Gravity Snap",
+    "date": "2026-10-20",
+    "description": "A charged orb auto-drifts rightward through a sealed neon tunnel, pulled by gravity toward the floor or ceiling. Tap to snap the pull to the opposite direction, threading the gap in each oncoming barrier and grabbing glowing gold cores along the way for a rising combo multiplier. Clip a barrier or slam into the tunnel edge and a shield cracks, resetting your combo; clearing more gates speeds up the drift with faster walls and tighter gaps. Lose all three shields and the circuit goes dark.",
+    "tagline": "Snap the pull. Thread the gap.",
+    "tags": [
+      "reflex",
+      "arcade",
+      "endless",
+      "timing",
+      "precision"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap the tunnel or the SNAP GRAVITY button, or press Space / Arrow Up / Arrow Down, to flip gravity and weave the drifting orb through each gap",
+    "folder": "games/2026-10-20",
+    "file": "games/2026-10-20/index.html",
+    "preview": "games/2026-10-20/preview.png",
+    "rating": 4.2
   }
 ]
