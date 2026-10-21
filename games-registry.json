@@ -4387,5 +4387,26 @@
     "file": "games/2026-10-20/index.html",
     "preview": "games/2026-10-20/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-10-21",
+    "name": "Sigil Duel",
+    "date": "2026-10-21",
+    "description": "Face a rival across a neon arena where three sigils lock in an endless triangle: Bolt overloads Shield, Shield blocks Core, Core absorbs Bolt. Pick your sigil before the burning countdown ring runs out, revealing both choices in a simultaneous flash. Win streaks chain into a rising combo multiplier, but the rival studies your habits round by round and starts countering your favorite pick. A loss or a hesitation that burns out the ring cracks a shield, and clearing more rounds speeds up the countdown with a sharper, more adaptive opponent. Lose all three shields and the duel ends.",
+    "tagline": "Pick fast. Read the rival.",
+    "tags": [
+      "reflex",
+      "decision",
+      "duel",
+      "arcade",
+      "adaptive-ai"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap BOLT / SHIELD / CORE, or press 1-2-3 / Q-W-E, before the countdown ring burns out — Bolt beats Shield, Shield beats Core, Core beats Bolt",
+    "folder": "games/2026-10-21",
+    "file": "games/2026-10-21/index.html",
+    "preview": "games/2026-10-21/preview.png",
+    "rating": 4.2
   }
 ]
