@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Sigil Duel</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 10%, #190a2e 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(79,242,255,0.08), rgba(255,47,208,0.08), rgba(255,228,79,0.06));
+    background-size: 400% 400%;
+    animation: drift 15s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 8px 2px;
+    z-index: 5;
+    gap: 4px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #7dffb0; text-shadow: 0 0 10px #7dffb0; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 4px 10px;
+    gap: 10px;
+  }
+  .duel-stage {
+    position: relative;
+    width: min(92vw, 420px);
+    aspect-ratio: 5 / 6;
+    max-height: 62%;
+    border-radius: 14px;
+    border: 1px solid rgba(79,242,255,0.22);
+    box-shadow: inset 0 0 40px rgba(79,242,255,0.08), 0 0 30px rgba(255,47,208,0.12);
+    overflow: hidden;
+    touch-action: none;
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .duel-label {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(207,239,255,0.6);
+    font-size: 11px;
+    letter-spacing: 1px;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .duel-label-rival { top: 10%; }
+  .duel-label-you { bottom: 10%; }
+  .banner {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .glyph-buttons {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    gap: 10px;
+    width: min(92vw, 420px);
+    justify-content: space-between;
+  }
+  .glyph-btn {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    cursor: pointer;
+    min-height: 56px;
+    padding: 8px 4px;
+    color: #05020a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    transition: transform 0.1s ease;
+  }
+  .glyph-btn:active { transform: scale(0.92); }
+  .glyph-btn .icon { font-size: 20px; line-height: 1; }
+  .glyph-bolt-btn { background: linear-gradient(135deg, #4ff2ff, #1aa8c9); box-shadow: 0 0 18px rgba(79,242,255,0.5); }
+  .glyph-shield-btn { background: linear-gradient(135deg, #ff57e6, #c22bb0); box-shadow: 0 0 18px rgba(255,87,230,0.5); }
+  .glyph-core-btn { background: linear-gradient(135deg, #ffd84f, #d69b1a); box-shadow: 0 0 18px rgba(255,216,79,0.5); }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.92);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4ff2ff, 0 0 40px #ff57e6;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 13px;
+    max-width: 380px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4ff2ff, #ff57e6);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 10px;
+    text-align: center;
+    padding: 2px 10px 8px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'sigilDuelHighScore';
+const START_LIVES = 3;
+const REVEAL_MS = 950;
+const HISTORY_LEN = 10;
+
+const BEATS = { bolt: 'shield', shield: 'core', core: 'bolt' };
+const COUNTER_OF = { shield: 'bolt', core: 'shield', bolt: 'core' };
+const MOVES = ['bolt', 'shield', 'core'];
+const GLYPH_META = {
+  bolt: { color: '#4ff2ff', glow: '#4ff2ff', symbol: '⚡' },
+  shield: { color: '#ff57e6', glow: '#ff57e6', symbol: '⬡' },
+  core: { color: '#ffd84f', glow: '#ffd84f', symbol: '⬢' },
+};
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function drawGlyphShape(ctx, type, cx, cy, s, color, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  if (type === 'bolt') {
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.12, cy - s);
+    ctx.lineTo(cx + s * 0.4, cy - s * 0.08);
+    ctx.lineTo(cx + s * 0.06, cy - s * 0.08);
+    ctx.lineTo(cx + s * 0.45, cy + s);
+    ctx.lineTo(cx - s * 0.32, cy + s * 0.1);
+    ctx.lineTo(cx + s * 0.02, cy + s * 0.1);
+    ctx.closePath();
+    ctx.fill();
+  } else if (type === 'shield') {
+    ctx.lineWidth = Math.max(2, s * 0.16);
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s);
+    ctx.quadraticCurveTo(cx + s * 0.95, cy - s * 0.65, cx + s * 0.8, cy - s * 0.05);
+    ctx.quadraticCurveTo(cx + s * 0.65, cy + s * 0.75, cx, cy + s);
+    ctx.quadraticCurveTo(cx - s * 0.65, cy + s * 0.75, cx - s * 0.8, cy - s * 0.05);
+    ctx.quadraticCurveTo(cx - s * 0.95, cy - s * 0.65, cx, cy - s);
+    ctx.closePath();
+    ctx.stroke();
+  } else if (type === 'core') {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 6 + i * Math.PI / 3;
+      const x = cx + s * Math.cos(a), y = cy + s * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    select: () => beep(520, 0.05, 'triangle', 0.06, 640),
+    win: (combo) => beep(640 + Math.min(combo, 16) * 28, 0.12, 'triangle', 0.09, 1040),
+    tie: () => beep(360, 0.08, 'sine', 0.06, 360),
+    lose: () => beep(170, 0.3, 'sawtooth', 0.12, 60),
+    levelup: () => { beep(520, 0.1, 'triangle', 0.08); setTimeout(() => beep(780, 0.12, 'triangle', 0.08), 90); setTimeout(() => beep(1040, 0.16, 'triangle', 0.08), 180); },
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function tally(history) {
+  const counts = { bolt: 0, shield: 0, core: 0 };
+  for (const m of history) if (counts[m] != null) counts[m] += 1;
+  return counts;
+}
+
+function favoriteOf(history) {
+  if (!history.length) return null;
+  const counts = tally(history);
+  let best = null, bestCount = -1, tied = [];
+  for (const m of MOVES) {
+    if (counts[m] > bestCount) { bestCount = counts[m]; best = m; tied = [m]; }
+    else if (counts[m] === bestCount) { tied.push(m); }
+  }
+  if (bestCount <= 0) return null;
+  return pick(tied);
+}
+
+function chooseAiMove(history, aiBias) {
+  const fav = favoriteOf(history);
+  if (fav && Math.random() < aiBias) return COUNTER_OF[fav];
+  return pick(MOVES);
+}
+
+function levelParams(level) {
+  const totalMs = clamp(2300 - (level - 1) * 140, 1000, 2300);
+  const aiBias = clamp(0.16 + (level - 1) * 0.055, 0.16, 0.8);
+  return { totalMs, aiBias };
+}
+
+function buildInitialGame() {
+  return {
+    dims: { w: 320, h: 380 },
+    history: [],
+    wins: 0,
+    particles: [],
+    flashColor: null,
+    flashUntil: 0,
+    bannerClearAt: 0,
+    round: { phase: 'idle', timeLeft: 0, total: 1, playerMove: null, aiMove: null, outcome: null, nextAt: 0 },
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    highScore: initialHigh, banner: '',
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+  const gameRef = useRef(buildInitialGame());
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 110) return;
+    for (let i = 0; i < (count || 10); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 60) + Math.random() * (spread || 60);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 380 + Math.random() * 280, maxLife: 660, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const startRound = useCallback((level) => {
+    const g = gameRef.current;
+    const lp = levelParams(level);
+    g.round = {
+      phase: 'choosing', timeLeft: lp.totalMs, total: lp.totalMs,
+      playerMove: null, aiMove: chooseAiMove(g.history, lp.aiBias),
+      outcome: null, nextAt: 0,
+    };
+  }, []);
+
+  const resetGameplay = useCallback(() => {
+    const g = gameRef.current;
+    g.history = [];
+    g.wins = 0;
+    g.particles = [];
+    g.flashColor = null;
+    g.flashUntil = 0;
+    g.bannerClearAt = 0;
+    startRound(1);
+  }, [startRound]);
+
+  const startGame = useCallback(() => {
+    resetGameplay();
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: START_LIVES,
+      level: 1, banner: '',
+    }));
+  }, [resetGameplay]);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const resolveRound = useCallback((timeoutFlag) => {
+    const g = gameRef.current;
+    const r = g.round;
+    if (r.phase !== 'choosing') return;
+    r.phase = 'reveal';
+    r.nextAt = performance.now() + REVEAL_MS;
+
+    const cx = g.dims.w / 2, cy = g.dims.h / 2;
+
+    let outcome;
+    if (timeoutFlag || !r.playerMove) {
+      outcome = 'timeout';
+    } else if (r.playerMove === r.aiMove) {
+      outcome = 'tie';
+    } else if (BEATS[r.playerMove] === r.aiMove) {
+      outcome = 'win';
+    } else {
+      outcome = 'lose';
+    }
+    r.outcome = outcome;
+
+    if (r.playerMove) {
+      g.history.push(r.playerMove);
+      if (g.history.length > HISTORY_LEN) g.history.shift();
+    }
+
+    if (outcome === 'win') {
+      g.wins += 1;
+      g.flashColor = '#7dffb0';
+      g.flashUntil = performance.now() + 240;
+      audio.win(uiRef.current.combo);
+      spawnParticles(cx, cy, GLYPH_META[r.playerMove].color, 20, 110);
+      setUi(prev => {
+        const combo = prev.combo + 1;
+        const gained = Math.round((14 + prev.level * 3) * (1 + combo * 0.12));
+        return { ...prev, score: prev.score + gained, combo, banner: 'YOU WIN' };
+      });
+    } else if (outcome === 'tie') {
+      audio.tie();
+      spawnParticles(cx, cy, '#cfefff', 10, 60);
+      setUi(prev => ({ ...prev, score: prev.score + 3, banner: 'CLASH' }));
+    } else {
+      g.flashColor = '#ff5050';
+      g.flashUntil = performance.now() + 260;
+      audio.lose();
+      spawnParticles(cx, cy, '#ff5050', 22, 120);
+      setUi(prev => {
+        const lives = prev.lives - 1;
+        const banner = outcome === 'timeout' ? 'TOO SLOW' : 'RIVAL WINS';
+        if (lives <= 0) {
+          setTimeout(() => endGame(), 0);
+          return { ...prev, lives: 0, combo: 0, banner };
+        }
+        return { ...prev, lives, combo: 0, banner };
+      });
+    }
+    g.bannerClearAt = performance.now() + REVEAL_MS + 50;
+  }, [audio, spawnParticles, endGame]);
+
+  const pickMove = useCallback((move) => {
+    const cur = uiRef.current;
+    const g = gameRef.current;
+    if (cur.phase === 'idle' || cur.phase === 'over') { startGame(); return; }
+    if (cur.phase !== 'playing') return;
+    if (g.round.phase !== 'choosing' || g.round.playerMove) return;
+    g.round.playerMove = move;
+    audio.select();
+    resolveRound(false);
+  }, [startGame, audio, resolveRound]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (cur.phase === 'idle' || cur.phase === 'over') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGame(); }
+        return;
+      }
+      if (e.code === 'Digit1' || e.code === 'KeyQ') { e.preventDefault(); pickMove('bolt'); }
+      else if (e.code === 'Digit2' || e.code === 'KeyW') { e.preventDefault(); pickMove('shield'); }
+      else if (e.code === 'Digit3' || e.code === 'KeyE') { e.preventDefault(); pickMove('core'); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, pickMove]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        gameRef.current.dims = { w: r.width, h: r.height };
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.033, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = g.dims.w, h = g.dims.h;
+      const now = performance.now();
+
+      if (cur.phase === 'playing') {
+        const r = g.round;
+        if (r.phase === 'choosing') {
+          r.timeLeft -= dt * 1000;
+          if (r.timeLeft <= 0 && !r.playerMove) {
+            r.timeLeft = 0;
+            resolveRound(true);
+          }
+        } else if (r.phase === 'reveal') {
+          if (now >= r.nextAt) {
+            const cur2 = uiRef.current;
+            if (cur2.lives > 0) {
+              const newLevel = 1 + Math.floor(g.wins / 4);
+              if (newLevel !== cur2.level) {
+                audio.levelup();
+                setUi(prev => ({ ...prev, level: newLevel }));
+              }
+              startRound(newLevel);
+            }
+          }
+        }
+
+        if (g.bannerClearAt && now > g.bannerClearAt) {
+          g.bannerClearAt = 0;
+          setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+        }
+      }
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.94;
+        p.vy *= 0.94;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas && w > 0 && h > 0) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        ctx.strokeStyle = 'rgba(79,242,255,0.08)';
+        ctx.lineWidth = 1;
+        for (let y = 0; y < h; y += Math.max(20, h / 8)) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+        }
+
+        const cx = w / 2, cy = h / 2;
+        const r = g.round;
+        const rivalY = h * 0.26, playerY = h * 0.74;
+        const slotR = Math.max(26, Math.min(w, h) * 0.17);
+
+        if (cur.phase === 'playing') {
+          if (r.phase === 'choosing') {
+            const frac = clamp(r.timeLeft / r.total, 0, 1);
+            const ringR = Math.min(w, h) * 0.3;
+            ctx.beginPath();
+            ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            const ringColor = frac < 0.25 ? '#ff5050' : '#4ff2ff';
+            ctx.beginPath();
+            ctx.arc(cx, cy, ringR, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+            ctx.strokeStyle = ringColor;
+            ctx.globalAlpha = 0.35;
+            ctx.lineWidth = 11;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = 6;
+            ctx.stroke();
+          }
+
+          // rival slot
+          const showReveal = r.phase === 'reveal';
+          const rivalMove = showReveal ? r.aiMove : null;
+          const iconS = slotR * 0.62;
+          if (rivalMove) {
+            drawGlyphShape(ctx, rivalMove, cx, rivalY, iconS * 1.25, GLYPH_META[rivalMove].glow, 0.3);
+            drawGlyphShape(ctx, rivalMove, cx, rivalY, iconS, GLYPH_META[rivalMove].color, 1);
+          } else {
+            ctx.font = (slotR * 1.1) + 'px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(207,239,255,0.35)';
+            ctx.fillText('?', cx, rivalY);
+          }
+
+          // player slot
+          const playerMove = showReveal ? r.playerMove : null;
+          if (playerMove) {
+            drawGlyphShape(ctx, playerMove, cx, playerY, iconS * 1.25, GLYPH_META[playerMove].glow, 0.3);
+            drawGlyphShape(ctx, playerMove, cx, playerY, iconS, GLYPH_META[playerMove].color, 1);
+          } else {
+            ctx.font = (slotR * 1.1) + 'px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(207,239,255,0.35)';
+            ctx.fillText('?', cx, playerY);
+          }
+        }
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (g.flashColor && now < g.flashUntil) {
+          ctx.fillStyle = g.flashColor;
+          ctx.globalAlpha = 0.14;
+          ctx.fillRect(0, 0, w, h);
+          ctx.globalAlpha = 1;
+        } else if (g.flashColor && now >= g.flashUntil) {
+          g.flashColor = null;
+        }
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [audio, startRound, resolveRound]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Shields<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div className="duel-stage" ref={wrapRef} data-testid="duel-stage">
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+          {ui.phase === 'playing' && (
+            <React.Fragment>
+              <div className="duel-label duel-label-rival">RIVAL</div>
+              <div className="duel-label duel-label-you">YOU</div>
+            </React.Fragment>
+          )}
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+
+          {ui.phase !== 'playing' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">SIGIL DUEL</h1>
+                  <p className="subtitle">Face the rival across the arena. Bolt overloads Shield, Shield blocks Core, Core absorbs Bolt. Pick your sigil before the ring burns out — the rival studies your habits and starts countering them. Win streaks build a rising combo; a loss or hesitation cracks a shield. Lose all three and the duel ends.</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">DUEL LOST</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>DUEL AGAIN</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="glyph-buttons">
+          <button
+            className="glyph-btn glyph-bolt-btn"
+            data-testid="glyph-bolt"
+            onPointerDown={(e) => { e.preventDefault(); pickMove('bolt'); }}
+          ><span className="icon">{GLYPH_META.bolt.symbol}</span>BOLT</button>
+          <button
+            className="glyph-btn glyph-shield-btn"
+            data-testid="glyph-shield"
+            onPointerDown={(e) => { e.preventDefault(); pickMove('shield'); }}
+          ><span className="icon">{GLYPH_META.shield.symbol}</span>SHIELD</button>
+          <button
+            className="glyph-btn glyph-core-btn"
+            data-testid="glyph-core"
+            onPointerDown={(e) => { e.preventDefault(); pickMove('core'); }}
+          ><span className="icon">{GLYPH_META.core.symbol}</span>CORE</button>
+        </div>
+      </div>
+
+      <div className="hint">Tap BOLT / SHIELD / CORE (or press 1-2-3 / Q-W-E) before the ring burns out. Bolt beats Shield, Shield beats Core, Core beats Bolt.</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
