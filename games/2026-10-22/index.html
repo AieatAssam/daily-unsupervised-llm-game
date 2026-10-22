@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Neon Cadence</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05020a; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 8%, #14102e 0%, #05020a 60%, #020108 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(79,242,255,0.08), rgba(255,47,208,0.08), rgba(255,228,79,0.06));
+    background-size: 400% 400%;
+    animation: drift 15s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 8px 2px;
+    z-index: 5;
+    gap: 4px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #cfefff;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4ff2ff; text-shadow: 0 0 10px #4ff2ff; }
+  .combo-val { color: #ff57e6; text-shadow: 0 0 10px #ff57e6; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #7dffb0; text-shadow: 0 0 10px #7dffb0; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 4px 10px;
+    gap: 10px;
+  }
+  .track-wrap {
+    position: relative;
+    width: min(92vw, 420px);
+    aspect-ratio: 4 / 5;
+    max-height: 62%;
+    border-radius: 14px;
+    border: 1px solid rgba(79,242,255,0.22);
+    box-shadow: inset 0 0 40px rgba(79,242,255,0.08), 0 0 30px rgba(255,47,208,0.12);
+    overflow: hidden;
+    touch-action: none;
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .banner {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .lane-buttons {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    gap: 10px;
+    width: min(92vw, 420px);
+    justify-content: space-between;
+  }
+  .lane-btn {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    cursor: pointer;
+    min-height: 56px;
+    padding: 8px 4px;
+    color: #05020a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    transition: transform 0.1s ease;
+  }
+  .lane-btn:active { transform: scale(0.92); }
+  .lane-btn .key { font-size: 11px; opacity: 0.75; }
+  .lane-0-btn { background: linear-gradient(135deg, #4ff2ff, #1aa8c9); box-shadow: 0 0 18px rgba(79,242,255,0.5); }
+  .lane-1-btn { background: linear-gradient(135deg, #ff57e6, #c22bb0); box-shadow: 0 0 18px rgba(255,87,230,0.5); }
+  .lane-2-btn { background: linear-gradient(135deg, #ffd84f, #d69b1a); box-shadow: 0 0 18px rgba(255,216,79,0.5); }
+  .lane-3-btn { background: linear-gradient(135deg, #7dffb0, #1fae6b); box-shadow: 0 0 18px rgba(125,255,176,0.5); }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(2,1,8,0.92);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4ff2ff, 0 0 40px #ff57e6;
+    margin: 0;
+  }
+  .subtitle {
+    color: #9fd8ff;
+    font-size: 13px;
+    max-width: 380px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4ff2ff, #ff57e6);
+    border: none;
+    color: #05020a;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79, 242, 255, 0.6), 0 0 45px rgba(255,87,230,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4ff2ff; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #7fb8d8;
+    font-size: 10px;
+    text-align: center;
+    padding: 2px 10px 8px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'neonCadenceHighScore';
+const START_LIVES = 3;
+const LANE_COUNT = 4;
+const HITS_PER_LEVEL = 10;
+const PERFECT_T = 0.09;
+const GOOD_T = 0.22;
+const LANE_META = [
+  { color: '#4ff2ff', key: 'D' },
+  { color: '#ff57e6', key: 'F' },
+  { color: '#ffd84f', key: 'J' },
+  { color: '#7dffb0', key: 'K' },
+];
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function levelParams(level) {
+  const speed = clamp(230 + (level - 1) * 20, 230, 560);
+  const interval = clamp(760 - (level - 1) * 32, 340, 760);
+  const chordChance = level >= 3 ? clamp(0.1 + (level - 3) * 0.035, 0, 0.38) : 0;
+  return { speed, interval, chordChance };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    perfect: () => beep(880, 0.09, 'triangle', 0.09, 1180),
+    good: () => beep(560, 0.08, 'triangle', 0.08, 640),
+    miss: () => beep(140, 0.3, 'sawtooth', 0.12, 50),
+    whiff: () => beep(300, 0.04, 'sine', 0.03),
+    levelup: () => { beep(520, 0.1, 'triangle', 0.08); setTimeout(() => beep(780, 0.12, 'triangle', 0.08), 90); setTimeout(() => beep(1040, 0.16, 'triangle', 0.08), 180); },
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function buildInitialGame() {
+  return {
+    dims: { w: 320, h: 400 },
+    notes: [],
+    particles: [],
+    nextSpawnAt: 0,
+    hits: 0,
+    flashColor: null,
+    flashUntil: 0,
+    bannerClearAt: 0,
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    highScore: initialHigh, banner: '',
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+  const gameRef = useRef(buildInitialGame());
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 160) return;
+    for (let i = 0; i < (count || 10); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 60) + Math.random() * (spread || 60);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 360 + Math.random() * 260, maxLife: 620, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const spawnNote = useCallback(() => {
+    const g = gameRef.current;
+    const lp = levelParams(uiRef.current.level);
+    const lane = Math.floor(Math.random() * LANE_COUNT);
+    g.notes.push({ lane, y: -14, speed: lp.speed, judged: false });
+    if (lp.chordChance > 0 && Math.random() < lp.chordChance) {
+      let lane2 = Math.floor(Math.random() * LANE_COUNT);
+      if (lane2 === lane) lane2 = (lane2 + 1 + Math.floor(Math.random() * (LANE_COUNT - 1))) % LANE_COUNT;
+      g.notes.push({ lane: lane2, y: -14, speed: lp.speed, judged: false });
+    }
+    g.nextSpawnAt = performance.now() + lp.interval * (0.82 + Math.random() * 0.36);
+  }, []);
+
+  const resetGameplay = useCallback(() => {
+    const g = gameRef.current;
+    g.notes = [];
+    g.particles = [];
+    g.hits = 0;
+    g.flashColor = null;
+    g.flashUntil = 0;
+    g.bannerClearAt = 0;
+    g.nextSpawnAt = performance.now() + 650;
+  }, []);
+
+  const startGame = useCallback(() => {
+    resetGameplay();
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: START_LIVES,
+      level: 1, banner: '',
+    }));
+  }, [resetGameplay]);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const flashBanner = useCallback((text, color, ms) => {
+    const g = gameRef.current;
+    g.bannerClearAt = performance.now() + (ms || 420);
+    setUi(prev => ({ ...prev, banner: text }));
+    if (color) {
+      g.flashColor = color;
+      g.flashUntil = performance.now() + 220;
+    }
+  }, []);
+
+  const missNote = useCallback((note) => {
+    const g = gameRef.current;
+    const laneCx = (note.lane + 0.5) * (g.dims.w / LANE_COUNT);
+    const hitY = g.dims.h * 0.84;
+    audio.miss();
+    spawnParticles(laneCx, hitY, '#ff5050', 18, 110);
+    flashBanner('MISS', '#ff5050', 420);
+    setUi(prev => {
+      const lives = prev.lives - 1;
+      if (lives <= 0) {
+        setTimeout(() => endGame(), 0);
+        return { ...prev, lives: 0, combo: 0 };
+      }
+      return { ...prev, lives, combo: 0 };
+    });
+  }, [audio, spawnParticles, flashBanner, endGame]);
+
+  const judgeLane = useCallback((lane) => {
+    const cur = uiRef.current;
+    if (cur.phase === 'idle' || cur.phase === 'over') { startGame(); return; }
+    if (cur.phase !== 'playing') return;
+    const g = gameRef.current;
+    const hitY = g.dims.h * 0.84;
+    let best = null, bestAbs = Infinity;
+    for (const n of g.notes) {
+      if (n.judged || n.lane !== lane) continue;
+      const diffT = (n.y - hitY) / n.speed;
+      const absT = Math.abs(diffT);
+      if (absT <= GOOD_T && absT < bestAbs) { best = n; bestAbs = absT; }
+    }
+    const laneCx = (lane + 0.5) * (g.dims.w / LANE_COUNT);
+    if (!best) {
+      audio.whiff();
+      return;
+    }
+    best.judged = true;
+    const color = LANE_META[lane].color;
+    const perfect = bestAbs <= PERFECT_T;
+    if (perfect) audio.perfect(); else audio.good();
+    spawnParticles(laneCx, hitY, color, perfect ? 24 : 14, perfect ? 130 : 85);
+    flashBanner(perfect ? 'PERFECT!' : 'GOOD', null, 360);
+    setUi(prev => {
+      const combo = prev.combo + 1;
+      const base = perfect ? 140 : 70;
+      const gained = Math.round(base * (1 + combo * 0.08));
+      const hits = g.hits + 1;
+      g.hits = hits;
+      let level = prev.level;
+      if (hits % HITS_PER_LEVEL === 0) {
+        level = prev.level + 1;
+        setTimeout(() => audio.levelup(), 0);
+      }
+      return { ...prev, score: prev.score + gained, combo, level };
+    });
+  }, [audio, spawnParticles, flashBanner, startGame]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (cur.phase === 'idle' || cur.phase === 'over') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGame(); }
+        return;
+      }
+      const map = {
+        KeyD: 0, Digit1: 0,
+        KeyF: 1, Digit2: 1,
+        KeyJ: 2, Digit3: 2,
+        KeyK: 3, Digit4: 3,
+      };
+      if (map[e.code] !== undefined) { e.preventDefault(); judgeLane(map[e.code]); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, judgeLane]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        gameRef.current.dims = { w: r.width, h: r.height };
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.033, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = g.dims.w, h = g.dims.h;
+      const now = performance.now();
+      const hitY = h * 0.84;
+
+      if (cur.phase === 'playing') {
+        if (now >= g.nextSpawnAt) spawnNote();
+
+        for (let i = g.notes.length - 1; i >= 0; i--) {
+          const n = g.notes[i];
+          n.y += n.speed * dt;
+          if (!n.judged && (n.y - hitY) / n.speed > GOOD_T) {
+            n.judged = true;
+            missNote(n);
+          }
+          if (n.y > h + 30) g.notes.splice(i, 1);
+          else if (n.judged && n.y > hitY + 4) g.notes.splice(i, 1);
+        }
+
+        if (g.bannerClearAt && now > g.bannerClearAt) {
+          g.bannerClearAt = 0;
+          setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+        }
+      }
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.94;
+        p.vy *= 0.94;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas && w > 0 && h > 0) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        const laneW = w / LANE_COUNT;
+        for (let i = 1; i < LANE_COUNT; i++) {
+          ctx.strokeStyle = 'rgba(207,239,255,0.08)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(i * laneW, 0);
+          ctx.lineTo(i * laneW, h);
+          ctx.stroke();
+        }
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(207,239,255,0.55)';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#4ff2ff';
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.moveTo(0, hitY);
+        ctx.lineTo(w, hitY);
+        ctx.stroke();
+        ctx.restore();
+
+        if (cur.phase === 'playing') {
+          for (const n of g.notes) {
+            const cx = (n.lane + 0.5) * laneW;
+            const r = Math.max(10, laneW * 0.28);
+            ctx.save();
+            ctx.fillStyle = LANE_META[n.lane].color;
+            ctx.shadowColor = LANE_META[n.lane].color;
+            ctx.shadowBlur = 16;
+            ctx.beginPath();
+            ctx.roundRect ? ctx.roundRect(cx - r, n.y - r * 0.55, r * 2, r * 1.1, 6) : ctx.rect(cx - r, n.y - r * 0.55, r * 2, r * 1.1);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (g.flashColor && now < g.flashUntil) {
+          ctx.fillStyle = g.flashColor;
+          ctx.globalAlpha = 0.14;
+          ctx.fillRect(0, 0, w, h);
+          ctx.globalAlpha = 1;
+        } else if (g.flashColor && now >= g.flashUntil) {
+          g.flashColor = null;
+        }
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [spawnNote, missNote]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Shields<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div className="track-wrap" ref={wrapRef} data-testid="track">
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+
+          {ui.phase !== 'playing' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">NEON CADENCE</h1>
+                  <p className="subtitle">Glowing notes fall down four lanes toward the hit line. Tap the lane (or hit its key) the instant a note crosses the line — perfect timing builds a rising combo multiplier, sloppy timing still lands but scores less. Let a note fall past unhit and a shield cracks. Clearing more hits speeds up the drift with faster notes and chord drops. Lose all three shields and the circuit goes dark.</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">CIRCUIT DARK</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={startGame}>PLAY AGAIN</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="lane-buttons">
+          {LANE_META.map((m, i) => (
+            <button
+              key={i}
+              className={`lane-btn lane-${i}-btn`}
+              data-testid={`lane-${i}`}
+              onPointerDown={(e) => { e.preventDefault(); judgeLane(i); }}
+            ><span className="key">{m.key}</span>LANE {i + 1}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="hint">Tap a lane (or press D / F / J / K, or 1-2-3-4) exactly as the note crosses the glowing line.</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
