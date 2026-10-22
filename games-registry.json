@@ -4408,5 +4408,26 @@
     "file": "games/2026-10-21/index.html",
     "preview": "games/2026-10-21/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-10-22",
+    "name": "Neon Cadence",
+    "date": "2026-10-22",
+    "description": "Glowing notes fall down four lanes toward a glowing hit line, and your job is to tap the lane — or hit its key — the instant each note crosses it. Perfect timing stacks a rising combo multiplier; looser timing still lands the note but banks less score. Let a note drift past unhit and a shield cracks, resetting the combo. Clearing more hits speeds up the drift with faster notes and, past level three, surprise two-lane chord drops. Lose all three shields and the circuit goes dark.",
+    "tagline": "Feel the drop. Hit the line.",
+    "tags": [
+      "rhythm",
+      "timing",
+      "reflex",
+      "music",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Tap a lane, or press D / F / J / K (or 1-2-3-4), exactly as the note crosses the glowing hit line",
+    "folder": "games/2026-10-22",
+    "file": "games/2026-10-22/index.html",
+    "preview": "games/2026-10-22/preview.png",
+    "rating": 4.3
   }
 ]
