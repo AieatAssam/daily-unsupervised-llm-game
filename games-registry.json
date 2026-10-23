@@ -4429,5 +4429,26 @@
     "file": "games/2026-10-22/index.html",
     "preview": "games/2026-10-22/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-23",
+    "name": "Pulse Weaver",
+    "date": "2026-10-23",
+    "description": "A glowing orb chases wherever your mouse, finger, or arrow keys lead it through a sealed neon field. Weave between drifting magenta shards while scooping up gold pulses for a rising combo multiplier, and fire a pulse dash with a click, tap, or Space to blast apart any hazards crowding your orb before they crack a shield. Clearing more pulses speeds up the field with denser, faster shards and a shorter dash cooldown. Lose all three shields and the signal goes dark.",
+    "tagline": "Steer the glow. Dash the dark.",
+    "tags": [
+      "reflex",
+      "arcade",
+      "avoidance",
+      "precision",
+      "endless"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Move the mouse, or drag/touch the field, to steer the glowing orb — or use Arrow keys / WASD; click, tap the field, press Space, or hit DASH to pulse-clear nearby hazards",
+    "folder": "games/2026-10-23",
+    "file": "games/2026-10-23/index.html",
+    "preview": "games/2026-10-23/preview.png",
+    "rating": 4.2
   }
 ]
