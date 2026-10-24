@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Pivot Strike</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --cyan: #3cf3ff;
+    --magenta: #ff3cf0;
+    --gold: #ffd93c;
+    --bg0: #060414;
+    --bg1: #0c0a26;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background: var(--bg0);
+    overflow-x: hidden;
+    font-family: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
+    color: #eafcff;
+    touch-action: none;
+  }
+  #root { min-height: 100vh; }
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 10px 18px;
+    position: relative;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(60,243,255,0.16), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(255,60,240,0.14), transparent 55%),
+      linear-gradient(160deg, var(--bg0), var(--bg1) 60%, var(--bg0));
+    background-size: 200% 200%;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 100% 100%; }
+  }
+  h1.title {
+    margin: 2px 0 10px;
+    font-size: clamp(22px, 5vw, 32px);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--gold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 22px rgba(60,243,255,0.35);
+  }
+  .hud {
+    width: min(520px, 92vw);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .stat {
+    flex: 1 1 70px;
+    min-width: 68px;
+    background: rgba(10, 10, 30, 0.55);
+    border: 1px solid rgba(60,243,255,0.35);
+    border-radius: 10px;
+    padding: 6px 10px;
+    text-align: center;
+    box-shadow: 0 0 14px rgba(60,243,255,0.08) inset;
+  }
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    text-transform: uppercase;
+  }
+  .stat .value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 10px rgba(60,243,255,0.6);
+  }
+  .stat.shields .value { color: #ff5a7a; text-shadow: 0 0 10px rgba(255,90,122,0.6); }
+  .stat.combo .value { color: var(--gold); text-shadow: 0 0 10px rgba(255,217,60,0.6); }
+  .stat.level .value { color: var(--magenta); text-shadow: 0 0 10px rgba(255,60,240,0.6); }
+
+  .play-field {
+    position: relative;
+    width: min(460px, 90vw);
+    height: min(380px, 48vh);
+    min-height: 300px;
+    border-radius: 16px;
+    border: 1px solid rgba(60,243,255,0.4);
+    box-shadow: 0 0 30px rgba(60,243,255,0.15), 0 0 60px rgba(255,60,240,0.08) inset;
+    overflow: hidden;
+    background: #04030c;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 16px;
+    background: rgba(4,3,12,0.72);
+    backdrop-filter: blur(2px);
+  }
+  .overlay h2 {
+    margin: 0;
+    font-size: clamp(18px, 4vw, 26px);
+    color: var(--cyan);
+    text-shadow: 0 0 14px rgba(60,243,255,0.6);
+    letter-spacing: 2px;
+  }
+  .overlay p {
+    margin: 0;
+    max-width: 440px;
+    font-size: 13px;
+    opacity: 0.85;
+    line-height: 1.5;
+  }
+  .overlay .score-line {
+    font-size: 16px;
+    color: var(--gold);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .start-btn {
+    margin-top: 6px;
+    padding: 14px 34px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #04030c;
+    background: linear-gradient(90deg, var(--cyan), var(--gold));
+    border-radius: 999px;
+    box-shadow: 0 0 24px rgba(60,243,255,0.55);
+    min-height: 48px;
+    min-width: 160px;
+    transition: transform 0.15s ease;
+  }
+  .start-btn:active { transform: scale(0.95); }
+
+  .controls-row {
+    width: min(520px, 92vw);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .hint {
+    font-size: 11px;
+    opacity: 0.6;
+    max-width: 520px;
+    line-height: 1.4;
+  }
+  .fire-btn {
+    min-width: 96px;
+    min-height: 52px;
+    padding: 10px 20px;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #04030c;
+    background: linear-gradient(90deg, var(--magenta), var(--cyan));
+    box-shadow: 0 0 20px rgba(255,60,240,0.45);
+  }
+  .fire-btn:disabled {
+    opacity: 0.4;
+    filter: grayscale(0.6);
+    box-shadow: none;
+  }
+  .fire-btn:active:not(:disabled) { transform: scale(0.94); }
+
+  @media (max-width: 480px) {
+    .hud { gap: 6px; }
+    .stat { padding: 5px 6px; min-width: 60px; }
+    .stat .value { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = "pivotStrikeHighScore";
+const TAU = Math.PI * 2;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist(x1, y1, x2, y2) { return Math.hypot(x1 - x2, y1 - y2); }
+function normalizeAngle(a) {
+  a = a % TAU;
+  if (a < 0) a += TAU;
+  return a;
+}
+function angleDiff(a, b) {
+  let d = normalizeAngle(a) - normalizeAngle(b);
+  if (d > Math.PI) d -= TAU;
+  if (d < -Math.PI) d += TAU;
+  return d;
+}
+
+function freshStats() {
+  return { score: 0, combo: 0, comboMultiplier: 1, shields: 3, level: 1, shardsDestroyed: 0 };
+}
+
+function App() {
+  const [uiStats, setUiStats] = useState(freshStats());
+  const [gameState, setGameState] = useState("idle"); // idle | playing | gameover
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [fireReady, setFireReady] = useState(true);
+
+  const fieldRef = useRef(null);
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
+  const rafRef = useRef(null);
+  const statsRef = useRef(freshStats());
+  const gameStateRef = useRef("idle");
+  const audioCtxRef = useRef(null);
+  const starsRef = useRef([]);
+  const glowSpritesRef = useRef(null);
+
+  const getGlowSprites = () => {
+    if (glowSpritesRef.current) return glowSpritesRef.current;
+    const make = (color, size) => {
+      const c = document.createElement("canvas");
+      c.width = size; c.height = size;
+      const cctx = c.getContext("2d");
+      const grd = cctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+      grd.addColorStop(0, `rgba(${color},0.95)`);
+      grd.addColorStop(0.5, `rgba(${color},0.35)`);
+      grd.addColorStop(1, `rgba(${color},0)`);
+      cctx.fillStyle = grd;
+      cctx.fillRect(0, 0, size, size);
+      return c;
+    };
+    glowSpritesRef.current = {
+      gold: make("255,217,60", 48),
+      magenta: make("255,70,120", 44),
+      cyan: make("150,240,255", 56),
+    };
+    return glowSpritesRef.current;
+  };
+
+  const gRef = useRef({
+    bounds: { w: 460, h: 380 },
+    center: { x: 230, y: 190 },
+    coreR: 24,
+    turretR: 42,
+    fieldR: 160,
+    turretAngle: -Math.PI / 2,
+    keys: {},
+    shards: [],
+    bolts: [],
+    particles: [],
+    spawnTimer: 1.0,
+    fireCooldown: 0,
+    fireCooldownMax: 0.22,
+    invulnTimer: 0,
+    shake: 0,
+    lastTime: 0,
+  });
+
+  const ensureAudio = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new Ctx();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playTone = useCallback((freq, dur = 0.12, type = "sine", vol = 0.16) => {
+    try {
+      const ctx = ensureAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }, [ensureAudio]);
+
+  const spawnParticles = (x, y, color, count = 10, speed = 90) => {
+    const g = gRef.current;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * TAU;
+      const s = speed * (0.4 + Math.random() * 0.9);
+      g.particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: 0.5 + Math.random() * 0.4,
+        maxLife: 0.9,
+        size: 2 + Math.random() * 2.5,
+        color,
+      });
+    }
+  };
+
+  const resizeCanvas = useCallback(() => {
+    const field = fieldRef.current;
+    const canvas = canvasRef.current;
+    if (!field || !canvas) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctxRef.current = ctx;
+    const g = gRef.current;
+    g.bounds = { w: rect.width, h: rect.height };
+    g.center = { x: rect.width / 2, y: rect.height / 2 };
+    g.fieldR = Math.max(60, Math.min(rect.width, rect.height) / 2 - 24);
+    if (!starsRef.current.length) {
+      const n = 16;
+      for (let i = 0; i < n; i++) {
+        starsRef.current.push({
+          x: Math.random(), y: Math.random(),
+          r: Math.random() * 1.6 + 0.4,
+          tw: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    const onResize = () => resizeCanvas();
+    window.addEventListener("resize", onResize);
+    let ro;
+    if (window.ResizeObserver && fieldRef.current) {
+      ro = new ResizeObserver(onResize);
+      ro.observe(fieldRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (ro) ro.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const spawnShard = () => {
+    const g = gRef.current;
+    const level = statsRef.current.level;
+    const angle = Math.random() * TAU;
+    const speed = 42 + level * 7 + Math.random() * 16;
+    g.shards.push({
+      angle,
+      r: g.fieldR,
+      speed,
+      size: 11 + Math.random() * 5,
+      rot: 0,
+      spin: (Math.random() - 0.5) * 3,
+    });
+  };
+
+  const commitStats = (mutator) => {
+    mutator(statsRef.current);
+    setUiStats({ ...statsRef.current });
+  };
+
+  const endGame = () => {
+    gameStateRef.current = "gameover";
+    setGameState("gameover");
+    const finalScore = statsRef.current.score;
+    if (finalScore > highScore) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalScore));
+      setHighScore(finalScore);
+    } else if (!localStorage.getItem(HIGH_SCORE_KEY)) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    }
+    playTone(90, 0.4, "triangle", 0.2);
+  };
+
+  const handleCoreHit = (shard) => {
+    const g = gRef.current;
+    g.invulnTimer = 0.8;
+    g.shake = 10;
+    playTone(120, 0.22, "sawtooth", 0.2);
+    spawnParticles(g.center.x, g.center.y, "255,70,100", 16, 140);
+    commitStats((s) => {
+      s.shields -= 1;
+      s.combo = 0;
+      s.comboMultiplier = 1;
+    });
+    if (statsRef.current.shields <= 0) endGame();
+  };
+
+  const handleShardKill = (shard, hx, hy) => {
+    spawnParticles(hx, hy, "60,243,255", 12, 110);
+    playTone(520 + Math.random() * 160, 0.1, "sine", 0.16);
+    commitStats((s) => {
+      s.score += 10 * s.comboMultiplier;
+      s.combo += 1;
+      if (s.combo % 5 === 0) s.comboMultiplier = Math.min(8, s.comboMultiplier + 1);
+      s.shardsDestroyed += 1;
+      if (s.shardsDestroyed % 6 === 0) {
+        s.level = Math.min(12, s.level + 1);
+        playTone(720, 0.18, "square", 0.12);
+      }
+    });
+  };
+
+  const doFire = useCallback(() => {
+    const g = gRef.current;
+    if (gameStateRef.current !== "playing") return;
+    if (g.fireCooldown > 0) return;
+    g.fireCooldown = g.fireCooldownMax;
+    setFireReady(false);
+    playTone(360, 0.08, "square", 0.12);
+    g.bolts.push({ angle: g.turretAngle, r: g.turretR + 4, speed: 380 });
+  }, [playTone]);
+
+  // pointer / touch aiming + fire
+  useEffect(() => {
+    const field = fieldRef.current;
+    if (!field) return;
+    const aimAt = (clientX, clientY) => {
+      const rect = field.getBoundingClientRect();
+      const g = gRef.current;
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      g.turretAngle = Math.atan2(y - g.center.y, x - g.center.x);
+    };
+    const onMouseMove = (e) => aimAt(e.clientX, e.clientY);
+    const onTouchMove = (e) => {
+      if (!e.touches || !e.touches[0]) return;
+      e.preventDefault();
+      aimAt(e.touches[0].clientX, e.touches[0].clientY);
+    };
+    const onClick = () => doFire();
+    const onTouchStart = (e) => {
+      if (e.touches && e.touches[0]) aimAt(e.touches[0].clientX, e.touches[0].clientY);
+      doFire();
+    };
+    field.addEventListener("mousemove", onMouseMove);
+    field.addEventListener("touchmove", onTouchMove, { passive: false });
+    field.addEventListener("touchstart", onTouchStart, { passive: false });
+    field.addEventListener("click", onClick);
+    return () => {
+      field.removeEventListener("mousemove", onMouseMove);
+      field.removeEventListener("touchmove", onTouchMove);
+      field.removeEventListener("touchstart", onTouchStart);
+      field.removeEventListener("click", onClick);
+    };
+  }, [doFire]);
+
+  // keyboard rotation + space fire
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const k = e.key;
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "a", "A", "d", "D", "w", "W", "s", "S"].includes(k)) {
+        gRef.current.keys[k.toLowerCase()] = true;
+        e.preventDefault();
+      }
+      if (k === " " || k === "Spacebar") {
+        e.preventDefault();
+        doFire();
+      }
+    };
+    const onKeyUp = (e) => {
+      gRef.current.keys[e.key.toLowerCase()] = false;
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [doFire]);
+
+  // main loop
+  useEffect(() => {
+    const step = (ts) => {
+      const g = gRef.current;
+      if (!g.lastTime) g.lastTime = ts;
+      let dt = (ts - g.lastTime) / 1000;
+      dt = Math.min(dt, 0.05);
+      g.lastTime = ts;
+
+      const turnSpeed = 3.2;
+      if (g.keys["arrowleft"] || g.keys["a"]) g.turretAngle -= turnSpeed * dt;
+      if (g.keys["arrowright"] || g.keys["d"]) g.turretAngle += turnSpeed * dt;
+
+      g.fireCooldown = Math.max(0, g.fireCooldown - dt);
+      if (g.fireCooldown === 0) setFireReady((prev) => (prev ? prev : true));
+      g.invulnTimer = Math.max(0, g.invulnTimer - dt);
+      g.shake *= 0.9;
+      if (g.shake < 0.05) g.shake = 0;
+
+      if (gameStateRef.current === "playing") {
+        g.spawnTimer -= dt;
+        const maxShards = 3 + Math.floor(statsRef.current.level / 2);
+        if (g.spawnTimer <= 0 && g.shards.length < maxShards) {
+          spawnShard();
+          g.spawnTimer = Math.max(0.5, 1.5 - statsRef.current.level * 0.1);
+        }
+
+        for (const sh of g.shards) {
+          sh.r -= sh.speed * dt;
+          sh.rot += sh.spin * dt;
+        }
+        for (const b of g.bolts) {
+          b.r += b.speed * dt;
+        }
+
+        // bolt vs shard collision (same angular sector, close radius)
+        for (const b of g.bolts.slice()) {
+          for (const sh of g.shards.slice()) {
+            if (Math.abs(angleDiff(b.angle, sh.angle)) < 0.18 && Math.abs(b.r - sh.r) < 16) {
+              const hx = g.center.x + Math.cos(sh.angle) * sh.r;
+              const hy = g.center.y + Math.sin(sh.angle) * sh.r;
+              g.bolts = g.bolts.filter((bb) => bb !== b);
+              g.shards = g.shards.filter((ss) => ss !== sh);
+              handleShardKill(sh, hx, hy);
+              break;
+            }
+          }
+        }
+
+        g.bolts = g.bolts.filter((b) => b.r < g.fieldR + 20);
+
+        if (g.invulnTimer <= 0) {
+          for (const sh of g.shards) {
+            if (sh.r <= g.coreR) {
+              g.shards = g.shards.filter((s2) => s2 !== sh);
+              handleCoreHit(sh);
+              break;
+            }
+          }
+        } else {
+          g.shards = g.shards.filter((sh) => sh.r > g.coreR);
+        }
+      }
+
+      g.particles.forEach((p) => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.96;
+        p.vy *= 0.96;
+        p.life -= dt;
+      });
+      g.particles = g.particles.filter((p) => p.life > 0);
+      if (g.particles.length > 60) g.particles = g.particles.slice(-60);
+
+      draw();
+      rafRef.current = requestAnimationFrame(step);
+    };
+
+    const draw = () => {
+      const ctx = ctxRef.current;
+      const g = gRef.current;
+      if (!ctx) return;
+      const { w, h } = g.bounds;
+      const t = performance.now() / 1000;
+
+      const breathe = 4 + 3 * Math.sin(t * 0.9);
+      ctx.fillStyle = `rgb(${5 + breathe * 0.5}, ${4 + breathe * 0.3}, ${14 + breathe})`;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      const shakeX = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      const shakeY = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      ctx.translate(shakeX, shakeY);
+
+      starsRef.current.forEach((st) => {
+        const a = 0.25 + 0.25 * Math.sin(t * 2 + st.tw);
+        ctx.fillStyle = `rgba(150,220,255,${a})`;
+        ctx.beginPath();
+        ctx.arc(st.x * w, st.y * h, st.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // outer field ring
+      ctx.strokeStyle = "rgba(60,243,255,0.18)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(g.center.x, g.center.y, g.fieldR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const glow = getGlowSprites();
+
+      g.shards.forEach((sh) => {
+        const x = g.center.x + Math.cos(sh.angle) * sh.r;
+        const y = g.center.y + Math.sin(sh.angle) * sh.r;
+        const gs = sh.size * 2.6;
+        ctx.drawImage(glow.magenta, x - gs / 2, y - gs / 2, gs, gs);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(sh.rot);
+        ctx.strokeStyle = "rgba(255,110,150,0.95)";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(0, -sh.size);
+        ctx.lineTo(sh.size, 0);
+        ctx.lineTo(0, sh.size);
+        ctx.lineTo(-sh.size, 0);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      g.bolts.forEach((b) => {
+        const x = g.center.x + Math.cos(b.angle) * b.r;
+        const y = g.center.y + Math.sin(b.angle) * b.r;
+        const gs = 18;
+        ctx.drawImage(glow.gold, x - gs / 2, y - gs / 2, gs, gs);
+        ctx.fillStyle = "rgba(255,240,200,0.95)";
+        ctx.beginPath();
+        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      g.particles.forEach((p) => {
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = `rgba(${p.color},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // turret indicator
+      ctx.save();
+      ctx.translate(g.center.x, g.center.y);
+      ctx.rotate(g.turretAngle);
+      ctx.strokeStyle = g.fireCooldown > 0 ? "rgba(255,217,60,0.4)" : "rgba(255,217,60,0.9)";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(g.coreR, 0);
+      ctx.lineTo(g.turretR, 0);
+      ctx.stroke();
+      ctx.restore();
+
+      // core
+      const blink = g.invulnTimer > 0 ? (Math.sin(t * 30) > 0 ? 1 : 0.3) : 1;
+      ctx.save();
+      ctx.globalAlpha = blink;
+      const ogs = g.coreR * 3.6;
+      ctx.drawImage(glow.cyan, g.center.x - ogs / 2, g.center.y - ogs / 2, ogs, ogs);
+      ctx.fillStyle = "rgba(230,255,255,0.95)";
+      ctx.beginPath();
+      ctx.arc(g.center.x, g.center.y, g.coreR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.restore();
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startGame = () => {
+    ensureAudio();
+    const g = gRef.current;
+    statsRef.current = freshStats();
+    setUiStats(freshStats());
+    g.turretAngle = -Math.PI / 2;
+    g.shards = [];
+    g.bolts = [];
+    g.particles = [];
+    g.spawnTimer = 0.8;
+    g.fireCooldown = 0;
+    g.invulnTimer = 0;
+    setFireReady(true);
+    gameStateRef.current = "playing";
+    setGameState("playing");
+    playTone(440, 0.15, "triangle", 0.15);
+  };
+
+  const fireDisabled = gameState !== "playing" || !fireReady;
+
+  return (
+    <div className="app">
+      <h1 className="title">Pivot Strike</h1>
+      <div className="hud">
+        <div className="stat">
+          <div className="label">Score</div>
+          <div className="value" data-testid="score">{uiStats.score}</div>
+        </div>
+        <div className="stat combo">
+          <div className="label">Combo</div>
+          <div className="value" data-testid="combo">{uiStats.combo}</div>
+        </div>
+        <div className="stat shields">
+          <div className="label">Shields</div>
+          <div className="value" data-testid="shields">{uiStats.shields}</div>
+        </div>
+        <div className="stat level">
+          <div className="label">Level</div>
+          <div className="value" data-testid="level">{uiStats.level}</div>
+        </div>
+      </div>
+
+      <div className="play-field" ref={fieldRef} data-testid="play-field">
+        <canvas ref={canvasRef} data-testid="canvas" />
+        {gameState !== "playing" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>{gameState === "gameover" ? "Core Breached" : "Pivot Strike"}</h2>
+            {gameState === "gameover" ? (
+              <p className="score-line">
+                Score: {uiStats.score} &nbsp;•&nbsp; Best: {Math.max(highScore, uiStats.score)}
+              </p>
+            ) : (
+              <p>
+                Rotate the turret ring around your core by moving the mouse, dragging on
+                touch, or pressing Arrow keys / A-D. Click, tap, or press Space to fire a
+                bolt outward and shred any shard streaking in along that line before it
+                reaches the core.
+              </p>
+            )}
+            <button className="start-btn" data-testid="start-btn" onClick={startGame}>
+              {gameState === "gameover" ? "Play Again" : "Start Defense"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="controls-row">
+        <p className="hint">
+          Move the mouse or drag/touch the field to aim the turret, or use Arrow keys / A-D
+          to rotate. Click, tap the field, press Space, or hit FIRE to shoot down incoming
+          shards before they reach the core.
+        </p>
+        <button
+          className="fire-btn"
+          data-testid="fire-btn"
+          disabled={fireDisabled}
+          onClick={doFire}
+        >
+          FIRE
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
