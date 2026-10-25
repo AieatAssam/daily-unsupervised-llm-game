@@ -4471,5 +4471,26 @@
     "file": "games/2026-10-24/index.html",
     "preview": "games/2026-10-24/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-25",
+    "name": "Twin Reactors",
+    "date": "2026-10-25",
+    "description": "Two neon reactor cores heat up on their own, and only you stand between them and a dual meltdown. Vent CORE A by clicking or tapping the left half of the field (or Arrow Left / A) and CORE B on the right (or Arrow Right / D) — or hit the dedicated VENT buttons. Let a core drift into the glowing gold sweet zone before venting for big combo points; vent too early and you waste the charge, vent too late in the red and you barely scrape by, and let either core hit 100% and it melts down, costing a shield and resetting your combo. Split your attention across both cores at once as unannounced heat surges spike one of them without warning, and climbing levels speed up the heat rise, tighten the sweet zone, and quicken the surges.",
+    "tagline": "Watch both cores. Vent at the perfect moment.",
+    "tags": [
+      "reflex",
+      "arcade",
+      "management",
+      "precision",
+      "endless"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap the left or right half of the field, or press Arrow Left/A and Arrow Right/D, or use the VENT A / VENT B buttons to cool each reactor core before it melts down",
+    "folder": "games/2026-10-25",
+    "file": "games/2026-10-25/index.html",
+    "preview": "games/2026-10-25/preview.png",
+    "rating": 4.2
   }
 ]

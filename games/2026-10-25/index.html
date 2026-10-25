@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Twin Reactors</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --cyan: #3cf3ff;
+    --magenta: #ff3cf0;
+    --gold: #ffd93c;
+    --red: #ff4d6a;
+    --bg0: #060414;
+    --bg1: #0c0a26;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background: var(--bg0);
+    overflow-x: hidden;
+    font-family: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
+    color: #eafcff;
+    touch-action: none;
+  }
+  #root { min-height: 100vh; }
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 10px 18px;
+    position: relative;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(60,243,255,0.16), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(255,60,240,0.14), transparent 55%),
+      linear-gradient(160deg, var(--bg0), var(--bg1) 60%, var(--bg0));
+    background-size: 200% 200%;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 100% 100%; }
+  }
+  h1.title {
+    margin: 2px 0 10px;
+    font-size: clamp(22px, 5vw, 32px);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--gold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 22px rgba(60,243,255,0.35);
+  }
+  .hud {
+    width: min(520px, 92vw);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .stat {
+    flex: 1 1 70px;
+    min-width: 68px;
+    background: rgba(10, 10, 30, 0.55);
+    border: 1px solid rgba(60,243,255,0.35);
+    border-radius: 10px;
+    padding: 6px 10px;
+    text-align: center;
+    box-shadow: 0 0 14px rgba(60,243,255,0.08) inset;
+  }
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    text-transform: uppercase;
+  }
+  .stat .value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 10px rgba(60,243,255,0.6);
+  }
+  .stat.shields .value { color: var(--red); text-shadow: 0 0 10px rgba(255,77,106,0.6); }
+  .stat.combo .value { color: var(--gold); text-shadow: 0 0 10px rgba(255,217,60,0.6); }
+  .stat.level .value { color: var(--magenta); text-shadow: 0 0 10px rgba(255,60,240,0.6); }
+
+  .play-field {
+    position: relative;
+    width: min(460px, 90vw);
+    height: min(380px, 48vh);
+    min-height: 300px;
+    border-radius: 16px;
+    border: 1px solid rgba(60,243,255,0.4);
+    box-shadow: 0 0 30px rgba(60,243,255,0.15), 0 0 60px rgba(255,60,240,0.08) inset;
+    overflow: hidden;
+    background: #04030c;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 16px;
+    background: rgba(4,3,12,0.72);
+    backdrop-filter: blur(2px);
+  }
+  .overlay h2 {
+    margin: 0;
+    font-size: clamp(18px, 4vw, 26px);
+    color: var(--cyan);
+    text-shadow: 0 0 14px rgba(60,243,255,0.6);
+    letter-spacing: 2px;
+  }
+  .overlay p {
+    margin: 0;
+    max-width: 440px;
+    font-size: 13px;
+    opacity: 0.85;
+    line-height: 1.5;
+  }
+  .overlay .score-line {
+    font-size: 16px;
+    color: var(--gold);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .start-btn {
+    margin-top: 6px;
+    padding: 14px 34px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #04030c;
+    background: linear-gradient(90deg, var(--cyan), var(--gold));
+    border-radius: 999px;
+    box-shadow: 0 0 24px rgba(60,243,255,0.55);
+    min-height: 48px;
+    min-width: 160px;
+    transition: transform 0.15s ease;
+  }
+  .start-btn:active { transform: scale(0.95); }
+
+  .controls-row {
+    width: min(520px, 92vw);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .hint {
+    width: 100%;
+    font-size: 11px;
+    opacity: 0.6;
+    max-width: 520px;
+    line-height: 1.4;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .vent-btn {
+    flex: 1 1 140px;
+    min-width: 120px;
+    min-height: 52px;
+    padding: 10px 20px;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #04030c;
+    transition: transform 0.12s ease;
+  }
+  .vent-btn.left {
+    background: linear-gradient(90deg, var(--cyan), #6af3d0);
+    box-shadow: 0 0 20px rgba(60,243,255,0.45);
+  }
+  .vent-btn.right {
+    background: linear-gradient(90deg, var(--magenta), #ff9a6a);
+    box-shadow: 0 0 20px rgba(255,60,240,0.45);
+  }
+  .vent-btn:disabled {
+    opacity: 0.4;
+    filter: grayscale(0.6);
+    box-shadow: none;
+  }
+  .vent-btn:active:not(:disabled) { transform: scale(0.94); }
+
+  @media (max-width: 480px) {
+    .hud { gap: 6px; }
+    .stat { padding: 5px 6px; min-width: 60px; }
+    .stat .value { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = "twinReactorsHighScore";
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function roundRectPath(target, x, y, w, h, r) {
+  target.moveTo(x + r, y);
+  target.arcTo(x + w, y, x + w, y + h, r);
+  target.arcTo(x + w, y + h, x, y + h, r);
+  target.arcTo(x, y + h, x, y, r);
+  target.arcTo(x, y, x + w, y, r);
+  target.closePath();
+}
+
+function freshStats() {
+  return { score: 0, combo: 0, comboMultiplier: 1, shields: 3, level: 1, ventsLanded: 0 };
+}
+
+function freshReactor() {
+  return { heat: 0, cooldown: 0, warnTimer: 0, warnApplied: false, burstAmount: 0, meltFlash: 0, pulse: 0 };
+}
+
+function App() {
+  const [uiStats, setUiStats] = useState(freshStats());
+  const [gameState, setGameState] = useState("idle"); // idle | playing | gameover
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [ventReady, setVentReady] = useState([true, true]);
+  const highScoreRef = useRef(highScore);
+  useEffect(() => { highScoreRef.current = highScore; }, [highScore]);
+
+  const fieldRef = useRef(null);
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
+  const rafRef = useRef(null);
+  const statsRef = useRef(freshStats());
+  const gameStateRef = useRef("idle");
+  const audioCtxRef = useRef(null);
+  const starsRef = useRef([]);
+  const glowSpritesRef = useRef(null);
+
+  const getGlowSprites = () => {
+    if (glowSpritesRef.current) return glowSpritesRef.current;
+    const make = (color, size) => {
+      const c = document.createElement("canvas");
+      c.width = size; c.height = size;
+      const cctx = c.getContext("2d");
+      const grd = cctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+      grd.addColorStop(0, `rgba(${color},0.95)`);
+      grd.addColorStop(0.5, `rgba(${color},0.35)`);
+      grd.addColorStop(1, `rgba(${color},0)`);
+      cctx.fillStyle = grd;
+      cctx.fillRect(0, 0, size, size);
+      return c;
+    };
+    glowSpritesRef.current = {
+      gold: make("255,217,60", 48),
+      cyan: make("150,240,255", 44),
+      magenta: make("255,70,180", 44),
+      red: make("255,70,100", 48),
+    };
+    return glowSpritesRef.current;
+  };
+
+  const gRef = useRef({
+    bounds: { w: 460, h: 380 },
+    reactors: [freshReactor(), freshReactor()],
+    sweetMin: 45,
+    sweetMax: 78,
+    heatRateBase: 7,
+    heatRatePerLevel: 1.15,
+    surgeTimer: 3.2,
+    surgeTimerMax: 4.2,
+    particles: [],
+    shake: 0,
+    lastTime: 0,
+    ventReadyCache: [true, true],
+    lastScoreDisplayed: 0,
+    barCache: [null, null],
+  });
+
+  const ensureAudio = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new Ctx();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playTone = useCallback((freq, dur = 0.12, type = "sine", vol = 0.16) => {
+    try {
+      const ctx = ensureAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }, [ensureAudio]);
+
+  const spawnParticles = (x, y, color, count = 10, speed = 90) => {
+    const g = gRef.current;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = speed * (0.4 + Math.random() * 0.9);
+      g.particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: 0.5 + Math.random() * 0.4,
+        maxLife: 0.9,
+        size: 2 + Math.random() * 2.5,
+        color,
+      });
+    }
+  };
+
+  const resizeCanvas = useCallback(() => {
+    const field = fieldRef.current;
+    const canvas = canvasRef.current;
+    if (!field || !canvas) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctxRef.current = ctx;
+    const g = gRef.current;
+    g.bounds = { w: rect.width, h: rect.height };
+    rebuildBarCache(g);
+    if (!starsRef.current.length) {
+      const n = 16;
+      for (let i = 0; i < n; i++) {
+        starsRef.current.push({
+          x: Math.random(), y: Math.random(),
+          r: Math.random() * 1.6 + 0.4,
+          tw: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    const onResize = () => resizeCanvas();
+    window.addEventListener("resize", onResize);
+    let ro;
+    if (window.ResizeObserver && fieldRef.current) {
+      ro = new ResizeObserver(onResize);
+      ro.observe(fieldRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (ro) ro.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const commitStats = (mutator) => {
+    mutator(statsRef.current);
+    setUiStats({ ...statsRef.current });
+  };
+
+  const endGame = () => {
+    gameStateRef.current = "gameover";
+    setGameState("gameover");
+    const finalScore = Math.floor(statsRef.current.score);
+    statsRef.current.score = finalScore;
+    setUiStats({ ...statsRef.current });
+    if (finalScore > highScoreRef.current) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalScore));
+      highScoreRef.current = finalScore;
+      setHighScore(finalScore);
+    } else if (!localStorage.getItem(HIGH_SCORE_KEY)) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(highScoreRef.current));
+    }
+    playTone(90, 0.4, "triangle", 0.2);
+  };
+
+  const triggerMeltdown = (idx) => {
+    const g = gRef.current;
+    const reactor = g.reactors[idx];
+    reactor.heat = 0;
+    reactor.meltFlash = 1;
+    reactor.cooldown = 0.5;
+    g.shake = 12;
+    const bar = barRect(g, idx);
+    spawnParticles(bar.x + bar.w / 2, bar.y, "255,70,100", 20, 150);
+    playTone(110, 0.3, "sawtooth", 0.22);
+    commitStats((s) => {
+      s.shields -= 1;
+      s.combo = 0;
+      s.comboMultiplier = 1;
+    });
+    if (statsRef.current.shields <= 0) endGame();
+  };
+
+  const barRect = (g, idx) => {
+    const { w, h } = g.bounds;
+    const barW = Math.min(90, w * 0.32);
+    const barH = h * 0.66;
+    const gap = w * 0.08;
+    const totalW = barW * 2 + gap;
+    const startX = (w - totalW) / 2;
+    const x = idx === 0 ? startX : startX + barW + gap;
+    const y = h * 0.1;
+    return { x, y, w: barW, h: barH };
+  };
+
+  const rebuildBarCache = (g) => {
+    for (let idx = 0; idx < 2; idx++) {
+      const rect = barRect(g, idx);
+      const path = new Path2D();
+      roundRectPath(path, rect.x, rect.y, rect.w, rect.h, 10);
+      g.barCache[idx] = { rect, path };
+    }
+  };
+
+  const doVent = useCallback((idx) => {
+    const g = gRef.current;
+    if (gameStateRef.current !== "playing") return;
+    const reactor = g.reactors[idx];
+    if (!reactor || reactor.cooldown > 0) return;
+
+    const heat = reactor.heat;
+    const bar = barRect(g, idx);
+    const px = bar.x + bar.w / 2;
+    const py = bar.y + bar.h * (1 - heat / 100);
+
+    if (heat >= g.sweetMin && heat <= g.sweetMax) {
+      spawnParticles(px, py, "60,243,255", 16, 130);
+      playTone(560 + Math.random() * 160, 0.12, "sine", 0.18);
+      commitStats((s) => {
+        s.score += 20 * s.comboMultiplier;
+        s.combo += 1;
+        if (s.combo % 5 === 0) s.comboMultiplier = Math.min(6, s.comboMultiplier + 1);
+        s.ventsLanded += 1;
+        if (s.ventsLanded % 8 === 0) {
+          s.level = Math.min(10, s.level + 1);
+          g.surgeTimerMax = Math.max(1.4, g.surgeTimerMax - 0.3);
+          g.sweetMax = Math.max(g.sweetMin + 14, g.sweetMax - 2);
+          playTone(720, 0.18, "square", 0.12);
+        }
+      });
+    } else if (heat > g.sweetMax) {
+      spawnParticles(px, py, "255,217,60", 10, 100);
+      playTone(300, 0.1, "triangle", 0.14);
+      commitStats((s) => {
+        s.score += 6 * s.comboMultiplier;
+      });
+    } else {
+      spawnParticles(px, py, "150,160,200", 6, 70);
+      playTone(200, 0.08, "sine", 0.1);
+      commitStats((s) => {
+        s.combo = 0;
+        s.comboMultiplier = 1;
+      });
+    }
+
+    reactor.heat = 0;
+    reactor.cooldown = 0.45;
+    const readyArr = [g.reactors[0].cooldown <= 0, g.reactors[1].cooldown <= 0];
+    g.ventReadyCache = readyArr;
+    setVentReady(readyArr);
+  }, [playTone]);
+
+  // click / tap on the play field: left half vents reactor 0, right half vents reactor 1
+  useEffect(() => {
+    const field = fieldRef.current;
+    if (!field) return;
+    const handlePoint = (clientX) => {
+      const rect = field.getBoundingClientRect();
+      const x = clientX - rect.left;
+      doVent(x < rect.width / 2 ? 0 : 1);
+    };
+    const onClick = (e) => handlePoint(e.clientX);
+    const onTouchStart = (e) => {
+      if (e.touches && e.touches[0]) {
+        e.preventDefault();
+        handlePoint(e.touches[0].clientX);
+      }
+    };
+    field.addEventListener("click", onClick);
+    field.addEventListener("touchstart", onTouchStart, { passive: false });
+    return () => {
+      field.removeEventListener("click", onClick);
+      field.removeEventListener("touchstart", onTouchStart);
+    };
+  }, [doVent]);
+
+  // keyboard: A/ArrowLeft vents left reactor, D/ArrowRight vents right reactor
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const k = e.key.toLowerCase();
+      if (k === "arrowleft" || k === "a") {
+        e.preventDefault();
+        doVent(0);
+      } else if (k === "arrowright" || k === "d") {
+        e.preventDefault();
+        doVent(1);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [doVent]);
+
+  // main loop
+  useEffect(() => {
+    const step = (ts) => {
+      const g = gRef.current;
+      if (!g.lastTime) g.lastTime = ts;
+      let dt = (ts - g.lastTime) / 1000;
+      dt = Math.min(dt, 0.05);
+      g.lastTime = ts;
+
+      g.shake *= 0.9;
+      if (g.shake < 0.05) g.shake = 0;
+
+      g.reactors.forEach((r) => {
+        r.cooldown = Math.max(0, r.cooldown - dt);
+        r.meltFlash = Math.max(0, r.meltFlash - dt * 2);
+        r.pulse += dt;
+      });
+      const readyNow = [g.reactors[0].cooldown <= 0, g.reactors[1].cooldown <= 0];
+      if (readyNow[0] !== g.ventReadyCache[0] || readyNow[1] !== g.ventReadyCache[1]) {
+        g.ventReadyCache = readyNow;
+        setVentReady(readyNow);
+      }
+
+      if (gameStateRef.current === "playing") {
+        const level = statsRef.current.level;
+        const heatRate = g.heatRateBase + (level - 1) * g.heatRatePerLevel;
+
+        g.surgeTimer -= dt;
+        if (g.surgeTimer <= 0) {
+          const idx = Math.floor(Math.random() * 2);
+          const r = g.reactors[idx];
+          if (r.warnTimer <= 0) {
+            r.warnTimer = 0.5;
+            r.warnApplied = false;
+            r.burstAmount = 14 + Math.random() * 10 + level;
+          }
+          g.surgeTimer = g.surgeTimerMax + Math.random() * 1.2;
+        }
+
+        g.reactors.forEach((r, idx) => {
+          r.heat += heatRate * dt;
+          if (r.warnTimer > 0) {
+            r.warnTimer -= dt;
+            if (r.warnTimer <= 0 && !r.warnApplied) {
+              r.warnApplied = true;
+              r.heat += r.burstAmount;
+            }
+          }
+          if (r.heat >= 100) {
+            r.heat = 100;
+            triggerMeltdown(idx);
+          }
+        });
+
+        statsRef.current.score += 2 * dt;
+      }
+
+      g.particles.forEach((p) => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.96;
+        p.vy *= 0.96;
+        p.life -= dt;
+      });
+      g.particles = g.particles.filter((p) => p.life > 0);
+      if (g.particles.length > 60) g.particles = g.particles.slice(-60);
+
+      if (gameStateRef.current === "playing") {
+        const flo = Math.floor(statsRef.current.score);
+        if (flo !== g.lastScoreDisplayed) {
+          g.lastScoreDisplayed = flo;
+          setUiStats((prev) => ({ ...prev, score: flo }));
+        }
+      }
+
+      draw();
+      rafRef.current = requestAnimationFrame(step);
+    };
+
+    const draw = () => {
+      const ctx = ctxRef.current;
+      const g = gRef.current;
+      if (!ctx) return;
+      const { w, h } = g.bounds;
+      const t = performance.now() / 1000;
+
+      const breathe = 4 + 3 * Math.sin(t * 0.9);
+      ctx.fillStyle = `rgb(${5 + breathe * 0.5}, ${4 + breathe * 0.3}, ${14 + breathe})`;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      const shakeX = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      const shakeY = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      ctx.translate(shakeX, shakeY);
+
+      starsRef.current.forEach((st) => {
+        const a = 0.25 + 0.25 * Math.sin(t * 2 + st.tw);
+        ctx.fillStyle = `rgba(150,220,255,${a})`;
+        ctx.beginPath();
+        ctx.arc(st.x * w, st.y * h, st.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      const glow = getGlowSprites();
+      const labels = ["CORE A", "CORE B"];
+
+      g.reactors.forEach((r, idx) => {
+        const cached = g.barCache[idx];
+        if (!cached) return;
+        const { rect: bar, path } = cached;
+        const sweetTop = bar.y + bar.h * (1 - g.sweetMax / 100);
+        const sweetBottom = bar.y + bar.h * (1 - g.sweetMin / 100);
+
+        ctx.save();
+        ctx.clip(path);
+
+        ctx.fillStyle = "rgba(255,255,255,0.05)";
+        ctx.fillRect(bar.x, bar.y, bar.w, bar.h);
+
+        ctx.fillStyle = "rgba(255,217,60,0.16)";
+        ctx.fillRect(bar.x, sweetTop, bar.w, sweetBottom - sweetTop);
+
+        const fillH = bar.h * clamp(r.heat, 0, 100) / 100;
+        const fillY = bar.y + bar.h - fillH;
+        let color;
+        if (r.heat < g.sweetMin) color = "60,243,255";
+        else if (r.heat <= g.sweetMax) color = "255,217,60";
+        else color = "255,77,106";
+        ctx.fillStyle = `rgba(${color},0.8)`;
+        ctx.fillRect(bar.x, fillY, bar.w, fillH);
+
+        if (r.meltFlash > 0) {
+          ctx.fillStyle = `rgba(255,255,255,${r.meltFlash * 0.7})`;
+          ctx.fillRect(bar.x, bar.y, bar.w, bar.h);
+        }
+
+        if (r.cooldown > 0) {
+          ctx.fillStyle = "rgba(4,3,12,0.45)";
+          ctx.fillRect(bar.x, bar.y, bar.w, bar.h);
+        }
+        ctx.restore();
+
+        ctx.strokeStyle = r.warnTimer > 0 ? `rgba(255,80,80,${0.5 + 0.4 * Math.sin(t * 20)})` : "rgba(60,243,255,0.3)";
+        ctx.lineWidth = 2;
+        ctx.stroke(path);
+
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(230,255,255,0.85)";
+        ctx.font = "bold 12px 'Segoe UI', sans-serif";
+        ctx.fillText(labels[idx], bar.x + bar.w / 2, bar.y - 10);
+        ctx.font = "bold 14px 'Segoe UI', sans-serif";
+        ctx.fillText(`${Math.round(r.heat)}%`, bar.x + bar.w / 2, bar.y + bar.h + 18);
+
+        if (r.warnTimer > 0) {
+          const gs = 30;
+          ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 25);
+          ctx.drawImage(glow.red, bar.x + bar.w / 2 - gs / 2, bar.y - 30, gs, gs);
+          ctx.globalAlpha = 1;
+        }
+      });
+
+      g.particles.forEach((p) => {
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = `rgba(${p.color},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      ctx.restore();
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startGame = () => {
+    ensureAudio();
+    const g = gRef.current;
+    statsRef.current = freshStats();
+    setUiStats(freshStats());
+    g.reactors = [freshReactor(), freshReactor()];
+    g.surgeTimer = 2.5;
+    g.surgeTimerMax = 4.2;
+    g.sweetMin = 45;
+    g.sweetMax = 78;
+    g.particles = [];
+    g.shake = 0;
+    g.ventReadyCache = [true, true];
+    g.lastScoreDisplayed = 0;
+    setVentReady([true, true]);
+    gameStateRef.current = "playing";
+    setGameState("playing");
+    playTone(440, 0.15, "triangle", 0.15);
+  };
+
+  return (
+    <div className="app">
+      <h1 className="title">Twin Reactors</h1>
+      <div className="hud">
+        <div className="stat">
+          <div className="label">Score</div>
+          <div className="value" data-testid="score">{uiStats.score}</div>
+        </div>
+        <div className="stat combo">
+          <div className="label">Combo</div>
+          <div className="value" data-testid="combo">{uiStats.combo}</div>
+        </div>
+        <div className="stat shields">
+          <div className="label">Shields</div>
+          <div className="value" data-testid="shields">{uiStats.shields}</div>
+        </div>
+        <div className="stat level">
+          <div className="label">Level</div>
+          <div className="value" data-testid="level">{uiStats.level}</div>
+        </div>
+      </div>
+
+      <div className="play-field" ref={fieldRef} data-testid="play-field">
+        <canvas ref={canvasRef} data-testid="canvas" />
+        {gameState !== "playing" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>{gameState === "gameover" ? "Dual Meltdown" : "Twin Reactors"}</h2>
+            {gameState === "gameover" ? (
+              <p className="score-line">
+                Score: {uiStats.score} &nbsp;•&nbsp; Best: {Math.max(highScore, uiStats.score)}
+              </p>
+            ) : (
+              <p>
+                Two reactor cores heat up on their own. Vent CORE A by clicking/tapping
+                its left half (or Arrow Left / A) and CORE B on the right (or Arrow Right / D).
+                Vent inside the gold sweet zone for big combo points &mdash; too early wastes
+                it, too late risks a meltdown. Watch both cores at once; surges spike them
+                without warning.
+              </p>
+            )}
+            <button className="start-btn" data-testid="start-btn" onClick={startGame}>
+              {gameState === "gameover" ? "Play Again" : "Start Reactors"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="controls-row">
+        <p className="hint">
+          Click/tap the left half of the field or press Arrow Left / A to vent CORE A.
+          Click/tap the right half or press Arrow Right / D to vent CORE B. Time each vent
+          inside the gold sweet zone for maximum combo &mdash; let a core hit 100% and it melts down.
+        </p>
+        <button
+          className="vent-btn left"
+          data-testid="vent-left-btn"
+          disabled={gameState !== "playing" || !ventReady[0]}
+          onClick={() => doVent(0)}
+        >
+          VENT A
+        </button>
+        <button
+          className="vent-btn right"
+          data-testid="vent-right-btn"
+          disabled={gameState !== "playing" || !ventReady[1]}
+          onClick={() => doVent(1)}
+        >
+          VENT B
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
