@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Neon Mixologist</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --cyan: #3cf3ff;
+    --magenta: #ff3cf0;
+    --gold: #ffd93c;
+    --bg0: #060414;
+    --bg1: #0c0a26;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background: var(--bg0);
+    overflow-x: hidden;
+    font-family: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
+    color: #eafcff;
+    touch-action: none;
+  }
+  #root { min-height: 100vh; }
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 10px 18px;
+    position: relative;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(60,243,255,0.16), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(255,60,240,0.14), transparent 55%),
+      linear-gradient(160deg, var(--bg0), var(--bg1) 60%, var(--bg0));
+    background-size: 200% 200%;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 100% 100%; }
+  }
+  h1.title {
+    margin: 2px 0 10px;
+    font-size: clamp(22px, 5vw, 32px);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--gold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 22px rgba(60,243,255,0.35);
+  }
+  .hud {
+    width: min(520px, 92vw);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .stat {
+    flex: 1 1 70px;
+    min-width: 68px;
+    background: rgba(10, 10, 30, 0.55);
+    border: 1px solid rgba(60,243,255,0.35);
+    border-radius: 10px;
+    padding: 6px 10px;
+    text-align: center;
+    box-shadow: 0 0 14px rgba(60,243,255,0.08) inset;
+  }
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    text-transform: uppercase;
+  }
+  .stat .value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 10px rgba(60,243,255,0.6);
+  }
+  .stat.shields .value { color: #ff5a7a; text-shadow: 0 0 10px rgba(255,90,122,0.6); }
+  .stat.combo .value { color: var(--gold); text-shadow: 0 0 10px rgba(255,217,60,0.6); }
+  .stat.level .value { color: var(--magenta); text-shadow: 0 0 10px rgba(255,60,240,0.6); }
+
+  .play-field {
+    position: relative;
+    width: min(460px, 90vw);
+    height: min(340px, 42vh);
+    min-height: 260px;
+    border-radius: 16px;
+    border: 1px solid rgba(60,243,255,0.4);
+    box-shadow: 0 0 30px rgba(60,243,255,0.15), 0 0 60px rgba(255,60,240,0.08) inset;
+    overflow: hidden;
+    background: #04030c;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 16px;
+    background: rgba(4,3,12,0.72);
+    backdrop-filter: blur(2px);
+  }
+  .overlay h2 {
+    margin: 0;
+    font-size: clamp(18px, 4vw, 26px);
+    color: var(--cyan);
+    text-shadow: 0 0 14px rgba(60,243,255,0.6);
+    letter-spacing: 2px;
+  }
+  .overlay p {
+    margin: 0;
+    max-width: 440px;
+    font-size: 13px;
+    opacity: 0.85;
+    line-height: 1.5;
+  }
+  .overlay .score-line {
+    font-size: 16px;
+    color: var(--gold);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .start-btn {
+    margin-top: 6px;
+    padding: 14px 34px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #04030c;
+    background: linear-gradient(90deg, var(--cyan), var(--gold));
+    border-radius: 999px;
+    box-shadow: 0 0 24px rgba(60,243,255,0.55);
+    min-height: 48px;
+    min-width: 160px;
+    transition: transform 0.15s ease;
+  }
+  .start-btn:active { transform: scale(0.95); }
+
+  .recipe-row {
+    width: min(460px, 90vw);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px;
+    background: rgba(10,10,30,0.45);
+    border: 1px solid rgba(60,243,255,0.25);
+    border-radius: 12px;
+  }
+  .recipe-row .recipe-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    opacity: 0.55;
+    text-transform: uppercase;
+    margin-right: 4px;
+  }
+  .recipe-slot {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.05);
+    transition: transform 0.15s ease;
+  }
+  .recipe-slot.filled {
+    border-color: rgba(255,255,255,0.9);
+    box-shadow: 0 0 12px currentColor;
+  }
+  .recipe-slot.next {
+    transform: scale(1.18);
+    border-color: #fff;
+    box-shadow: 0 0 10px #fff;
+  }
+
+  .ingredient-row {
+    width: min(460px, 90vw);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .ingredient-btn {
+    position: relative;
+    min-width: 62px;
+    min-height: 56px;
+    flex: 1 1 62px;
+    max-width: 90px;
+    border-radius: 14px;
+    background: rgba(10,10,30,0.6);
+    border: 2px solid rgba(255,255,255,0.25);
+    color: #eafcff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: transform 0.1s ease;
+  }
+  .ingredient-btn .swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    box-shadow: 0 0 10px currentColor;
+  }
+  .ingredient-btn .key {
+    position: absolute;
+    top: 3px;
+    left: 5px;
+    font-size: 9px;
+    opacity: 0.5;
+  }
+  .ingredient-btn.selected {
+    box-shadow: 0 0 0 2px #fff, 0 0 14px #fff;
+  }
+  .ingredient-btn:active { transform: scale(0.92); }
+
+  .controls-row {
+    width: min(520px, 92vw);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .hint {
+    font-size: 11px;
+    opacity: 0.6;
+    max-width: 520px;
+    line-height: 1.4;
+    text-align: center;
+  }
+
+  @media (max-width: 480px) {
+    .hud { gap: 6px; }
+    .stat { padding: 5px 6px; min-width: 60px; }
+    .stat .value { font-size: 16px; }
+    .ingredient-btn { min-width: 54px; min-height: 48px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = "neonMixologistHighScore";
+const TAU = Math.PI * 2;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+const INGREDIENTS = [
+  { id: "cyan", color: "60,243,255", label: "ICE SPARK", freq: 420 },
+  { id: "magenta", color: "255,70,220", label: "PULSE BERRY", freq: 480 },
+  { id: "gold", color: "255,217,60", label: "SUNFIZZ", freq: 540 },
+  { id: "green", color: "70,255,150", label: "VOLT LIME", freq: 600 },
+  { id: "purple", color: "165,90,255", label: "NEBULA PLUM", freq: 660 },
+];
+
+function paletteSizeForLevel(level) { return Math.min(INGREDIENTS.length, 3 + Math.floor((level - 1) / 2)); }
+function recipeLenForLevel(level) { return Math.min(5, 2 + Math.floor((level - 1) / 2)); }
+function patienceMaxForLevel(level) { return Math.max(4.5, 9 - (level - 1) * 0.4); }
+
+function generateOrder(level) {
+  const n = paletteSizeForLevel(level);
+  const len = recipeLenForLevel(level);
+  const recipe = [];
+  for (let i = 0; i < len; i++) recipe.push(INGREDIENTS[Math.floor(Math.random() * n)].id);
+  if (len > 1 && n > 1 && recipe.every((r) => r === recipe[0])) {
+    const altIdx = (INGREDIENTS.findIndex((it) => it.id === recipe[0]) + 1) % n;
+    recipe[len - 1] = INGREDIENTS[altIdx].id;
+  }
+  const patienceMax = patienceMaxForLevel(level);
+  return { recipe, progress: 0, patience: patienceMax, patienceMax, unlockedCount: n };
+}
+
+function freshStats() {
+  return { score: 0, combo: 0, comboMultiplier: 1, shields: 3, level: 1, ordersServed: 0 };
+}
+
+function App() {
+  const [uiStats, setUiStats] = useState(freshStats());
+  const [gameState, setGameState] = useState("idle"); // idle | playing | gameover
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const [orderView, setOrderView] = useState(generateOrder(1));
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [flashKey, setFlashKey] = useState(0);
+
+  const fieldRef = useRef(null);
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
+  const rafRef = useRef(null);
+  const statsRef = useRef(freshStats());
+  const gameStateRef = useRef("idle");
+  const audioCtxRef = useRef(null);
+  const patienceBarRef = useRef(null);
+  const glowSpritesRef = useRef(null);
+
+  const gRef = useRef({
+    bounds: { w: 460, h: 340 },
+    order: generateOrder(1),
+    fillAnim: 0,
+    particles: [],
+    bubbles: [],
+    shake: 0,
+    flashColor: null,
+    flashT: 0,
+    lastTime: 0,
+  });
+
+  const getGlowSprites = () => {
+    if (glowSpritesRef.current) return glowSpritesRef.current;
+    const make = (color) => {
+      const c = document.createElement("canvas");
+      c.width = 48; c.height = 48;
+      const cctx = c.getContext("2d");
+      const grd = cctx.createRadialGradient(24, 24, 0, 24, 24, 24);
+      grd.addColorStop(0, `rgba(${color},0.9)`);
+      grd.addColorStop(0.5, `rgba(${color},0.32)`);
+      grd.addColorStop(1, `rgba(${color},0)`);
+      cctx.fillStyle = grd;
+      cctx.fillRect(0, 0, 48, 48);
+      return c;
+    };
+    const m = {};
+    INGREDIENTS.forEach((ing) => { m[ing.id] = make(ing.color); });
+    m.red = make("255,70,90");
+    m.patronGreen = make("70,255,130");
+    m.patronRed = make("255,70,110");
+    glowSpritesRef.current = m;
+    return m;
+  };
+
+  const ensureAudio = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new Ctx();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playTone = useCallback((freq, dur = 0.12, type = "sine", vol = 0.16) => {
+    try {
+      const ctx = ensureAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }, [ensureAudio]);
+
+  const spawnParticles = (x, y, color, count = 10, speed = 90) => {
+    const g = gRef.current;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * TAU;
+      const s = speed * (0.4 + Math.random() * 0.9);
+      g.particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s - 40,
+        life: 0.5 + Math.random() * 0.4,
+        maxLife: 0.9,
+        size: 2 + Math.random() * 2.5,
+        color,
+      });
+    }
+    if (g.particles.length > 140) g.particles = g.particles.slice(-140);
+  };
+
+  const resizeCanvas = useCallback(() => {
+    const field = fieldRef.current;
+    const canvas = canvasRef.current;
+    if (!field || !canvas) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctxRef.current = ctx;
+    gRef.current.bounds = { w: rect.width, h: rect.height };
+    const g = gRef.current;
+    if (!g.bubbles.length) {
+      for (let i = 0; i < 14; i++) {
+        g.bubbles.push({ x: Math.random(), y: Math.random(), r: 0.5 + Math.random() * 1.3, sp: 8 + Math.random() * 14, ph: Math.random() * TAU });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    const onResize = () => resizeCanvas();
+    window.addEventListener("resize", onResize);
+    let ro;
+    if (window.ResizeObserver && fieldRef.current) {
+      ro = new ResizeObserver(onResize);
+      ro.observe(fieldRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (ro) ro.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const commitStats = (mutator) => {
+    mutator(statsRef.current);
+    setUiStats({ ...statsRef.current });
+  };
+
+  const syncOrderView = () => {
+    const o = gRef.current.order;
+    setOrderView({ recipe: [...o.recipe], progress: o.progress, patience: o.patience, patienceMax: o.patienceMax, unlockedCount: o.unlockedCount });
+  };
+
+  const endGame = () => {
+    gameStateRef.current = "gameover";
+    setGameState("gameover");
+    const finalScore = statsRef.current.score;
+    if (finalScore > highScore) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalScore));
+      setHighScore(finalScore);
+    } else if (!localStorage.getItem(HIGH_SCORE_KEY)) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    }
+    playTone(90, 0.4, "triangle", 0.2);
+  };
+
+  const glassRect = () => {
+    const g = gRef.current;
+    const { w, h } = g.bounds;
+    const gw = Math.min(140, w * 0.3);
+    const gh = Math.min(150, h * 0.56);
+    const cx = w * 0.72;
+    const bottom = h - 34;
+    return { cx, top: bottom - gh, bottom, topW: gw, botW: gw * 0.62 };
+  };
+
+  const completeOrder = () => {
+    const g = gRef.current;
+    const r = glassRect();
+    spawnParticles(r.cx, r.top, "255,255,255", 24, 150);
+    [520, 660, 820].forEach((f, i) => setTimeout(() => playTone(f, 0.12, "sine", 0.14), i * 70));
+    commitStats((s) => {
+      s.score += 15 * s.comboMultiplier;
+      s.combo += 1;
+      if (s.combo % 4 === 0) s.comboMultiplier = Math.min(8, s.comboMultiplier + 1);
+      s.ordersServed += 1;
+      if (s.ordersServed % 5 === 0) {
+        s.level = Math.min(14, s.level + 1);
+        playTone(760, 0.18, "square", 0.12);
+      }
+    });
+    g.order = generateOrder(statsRef.current.level);
+    g.fillAnim = 0;
+    syncOrderView();
+  };
+
+  const handleOrderFail = () => {
+    const g = gRef.current;
+    g.shake = 12;
+    const r = glassRect();
+    spawnParticles(r.cx, r.bottom - 10, "255,70,90", 16, 110);
+    playTone(100, 0.3, "triangle", 0.2);
+    commitStats((s) => {
+      s.shields -= 1;
+      s.combo = 0;
+      s.comboMultiplier = 1;
+    });
+    if (statsRef.current.shields <= 0) {
+      endGame();
+      return;
+    }
+    g.order = generateOrder(statsRef.current.level);
+    g.fillAnim = 0;
+    syncOrderView();
+  };
+
+  const tapIngredient = useCallback((id) => {
+    if (gameStateRef.current !== "playing") return;
+    const g = gRef.current;
+    const order = g.order;
+    const expected = order.recipe[order.progress];
+    const ing = INGREDIENTS.find((it) => it.id === id);
+    setFlashKey((k) => k + 1);
+    if (id === expected) {
+      order.progress += 1;
+      const r = glassRect();
+      const fillFrac = order.progress / order.recipe.length;
+      spawnParticles(r.cx, r.bottom - fillFrac * (r.bottom - r.top), ing.color, 12, 100);
+      playTone(ing.freq, 0.1, "sine", 0.15);
+      if (order.progress >= order.recipe.length) {
+        completeOrder();
+      } else {
+        syncOrderView();
+      }
+    } else {
+      order.progress = 0;
+      order.patience = Math.max(1, order.patience - 1.2);
+      g.shake = 8;
+      playTone(140, 0.15, "sawtooth", 0.18);
+      commitStats((s) => {
+        s.combo = 0;
+        s.comboMultiplier = 1;
+      });
+      syncOrderView();
+    }
+  }, []);
+
+  const startGame = useCallback(() => {
+    ensureAudio();
+    statsRef.current = freshStats();
+    setUiStats(freshStats());
+    const g = gRef.current;
+    g.order = generateOrder(1);
+    g.fillAnim = 0;
+    g.particles = [];
+    g.shake = 0;
+    syncOrderView();
+    setSelectedIdx(0);
+    gameStateRef.current = "playing";
+    setGameState("playing");
+  }, [ensureAudio]);
+
+  // keyboard: arrows move selection, space/digits tap ingredient
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (gameStateRef.current !== "playing") return;
+      const n = gRef.current.order.unlockedCount;
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setSelectedIdx((i) => (i + 1) % n);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setSelectedIdx((i) => (i - 1 + n) % n);
+      } else if (e.key === " " || e.key === "Spacebar") {
+        e.preventDefault();
+        setSelectedIdx((i) => {
+          tapIngredient(INGREDIENTS[i % n].id);
+          return i;
+        });
+      } else if (/^[1-5]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < n) {
+          setSelectedIdx(idx);
+          tapIngredient(INGREDIENTS[idx].id);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [tapIngredient]);
+
+  // main loop
+  useEffect(() => {
+    const step = (ts) => {
+      const g = gRef.current;
+      if (!g.lastTime) g.lastTime = ts;
+      let dt = (ts - g.lastTime) / 1000;
+      dt = Math.min(dt, 0.05);
+      g.lastTime = ts;
+
+      g.shake *= 0.9;
+      if (g.shake < 0.05) g.shake = 0;
+
+      if (gameStateRef.current === "playing") {
+        g.order.patience -= dt;
+        if (g.order.patience <= 0) {
+          g.order.patience = 0;
+          handleOrderFail();
+        }
+        if (patienceBarRef.current) {
+          const ratio = clamp(g.order.patience / g.order.patienceMax, 0, 1);
+          patienceBarRef.current.style.transform = `scaleX(${ratio})`;
+          const r = Math.round(lerp(255, 70, ratio));
+          const gr = Math.round(lerp(70, 255, ratio));
+          patienceBarRef.current.style.background = `rgb(${r},${gr},90)`;
+        }
+      }
+
+      g.fillAnim = lerp(g.fillAnim, g.order.progress, clamp(dt * 6, 0, 1));
+
+      g.particles.forEach((p) => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.96;
+        p.vy *= 0.96;
+        p.vy += 60 * dt;
+        p.life -= dt;
+      });
+      g.particles = g.particles.filter((p) => p.life > 0);
+
+      draw();
+      rafRef.current = requestAnimationFrame(step);
+    };
+
+    const draw = () => {
+      const ctx = ctxRef.current;
+      const g = gRef.current;
+      if (!ctx) return;
+      const { w, h } = g.bounds;
+      const t = performance.now() / 1000;
+
+      ctx.fillStyle = "#07051a";
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      const shakeX = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      const shakeY = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      ctx.translate(shakeX, shakeY);
+
+      // bar counter line
+      ctx.strokeStyle = "rgba(60,243,255,0.18)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, h - 30);
+      ctx.lineTo(w, h - 30);
+      ctx.stroke();
+
+      const glow = getGlowSprites();
+
+      // ambient bubbles
+      g.bubbles.forEach((b) => {
+        const by = (b.y * h + t * b.sp) % h;
+        const a = 0.15 + 0.1 * Math.sin(t * 2 + b.ph);
+        ctx.fillStyle = `rgba(120,220,255,${a})`;
+        ctx.beginPath();
+        ctx.arc(b.x * w, h - by, b.r, 0, TAU);
+        ctx.fill();
+      });
+
+      // patron orb
+      const order = g.order;
+      const ratio = clamp(order.patience / order.patienceMax, 0, 1);
+      const px = w * 0.24, py = h * 0.4;
+      const pulse = 1 + 0.12 * Math.sin(t * (3 + (1 - ratio) * 8));
+      const pr = Math.round(lerp(70, 255, 1 - ratio));
+      const pg = Math.round(lerp(255, 70, 1 - ratio));
+      const glowSize = 70 * pulse;
+      ctx.save();
+      ctx.globalAlpha = ratio * 0.85;
+      ctx.drawImage(glow.patronGreen, px - glowSize / 2, py - glowSize / 2, glowSize, glowSize);
+      ctx.globalAlpha = (1 - ratio) * 0.85;
+      ctx.drawImage(glow.patronRed, px - glowSize / 2, py - glowSize / 2, glowSize, glowSize);
+      ctx.restore();
+      ctx.fillStyle = `rgb(${pr},${pg},130)`;
+      ctx.beginPath();
+      ctx.arc(px, py, 22 * pulse, 0, TAU);
+      ctx.fill();
+
+      // glass
+      const r = glassRect();
+      ctx.strokeStyle = "rgba(230,250,255,0.55)";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(r.cx - r.topW / 2, r.top);
+      ctx.lineTo(r.cx + r.topW / 2, r.top);
+      ctx.lineTo(r.cx + r.botW / 2, r.bottom);
+      ctx.lineTo(r.cx - r.botW / 2, r.bottom);
+      ctx.closePath();
+      ctx.stroke();
+
+      const widthAtY = (y) => lerp(r.topW, r.botW, (y - r.top) / (r.bottom - r.top));
+      const fillQuad = (y1, y2, color) => {
+        const w1 = widthAtY(y1) / 2, w2 = widthAtY(y2) / 2;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(r.cx - w1, y1);
+        ctx.lineTo(r.cx + w1, y1);
+        ctx.lineTo(r.cx + w2, y2);
+        ctx.lineTo(r.cx - w2, y2);
+        ctx.closePath();
+        ctx.fill();
+      };
+
+      const fillFrac = clamp(g.fillAnim / Math.max(1, order.recipe.length), 0, 1);
+      if (fillFrac > 0.001) {
+        const layerH = (r.bottom - r.top) / order.recipe.length;
+        const filledLayers = Math.floor(g.fillAnim + 0.001);
+        for (let i = 0; i < filledLayers; i++) {
+          const ing = INGREDIENTS.find((it) => it.id === order.recipe[i]);
+          const ly1 = r.bottom - (i + 1) * layerH;
+          const ly2 = r.bottom - i * layerH;
+          fillQuad(ly1, ly2, `rgba(${ing.color},0.85)`);
+        }
+        const partial = g.fillAnim - filledLayers;
+        if (partial > 0.01 && filledLayers < order.recipe.length) {
+          const ing = INGREDIENTS.find((it) => it.id === order.recipe[filledLayers]);
+          const wobble = Math.sin(t * 5) * 2;
+          const ly1 = r.bottom - (filledLayers + partial) * layerH;
+          const ly2 = r.bottom - filledLayers * layerH + wobble;
+          fillQuad(ly1, ly2, `rgba(${ing.color},0.85)`);
+        }
+      }
+
+      // particles
+      g.particles.forEach((p) => {
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = `rgba(${p.color},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, TAU);
+        ctx.fill();
+      });
+
+      ctx.restore();
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const unlockedCount = orderView.unlockedCount || 3;
+  const visibleIngredients = INGREDIENTS.slice(0, unlockedCount);
+
+  return (
+    <div className="app">
+      <h1 className="title">Neon Mixologist</h1>
+
+      <div className="hud">
+        <div className="stat">
+          <div className="label">Score</div>
+          <div className="value" data-testid="score">{uiStats.score}</div>
+        </div>
+        <div className="stat combo">
+          <div className="label">Combo</div>
+          <div className="value" data-testid="combo">x{uiStats.comboMultiplier}</div>
+        </div>
+        <div className="stat shields">
+          <div className="label">Shields</div>
+          <div className="value" data-testid="shields">{"♥".repeat(Math.max(0, uiStats.shields))}</div>
+        </div>
+        <div className="stat level">
+          <div className="label">Level</div>
+          <div className="value" data-testid="level">{uiStats.level}</div>
+        </div>
+      </div>
+
+      <div className="play-field" ref={fieldRef} data-testid="play-field">
+        <canvas ref={canvasRef} data-testid="canvas" />
+
+        {gameState === "playing" && (
+          <div style={{ position: "absolute", top: 8, left: 8, right: 8 }}>
+            <div style={{ height: 8, borderRadius: 6, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
+              <div
+                ref={patienceBarRef}
+                data-testid="patience-bar"
+                style={{ height: "100%", width: "100%", transformOrigin: "left center", background: "rgb(70,255,90)" }}
+              />
+            </div>
+          </div>
+        )}
+
+        {gameState === "idle" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>NEON MIXOLOGIST</h2>
+            <p>Patrons order glowing cocktails. Tap ingredients in the exact order shown on the recipe card before their patience runs dry. Mix fast, chain perfect pours, keep the bar lit.</p>
+            <button className="start-btn" data-testid="start-btn" onClick={startGame}>START SHIFT</button>
+          </div>
+        )}
+
+        {gameState === "gameover" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>BAR'S CLOSED</h2>
+            <p className="score-line">Score: {uiStats.score} &nbsp;•&nbsp; Best: {highScore}</p>
+            <button className="start-btn" data-testid="start-btn" onClick={startGame}>MIX AGAIN</button>
+          </div>
+        )}
+      </div>
+
+      {gameState === "playing" && (
+        <React.Fragment>
+          <div className="recipe-row" data-testid="recipe">
+            <span className="recipe-label">Order</span>
+            {orderView.recipe.map((id, i) => {
+              const ing = INGREDIENTS.find((it) => it.id === id);
+              const filled = i < orderView.progress;
+              const next = i === orderView.progress;
+              return (
+                <div
+                  key={i}
+                  data-testid="recipe-slot"
+                  className={"recipe-slot" + (filled ? " filled" : "") + (next ? " next" : "")}
+                  style={{
+                    color: `rgb(${ing.color})`,
+                    borderColor: `rgba(${ing.color},${filled ? 1 : 0.6})`,
+                    background: filled ? `rgba(${ing.color},0.8)` : `rgba(${ing.color},0.18)`,
+                  }}
+                />
+              );
+            })}
+          </div>
+
+          <div className="ingredient-row">
+            {visibleIngredients.map((ing, i) => (
+              <button
+                key={ing.id}
+                className={"ingredient-btn" + (selectedIdx === i ? " selected" : "")}
+                data-testid={`ingredient-${ing.id}`}
+                style={{ borderColor: `rgba(${ing.color},0.7)`, color: `rgb(${ing.color})` }}
+                onClick={() => { setSelectedIdx(i); tapIngredient(ing.id); }}
+              >
+                <span className="key">{i + 1}</span>
+                <span className="swatch" style={{ background: `rgb(${ing.color})`, color: `rgb(${ing.color})` }} />
+                {ing.label}
+              </button>
+            ))}
+          </div>
+        </React.Fragment>
+      )}
+
+      <div className="controls-row">
+        <p className="hint">
+          Tap/click an ingredient to pour it into the glass, or use Arrow keys + Space / number keys 1-5, matching the order shown above before the patience bar empties. Perfect orders chain combo multipliers; wrong pours spill and reset the glass.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>

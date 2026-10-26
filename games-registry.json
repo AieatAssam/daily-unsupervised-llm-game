@@ -4471,5 +4471,26 @@
     "file": "games/2026-10-24/index.html",
     "preview": "games/2026-10-24/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-26",
+    "name": "Neon Mixologist",
+    "date": "2026-10-26",
+    "description": "A glowing patron waits at the bar with a cocktail order lit up as a row of colored recipe icons. Tap the matching ingredient bottles in the exact order shown — by click, tap, or Arrow keys plus Space / number keys 1-5 — to pour each layer into the glass before the patron patience bar burns out. A correct pour chains the glass higher with a particle splash; a wrong pour spills, breaks the combo, and docks patience. Clearing more orders unlocks extra ingredient bottles and longer recipes with a tighter patience window. Lose all three shields and the bar goes dark.",
+    "tagline": "Pour fast. Read the order. Keep them happy.",
+    "tags": [
+      "management",
+      "sequence",
+      "precision",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap/click an ingredient bottle to pour it, or use Arrow keys + Space / number keys 1-5, matching the recipe order shown before the patience bar empties",
+    "folder": "games/2026-10-26",
+    "file": "games/2026-10-26/index.html",
+    "preview": "games/2026-10-26/preview.png",
+    "rating": 4.2
   }
 ]
