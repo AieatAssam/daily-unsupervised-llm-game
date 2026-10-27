@@ -4492,5 +4492,26 @@
     "file": "games/2026-10-26/index.html",
     "preview": "games/2026-10-26/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-10-27",
+    "name": "Stack Surge",
+    "date": "2026-10-27",
+    "description": "A neon tower rises one plank at a time. A sliding plank sweeps left and right across the top of the stack, and you drop it with a tap, click, or Space to lock it onto the block below. Perfect alignment keeps the plank's full width and chains a rising combo; an off-center drop shaves the plank down to just the overlapping sliver, making the next drop harder. Miss the stack entirely and a shield cracks. Chain five perfect drops in a row to trigger a surge that drops a wide reinforcement floor and resets your lane, buying room to recover. Clearing more floors speeds up the sweep. Lose all three shields and the tower collapses.",
+    "tagline": "Drop true. Stack higher. Don't miss.",
+    "tags": [
+      "timing",
+      "precision",
+      "arcade",
+      "stacking",
+      "endless"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap/click the tower or the DROP button, or press Space, to drop the sliding plank onto the stack",
+    "folder": "games/2026-10-27",
+    "file": "games/2026-10-27/index.html",
+    "preview": "games/2026-10-27/preview.png",
+    "rating": 4.3
   }
 ]
