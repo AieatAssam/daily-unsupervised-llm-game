@@ -4513,5 +4513,26 @@
     "file": "games/2026-10-27/index.html",
     "preview": "games/2026-10-27/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-28",
+    "name": "Nerve Deck",
+    "date": "2026-10-28",
+    "description": "A neon deck shuffles endlessly beside your Nerve gauge. Tap, click, or press Space/D to flip the next card onto your running total, or press Enter/B to BANK and lock in the round's points with your combo multiplier before the countdown runs out. Push past the glowing threshold and the gauge flares red — a life cracks and the round resets. Let the timer burn to zero instead and your Nerve resets for free, but the combo breaks. Chain banked rounds back to back to climb the multiplier, level up, and face higher-value cards on a shorter fuse. Lose all three lives and the deck goes cold.",
+    "tagline": "Draw greedy. Bank smart. Keep your nerve.",
+    "tags": [
+      "push-your-luck",
+      "risk",
+      "cards",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap/click the field or DRAW to flip a card, click BANK (or press Enter/B) to lock in points — Space/D also draws",
+    "folder": "games/2026-10-28",
+    "file": "games/2026-10-28/index.html",
+    "preview": "games/2026-10-28/preview.png",
+    "rating": 4.3
   }
 ]

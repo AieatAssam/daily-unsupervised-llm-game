@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Nerve Deck</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --cyan: #3cf3ff;
+    --magenta: #ff3cf0;
+    --gold: #ffd93c;
+    --red: #ff4d6a;
+    --bg0: #060414;
+    --bg1: #0c0a26;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background: var(--bg0);
+    overflow-x: hidden;
+    font-family: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
+    color: #eafcff;
+    touch-action: none;
+  }
+  #root { min-height: 100vh; }
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 10px 18px;
+    position: relative;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(60,243,255,0.16), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(255,60,240,0.14), transparent 55%),
+      linear-gradient(160deg, var(--bg0), var(--bg1) 60%, var(--bg0));
+    background-size: 200% 200%;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 100% 100%; }
+  }
+  h1.title {
+    margin: 2px 0 10px;
+    font-size: clamp(22px, 5vw, 32px);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--gold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 22px rgba(60,243,255,0.35);
+  }
+  .hud {
+    width: min(500px, 94vw);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .stat {
+    flex: 1 1 70px;
+    min-width: 62px;
+    background: rgba(10, 10, 30, 0.55);
+    border: 1px solid rgba(60,243,255,0.35);
+    border-radius: 10px;
+    padding: 6px 8px;
+    text-align: center;
+    box-shadow: 0 0 14px rgba(60,243,255,0.08) inset;
+  }
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    text-transform: uppercase;
+  }
+  .stat .value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 10px rgba(60,243,255,0.6);
+  }
+  .stat.lives .value { color: var(--red); text-shadow: 0 0 10px rgba(255,77,106,0.6); }
+  .stat.combo .value { color: var(--gold); text-shadow: 0 0 10px rgba(255,217,60,0.6); }
+  .stat.level .value { color: var(--magenta); text-shadow: 0 0 10px rgba(255,60,240,0.6); }
+  .stat.nerve .value { color: #eafcff; }
+
+  .play-field {
+    position: relative;
+    width: min(400px, 92vw);
+    height: min(440px, 56vh);
+    min-height: 300px;
+    border-radius: 16px;
+    border: 1px solid rgba(60,243,255,0.4);
+    box-shadow: 0 0 30px rgba(60,243,255,0.15), 0 0 60px rgba(255,60,240,0.08) inset;
+    overflow: hidden;
+    background: #04030c;
+    touch-action: none;
+    cursor: pointer;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 16px;
+    background: rgba(4,3,12,0.72);
+    backdrop-filter: blur(2px);
+  }
+  .overlay h2 {
+    margin: 0;
+    font-size: clamp(18px, 4vw, 26px);
+    color: var(--cyan);
+    text-shadow: 0 0 14px rgba(60,243,255,0.6);
+    letter-spacing: 2px;
+  }
+  .overlay p {
+    margin: 0;
+    max-width: 440px;
+    font-size: 13px;
+    opacity: 0.85;
+    line-height: 1.5;
+  }
+  .overlay .score-line {
+    font-size: 16px;
+    color: var(--gold);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .start-btn {
+    margin-top: 6px;
+    padding: 14px 34px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #04030c;
+    background: linear-gradient(90deg, var(--cyan), var(--gold));
+    border-radius: 999px;
+    box-shadow: 0 0 24px rgba(60,243,255,0.55);
+    min-height: 48px;
+    min-width: 160px;
+    transition: transform 0.15s ease;
+  }
+  .start-btn:active { transform: scale(0.95); }
+
+  .action-row {
+    width: min(500px, 94vw);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .draw-btn, .bank-btn {
+    padding: 14px 30px;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    border-radius: 999px;
+    min-height: 48px;
+    min-width: 140px;
+    transition: transform 0.12s ease;
+    color: #04030c;
+  }
+  .draw-btn {
+    background: linear-gradient(90deg, var(--cyan), #6ef0ff);
+    box-shadow: 0 0 20px rgba(60,243,255,0.5);
+  }
+  .bank-btn {
+    background: linear-gradient(90deg, var(--gold), #ffae3c);
+    box-shadow: 0 0 20px rgba(255,217,60,0.5);
+  }
+  .draw-btn:active, .bank-btn:active { transform: scale(0.94); }
+  .bank-btn:disabled {
+    opacity: 0.4;
+    box-shadow: none;
+    cursor: default;
+  }
+
+  .hint {
+    font-size: 11px;
+    opacity: 0.6;
+    max-width: 480px;
+    line-height: 1.4;
+    text-align: center;
+    margin-top: 10px;
+  }
+
+  @media (max-width: 480px) {
+    .hud { gap: 6px; }
+    .stat { padding: 5px 6px; min-width: 56px; }
+    .stat .value { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = "nerveDeckHighScore";
+const TAU = Math.PI * 2;
+const BASE_THRESHOLD = 21;
+const BASE_ROUND_TIME = 7000;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function freshStats() {
+  return { score: 0, combo: 0, multiplier: 1, lives: 3, level: 1, banks: 0 };
+}
+
+function thresholdForLevel(level) {
+  return Math.min(31, BASE_THRESHOLD + Math.floor((level - 1) / 2) * 2);
+}
+function roundTimeForLevel(level) {
+  return Math.max(2500, BASE_ROUND_TIME - (level - 1) * 350);
+}
+function maxCardForLevel(level) {
+  return Math.min(10, 6 + level);
+}
+
+function cardColor(v) {
+  if (v >= 8) return "#ff3cf0";
+  if (v >= 5) return "#ffd93c";
+  return "#3cf3ff";
+}
+
+function App() {
+  const [uiStats, setUiStats] = useState(freshStats());
+  const [uiRound, setUiRound] = useState({ total: 0, threshold: BASE_THRESHOLD });
+  const [gameState, setGameState] = useState("idle"); // idle | playing | gameover
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+
+  const fieldRef = useRef(null);
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
+  const rafRef = useRef(null);
+  const statsRef = useRef(freshStats());
+  const gameStateRef = useRef("idle");
+  const audioCtxRef = useRef(null);
+
+  const gRef = useRef({
+    bounds: { w: 400, h: 440 },
+    roundCards: [],
+    roundTotal: 0,
+    threshold: BASE_THRESHOLD,
+    timeLeft: BASE_ROUND_TIME,
+    roundTime: BASE_ROUND_TIME,
+    particles: [],
+    shake: 0,
+    flash: 0,
+    flashColor: "255,217,60",
+    lastTime: 0,
+    deckPulse: 0,
+  });
+
+  const ensureAudio = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new Ctx();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playTone = useCallback((freq, dur = 0.12, type = "sine", vol = 0.16) => {
+    try {
+      const ctx = ensureAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }, [ensureAudio]);
+
+  const spawnParticles = (x, y, color, count = 10, speed = 90) => {
+    const g = gRef.current;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * TAU;
+      const s = speed * (0.4 + Math.random() * 0.9);
+      g.particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s - 40,
+        life: 0.5 + Math.random() * 0.4,
+        maxLife: 0.9,
+        size: 2 + Math.random() * 2.5,
+        color,
+      });
+    }
+    if (g.particles.length > 60) g.particles = g.particles.slice(-60);
+  };
+
+  const resizeCanvas = useCallback(() => {
+    const field = fieldRef.current;
+    const canvas = canvasRef.current;
+    if (!field || !canvas) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctxRef.current = ctx;
+    const g = gRef.current;
+    g.bounds = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    const onResize = () => resizeCanvas();
+    window.addEventListener("resize", onResize);
+    let ro;
+    if (window.ResizeObserver && fieldRef.current) {
+      ro = new ResizeObserver(onResize);
+      ro.observe(fieldRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (ro) ro.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const commitStats = (mutator) => {
+    mutator(statsRef.current);
+    setUiStats({ ...statsRef.current });
+  };
+
+  const syncRoundUi = () => {
+    const g = gRef.current;
+    setUiRound({ total: g.roundTotal, threshold: g.threshold });
+  };
+
+  const beginRound = () => {
+    const g = gRef.current;
+    const level = statsRef.current.level;
+    g.roundCards = [];
+    g.roundTotal = 0;
+    g.threshold = thresholdForLevel(level);
+    g.roundTime = roundTimeForLevel(level);
+    g.timeLeft = g.roundTime;
+    syncRoundUi();
+  };
+
+  const endGame = () => {
+    gameStateRef.current = "gameover";
+    setGameState("gameover");
+    const finalScore = statsRef.current.score;
+    if (finalScore > highScore) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalScore));
+      setHighScore(finalScore);
+    } else if (!localStorage.getItem(HIGH_SCORE_KEY)) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    }
+    playTone(90, 0.4, "triangle", 0.2);
+  };
+
+  const loseLife = () => {
+    const g = gRef.current;
+    g.shake = 10;
+    g.flash = 1;
+    g.flashColor = "255,77,106";
+    spawnParticles(g.bounds.w / 2, g.bounds.h / 2, "255,77,106", 22, 150);
+    playTone(110, 0.25, "sawtooth", 0.2);
+    commitStats((s) => {
+      s.lives -= 1;
+      s.combo = 0;
+      s.multiplier = 1;
+    });
+    if (statsRef.current.lives <= 0) {
+      endGame();
+      return;
+    }
+    beginRound();
+  };
+
+  const softFail = () => {
+    const g = gRef.current;
+    g.flash = 0.7;
+    g.flashColor = "60,130,255";
+    playTone(140, 0.18, "square", 0.14);
+    commitStats((s) => {
+      s.combo = 0;
+      s.multiplier = 1;
+    });
+    beginRound();
+  };
+
+  const drawCard = useCallback(() => {
+    if (gameStateRef.current !== "playing") return;
+    const g = gRef.current;
+    const level = statsRef.current.level;
+    const value = 1 + Math.floor(Math.random() * maxCardForLevel(level));
+    g.roundCards.push({ value, t: performance.now(), x: g.bounds.w / 2, y: g.bounds.h / 2 - 60 });
+    if (g.roundCards.length > 10) g.roundCards.shift();
+    g.roundTotal += value;
+    syncRoundUi();
+    playTone(220 + value * 24, 0.1, "sine", 0.15);
+    spawnParticles(g.bounds.w / 2, g.bounds.h / 2 - 60, cardColor(value).replace('#','').match(/.{2}/g).map(h=>parseInt(h,16)).join(','), 8, 80);
+
+    if (g.roundTotal >= g.threshold) {
+      loseLife();
+    }
+  }, [playTone]);
+
+  const bankRound = useCallback(() => {
+    if (gameStateRef.current !== "playing") return;
+    const g = gRef.current;
+    if (g.roundTotal <= 0) return;
+    const total = g.roundTotal;
+    g.flash = 1;
+    g.flashColor = "255,217,60";
+    spawnParticles(g.bounds.w / 2, g.bounds.h / 2, "255,217,60", 26, 160);
+    [480, 640, 880].forEach((f, i) => setTimeout(() => playTone(f, 0.12, "triangle", 0.15), i * 60));
+
+    commitStats((s) => {
+      s.score += total * s.multiplier;
+      s.combo += 1;
+      s.multiplier = Math.min(6, 1 + Math.floor(s.combo / 2));
+      s.banks += 1;
+      s.level = Math.min(10, 1 + Math.floor(s.banks / 3));
+    });
+    beginRound();
+  }, []);
+
+  const startGame = useCallback(() => {
+    ensureAudio();
+    statsRef.current = freshStats();
+    setUiStats(freshStats());
+    const g = gRef.current;
+    g.particles = [];
+    g.shake = 0;
+    g.flash = 0;
+    beginRound();
+    gameStateRef.current = "playing";
+    setGameState("playing");
+  }, [ensureAudio]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code === "Space" || e.key === " " || e.key === "Spacebar" || e.key === "d" || e.key === "D") {
+        e.preventDefault();
+        if (gameStateRef.current === "playing") drawCard();
+        else startGame();
+      } else if (e.code === "Enter" || e.key === "b" || e.key === "B") {
+        e.preventDefault();
+        if (gameStateRef.current === "playing") bankRound();
+        else startGame();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [drawCard, bankRound, startGame]);
+
+  // main loop
+  useEffect(() => {
+    const step = (ts) => {
+      const g = gRef.current;
+      if (!g.lastTime) g.lastTime = ts;
+      let dt = (ts - g.lastTime) / 1000;
+      dt = Math.min(dt, 0.05);
+      g.lastTime = ts;
+
+      g.shake *= 0.9;
+      if (g.shake < 0.05) g.shake = 0;
+      g.flash *= 0.92;
+      if (g.flash < 0.02) g.flash = 0;
+      g.deckPulse = (g.deckPulse + dt) % 2;
+
+      if (gameStateRef.current === "playing") {
+        g.timeLeft -= dt * 1000;
+        if (g.timeLeft <= 0) {
+          g.timeLeft = 0;
+          softFail();
+        }
+      }
+
+      g.particles.forEach((p) => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.96;
+        p.vy *= 0.96;
+        p.vy += 70 * dt;
+        p.life -= dt;
+      });
+      g.particles = g.particles.filter((p) => p.life > 0);
+
+      draw();
+      rafRef.current = requestAnimationFrame(step);
+    };
+
+    const draw = () => {
+      const ctx = ctxRef.current;
+      const g = gRef.current;
+      if (!ctx) return;
+      const { w, h } = g.bounds;
+
+      ctx.fillStyle = "#07051a";
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      const shakeX = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      const shakeY = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      ctx.translate(shakeX, shakeY);
+
+      // deck pile (top-left)
+      const pulse = 1 + Math.sin(g.deckPulse * Math.PI) * 0.03;
+      const deckW = 52 * pulse, deckH = 70 * pulse;
+      ctx.fillStyle = "rgba(60,243,255,0.2)";
+      ctx.fillRect(46 - deckW / 2 - 2, 44 - deckH / 2 - 2, deckW, deckH);
+      ctx.fillStyle = "rgba(60,243,255,0.3)";
+      ctx.fillRect(46 - deckW / 2, 44 - deckH / 2, deckW, deckH);
+      ctx.strokeStyle = "rgba(60,243,255,0.6)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(46 - deckW / 2, 44 - deckH / 2, deckW, deckH);
+      ctx.font = "bold 10px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(60,243,255,0.7)";
+      ctx.fillText("DECK", 46, 100);
+
+      // nerve gauge ring (top center-right)
+      const ringCx = w - 60;
+      const ringCy = 54;
+      const ringR = 32;
+      const frac = clamp(g.roundTotal / g.threshold, 0, 1);
+      ctx.beginPath();
+      ctx.arc(ringCx, ringCy, ringR, 0, TAU);
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.lineWidth = 7;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ringCx, ringCy, ringR, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
+      const ringColor = frac > 0.85 ? "#ff4d6a" : frac > 0.6 ? "#ffd93c" : "#3cf3ff";
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = 7;
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.font = "bold 16px 'Segoe UI', sans-serif";
+      ctx.fillStyle = ringColor;
+      ctx.fillText(String(g.roundTotal), ringCx, ringCy + 5);
+      ctx.font = "9px 'Segoe UI', sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.fillText("/ " + g.threshold, ringCx, ringCy + 20);
+
+      // played cards fan
+      const n = g.roundCards.length;
+      const cardW = 46, cardH = 64;
+      const centerY = h / 2 - 10;
+      g.roundCards.forEach((c, i) => {
+        const spread = Math.min(w - 80, n * 40);
+        const startX = w / 2 - spread / 2 + (spread / Math.max(1, n)) * 0.5;
+        const cx = n <= 1 ? w / 2 : startX + i * (spread / n);
+        const age = (performance.now() - c.t) / 1000;
+        const pop = clamp(age / 0.25, 0, 1);
+        const scale = 0.6 + 0.4 * pop;
+        const color = cardColor(c.value);
+        const cw = cardW * scale, ch = cardH * scale;
+        const left = cx - cw / 2, top = centerY - ch / 2;
+        ctx.fillStyle = "#0c0a1f";
+        ctx.fillRect(left, top, cw, ch);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(left, top, cw, ch);
+        ctx.fillStyle = color;
+        ctx.font = "bold 22px 'Segoe UI', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(String(c.value), cx, centerY + 8);
+      });
+
+      // timer bar
+      const barW = w - 40;
+      const barFrac = clamp(g.timeLeft / g.roundTime, 0, 1);
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      ctx.fillRect(20, h - 28, barW, 8);
+      ctx.fillStyle = barFrac < 0.3 ? "#ff4d6a" : "#3cf3ff";
+      ctx.fillRect(20, h - 28, barW * barFrac, 8);
+
+      // particles
+      g.particles.forEach((p) => {
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = `rgba(${p.color},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, TAU);
+        ctx.fill();
+      });
+
+      ctx.restore();
+
+      if (g.flash > 0.01) {
+        ctx.fillStyle = `rgba(${g.flashColor},${g.flash * 0.3})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      ctx.textAlign = "left";
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleFieldTap = () => {
+    if (gameStateRef.current === "playing") drawCard();
+    else startGame();
+  };
+
+  return (
+    <div className="app">
+      <h1 className="title">Nerve Deck</h1>
+
+      <div className="hud">
+        <div className="stat">
+          <div className="label">Score</div>
+          <div className="value" data-testid="score">{uiStats.score}</div>
+        </div>
+        <div className="stat combo">
+          <div className="label">Combo</div>
+          <div className="value" data-testid="combo">x{uiStats.multiplier}</div>
+        </div>
+        <div className="stat lives">
+          <div className="label">Lives</div>
+          <div className="value" data-testid="lives">{"♥".repeat(Math.max(0, uiStats.lives))}</div>
+        </div>
+        <div className="stat level">
+          <div className="label">Level</div>
+          <div className="value" data-testid="level">{uiStats.level}</div>
+        </div>
+        <div className="stat nerve">
+          <div className="label">Nerve</div>
+          <div className="value" data-testid="round-total">{uiRound.total}/{uiRound.threshold}</div>
+        </div>
+      </div>
+
+      <div
+        className="play-field"
+        ref={fieldRef}
+        data-testid="play-field"
+        onClick={handleFieldTap}
+        onTouchStart={(e) => { e.preventDefault(); handleFieldTap(); }}
+      >
+        <canvas ref={canvasRef} data-testid="canvas" />
+
+        {gameState === "idle" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>NERVE DECK</h2>
+            <p>Draw neon cards and watch your Nerve total climb. Bank before you cross the threshold to lock in points with your combo multiplier — but hit the limit and you lose a life. Run out of time on a round and your Nerve resets with no penalty, but your combo breaks. Tap/click to draw, or use the BANK button.</p>
+            <button className="start-btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>DEAL IN</button>
+          </div>
+        )}
+
+        {gameState === "gameover" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>BUSTED OUT</h2>
+            <p className="score-line">Score: {uiStats.score} &nbsp;•&nbsp; Banks: {uiStats.banks} &nbsp;•&nbsp; Best: {highScore}</p>
+            <button className="start-btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>DEAL AGAIN</button>
+          </div>
+        )}
+      </div>
+
+      {gameState === "playing" && (
+        <div className="action-row">
+          <button className="draw-btn" data-testid="draw-btn" onClick={(e) => { e.stopPropagation(); drawCard(); }}>DRAW</button>
+          <button
+            className="bank-btn"
+            data-testid="bank-btn"
+            disabled={uiRound.total <= 0}
+            onClick={(e) => { e.stopPropagation(); bankRound(); }}
+          >
+            BANK
+          </button>
+        </div>
+      )}
+
+      <p className="hint">
+        Tap/click the field or DRAW to flip a card onto your Nerve total · BANK (or Enter) locks in points · Space/D draws · Cross the threshold and a life cracks · Let the timer run out and your Nerve resets safely but the combo breaks.
+      </p>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
