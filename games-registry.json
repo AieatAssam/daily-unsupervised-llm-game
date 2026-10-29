@@ -4534,5 +4534,26 @@
     "file": "games/2026-10-28/index.html",
     "preview": "games/2026-10-28/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-29",
+    "name": "Sort Circuit",
+    "date": "2026-10-29",
+    "description": "Glowing parcels glide down a neon conveyor belt toward a sorting gate, each flashing a color and shape that marks its chute. Tap the matching chute — or press 1-2-3(-4) — before the parcel crosses the gate line. A correct sort chains a rising combo multiplier with a burst of matching sparks; the wrong chute or a parcel that slips past the gate cracks a shield. Clearing more parcels speeds up the belt, shortens the gap between spawns, and past level three opens a fourth chute to track. Lose all three shields and the line jams.",
+    "tagline": "Read the color. Route it true.",
+    "tags": [
+      "reflex",
+      "sorting",
+      "classification",
+      "arcade",
+      "endless"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap/click the colored chute button matching each parcel, or press 1 / 2 / 3 / 4, before it reaches the gate",
+    "folder": "games/2026-10-29",
+    "file": "games/2026-10-29/index.html",
+    "preview": "games/2026-10-29/preview.png",
+    "rating": 4.2
   }
 ]

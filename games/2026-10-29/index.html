@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Sort Circuit</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --cyan: #3cf3ff;
+    --magenta: #ff3cf0;
+    --gold: #ffd93c;
+    --lime: #7cff6b;
+    --red: #ff4d6a;
+    --bg0: #060414;
+    --bg1: #0c0a26;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background: var(--bg0);
+    overflow-x: hidden;
+    font-family: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
+    color: #eafcff;
+    touch-action: none;
+  }
+  #root { min-height: 100vh; }
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 10px 18px;
+    position: relative;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(60,243,255,0.16), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(255,60,240,0.14), transparent 55%),
+      linear-gradient(160deg, var(--bg0), var(--bg1) 60%, var(--bg0));
+    background-size: 200% 200%;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 100% 100%; }
+  }
+  h1.title {
+    margin: 2px 0 10px;
+    font-size: clamp(22px, 5vw, 32px);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--gold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 22px rgba(60,243,255,0.35);
+  }
+  .hud {
+    width: min(500px, 94vw);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .stat {
+    flex: 1 1 70px;
+    min-width: 62px;
+    background: rgba(10, 10, 30, 0.55);
+    border: 1px solid rgba(60,243,255,0.35);
+    border-radius: 10px;
+    padding: 6px 8px;
+    text-align: center;
+    box-shadow: 0 0 14px rgba(60,243,255,0.08) inset;
+  }
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    text-transform: uppercase;
+  }
+  .stat .value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 10px rgba(60,243,255,0.6);
+  }
+  .stat.lives .value { color: var(--red); text-shadow: 0 0 10px rgba(255,77,106,0.6); }
+  .stat.combo .value { color: var(--gold); text-shadow: 0 0 10px rgba(255,217,60,0.6); }
+  .stat.level .value { color: var(--magenta); text-shadow: 0 0 10px rgba(255,60,240,0.6); }
+
+  .play-field {
+    position: relative;
+    width: min(440px, 92vw);
+    height: min(300px, 42vh);
+    min-height: 220px;
+    border-radius: 16px;
+    border: 1px solid rgba(60,243,255,0.4);
+    box-shadow: 0 0 30px rgba(60,243,255,0.15), 0 0 60px rgba(255,60,240,0.08) inset;
+    overflow: hidden;
+    background: #04030c;
+    touch-action: none;
+    cursor: pointer;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 16px;
+    background: rgba(4,3,12,0.72);
+    backdrop-filter: blur(2px);
+  }
+  .overlay h2 {
+    margin: 0;
+    font-size: clamp(18px, 4vw, 26px);
+    color: var(--cyan);
+    text-shadow: 0 0 14px rgba(60,243,255,0.6);
+    letter-spacing: 2px;
+  }
+  .overlay p {
+    margin: 0;
+    max-width: 440px;
+    font-size: 13px;
+    opacity: 0.85;
+    line-height: 1.5;
+  }
+  .overlay .score-line {
+    font-size: 16px;
+    color: var(--gold);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .start-btn {
+    margin-top: 6px;
+    padding: 14px 34px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #04030c;
+    background: linear-gradient(90deg, var(--cyan), var(--gold));
+    border-radius: 999px;
+    box-shadow: 0 0 24px rgba(60,243,255,0.55);
+    min-height: 48px;
+    min-width: 160px;
+    transition: transform 0.15s ease;
+  }
+  .start-btn:active { transform: scale(0.95); }
+
+  .chute-row {
+    width: min(500px, 94vw);
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .chute-btn {
+    flex: 1 1 90px;
+    min-width: 80px;
+    min-height: 56px;
+    padding: 8px 10px;
+    border-radius: 14px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    font-size: 13px;
+    color: #04030c;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    transition: transform 0.1s ease;
+  }
+  .chute-btn:active { transform: scale(0.92); }
+  .chute-btn .glyph { font-size: 20px; line-height: 1; }
+  .chute-btn .hotkey { font-size: 9px; opacity: 0.65; }
+
+  .hint {
+    font-size: 11px;
+    opacity: 0.6;
+    max-width: 480px;
+    line-height: 1.4;
+    text-align: center;
+    margin-top: 10px;
+  }
+
+  @media (max-width: 480px) {
+    .hud { gap: 6px; }
+    .stat { padding: 5px 6px; min-width: 56px; }
+    .stat .value { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = "sortCircuitHighScore";
+const TAU = Math.PI * 2;
+const BASE_SPEED = 90;
+const BASE_SPAWN_MS = 1400;
+
+const CHUTES = [
+  { id: "cyan", hex: "#3cf3ff", name: "CYAN", glyph: "●", key: "1" },
+  { id: "magenta", hex: "#ff3cf0", name: "MAGENTA", glyph: "▲", key: "2" },
+  { id: "gold", hex: "#ffd93c", name: "GOLD", glyph: "■", key: "3" },
+  { id: "lime", hex: "#7cff6b", name: "LIME", glyph: "◆", key: "4" },
+];
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  return [0, 2, 4].map((i) => parseInt(h.substr(i, 2), 16)).join(",");
+}
+
+function freshStats() {
+  return { score: 0, combo: 0, multiplier: 1, lives: 3, level: 1, sorted: 0 };
+}
+
+function chutesForLevel(level) {
+  return CHUTES.slice(0, level >= 3 ? 4 : 3);
+}
+function speedForLevel(level) {
+  return BASE_SPEED * (1 + (level - 1) * 0.16);
+}
+function spawnMsForLevel(level) {
+  return Math.max(620, BASE_SPAWN_MS - (level - 1) * 90);
+}
+function levelForSorted(sorted) {
+  return Math.min(8, 1 + Math.floor(sorted / 6));
+}
+
+function App() {
+  const [uiStats, setUiStats] = useState(freshStats());
+  const [gameState, setGameState] = useState("idle"); // idle | playing | gameover
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+
+  const fieldRef = useRef(null);
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
+  const rafRef = useRef(null);
+  const statsRef = useRef(freshStats());
+  const gameStateRef = useRef("idle");
+  const audioCtxRef = useRef(null);
+
+  const gRef = useRef({
+    bounds: { w: 440, h: 300 },
+    items: [],
+    nextId: 1,
+    spawnTimer: 260,
+    particles: [],
+    shake: 0,
+    flash: 0,
+    flashColor: "255,217,60",
+    lastTime: 0,
+    beltPulse: 0,
+  });
+
+  const ensureAudio = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new Ctx();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playTone = useCallback((freq, dur = 0.12, type = "sine", vol = 0.16) => {
+    try {
+      const ctx = ensureAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }, [ensureAudio]);
+
+  const spawnParticles = (x, y, color, count = 10, speed = 90) => {
+    const g = gRef.current;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * TAU;
+      const s = speed * (0.4 + Math.random() * 0.9);
+      g.particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s - 30,
+        life: 0.45 + Math.random() * 0.4,
+        maxLife: 0.85,
+        size: 2 + Math.random() * 2.5,
+        color,
+      });
+    }
+    if (g.particles.length > 45) g.particles = g.particles.slice(-45);
+  };
+
+  const resizeCanvas = useCallback(() => {
+    const field = fieldRef.current;
+    const canvas = canvasRef.current;
+    if (!field || !canvas) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctxRef.current = ctx;
+    const g = gRef.current;
+    g.bounds = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    const onResize = () => resizeCanvas();
+    window.addEventListener("resize", onResize);
+    let ro;
+    if (window.ResizeObserver && fieldRef.current) {
+      ro = new ResizeObserver(onResize);
+      ro.observe(fieldRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (ro) ro.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const commitStats = (mutator) => {
+    mutator(statsRef.current);
+    setUiStats({ ...statsRef.current });
+  };
+
+  const endGame = () => {
+    gameStateRef.current = "gameover";
+    setGameState("gameover");
+    const finalScore = statsRef.current.score;
+    if (finalScore > highScore) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalScore));
+      setHighScore(finalScore);
+    } else if (!localStorage.getItem(HIGH_SCORE_KEY)) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    }
+    playTone(90, 0.4, "triangle", 0.2);
+  };
+
+  const penalize = (x, y) => {
+    const g = gRef.current;
+    g.shake = 10;
+    g.flash = 1;
+    g.flashColor = "255,77,106";
+    spawnParticles(x, y, "255,77,106", 12, 140);
+    playTone(110, 0.22, "sawtooth", 0.2);
+    commitStats((s) => {
+      s.lives -= 1;
+      s.combo = 0;
+      s.multiplier = 1;
+    });
+    if (statsRef.current.lives <= 0) endGame();
+  };
+
+  const levelUpFx = () => {
+    const g = gRef.current;
+    g.flash = 0.8;
+    g.flashColor = "255,217,60";
+    [520, 660, 820].forEach((f, i) => setTimeout(() => playTone(f, 0.1, "triangle", 0.14), i * 50));
+  };
+
+  const trySort = useCallback((colorId) => {
+    if (gameStateRef.current !== "playing") return;
+    const g = gRef.current;
+    if (!g.items.length) {
+      playTone(220, 0.05, "square", 0.05);
+      return;
+    }
+    let idx = 0;
+    for (let i = 1; i < g.items.length; i++) {
+      if (g.items[i].x > g.items[idx].x) idx = i;
+    }
+    const item = g.items[idx];
+    if (item.color === colorId) {
+      g.items.splice(idx, 1);
+      spawnParticles(item.x, item.y, item.rgb, 10, 120);
+      const combo = statsRef.current.combo;
+      playTone(420 + combo * 14, 0.1, "sine", 0.15);
+      commitStats((s) => {
+        s.combo += 1;
+        s.multiplier = Math.min(5, 1 + Math.floor(s.combo / 5));
+        s.sorted += 1;
+        s.score += 10 * s.multiplier * s.level;
+        const newLevel = levelForSorted(s.sorted);
+        if (newLevel > s.level) {
+          s.level = newLevel;
+          levelUpFx();
+        }
+      });
+    } else {
+      g.items.splice(idx, 1);
+      penalize(item.x, item.y);
+    }
+  }, [playTone]);
+
+  const startGame = useCallback(() => {
+    ensureAudio();
+    statsRef.current = freshStats();
+    setUiStats(freshStats());
+    const g = gRef.current;
+    g.items = [];
+    g.particles = [];
+    g.shake = 0;
+    g.flash = 0;
+    g.spawnTimer = 200;
+    gameStateRef.current = "playing";
+    setGameState("playing");
+  }, [ensureAudio]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const chute = CHUTES.find((c) => c.key === e.key);
+      if (chute) {
+        e.preventDefault();
+        if (gameStateRef.current === "playing") {
+          const active = chutesForLevel(statsRef.current.level);
+          if (active.some((c) => c.id === chute.id)) trySort(chute.id);
+        } else {
+          startGame();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [trySort, startGame]);
+
+  // main loop
+  useEffect(() => {
+    const step = (ts) => {
+      const g = gRef.current;
+      if (!g.lastTime) g.lastTime = ts;
+      let dt = (ts - g.lastTime) / 1000;
+      dt = Math.min(dt, 0.05);
+      g.lastTime = ts;
+
+      g.shake *= 0.9;
+      if (g.shake < 0.05) g.shake = 0;
+      g.flash *= 0.92;
+      if (g.flash < 0.02) g.flash = 0;
+      g.beltPulse = (g.beltPulse + dt) % 1000;
+
+      if (gameStateRef.current === "playing") {
+        const level = statsRef.current.level;
+        const speed = speedForLevel(level);
+        g.speed = speed;
+        const beltStartX = 40;
+        const beltEndX = g.bounds.w - 40;
+
+        g.items.forEach((it) => { it.x += speed * dt; });
+
+        const missed = g.items.filter((it) => it.x >= beltEndX);
+        if (missed.length) {
+          g.items = g.items.filter((it) => it.x < beltEndX);
+          const m = missed[0];
+          penalize(m.x, m.y);
+        }
+
+        g.spawnTimer -= dt * 1000;
+        if (g.spawnTimer <= 0) {
+          const active = chutesForLevel(statsRef.current.level);
+          const chute = active[Math.floor(Math.random() * active.length)];
+          g.items.push({
+            id: g.nextId++,
+            x: beltStartX,
+            y: g.bounds.h / 2,
+            color: chute.id,
+            hex: chute.hex,
+            rgb: hexToRgb(chute.hex),
+            glyph: chute.glyph,
+          });
+          g.spawnTimer = spawnMsForLevel(statsRef.current.level) * (0.8 + Math.random() * 0.35);
+        }
+      }
+
+      g.particles.forEach((p) => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.96;
+        p.vy *= 0.96;
+        p.vy += 60 * dt;
+        p.life -= dt;
+      });
+      g.particles = g.particles.filter((p) => p.life > 0);
+
+      draw();
+      rafRef.current = requestAnimationFrame(step);
+    };
+
+    const traceShape = (ctx, x, y, r, glyph) => {
+      ctx.beginPath();
+      if (glyph === "●") {
+        ctx.arc(x, y, r, 0, TAU);
+      } else if (glyph === "▲") {
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r * 0.95, y + r * 0.8);
+        ctx.lineTo(x - r * 0.95, y + r * 0.8);
+        ctx.closePath();
+      } else if (glyph === "■") {
+        ctx.rect(x - r * 0.85, y - r * 0.85, r * 1.7, r * 1.7);
+      } else {
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r, y);
+        ctx.lineTo(x, y + r);
+        ctx.lineTo(x - r, y);
+        ctx.closePath();
+      }
+    };
+
+    const drawShape = (ctx, x, y, r, glyph, color, glow) => {
+      ctx.fillStyle = glow;
+      traceShape(ctx, x, y, r * 1.45, glyph);
+      ctx.fill();
+      ctx.fillStyle = color;
+      traceShape(ctx, x, y, r, glyph);
+      ctx.fill();
+    };
+
+    const draw = () => {
+      const ctx = ctxRef.current;
+      const g = gRef.current;
+      if (!ctx) return;
+      const { w, h } = g.bounds;
+
+      ctx.fillStyle = "#07051a";
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      const shakeX = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      const shakeY = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      ctx.translate(shakeX, shakeY);
+
+      const midY = h / 2;
+      const beltStartX = 40;
+      const beltEndX = w - 40;
+      const beltLen = beltEndX - beltStartX;
+
+      // belt tube
+      ctx.fillStyle = "rgba(60,243,255,0.08)";
+      ctx.fillRect(beltStartX - 18, midY - 20, beltLen + 36, 40);
+      ctx.strokeStyle = "rgba(60,243,255,0.35)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(beltStartX - 18, midY - 20, beltLen + 36, 40);
+
+      // scrolling stripes (single batched path, no clip — cheap)
+      const stripeW = 40;
+      const offset = (performance.now() / 1000 * (g.speed || BASE_SPEED)) % stripeW;
+      ctx.strokeStyle = "rgba(60,243,255,0.18)";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      for (let x = beltStartX + offset; x < beltEndX; x += stripeW) {
+        ctx.moveTo(x, midY - 18);
+        ctx.lineTo(x + 18, midY + 18);
+      }
+      ctx.stroke();
+
+      // danger zone near gate
+      const dangerStart = beltEndX - beltLen * 0.22;
+      const pulse = 0.12 + Math.sin(g.beltPulse * Math.PI * 3) * 0.06;
+      ctx.fillStyle = `rgba(255,77,106,${Math.max(0.05, pulse)})`;
+      ctx.fillRect(dangerStart, midY - 20, beltEndX - dangerStart, 40);
+
+      // gate line
+      ctx.strokeStyle = "rgba(255,217,60,0.8)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(beltEndX, midY - 26);
+      ctx.lineTo(beltEndX, midY + 26);
+      ctx.stroke();
+
+      // spawn marker
+      ctx.font = "bold 10px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(60,243,255,0.7)";
+      ctx.fillText("IN", beltStartX - 18, midY + 36);
+      ctx.fillStyle = "rgba(255,217,60,0.7)";
+      ctx.fillText("GATE", beltEndX, midY + 36);
+
+      // items
+      g.items.forEach((it) => {
+        drawShape(ctx, it.x, it.y, 15, it.glyph, it.hex, `rgba(${it.rgb},0.3)`);
+      });
+
+      // particles
+      g.particles.forEach((p) => {
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = `rgba(${p.color},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, TAU);
+        ctx.fill();
+      });
+
+      ctx.restore();
+
+      if (g.flash > 0.01) {
+        ctx.fillStyle = `rgba(${g.flashColor},${g.flash * 0.3})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      ctx.textAlign = "left";
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleFieldTap = () => {
+    if (gameStateRef.current !== "playing") startGame();
+  };
+
+  const activeChutes = chutesForLevel(uiStats.level);
+
+  return (
+    <div className="app">
+      <h1 className="title">Sort Circuit</h1>
+
+      <div className="hud">
+        <div className="stat">
+          <div className="label">Score</div>
+          <div className="value" data-testid="score">{uiStats.score}</div>
+        </div>
+        <div className="stat combo">
+          <div className="label">Combo</div>
+          <div className="value" data-testid="combo">x{uiStats.multiplier}</div>
+        </div>
+        <div className="stat lives">
+          <div className="label">Lives</div>
+          <div className="value" data-testid="lives">{"♥".repeat(Math.max(0, uiStats.lives))}</div>
+        </div>
+        <div className="stat level">
+          <div className="label">Level</div>
+          <div className="value" data-testid="level">{uiStats.level}</div>
+        </div>
+      </div>
+
+      <div
+        className="play-field"
+        ref={fieldRef}
+        data-testid="play-field"
+        onClick={handleFieldTap}
+        onTouchStart={(e) => { e.preventDefault(); handleFieldTap(); }}
+      >
+        <canvas ref={canvasRef} data-testid="canvas" />
+
+        {gameState === "idle" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>SORT CIRCUIT</h2>
+            <p>Glowing parcels glide down the belt toward the gate. Tap the matching colored chute — or press 1-2-3(-4) — before each parcel reaches the gate. Wrong chute or a missed parcel cracks a shield. Chain correct sorts for a rising combo multiplier. Clearing more parcels speeds up the belt and unlocks a fourth chute. Lose all three shields and the line jams.</p>
+            <button className="start-btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>START SORTING</button>
+          </div>
+        )}
+
+        {gameState === "gameover" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>LINE JAMMED</h2>
+            <p className="score-line">Score: {uiStats.score} &nbsp;&bull;&nbsp; Sorted: {uiStats.sorted} &nbsp;&bull;&nbsp; Best: {highScore}</p>
+            <button className="start-btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>RESTART LINE</button>
+          </div>
+        )}
+      </div>
+
+      {gameState === "playing" && (
+        <div className="chute-row">
+          {activeChutes.map((c) => (
+            <button
+              key={c.id}
+              className="chute-btn"
+              data-testid={`chute-${c.id}`}
+              style={{ background: `linear-gradient(90deg, ${c.hex}, ${c.hex}cc)`, boxShadow: `0 0 18px ${c.hex}88` }}
+              onClick={(e) => { e.stopPropagation(); trySort(c.id); }}
+            >
+              <span className="glyph">{c.glyph}</span>
+              <span>{c.name}</span>
+              <span className="hotkey">key {c.key}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="hint">
+        Tap/click the colored chute matching each parcel, or press 1 / 2 / 3 / 4, before it reaches the GATE &middot; wrong chute or a missed parcel cracks a shield &middot; chain sorts to climb the combo multiplier &middot; the belt speeds up and a fourth chute unlocks as you clear more parcels.
+      </p>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
