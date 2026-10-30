@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Beacon Snap</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --cyan: #3cf3ff;
+    --magenta: #ff3cf0;
+    --gold: #ffd93c;
+    --red: #ff4d6a;
+    --bg0: #060414;
+    --bg1: #0c0a26;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background: var(--bg0);
+    overflow-x: hidden;
+    font-family: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
+    color: #eafcff;
+    touch-action: none;
+  }
+  #root { min-height: 100vh; }
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 10px 18px;
+    position: relative;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(60,243,255,0.16), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(255,60,240,0.14), transparent 55%),
+      linear-gradient(160deg, var(--bg0), var(--bg1) 60%, var(--bg0));
+    background-size: 200% 200%;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 100% 100%; }
+  }
+  h1.title {
+    margin: 2px 0 10px;
+    font-size: clamp(22px, 5vw, 32px);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--gold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 22px rgba(60,243,255,0.35);
+  }
+  .hud {
+    width: min(500px, 94vw);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .stat {
+    flex: 1 1 70px;
+    min-width: 62px;
+    background: rgba(10, 10, 30, 0.55);
+    border: 1px solid rgba(60,243,255,0.35);
+    border-radius: 10px;
+    padding: 6px 8px;
+    text-align: center;
+    box-shadow: 0 0 14px rgba(60,243,255,0.08) inset;
+  }
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    text-transform: uppercase;
+  }
+  .stat .value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 10px rgba(60,243,255,0.6);
+  }
+  .stat.shields .value { color: var(--red); text-shadow: 0 0 10px rgba(255,77,106,0.6); }
+  .stat.combo .value { color: var(--gold); text-shadow: 0 0 10px rgba(255,217,60,0.6); }
+  .stat.level .value { color: var(--magenta); text-shadow: 0 0 10px rgba(255,60,240,0.6); }
+  .stat.status .value { color: #eafcff; font-size: 13px; }
+
+  .play-field {
+    position: relative;
+    width: min(440px, 92vw);
+    height: min(440px, 56vh);
+    min-height: 300px;
+    border-radius: 16px;
+    border: 1px solid rgba(60,243,255,0.4);
+    box-shadow: 0 0 30px rgba(60,243,255,0.15), 0 0 60px rgba(255,60,240,0.08) inset;
+    overflow: hidden;
+    background: #04030c;
+    touch-action: none;
+    cursor: pointer;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 16px;
+    background: rgba(4,3,12,0.72);
+    backdrop-filter: blur(2px);
+  }
+  .overlay h2 {
+    margin: 0;
+    font-size: clamp(18px, 4vw, 26px);
+    color: var(--cyan);
+    text-shadow: 0 0 14px rgba(60,243,255,0.6);
+    letter-spacing: 2px;
+  }
+  .overlay p {
+    margin: 0;
+    max-width: 440px;
+    font-size: 13px;
+    opacity: 0.85;
+    line-height: 1.5;
+  }
+  .overlay .score-line {
+    font-size: 16px;
+    color: var(--gold);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .start-btn {
+    margin-top: 6px;
+    padding: 14px 34px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #04030c;
+    background: linear-gradient(90deg, var(--cyan), var(--gold));
+    border-radius: 999px;
+    box-shadow: 0 0 24px rgba(60,243,255,0.55);
+    min-height: 48px;
+    min-width: 160px;
+    transition: transform 0.15s ease;
+  }
+  .start-btn:active { transform: scale(0.95); }
+
+  .hint {
+    font-size: 11px;
+    opacity: 0.6;
+    max-width: 480px;
+    line-height: 1.4;
+    text-align: center;
+    margin-top: 10px;
+  }
+
+  @media (max-width: 480px) {
+    .hud { gap: 6px; }
+    .stat { padding: 5px 6px; min-width: 56px; }
+    .stat .value { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = "beaconSnapHighScore";
+const TAU = Math.PI * 2;
+const HITS_PER_LEVEL = 8;
+const MAX_LEVEL = 14;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function deg2rad(d) { return (d * Math.PI) / 180; }
+function angDiff(a, b) {
+  let d = (b - a + 540) % 360 - 180;
+  return d;
+}
+
+function freshStats() {
+  return { score: 0, combo: 0, multiplier: 1, shields: 3, level: 1, hits: 0 };
+}
+
+function sweepSpeedForLevel(level) { return Math.min(260, 70 + (level - 1) * 16); }
+function windowForLevel(level) { return Math.max(16, 42 - (level - 1) * 2.2); }
+function lifetimeForLevel(level) { return Math.max(1300, 3200 - (level - 1) * 140); }
+function blipCountForLevel(level) { return level >= 8 ? 3 : level >= 4 ? 2 : 1; }
+function decoyChanceForLevel(level) { return Math.min(0.32, 0.04 * (level - 1)); }
+
+function App() {
+  const [uiStats, setUiStats] = useState(freshStats());
+  const [uiStatus, setUiStatus] = useState("STANDBY");
+  const [gameState, setGameState] = useState("idle"); // idle | playing | gameover
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+
+  const fieldRef = useRef(null);
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
+  const rafRef = useRef(null);
+  const statsRef = useRef(freshStats());
+  const gameStateRef = useRef("idle");
+  const audioCtxRef = useRef(null);
+
+  const gRef = useRef({
+    bounds: { w: 440, h: 440 },
+    sweepAngle: 0,
+    blips: [],
+    nextId: 1,
+    particles: [],
+    shake: 0,
+    flash: 0,
+    flashColor: "255,217,60",
+    lastTime: 0,
+  });
+
+  const ensureAudio = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new Ctx();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playTone = useCallback((freq, dur = 0.12, type = "sine", vol = 0.16) => {
+    try {
+      const ctx = ensureAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }, [ensureAudio]);
+
+  const spawnParticles = (x, y, color, count = 10, speed = 90) => {
+    const g = gRef.current;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * TAU;
+      const s = speed * (0.4 + Math.random() * 0.9);
+      g.particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: 0.5 + Math.random() * 0.4,
+        maxLife: 0.9,
+        size: 2 + Math.random() * 2.5,
+        color,
+      });
+    }
+    if (g.particles.length > 70) g.particles = g.particles.slice(-70);
+  };
+
+  const resizeCanvas = useCallback(() => {
+    const field = fieldRef.current;
+    const canvas = canvasRef.current;
+    if (!field || !canvas) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctxRef.current = ctx;
+    gRef.current.bounds = { w: rect.width, h: rect.height };
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    const onResize = () => resizeCanvas();
+    window.addEventListener("resize", onResize);
+    let ro;
+    if (window.ResizeObserver && fieldRef.current) {
+      ro = new ResizeObserver(onResize);
+      ro.observe(fieldRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (ro) ro.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const commitStats = (mutator) => {
+    mutator(statsRef.current);
+    setUiStats({ ...statsRef.current });
+  };
+
+  const spawnBlip = () => {
+    const g = gRef.current;
+    const level = statsRef.current.level;
+    const isDecoy = Math.random() < decoyChanceForLevel(level);
+    const isGold = !isDecoy && Math.random() < 0.14;
+    const type = isDecoy ? "decoy" : isGold ? "gold" : "normal";
+    const angle = Math.random() * 360;
+    g.blips.push({
+      id: g.nextId++,
+      angle,
+      window: windowForLevel(level),
+      lifetime: lifetimeForLevel(level),
+      age: 0,
+      type,
+    });
+  };
+
+  const ensureBlipCount = () => {
+    const g = gRef.current;
+    const desired = blipCountForLevel(statsRef.current.level);
+    while (g.blips.length < desired) spawnBlip();
+  };
+
+  const endGame = () => {
+    gameStateRef.current = "gameover";
+    setGameState("gameover");
+    const finalScore = statsRef.current.score;
+    if (finalScore > highScore) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalScore));
+      setHighScore(finalScore);
+    } else if (!localStorage.getItem(HIGH_SCORE_KEY)) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    }
+    playTone(90, 0.4, "triangle", 0.2);
+  };
+
+  const breakShield = (x, y) => {
+    const g = gRef.current;
+    g.shake = 10;
+    g.flash = 1;
+    g.flashColor = "255,77,106";
+    spawnParticles(x, y, "255,77,106", 20, 140);
+    playTone(110, 0.25, "sawtooth", 0.2);
+    commitStats((s) => {
+      s.shields -= 1;
+      s.combo = 0;
+      s.multiplier = 1;
+    });
+    if (statsRef.current.shields <= 0) {
+      endGame();
+    }
+  };
+
+  const attemptLock = useCallback(() => {
+    const g = gRef.current;
+    g.attemptSeq = (g.attemptSeq || 0) + 1;
+    const seq = g.attemptSeq;
+
+    if (gameStateRef.current !== "playing") {
+      startGame();
+      return;
+    }
+    const { w, h } = g.bounds;
+    const cx = w / 2, cy = h / 2;
+    const R = Math.min(w, h) / 2 - 30;
+
+    let best = null;
+    let bestDist = Infinity;
+    g.blips.forEach((b) => {
+      const d = Math.abs(angDiff(g.sweepAngle, b.angle));
+      if (d <= b.window / 2 && d < bestDist) {
+        best = b;
+        bestDist = d;
+      }
+    });
+
+    if (!best) {
+      setUiStatus("MISS ·" + seq);
+      playTone(160, 0.08, "square", 0.08);
+      return;
+    }
+
+    const bx = cx + R * Math.cos(deg2rad(best.angle));
+    const by = cy + R * Math.sin(deg2rad(best.angle));
+    g.blips = g.blips.filter((b) => b.id !== best.id);
+
+    if (best.type === "decoy") {
+      setUiStatus("DECOY! ·" + seq);
+      breakShield(bx, by);
+    } else {
+      const base = best.type === "gold" ? 180 : 100;
+      const pts = base * statsRef.current.multiplier;
+      setUiStatus("LOCKED +" + pts + " ·" + seq);
+      spawnParticles(bx, by, best.type === "gold" ? "255,217,60" : "60,243,255", 16, 150);
+      playTone(best.type === "gold" ? 720 : 480, 0.1, "sine", 0.15);
+      commitStats((s) => {
+        s.score += pts;
+        s.combo += 1;
+        s.hits += 1;
+        s.multiplier = Math.min(6, 1 + Math.floor(s.combo / 5));
+        if (s.hits % HITS_PER_LEVEL === 0) {
+          s.level = Math.min(MAX_LEVEL, s.level + 1);
+        }
+      });
+    }
+    ensureBlipCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playTone]);
+
+  const startGame = useCallback(() => {
+    ensureAudio();
+    statsRef.current = freshStats();
+    setUiStats(freshStats());
+    setUiStatus("GO!");
+    const g = gRef.current;
+    g.particles = [];
+    g.shake = 0;
+    g.flash = 0;
+    g.sweepAngle = 0;
+    g.blips = [];
+    spawnBlip();
+    gameStateRef.current = "playing";
+    setGameState("playing");
+  }, [ensureAudio]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code === "Space" || e.key === " " || e.key === "Spacebar" || e.code === "Enter") {
+        e.preventDefault();
+        attemptLock();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [attemptLock]);
+
+  // main loop
+  useEffect(() => {
+    const step = (ts) => {
+      const g = gRef.current;
+      if (!g.lastTime) g.lastTime = ts;
+      let dt = (ts - g.lastTime) / 1000;
+      dt = Math.min(dt, 0.05);
+      g.lastTime = ts;
+
+      g.shake *= 0.9;
+      if (g.shake < 0.05) g.shake = 0;
+      g.flash *= 0.92;
+      if (g.flash < 0.02) g.flash = 0;
+
+      if (gameStateRef.current === "playing") {
+        const speed = sweepSpeedForLevel(statsRef.current.level);
+        g.sweepAngle = (g.sweepAngle + speed * dt) % 360;
+
+        const { w, h } = g.bounds;
+        const cx = w / 2, cy = h / 2;
+        const R = Math.min(w, h) / 2 - 30;
+        let expired = [];
+        g.blips.forEach((b) => {
+          b.age += dt * 1000;
+          if (b.age >= b.lifetime) expired.push(b);
+        });
+        if (expired.length) {
+          g.blips = g.blips.filter((b) => !expired.includes(b));
+          expired.forEach((b) => {
+            const bx = cx + R * Math.cos(deg2rad(b.angle));
+            const by = cy + R * Math.sin(deg2rad(b.angle));
+            if (b.type !== "decoy") {
+              setUiStatus("EXPIRED");
+              breakShield(bx, by);
+            }
+          });
+          ensureBlipCount();
+        }
+      }
+
+      g.particles.forEach((p) => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.94;
+        p.vy *= 0.94;
+        p.life -= dt;
+      });
+      g.particles = g.particles.filter((p) => p.life > 0);
+
+      draw();
+      rafRef.current = requestAnimationFrame(step);
+    };
+
+    const draw = () => {
+      const ctx = ctxRef.current;
+      const g = gRef.current;
+      if (!ctx) return;
+      const { w, h } = g.bounds;
+
+      ctx.fillStyle = "#07051a";
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      const shakeX = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      const shakeY = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      ctx.translate(shakeX, shakeY);
+
+      const cx = w / 2, cy = h / 2;
+      const R = Math.min(w, h) / 2 - 30;
+
+      // radar rings
+      for (let i = 1; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, (R / 3) * i, 0, TAU);
+        ctx.strokeStyle = "rgba(60,243,255,0.14)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, TAU);
+      ctx.strokeStyle = "rgba(60,243,255,0.4)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // blips: lock window arc + dot
+      g.blips.forEach((b) => {
+        const a0 = deg2rad(b.angle - b.window / 2);
+        const a1 = deg2rad(b.angle + b.window / 2);
+        const color = b.type === "decoy" ? "255,77,106" : b.type === "gold" ? "255,217,60" : "60,243,255";
+        const lifeFrac = clamp(1 - b.age / b.lifetime, 0, 1);
+        ctx.beginPath();
+        ctx.arc(cx, cy, R, a0, a1);
+        ctx.strokeStyle = `rgba(${color},${0.25 + 0.35 * lifeFrac})`;
+        ctx.lineWidth = 9;
+        ctx.stroke();
+
+        const bx = cx + R * Math.cos(deg2rad(b.angle));
+        const by = cy + R * Math.sin(deg2rad(b.angle));
+        const pulse = 1 + Math.sin(performance.now() / 150) * 0.15;
+        ctx.beginPath();
+        ctx.arc(bx, by, 15 * pulse, 0, TAU);
+        ctx.fillStyle = `rgba(${color},0.22)`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(bx, by, 9 * pulse, 0, TAU);
+        ctx.fillStyle = `rgba(${color},0.95)`;
+        ctx.fill();
+
+        if (b.type === "decoy") {
+          ctx.strokeStyle = "#07051a";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(bx - 4, by - 4); ctx.lineTo(bx + 4, by + 4);
+          ctx.moveTo(bx + 4, by - 4); ctx.lineTo(bx - 4, by + 4);
+          ctx.stroke();
+        }
+      });
+
+      // sweep trail (one wedge fill instead of many strokes — cheap)
+      const sweepRad = deg2rad(g.sweepAngle);
+      const trailRad = deg2rad(34);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, R, sweepRad - trailRad, sweepRad);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(255,217,60,0.12)";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + R * Math.cos(sweepRad), cy + R * Math.sin(sweepRad));
+      ctx.strokeStyle = "rgba(255,217,60,0.8)";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // hub
+      ctx.beginPath();
+      ctx.arc(cx, cy, 16, 0, TAU);
+      ctx.fillStyle = "rgba(255,217,60,0.25)";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 10, 0, TAU);
+      ctx.fillStyle = "rgba(255,217,60,0.9)";
+      ctx.fill();
+
+      // particles
+      g.particles.forEach((p) => {
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = `rgba(${p.color},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, TAU);
+        ctx.fill();
+      });
+
+      ctx.restore();
+
+      if (g.flash > 0.01) {
+        ctx.fillStyle = `rgba(${g.flashColor},${g.flash * 0.3})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleFieldTap = () => attemptLock();
+
+  return (
+    <div className="app">
+      <h1 className="title">Beacon Snap</h1>
+
+      <div className="hud">
+        <div className="stat">
+          <div className="label">Score</div>
+          <div className="value" data-testid="score">{uiStats.score}</div>
+        </div>
+        <div className="stat combo">
+          <div className="label">Combo</div>
+          <div className="value" data-testid="combo">x{uiStats.multiplier}</div>
+        </div>
+        <div className="stat shields">
+          <div className="label">Shields</div>
+          <div className="value" data-testid="lives">{"♥".repeat(Math.max(0, uiStats.shields))}</div>
+        </div>
+        <div className="stat level">
+          <div className="label">Level</div>
+          <div className="value" data-testid="level">{uiStats.level}</div>
+        </div>
+        <div className="stat status">
+          <div className="label">Status</div>
+          <div className="value" data-testid="status">{uiStatus}</div>
+        </div>
+      </div>
+
+      <div
+        className="play-field"
+        ref={fieldRef}
+        data-testid="play-field"
+        onClick={handleFieldTap}
+        onTouchStart={(e) => { e.preventDefault(); handleFieldTap(); }}
+      >
+        <canvas ref={canvasRef} data-testid="canvas" />
+
+        {gameState === "idle" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>BEACON SNAP</h2>
+            <p>A sweep arm spins endlessly around the radar. Glowing beacons flare up at random angles — tap, click, or press Space the instant the sweep crosses one to lock it for points. Gold beacons pay double, but red decoys will crack a shield if you lock them. Let a beacon's glow fade out unlocked and a shield cracks too. Chain locks for a rising combo multiplier as the sweep spins faster and beacons get stingier with time.</p>
+            <button className="start-btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>POWER ON</button>
+          </div>
+        )}
+
+        {gameState === "gameover" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>SIGNAL LOST</h2>
+            <p className="score-line">Score: {uiStats.score} &nbsp;•&nbsp; Level: {uiStats.level} &nbsp;•&nbsp; Best: {highScore}</p>
+            <button className="start-btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>REBOOT</button>
+          </div>
+        )}
+      </div>
+
+      <p className="hint">
+        Tap/click the radar or press Space/Enter the instant the sweep crosses a beacon to lock it · Gold = bonus points · Red decoys and expired beacons crack a shield · Lose all three shields and the signal dies.
+      </p>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>

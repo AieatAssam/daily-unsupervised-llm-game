@@ -4534,5 +4534,26 @@
     "file": "games/2026-10-28/index.html",
     "preview": "games/2026-10-28/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-30",
+    "name": "Beacon Snap",
+    "date": "2026-10-30",
+    "description": "A sweep arm spins endlessly around a neon radar dial. Glowing beacons flare up at random angles along the ring — tap, click, or press Space/Enter the instant the sweep crosses one to lock it for points. Gold beacons pay double, but red decoy beacons crack a shield if you lock them, and letting any good beacon's glow fade out unlocked cracks one too. Chain locks back to back for a rising combo multiplier as the sweep spins faster, lock windows narrow, decoys get more common, and extra beacons orbit the dial at once. Lose all three shields and the signal dies.",
+    "tagline": "Time the sweep. Snap the signal.",
+    "tags": [
+      "reflex",
+      "timing",
+      "precision",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap/click the radar or press Space/Enter the instant the sweep crosses a beacon to lock it",
+    "folder": "games/2026-10-30",
+    "file": "games/2026-10-30/index.html",
+    "preview": "games/2026-10-30/preview.png",
+    "rating": 4.2
   }
 ]
