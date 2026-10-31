@@ -4534,5 +4534,26 @@
     "file": "games/2026-10-28/index.html",
     "preview": "games/2026-10-28/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-10-31",
+    "name": "Wire Weave",
+    "date": "2026-10-31",
+    "description": "A magenta power source sits in a neon grid of pipe tiles, and gold nodes wait to be lit. Click or tap a tile to rotate it 90°, or steer a cursor with Arrow keys / WASD and rotate with Space/Enter, lining up straights, elbows, and junctions into a single live circuit before the countdown bar burns out. Partial progress glows cyan in real time as the current reaches further down the line. Solve a grid fast for a bigger time bonus and a rising combo multiplier, and the next grid adds more nodes to feed on a tighter fuse. Burn out the timer and a life cracks instead. Lose all three lives and the circuit dies.",
+    "tagline": "Rotate the grid. Route the power.",
+    "tags": [
+      "puzzle",
+      "logic",
+      "rotation",
+      "arcade",
+      "circuit"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Click/tap a pipe tile to rotate it 90°, or move the cursor with Arrow keys / WASD and press Space/Enter to rotate — connect the source to every node before time runs out",
+    "folder": "games/2026-10-31",
+    "file": "games/2026-10-31/index.html",
+    "preview": "games/2026-10-31/preview.png",
+    "rating": 4.2
   }
 ]

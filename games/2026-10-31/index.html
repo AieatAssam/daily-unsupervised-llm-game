@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Wire Weave</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --cyan: #3cf3ff;
+    --magenta: #ff3cf0;
+    --gold: #ffd93c;
+    --red: #ff4d6a;
+    --bg0: #060414;
+    --bg1: #0c0a26;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background: var(--bg0);
+    overflow-x: hidden;
+    font-family: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
+    color: #eafcff;
+    touch-action: none;
+  }
+  #root { min-height: 100vh; }
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 10px 18px;
+    position: relative;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(60,243,255,0.16), transparent 55%),
+      radial-gradient(circle at 85% 85%, rgba(255,60,240,0.14), transparent 55%),
+      linear-gradient(160deg, var(--bg0), var(--bg1) 60%, var(--bg0));
+    background-size: 200% 200%;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 100% 100%; }
+  }
+  h1.title {
+    margin: 2px 0 10px;
+    font-size: clamp(22px, 5vw, 32px);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--gold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 22px rgba(60,243,255,0.35);
+  }
+  .hud {
+    width: min(500px, 94vw);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .stat {
+    flex: 1 1 70px;
+    min-width: 62px;
+    background: rgba(10, 10, 30, 0.55);
+    border: 1px solid rgba(60,243,255,0.35);
+    border-radius: 10px;
+    padding: 6px 8px;
+    text-align: center;
+    box-shadow: 0 0 14px rgba(60,243,255,0.08) inset;
+  }
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    text-transform: uppercase;
+  }
+  .stat .value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 10px rgba(60,243,255,0.6);
+  }
+  .stat.lives .value { color: var(--red); text-shadow: 0 0 10px rgba(255,77,106,0.6); }
+  .stat.combo .value { color: var(--gold); text-shadow: 0 0 10px rgba(255,217,60,0.6); }
+  .stat.level .value { color: var(--magenta); text-shadow: 0 0 10px rgba(255,60,240,0.6); }
+  .stat.ends .value { color: #eafcff; }
+
+  .play-field {
+    position: relative;
+    width: min(420px, 90vw, 60vh);
+    height: min(420px, 90vw, 60vh);
+    min-width: 280px;
+    min-height: 280px;
+    border-radius: 16px;
+    border: 1px solid rgba(60,243,255,0.4);
+    box-shadow: 0 0 30px rgba(60,243,255,0.15), 0 0 60px rgba(255,60,240,0.08) inset;
+    overflow: hidden;
+    background: #04030c;
+    touch-action: none;
+    cursor: pointer;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 16px;
+    background: rgba(4,3,12,0.72);
+    backdrop-filter: blur(2px);
+    z-index: 2;
+  }
+  .overlay h2 {
+    margin: 0;
+    font-size: clamp(18px, 4vw, 26px);
+    color: var(--cyan);
+    text-shadow: 0 0 14px rgba(60,243,255,0.6);
+    letter-spacing: 2px;
+  }
+  .overlay p {
+    margin: 0;
+    max-width: 440px;
+    font-size: 13px;
+    opacity: 0.85;
+    line-height: 1.5;
+  }
+  .overlay .score-line {
+    font-size: 16px;
+    color: var(--gold);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .start-btn {
+    margin-top: 6px;
+    padding: 14px 34px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #04030c;
+    background: linear-gradient(90deg, var(--cyan), var(--gold));
+    border-radius: 999px;
+    box-shadow: 0 0 24px rgba(60,243,255,0.55);
+    min-height: 48px;
+    min-width: 160px;
+    transition: transform 0.15s ease;
+  }
+  .start-btn:active { transform: scale(0.95); }
+
+  .hint {
+    font-size: 11px;
+    opacity: 0.6;
+    max-width: 480px;
+    line-height: 1.4;
+    text-align: center;
+    margin-top: 12px;
+  }
+
+  @media (max-width: 480px) {
+    .hud { gap: 6px; }
+    .stat { padding: 5px 6px; min-width: 56px; }
+    .stat .value { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const HIGH_SCORE_KEY = "wireWeaveHighScore";
+const TAU = Math.PI * 2;
+
+const DIRS = [1, 2, 4, 8]; // N E S W
+const DELTA = { 1: [-1, 0], 2: [0, 1], 4: [1, 0], 8: [0, -1] };
+const OPP = { 1: 4, 4: 1, 2: 8, 8: 2 };
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function freshStats() {
+  return { score: 0, combo: 0, multiplier: 1, lives: 3, level: 1, solved: 0 };
+}
+
+function gridSizeForLevel(level) {
+  if (level <= 2) return 4;
+  if (level <= 5) return 5;
+  return 6;
+}
+function numEndsForLevel(level) {
+  if (level <= 2) return 1;
+  if (level <= 5) return 2;
+  return 3;
+}
+function puzzleTimeForLevel(level) {
+  return Math.max(9000, 23000 - (level - 1) * 1300);
+}
+
+function rotateMask(mask) {
+  return ((mask << 1) | (mask >> 3)) & 0xf;
+}
+function isStraight(mask) {
+  return mask === 5 || mask === 10;
+}
+function dirFromTo(r1, c1, r2, c2) {
+  const dr = r2 - r1, dc = c2 - c1;
+  for (const d of DIRS) {
+    const [ddr, ddc] = DELTA[d];
+    if (ddr === dr && ddc === dc) return d;
+  }
+  return null;
+}
+
+function buildPuzzle(level) {
+  const size = gridSizeForLevel(level);
+  const numEnds = numEndsForLevel(level);
+  const grid = Array.from({ length: size }, () =>
+    Array.from({ length: size }, () => ({ kind: "empty", mask: 0 }))
+  );
+  const visited = new Set();
+  const key = (r, c) => r + "," + c;
+
+  const borderCells = [];
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (r === 0 || c === 0 || r === size - 1 || c === size - 1) borderCells.push([r, c]);
+    }
+  }
+  const [sr, sc] = borderCells[Math.floor(Math.random() * borderCells.length)];
+  grid[sr][sc].kind = "source";
+  visited.add(key(sr, sc));
+
+  function shuffledDirs() {
+    const a = [...DIRS];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function walk(startR, startC, minSteps, maxSteps) {
+    let r = startR, c = startC;
+    const path = [[r, c]];
+    const steps = minSteps + Math.floor(Math.random() * Math.max(1, maxSteps - minSteps + 1));
+    for (let i = 0; i < steps; i++) {
+      let moved = false;
+      for (const d of shuffledDirs()) {
+        const [dr, dc] = DELTA[d];
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nc < 0 || nr >= size || nc >= size) continue;
+        if (visited.has(key(nr, nc))) continue;
+        visited.add(key(nr, nc));
+        path.push([nr, nc]);
+        r = nr; c = nc;
+        moved = true;
+        break;
+      }
+      if (!moved) break;
+    }
+    return path;
+  }
+
+  function applyPath(path) {
+    for (let i = 1; i < path.length; i++) {
+      const [pr, pc] = path[i - 1];
+      const [r, c] = path[i];
+      const d = dirFromTo(pr, pc, r, c);
+      grid[pr][pc].mask |= d;
+      grid[r][c].mask |= OPP[d];
+      if (grid[pr][pc].kind === "empty") grid[pr][pc].kind = "pipe";
+      if (grid[r][c].kind === "empty") grid[r][c].kind = "pipe";
+    }
+    const last = path[path.length - 1];
+    grid[last[0]][last[1]].kind = "end";
+    return last;
+  }
+
+  const ends = [];
+  for (let e = 0; e < numEnds; e++) {
+    const candidates = Array.from(visited)
+      .map((k) => k.split(",").map(Number))
+      .filter(([r, c]) => grid[r][c].kind !== "end");
+    if (!candidates.length) break;
+    const pivot = e === 0 ? [sr, sc] : candidates[Math.floor(Math.random() * candidates.length)];
+    const minSteps = e === 0 ? Math.max(3, size - 1) : Math.max(2, size - 2);
+    const maxSteps = e === 0 ? size + 2 : size;
+    let path = walk(pivot[0], pivot[1], minSteps, maxSteps);
+    if (path.length < 2) {
+      const alt = candidates[Math.floor(Math.random() * candidates.length)];
+      path = walk(alt[0], alt[1], 1, Math.max(2, size - 2));
+    }
+    if (path.length < 2) continue;
+    const endCell = applyPath(path);
+    ends.push({ r: endCell[0], c: endCell[1] });
+  }
+
+  // scramble rotatable pipe tiles so the puzzle starts unsolved
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const cell = grid[r][c];
+      if (cell.kind !== "pipe") continue;
+      let k = 1 + Math.floor(Math.random() * 3);
+      if (isStraight(cell.mask) && k % 2 === 0) k = 1;
+      for (let i = 0; i < k; i++) cell.mask = rotateMask(cell.mask);
+    }
+  }
+
+  return { grid, size, source: { r: sr, c: sc }, ends };
+}
+
+function gridLayout(bounds, size) {
+  const timerH = 26;
+  const padding = 10;
+  const availW = bounds.w - padding * 2;
+  const availH = bounds.h - timerH - padding * 2;
+  const cellPx = Math.max(10, Math.floor(Math.min(availW, availH) / size));
+  const gridPx = cellPx * size;
+  const originX = (bounds.w - gridPx) / 2;
+  const originY = padding + (availH - gridPx) / 2;
+  return { cellPx, originX, originY, timerH };
+}
+
+function App() {
+  const [uiStats, setUiStats] = useState(freshStats());
+  const [uiRound, setUiRound] = useState({ solvedEnds: 0, totalEnds: 1 });
+  const [gameState, setGameState] = useState("idle"); // idle | playing | gameover
+  const [highScore, setHighScore] = useState(() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || "0", 10);
+    return Number.isFinite(v) ? v : 0;
+  });
+
+  const fieldRef = useRef(null);
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
+  const rafRef = useRef(null);
+  const statsRef = useRef(freshStats());
+  const gameStateRef = useRef("idle");
+  const audioCtxRef = useRef(null);
+
+  const gRef = useRef({
+    bounds: { w: 400, h: 400 },
+    grid: [],
+    geo: null,
+    size: 4,
+    source: { r: 0, c: 0 },
+    ends: [],
+    reached: new Set(),
+    puzzleTime: 23000,
+    timeLeft: 23000,
+    celebrating: false,
+    celebrateMs: 0,
+    cursor: { r: 0, c: 0 },
+    particles: [],
+    shake: 0,
+    flash: 0,
+    flashColor: "60,243,255",
+    lastTime: 0,
+    clock: 0,
+  });
+
+  const ensureAudio = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new Ctx();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playTone = useCallback((freq, dur = 0.12, type = "sine", vol = 0.16) => {
+    try {
+      const ctx = ensureAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }, [ensureAudio]);
+
+  const spawnParticles = (x, y, color, count = 10, speed = 90) => {
+    const g = gRef.current;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * TAU;
+      const s = speed * (0.4 + Math.random() * 0.9);
+      g.particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s - 30,
+        life: 0.5 + Math.random() * 0.4,
+        maxLife: 0.9,
+        size: 2 + Math.random() * 2.5,
+        color,
+      });
+    }
+    if (g.particles.length > 80) g.particles = g.particles.slice(-80);
+  };
+
+  const resizeCanvas = useCallback(() => {
+    const field = fieldRef.current;
+    const canvas = canvasRef.current;
+    if (!field || !canvas) return;
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctxRef.current = ctx;
+    const g = gRef.current;
+    g.bounds = { w: rect.width, h: rect.height };
+    if (g.grid.length) rebuildGeometry();
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    const onResize = () => resizeCanvas();
+    window.addEventListener("resize", onResize);
+    let ro;
+    if (window.ResizeObserver && fieldRef.current) {
+      ro = new ResizeObserver(onResize);
+      ro.observe(fieldRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (ro) ro.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const commitStats = (mutator) => {
+    mutator(statsRef.current);
+    setUiStats({ ...statsRef.current });
+  };
+
+  const rebuildGeometry = () => {
+    const g = gRef.current;
+    if (!g.grid.length) return;
+    const layout = gridLayout(g.bounds, g.size);
+    const { cellPx, originX, originY } = layout;
+    const panelPath = new Path2D();
+    const borderPath = new Path2D();
+    const haloPath = new Path2D();
+    const reachedPath = new Path2D();
+    const dimPath = new Path2D();
+    const specials = [];
+
+    for (let r = 0; r < g.size; r++) {
+      for (let c = 0; c < g.size; c++) {
+        const x = originX + c * cellPx;
+        const y = originY + r * cellPx;
+        const cell = g.grid[r][c];
+        const cx = x + cellPx / 2, cy = y + cellPx / 2;
+        const isReached = g.reached.has(r + "," + c);
+
+        panelPath.rect(x + 1, y + 1, cellPx - 2, cellPx - 2);
+        borderPath.rect(x + 0.5, y + 0.5, cellPx - 1, cellPx - 1);
+
+        if (cell.kind === "empty") continue;
+
+        const linePath = isReached ? reachedPath : dimPath;
+        for (const d of DIRS) {
+          if (!(cell.mask & d)) continue;
+          const [dr, dc] = DELTA[d];
+          const ex = cx + (dc * cellPx) / 2, ey = cy + (dr * cellPx) / 2;
+          linePath.moveTo(cx, cy);
+          linePath.lineTo(ex, ey);
+          if (isReached) {
+            haloPath.moveTo(cx, cy);
+            haloPath.lineTo(ex, ey);
+          }
+        }
+
+        specials.push({ kind: cell.kind, cx, cy, isReached });
+      }
+    }
+
+    g.geo = { layout, panelPath, borderPath, haloPath, reachedPath, dimPath, specials };
+  };
+
+  const recomputeReached = () => {
+    const g = gRef.current;
+    const { grid, size, source } = g;
+    const reached = new Set();
+    const startKey = source.r + "," + source.c;
+    reached.add(startKey);
+    const queue = [[source.r, source.c]];
+    while (queue.length) {
+      const [r, c] = queue.shift();
+      const cell = grid[r][c];
+      for (const d of DIRS) {
+        if (!(cell.mask & d)) continue;
+        const [dr, dc] = DELTA[d];
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nc < 0 || nr >= size || nc >= size) continue;
+        const nk = nr + "," + nc;
+        if (reached.has(nk)) continue;
+        const ncell = grid[nr][nc];
+        if (!(ncell.mask & OPP[d])) continue;
+        reached.add(nk);
+        queue.push([nr, nc]);
+      }
+    }
+    g.reached = reached;
+    rebuildGeometry();
+    const solvedEnds = g.ends.filter((e) => reached.has(e.r + "," + e.c)).length;
+    setUiRound({ solvedEnds, totalEnds: g.ends.length });
+    return reached;
+  };
+
+  const cellCenter = (r, c) => {
+    const g = gRef.current;
+    const layout = gridLayout(g.bounds, g.size);
+    return {
+      x: layout.originX + c * layout.cellPx + layout.cellPx / 2,
+      y: layout.originY + r * layout.cellPx + layout.cellPx / 2,
+    };
+  };
+
+  const endGame = () => {
+    gameStateRef.current = "gameover";
+    setGameState("gameover");
+    const finalScore = statsRef.current.score;
+    if (finalScore > highScore) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(finalScore));
+      setHighScore(finalScore);
+    } else if (!localStorage.getItem(HIGH_SCORE_KEY)) {
+      localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    }
+    playTone(90, 0.4, "triangle", 0.2);
+  };
+
+  const nextPuzzle = (level) => {
+    const g = gRef.current;
+    const puzzle = buildPuzzle(level);
+    g.grid = puzzle.grid;
+    g.size = puzzle.size;
+    g.source = puzzle.source;
+    g.ends = puzzle.ends;
+    g.cursor = { r: puzzle.source.r, c: puzzle.source.c };
+    g.puzzleTime = puzzleTimeForLevel(level);
+    g.timeLeft = g.puzzleTime;
+    g.celebrating = false;
+    g.celebrateMs = 0;
+    recomputeReached();
+  };
+
+  const timeoutFail = () => {
+    const g = gRef.current;
+    g.shake = 10;
+    g.flash = 1;
+    g.flashColor = "255,77,106";
+    const c = cellCenter(g.source.r, g.source.c);
+    spawnParticles(c.x, c.y, "255,77,106", 22, 150);
+    playTone(110, 0.25, "sawtooth", 0.2);
+    commitStats((s) => {
+      s.lives -= 1;
+      s.combo = 0;
+      s.multiplier = 1;
+    });
+    if (statsRef.current.lives <= 0) {
+      endGame();
+      return;
+    }
+    nextPuzzle(statsRef.current.level);
+  };
+
+  const onSolve = () => {
+    const g = gRef.current;
+    g.celebrating = true;
+    g.celebrateMs = 900;
+    g.flash = 1;
+    g.flashColor = "255,217,60";
+    g.ends.forEach((e) => {
+      const c = cellCenter(e.r, e.c);
+      spawnParticles(c.x, c.y, "255,217,60", 20, 140);
+    });
+    const sc = cellCenter(g.source.r, g.source.c);
+    spawnParticles(sc.x, sc.y, "60,243,255", 16, 120);
+    [520, 680, 880, 1040].forEach((f, i) => setTimeout(() => playTone(f, 0.14, "triangle", 0.15), i * 70));
+
+    const level = statsRef.current.level;
+    const timeFrac = clamp(g.timeLeft / g.puzzleTime, 0, 1);
+    const base = (100 + level * 20) * Math.max(1, g.ends.length);
+    const gained = Math.round(base * (1 + timeFrac));
+    commitStats((s) => {
+      s.score += gained * s.multiplier;
+      s.combo += 1;
+      s.multiplier = Math.min(5, 1 + Math.floor(s.combo / 2));
+      s.solved += 1;
+      s.level += 1;
+    });
+  };
+
+  const rotateCell = (r, c) => {
+    const g = gRef.current;
+    if (gameStateRef.current !== "playing" || g.celebrating) return;
+    if (r < 0 || c < 0 || r >= g.size || c >= g.size) return;
+    const cell = g.grid[r][c];
+    if (!cell || cell.kind !== "pipe") {
+      playTone(180, 0.05, "square", 0.05);
+      return;
+    }
+    cell.mask = rotateMask(cell.mask);
+    playTone(360, 0.06, "square", 0.09);
+    const center = cellCenter(r, c);
+    spawnParticles(center.x, center.y, "60,243,255", 4, 50);
+    recomputeReached();
+    const solved = g.ends.length > 0 && g.ends.every((e) => g.reached.has(e.r + "," + e.c));
+    if (solved) onSolve();
+  };
+
+  const startGame = useCallback(() => {
+    ensureAudio();
+    statsRef.current = freshStats();
+    setUiStats(freshStats());
+    const g = gRef.current;
+    g.particles = [];
+    g.shake = 0;
+    g.flash = 0;
+    g.clock = 0;
+    nextPuzzle(1);
+    gameStateRef.current = "playing";
+    setGameState("playing");
+  }, [ensureAudio]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const g = gRef.current;
+      if (gameStateRef.current !== "playing") {
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Enter", "Spacebar"].includes(e.key) || e.code === "Space") {
+          e.preventDefault();
+          startGame();
+        }
+        return;
+      }
+      if (e.code === "ArrowUp" || e.key === "w" || e.key === "W") {
+        e.preventDefault();
+        g.cursor = { r: clamp(g.cursor.r - 1, 0, g.size - 1), c: g.cursor.c };
+      } else if (e.code === "ArrowDown" || e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        g.cursor = { r: clamp(g.cursor.r + 1, 0, g.size - 1), c: g.cursor.c };
+      } else if (e.code === "ArrowLeft" || e.key === "a" || e.key === "A") {
+        e.preventDefault();
+        g.cursor = { r: g.cursor.r, c: clamp(g.cursor.c - 1, 0, g.size - 1) };
+      } else if (e.code === "ArrowRight" || e.key === "d" || e.key === "D") {
+        e.preventDefault();
+        g.cursor = { r: g.cursor.r, c: clamp(g.cursor.c + 1, 0, g.size - 1) };
+      } else if (e.code === "Space" || e.key === " " || e.key === "Enter" || e.key === "Spacebar") {
+        e.preventDefault();
+        rotateCell(g.cursor.r, g.cursor.c);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startGame]);
+
+  // main loop
+  useEffect(() => {
+    const step = (ts) => {
+      const g = gRef.current;
+      if (!g.lastTime) g.lastTime = ts;
+      let dt = (ts - g.lastTime) / 1000;
+      dt = Math.min(dt, 0.05);
+      g.lastTime = ts;
+      g.clock += dt;
+
+      g.shake *= 0.9;
+      if (g.shake < 0.05) g.shake = 0;
+      g.flash *= 0.92;
+      if (g.flash < 0.02) g.flash = 0;
+
+      if (gameStateRef.current === "playing") {
+        if (g.celebrating) {
+          g.celebrateMs -= dt * 1000;
+          if (g.celebrateMs <= 0) {
+            nextPuzzle(statsRef.current.level);
+          }
+        } else {
+          g.timeLeft -= dt * 1000;
+          if (g.timeLeft <= 0) {
+            g.timeLeft = 0;
+            timeoutFail();
+          }
+        }
+      }
+
+      g.particles.forEach((p) => {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.96;
+        p.vy *= 0.96;
+        p.vy += 60 * dt;
+        p.life -= dt;
+      });
+      g.particles = g.particles.filter((p) => p.life > 0);
+
+      draw();
+      rafRef.current = requestAnimationFrame(step);
+    };
+
+    const draw = () => {
+      const ctx = ctxRef.current;
+      const g = gRef.current;
+      if (!ctx) return;
+      const { w, h } = g.bounds;
+
+      const bgPulse = 5 + Math.round(4 + Math.sin(g.clock * 2) * 4);
+      ctx.fillStyle = `rgb(${bgPulse},${Math.round(bgPulse * 0.8)},${15 + bgPulse})`;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      const shakeX = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      const shakeY = g.shake ? (Math.random() - 0.5) * g.shake : 0;
+      ctx.translate(shakeX, shakeY);
+
+      // ambient power indicator (always pulsing, keeps the loop visibly alive)
+      const pulseR = 4 + Math.sin(g.clock * 3) * 2.5;
+      ctx.beginPath();
+      ctx.fillStyle = "rgba(60,243,255,0.6)";
+      ctx.arc(14, 14, Math.max(1, pulseR), 0, TAU);
+      ctx.fill();
+
+      if (g.grid.length && g.geo) {
+        const { layout, panelPath, borderPath, haloPath, reachedPath, dimPath, specials } = g.geo;
+        const { cellPx, originX, originY } = layout;
+        const lineW = Math.max(4, cellPx * 0.16);
+
+        ctx.fillStyle = "rgba(255,255,255,0.03)";
+        ctx.fill(panelPath);
+        ctx.strokeStyle = "rgba(120,140,200,0.14)";
+        ctx.lineWidth = 1;
+        ctx.stroke(borderPath);
+
+        ctx.lineCap = "butt";
+        ctx.strokeStyle = "rgba(60,243,255,0.28)";
+        ctx.lineWidth = lineW * 2;
+        ctx.stroke(haloPath);
+        ctx.strokeStyle = "#3cf3ff";
+        ctx.lineWidth = lineW;
+        ctx.stroke(reachedPath);
+        ctx.strokeStyle = "rgba(150,170,210,0.4)";
+        ctx.lineWidth = lineW;
+        ctx.stroke(dimPath);
+
+        for (const sp of specials) {
+          const { kind, cx, cy, isReached } = sp;
+          if (kind === "source") {
+            const pulse = 1 + Math.sin(g.clock * 4) * 0.15;
+            ctx.beginPath();
+            ctx.fillStyle = "rgba(255,60,240,0.25)";
+            ctx.arc(cx, cy, cellPx * 0.34 * pulse, 0, TAU);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.fillStyle = "#ff3cf0";
+            ctx.arc(cx, cy, cellPx * 0.2 * pulse, 0, TAU);
+            ctx.fill();
+          } else if (kind === "end") {
+            const pulse = isReached ? 1 + Math.sin(g.clock * 5) * 0.1 : 1 + Math.sin(g.clock * 2) * 0.08;
+            if (isReached) {
+              ctx.beginPath();
+              ctx.fillStyle = "rgba(255,217,60,0.25)";
+              ctx.arc(cx, cy, cellPx * 0.32 * pulse, 0, TAU);
+              ctx.fill();
+            }
+            ctx.beginPath();
+            ctx.fillStyle = isReached ? "#ffd93c" : "rgba(255,217,60,0.25)";
+            ctx.arc(cx, cy, cellPx * 0.2 * pulse, 0, TAU);
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = isReached ? "#fff" : "rgba(255,217,60,0.6)";
+            ctx.stroke();
+          }
+        }
+
+        if (gameStateRef.current === "playing") {
+          const cx = originX + g.cursor.c * cellPx;
+          const cy = originY + g.cursor.r * cellPx;
+          ctx.strokeStyle = "rgba(255,255,255,0.75)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 4]);
+          ctx.strokeRect(cx + 3, cy + 3, cellPx - 6, cellPx - 6);
+          ctx.setLineDash([]);
+        }
+
+        // timer bar
+        const barW = w - 20;
+        const barFrac = clamp(g.timeLeft / g.puzzleTime, 0, 1);
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        ctx.fillRect(10, h - 16, barW, 7);
+        ctx.fillStyle = barFrac < 0.3 ? "#ff4d6a" : "#3cf3ff";
+        ctx.fillRect(10, h - 16, barW * barFrac, 7);
+      }
+
+      g.particles.forEach((p) => {
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = `rgba(${p.color},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, TAU);
+        ctx.fill();
+      });
+
+      ctx.restore();
+
+      if (g.flash > 0.01) {
+        ctx.fillStyle = `rgba(${g.flashColor},${g.flash * 0.3})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleFieldPoint = (clientX, clientY) => {
+    if (gameStateRef.current !== "playing") {
+      startGame();
+      return;
+    }
+    const field = fieldRef.current;
+    if (!field) return;
+    const rect = field.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const g = gRef.current;
+    const layout = gridLayout(g.bounds, g.size);
+    const col = Math.floor((x - layout.originX) / layout.cellPx);
+    const row = Math.floor((y - layout.originY) / layout.cellPx);
+    if (row < 0 || col < 0 || row >= g.size || col >= g.size) return;
+    g.cursor = { r: row, c: col };
+    rotateCell(row, col);
+  };
+
+  return (
+    <div className="app">
+      <h1 className="title">Wire Weave</h1>
+
+      <div className="hud">
+        <div className="stat">
+          <div className="label">Score</div>
+          <div className="value" data-testid="score">{uiStats.score}</div>
+        </div>
+        <div className="stat combo">
+          <div className="label">Combo</div>
+          <div className="value" data-testid="combo">x{uiStats.multiplier}</div>
+        </div>
+        <div className="stat lives">
+          <div className="label">Lives</div>
+          <div className="value" data-testid="lives">{"♥".repeat(Math.max(0, uiStats.lives))}</div>
+        </div>
+        <div className="stat level">
+          <div className="label">Level</div>
+          <div className="value" data-testid="level">{uiStats.level}</div>
+        </div>
+        <div className="stat ends">
+          <div className="label">Nodes</div>
+          <div className="value" data-testid="round-total">{uiRound.solvedEnds}/{uiRound.totalEnds}</div>
+        </div>
+      </div>
+
+      <div
+        className="play-field"
+        ref={fieldRef}
+        data-testid="play-field"
+        onClick={(e) => handleFieldPoint(e.clientX, e.clientY)}
+        onTouchStart={(e) => {
+          e.preventDefault();
+          const t = e.changedTouches[0];
+          if (t) handleFieldPoint(t.clientX, t.clientY);
+        }}
+      >
+        <canvas ref={canvasRef} data-testid="canvas" />
+
+        {gameState === "idle" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>WIRE WEAVE</h2>
+            <p>Rotate the glowing pipe tiles to route power from the magenta source to every gold node before the countdown bar burns out. Click/tap a tile to rotate it 90°, or move the cursor with Arrow keys / WASD and press Space/Enter to rotate. Clearing a grid speeds up the next one and adds more nodes to feed. Lose all three lives and the circuit dies.</p>
+            <button className="start-btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>POWER ON</button>
+          </div>
+        )}
+
+        {gameState === "gameover" && (
+          <div className="overlay" data-testid="overlay">
+            <h2>CIRCUIT DEAD</h2>
+            <p className="score-line">Score: {uiStats.score} &nbsp;•&nbsp; Grids solved: {uiStats.solved} &nbsp;•&nbsp; Best: {Math.max(highScore, uiStats.score)}</p>
+            <button className="start-btn" data-testid="start-btn" onClick={(e) => { e.stopPropagation(); startGame(); }}>REWIRE</button>
+          </div>
+        )}
+      </div>
+
+      <p className="hint">
+        Click/tap a tile to rotate it 90° · Arrow keys / WASD move the cursor, Space/Enter rotates · Connect the source to every node before time runs out · Timeouts cost a life, solves grow your combo.
+      </p>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
