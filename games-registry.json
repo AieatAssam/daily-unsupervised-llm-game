@@ -4534,5 +4534,26 @@
     "file": "games/2026-10-28/index.html",
     "preview": "games/2026-10-28/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-11-01",
+    "name": "Grid Evader",
+    "date": "2026-11-01",
+    "description": "A lone neon ship drifts in a glowing grid arena while spiked hazards converge from every edge. Steer with Arrow keys/WASD or the on-screen d-pad, or tap the field to glide toward a waypoint, weaving past magenta and red spikes while scooping up pulsing green shards for points. Collecting shards in quick succession builds a combo multiplier that decays if you stall, while brushing just past a hazard without touching it banks a risky graze bonus. Every hit costs a life and resets your streak; climb levels as your score grows and the swarm spawns faster and meaner. Lose all three lives and the grid overloads.",
+    "tagline": "Dodge the swarm. Snatch the shards. Keep your streak alive.",
+    "tags": [
+      "dodge",
+      "survival",
+      "arcade",
+      "action",
+      "combo"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys/WASD or the on-screen d-pad to move, or tap/click the field to glide there — dodge hazards, collect shards",
+    "folder": "games/2026-11-01",
+    "file": "games/2026-11-01/index.html",
+    "preview": "games/2026-11-01/preview.png",
+    "rating": 4.2
   }
 ]
