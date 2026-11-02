@@ -4538,5 +4538,26 @@
     "file": "games/2026-10-28/index.html",
     "preview": "games/2026-10-28/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-11-02",
+    "name": "Grid Garrison",
+    "date": "2026-11-02",
+    "description": "A winding magenta track carries waves of glowing invaders across a neon grid toward your core. Tap an empty tile to spend energy deploying a turret, or tap an existing turret to upgrade it up to level 3 — each level hits harder, fires faster, and reaches further. Turrets auto-target the nearest invader in range with searing beams, kills pay bonus energy and stack a rising combo multiplier, and energy trickles back in on its own between builds. Every cleared wave ramps up the next with faster, tougher invaders, fast scouts from wave four, and an armored boss every five waves. Let three invaders slip through to the core and the grid goes dark.",
+    "tagline": "Place smart. Hold the core.",
+    "tags": [
+      "tower-defense",
+      "strategy",
+      "placement",
+      "arcade",
+      "endless"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Tap/click an empty tile to build a turret (costs energy), tap an existing turret to upgrade it — defend the core from waves streaming down the glowing track",
+    "folder": "games/2026-11-02",
+    "file": "games/2026-11-02/index.html",
+    "preview": "games/2026-11-02/preview.png",
+    "rating": 4.2
   }
 ]
