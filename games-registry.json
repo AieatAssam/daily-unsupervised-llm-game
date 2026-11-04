@@ -4559,5 +4559,26 @@
     "file": "games/2026-11-03/index.html",
     "preview": "games/2026-11-03/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-11-04",
+    "name": "Neon Slice",
+    "date": "2026-11-04",
+    "description": "Glowing shards arc up from the bottom of the stage — drag or swipe across them to slice them out of the air, or stab with a quick tap. Red bombs cost a life if sliced, so dodge them or clear the whole field safely with a charged BURST. Miss a shard and your combo breaks, but no life is lost. Chain slices for a rising combo multiplier and climb the levels as volleys speed up and bombs grow more common. Lose all three lives and the blade goes dull.",
+    "tagline": "Drag true. Dodge the boom. Keep slicing.",
+    "tags": [
+      "slicing",
+      "reflex",
+      "arcade",
+      "drag",
+      "action"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Drag/swipe across falling shards to slice them (or click/tap, or press Space to stab center) — avoid red bombs, tap BURST or press B to safely clear the field when charged",
+    "folder": "games/2026-11-04",
+    "file": "games/2026-11-04/index.html",
+    "preview": "games/2026-11-04/preview.png",
+    "rating": 4.3
   }
 ]
