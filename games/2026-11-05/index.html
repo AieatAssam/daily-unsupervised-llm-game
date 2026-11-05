@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Photon Putt</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #040611; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 6%, #0f1f2e 0%, #081021 55%, #03050d 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(79,255,214,0.06), rgba(79,168,255,0.08), rgba(179,125,255,0.06));
+    background-size: 400% 400%;
+    animation: drift 18s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 8px 0;
+    z-index: 5;
+    gap: 4px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #d9f7ff;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4fffd6; text-shadow: 0 0 10px #4fffd6; }
+  .combo-val { color: #ff3d96; text-shadow: 0 0 10px #ff3d96; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #4fa8ff; text-shadow: 0 0 10px #4fa8ff; }
+  .stat-line {
+    position: relative;
+    z-index: 5;
+    color: #8fc7d8;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-align: center;
+    padding: 4px 0 0;
+    min-height: 16px;
+  }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 4px 10px;
+    gap: 10px;
+  }
+  .putt-stage {
+    position: relative;
+    width: min(92vw, 420px);
+    aspect-ratio: 3 / 4;
+    max-height: 68%;
+    border-radius: 14px;
+    border: 1px solid rgba(79,255,150,0.22);
+    box-shadow: inset 0 0 40px rgba(79,255,150,0.08), 0 0 30px rgba(79,168,255,0.12);
+    overflow: hidden;
+    touch-action: none;
+    cursor: crosshair;
+    transition: box-shadow 0.15s ease;
+  }
+  .putt-stage.tap-pulse {
+    box-shadow: inset 0 0 60px rgba(79,255,150,0.28), 0 0 50px rgba(79,168,255,0.32);
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .banner {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(3,5,13,0.92);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 25px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4fffd6, 0 0 40px #4fa8ff;
+    margin: 0;
+  }
+  .subtitle {
+    color: #b7e8ff;
+    font-size: 13px;
+    max-width: 380px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4fffd6, #4fa8ff);
+    border: none;
+    color: #03050d;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 1px;
+    padding: 16px 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 140px;
+    box-shadow: 0 0 25px rgba(79,255,214,0.6), 0 0 45px rgba(79,168,255,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore {
+    color: #fff;
+    font-size: 16px;
+  }
+  .finalscore b { color: #4fffd6; font-size: 22px; }
+  .highscore-line {
+    color: #ffd84f;
+    font-size: 13px;
+  }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #8fc7d8;
+    font-size: 10px;
+    text-align: center;
+    padding: 2px 10px 8px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'photonPuttHighScore';
+const START_LIVES = 3;
+const BALL_R = 9;
+const MAX_DRAG = 130;
+const MAX_SPEED = 480;
+const FRICTION_K = 1.55;
+const STOP_EPS = 5;
+const REST = 0.74;
+const HOLE_R = 15;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq > 0 ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+  t = clamp(t, 0, 1);
+  const cx = x1 + t * dx, cy = y1 + t * dy;
+  return { dist: Math.hypot(px - cx, py - cy), cx, cy };
+}
+
+function holeParams(level) {
+  return {
+    walls: clamp(Math.floor(level / 2), 0, 5),
+    bumpers: clamp(1 + Math.floor(level / 3), 1, 4),
+    hazards: clamp(Math.floor((level - 1) / 3), 0, 3),
+  };
+}
+
+function buildHole(level, w, h) {
+  w = Math.max(w, 160); h = Math.max(h, 220);
+  const margin = 26;
+  const ball = {
+    x: w * (0.35 + Math.random() * 0.3),
+    y: h - margin - 14,
+    vx: 0, vy: 0,
+  };
+  let hole;
+  let tries = 0;
+  do {
+    hole = { x: margin + Math.random() * (w - 2 * margin), y: margin + Math.random() * (h * 0.55), r: HOLE_R };
+    tries++;
+  } while (tries < 30 && Math.hypot(hole.x - ball.x, hole.y - ball.y) < Math.max(w, h) * 0.4);
+
+  const lp = holeParams(level);
+  const walls = [];
+  for (let i = 0; i < lp.walls; i++) {
+    let seg; let t2 = 0;
+    do {
+      const cx = margin + 20 + Math.random() * (w - 2 * margin - 40);
+      const cy = margin + 20 + Math.random() * (h - 2 * margin - 40);
+      const len = 44 + Math.random() * 60;
+      const ang = Math.random() * Math.PI;
+      seg = {
+        x1: cx - Math.cos(ang) * len / 2, y1: cy - Math.sin(ang) * len / 2,
+        x2: cx + Math.cos(ang) * len / 2, y2: cy + Math.sin(ang) * len / 2,
+      };
+      t2++;
+    } while (t2 < 20 && (
+      distToSegment(hole.x, hole.y, seg.x1, seg.y1, seg.x2, seg.y2).dist < 42 ||
+      distToSegment(ball.x, ball.y, seg.x1, seg.y1, seg.x2, seg.y2).dist < 42
+    ));
+    walls.push(seg);
+  }
+
+  const bumpers = [];
+  for (let i = 0; i < lp.bumpers; i++) {
+    let b; let t2 = 0;
+    do {
+      b = {
+        x: margin + 20 + Math.random() * (w - 2 * margin - 40),
+        y: margin + 20 + Math.random() * (h - 2 * margin - 40),
+        r: 12 + Math.random() * 5, lastHit: 0,
+      };
+      t2++;
+    } while (t2 < 20 && (
+      Math.hypot(b.x - hole.x, b.y - hole.y) < 48 ||
+      Math.hypot(b.x - ball.x, b.y - ball.y) < 48
+    ));
+    bumpers.push(b);
+  }
+
+  const hazards = [];
+  for (let i = 0; i < lp.hazards; i++) {
+    let hz; let t2 = 0;
+    do {
+      hz = {
+        x: margin + 20 + Math.random() * (w - 2 * margin - 40),
+        y: margin + 20 + Math.random() * (h - 2 * margin - 40),
+        r: 17 + Math.random() * 7,
+      };
+      t2++;
+    } while (t2 < 20 && (
+      Math.hypot(hz.x - hole.x, hz.y - hole.y) < 55 ||
+      Math.hypot(hz.x - ball.x, hz.y - ball.y) < 55 ||
+      bumpers.some(b => Math.hypot(hz.x - b.x, hz.y - b.y) < b.r + hz.r + 10)
+    ));
+    hazards.push(hz);
+  }
+
+  const par = clamp(2 + Math.floor((level - 1) / 3), 2, 5);
+  return {
+    ball: { x: ball.x, y: ball.y, vx: 0, vy: 0 },
+    startBall: { x: ball.x, y: ball.y },
+    hole, walls, bumpers, hazards, par,
+  };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    putt: (power) => beep(200 + power * 160, 0.1, 'triangle', 0.09, 110),
+    bumper: () => beep(680 + Math.random() * 140, 0.08, 'sine', 0.09, 920),
+    wall: () => beep(300, 0.05, 'square', 0.03, 220),
+    hazard: () => beep(380, 0.4, 'sawtooth', 0.12, 60),
+    sink: (label) => {
+      const base = label === 'EAGLE!' ? 620 : label === 'BIRDIE!' ? 540 : label === 'PAR' ? 460 : 360;
+      beep(base, 0.1, 'triangle', 0.09);
+      setTimeout(() => beep(base * 1.26, 0.12, 'triangle', 0.09), 90);
+      setTimeout(() => beep(base * 1.5, 0.16, 'triangle', 0.09), 180);
+    },
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function buildInitialGame() {
+  const h = buildHole(1, 320, 420);
+  return {
+    dims: { w: 320, h: 420 },
+    ball: h.ball, startBall: h.startBall, hole: h.hole,
+    walls: h.walls, bumpers: h.bumpers, hazards: h.hazards,
+    particles: [], trail: [],
+    dragging: false, dragStart: null, dragCurrent: null,
+    aimAngle: Math.atan2(h.hole.y - h.ball.y, h.hole.x - h.ball.x),
+    aimPower: 0.55,
+    sunkUntil: 0, flashColor: null, flashUntil: 0, bannerClearAt: 0,
+    lastWallSound: 0,
+    staticCanvas: null, staticDirty: true,
+  };
+}
+
+// Static (unchanging per-hole) scenery — grid, hole, walls, hazards — is drawn once
+// to an offscreen canvas and blitted each frame instead of re-stroking/re-blurring
+// every shape at 60fps, which is what tanked frame rate in headless CI.
+function renderStatic(g, w, h) {
+  let sc = g.staticCanvas;
+  const cw = Math.max(1, Math.round(w)), ch = Math.max(1, Math.round(h));
+  if (!sc) { sc = document.createElement('canvas'); g.staticCanvas = sc; }
+  if (sc.width !== cw || sc.height !== ch) { sc.width = cw; sc.height = ch; }
+  const ctx = sc.getContext('2d');
+  ctx.clearRect(0, 0, cw, ch);
+
+  ctx.strokeStyle = 'rgba(79,255,150,0.06)';
+  ctx.lineWidth = 1;
+  for (let gy = 0; gy < h; gy += Math.max(20, h / 8)) {
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+  }
+  for (let gx = 0; gx < w; gx += Math.max(20, w / 6)) {
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+  }
+
+  if (g.hole) {
+    ctx.save();
+    ctx.shadowColor = '#4fffd6';
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(g.hole.x, g.hole.y, g.hole.r, 0, Math.PI * 2);
+    ctx.strokeStyle = '#4fffd6';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(g.hole.x, g.hole.y, g.hole.r * 0.7, 0, Math.PI * 2);
+    ctx.fillStyle = '#020a08';
+    ctx.fill();
+    ctx.strokeStyle = '#b47dff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(g.hole.x, g.hole.y - g.hole.r);
+    ctx.lineTo(g.hole.x, g.hole.y - g.hole.r - 22);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(g.hole.x, g.hole.y - g.hole.r - 22);
+    ctx.lineTo(g.hole.x + 14, g.hole.y - g.hole.r - 17);
+    ctx.lineTo(g.hole.x, g.hole.y - g.hole.r - 12);
+    ctx.closePath();
+    ctx.fillStyle = '#ff3d96';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (g.walls) {
+    ctx.save();
+    ctx.shadowColor = '#4fa8ff';
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = '#4fa8ff';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    for (const seg of g.walls) {
+      ctx.beginPath();
+      ctx.moveTo(seg.x1, seg.y1);
+      ctx.lineTo(seg.x2, seg.y2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  if (g.hazards) {
+    ctx.save();
+    ctx.shadowColor = '#ff3d96';
+    ctx.shadowBlur = 14;
+    for (const hz of g.hazards) {
+      ctx.beginPath();
+      ctx.arc(hz.x, hz.y, hz.r, 0, Math.PI * 2);
+      ctx.fillStyle = '#140318';
+      ctx.fill();
+      ctx.strokeStyle = '#ff3d96';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+  const pointerDownRef = useRef(false);
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    par: 2, strokes: 0, highScore: initialHigh, banner: '',
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+  const gameRef = useRef(buildInitialGame());
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 140) return;
+    for (let i = 0; i < (count || 10); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 60) + Math.random() * (spread || 60);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 360 + Math.random() * 260, maxLife: 620, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const showBanner = useCallback((text) => {
+    const g = gameRef.current;
+    g.bannerClearAt = performance.now() + 900;
+    setUi(prev => ({ ...prev, banner: text }));
+  }, []);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const loseBall = useCallback(() => {
+    const g = gameRef.current;
+    g.flashColor = '#ff4f4f';
+    g.flashUntil = performance.now() + 260;
+    audio.hazard();
+    spawnParticles(g.ball.x, g.ball.y, '#ff4f6f', 22, 110);
+    g.ball.x = g.startBall.x; g.ball.y = g.startBall.y;
+    g.ball.vx = 0; g.ball.vy = 0;
+    g.dragging = false;
+    showBanner('LOST BALL!');
+    setUi(prev => {
+      const lives = prev.lives - 1;
+      if (lives <= 0) {
+        setTimeout(() => endGame(), 0);
+        return { ...prev, lives: 0, combo: 0, strokes: prev.strokes + 1 };
+      }
+      return { ...prev, lives, combo: 0, strokes: prev.strokes + 1 };
+    });
+  }, [audio, spawnParticles, showBanner, endGame]);
+
+  const sinkHole = useCallback(() => {
+    const g = gameRef.current;
+    const cur = uiRef.current;
+    const strokesUsed = Math.max(1, cur.strokes);
+    const underPar = cur.par - strokesUsed;
+    let label;
+    if (underPar >= 2) label = 'EAGLE!';
+    else if (underPar === 1) label = 'BIRDIE!';
+    else if (underPar === 0) label = 'PAR';
+    else label = 'BOGEY';
+    const combo = underPar >= 0 ? cur.combo + 1 : 0;
+    const gained = Math.round((120 + Math.max(0, underPar) * 70) * (1 + combo * 0.12));
+    audio.sink(label);
+    spawnParticles(g.hole.x, g.hole.y, '#ffd84f', 30, 140);
+    g.flashColor = '#4fffd6';
+    g.flashUntil = performance.now() + 240;
+    g.sunkUntil = performance.now() + 650;
+    showBanner(label + '  +' + gained);
+    setUi(prev => ({
+      ...prev, phase: 'sunk', score: prev.score + gained, combo,
+    }));
+  }, [audio, spawnParticles, showBanner]);
+
+  const performPutt = useCallback((angle, powerFrac) => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    const g = gameRef.current;
+    const b = g.ball;
+    const speed = Math.hypot(b.vx, b.vy);
+    if (speed > STOP_EPS) return;
+    const power = clamp(powerFrac, 0.1, 1);
+    b.vx = Math.cos(angle) * power * MAX_SPEED;
+    b.vy = Math.sin(angle) * power * MAX_SPEED;
+    g.aimAngle = angle; g.aimPower = power;
+    audio.putt(power);
+    spawnParticles(b.x, b.y, '#ffffff', 6, 24 * power + 10);
+    setUi(prev => ({ ...prev, strokes: prev.strokes + 1 }));
+  }, [audio, spawnParticles]);
+
+  const startGame = useCallback(() => {
+    const g = gameRef.current;
+    const h = buildHole(1, g.dims.w, g.dims.h);
+    g.ball = h.ball; g.startBall = h.startBall; g.hole = h.hole;
+    g.walls = h.walls; g.bumpers = h.bumpers; g.hazards = h.hazards;
+    g.particles = []; g.trail = [];
+    g.dragging = false; g.dragStart = null; g.dragCurrent = null;
+    g.aimAngle = Math.atan2(h.hole.y - h.ball.y, h.hole.x - h.ball.x);
+    g.aimPower = 0.55;
+    g.sunkUntil = 0; g.flashColor = null; g.flashUntil = 0; g.bannerClearAt = 0;
+    g.staticDirty = true;
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: START_LIVES,
+      level: 1, par: h.par, strokes: 0, banner: '',
+    }));
+  }, []);
+
+  const press = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.phase === 'idle' || cur.phase === 'over') startGame();
+  }, [startGame]);
+
+  const getLocalPoint = useCallback((e) => {
+    const rect = wrapRef.current.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }, []);
+
+  const onPointerDown = useCallback((e) => {
+    e.preventDefault();
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    const g = gameRef.current;
+    const speed = Math.hypot(g.ball.vx, g.ball.vy);
+    if (speed > STOP_EPS) return;
+    pointerDownRef.current = true;
+    const p = getLocalPoint(e);
+    g.dragging = true;
+    g.dragStart = p;
+    g.dragCurrent = p;
+    if (wrapRef.current) wrapRef.current.classList.add('tap-pulse');
+  }, [getLocalPoint]);
+
+  const onPointerMove = useCallback((e) => {
+    if (!pointerDownRef.current) return;
+    const g = gameRef.current;
+    if (!g.dragging) return;
+    const p = getLocalPoint(e);
+    g.dragCurrent = p;
+    const dx = p.x - g.dragStart.x, dy = p.y - g.dragStart.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 6) {
+      g.aimAngle = Math.atan2(dy, dx);
+      g.aimPower = clamp(dist / MAX_DRAG, 0, 1);
+    }
+  }, [getLocalPoint]);
+
+  const onPointerUp = useCallback(() => {
+    pointerDownRef.current = false;
+    const g = gameRef.current;
+    if (wrapRef.current) wrapRef.current.classList.remove('tap-pulse');
+    if (!g.dragging) return;
+    g.dragging = false;
+    const dx = g.dragCurrent.x - g.dragStart.x, dy = g.dragCurrent.y - g.dragStart.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 8) return;
+    const angle = Math.atan2(dy, dx);
+    const power = clamp(dist / MAX_DRAG, 0, 1);
+    performPutt(angle, power);
+  }, [performPutt]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (cur.phase === 'idle' || cur.phase === 'over') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGame(); }
+        return;
+      }
+      const g = gameRef.current;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+        e.preventDefault(); g.aimAngle -= 0.18;
+      } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+        e.preventDefault(); g.aimAngle += 0.18;
+      } else if (e.code === 'ArrowUp') {
+        e.preventDefault(); g.aimPower = clamp((g.aimPower || 0.5) + 0.12, 0.12, 1);
+      } else if (e.code === 'ArrowDown') {
+        e.preventDefault(); g.aimPower = clamp((g.aimPower || 0.5) - 0.12, 0.12, 1);
+      } else if (e.code === 'Space') {
+        e.preventDefault(); performPutt(g.aimAngle, g.aimPower || 0.5);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, performPutt]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        gameRef.current.dims = { w: r.width, h: r.height };
+        gameRef.current.staticDirty = true;
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.033, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = g.dims.w, h = g.dims.h;
+      const now = performance.now();
+
+      if (cur.phase === 'playing') {
+        const b = g.ball;
+        const speed = Math.hypot(b.vx, b.vy);
+        if (speed > 0.01) {
+          const decay = Math.exp(-FRICTION_K * dt);
+          b.vx *= decay; b.vy *= decay;
+          b.x += b.vx * dt; b.y += b.vy * dt;
+          const lastTrail = g.trail[g.trail.length - 1];
+          if (!lastTrail || Math.hypot(b.x - lastTrail.x, b.y - lastTrail.y) > 5) {
+            g.trail.push({ x: b.x, y: b.y, t: now });
+            if (g.trail.length > 10) g.trail.shift();
+          }
+
+          if (Math.hypot(b.vx, b.vy) < STOP_EPS) { b.vx = 0; b.vy = 0; }
+
+          if (b.x - BALL_R < 0) { b.x = BALL_R; b.vx = -b.vx * REST; }
+          if (b.x + BALL_R > w) { b.x = w - BALL_R; b.vx = -b.vx * REST; }
+          if (b.y - BALL_R < 0) { b.y = BALL_R; b.vy = -b.vy * REST; }
+          if (b.y + BALL_R > h) { b.y = h - BALL_R; b.vy = -b.vy * REST; }
+
+          for (const seg of g.walls) {
+            const r = distToSegment(b.x, b.y, seg.x1, seg.y1, seg.x2, seg.y2);
+            const minDist = BALL_R + 3;
+            if (r.dist < minDist && r.dist > 0.001) {
+              const nx = (b.x - r.cx) / r.dist, ny = (b.y - r.cy) / r.dist;
+              const overlap = minDist - r.dist;
+              b.x += nx * overlap; b.y += ny * overlap;
+              const dot = b.vx * nx + b.vy * ny;
+              b.vx = (b.vx - 2 * dot * nx) * REST;
+              b.vy = (b.vy - 2 * dot * ny) * REST;
+              if (now - g.lastWallSound > 100) { audio.wall(); g.lastWallSound = now; }
+              spawnParticles(r.cx, r.cy, '#4fa8ff', 4, 40);
+            }
+          }
+
+          for (const bp of g.bumpers) {
+            const dist = Math.hypot(b.x - bp.x, b.y - bp.y);
+            const minDist = BALL_R + bp.r;
+            if (dist < minDist && dist > 0.001) {
+              const nx = (b.x - bp.x) / dist, ny = (b.y - bp.y) / dist;
+              const overlap = minDist - dist;
+              b.x += nx * overlap; b.y += ny * overlap;
+              const curSpeed = Math.hypot(b.vx, b.vy);
+              const boosted = Math.max(curSpeed * 1.2, 230);
+              b.vx = nx * boosted; b.vy = ny * boosted;
+              if (now - bp.lastHit > 120) {
+                bp.lastHit = now;
+                audio.bumper();
+                spawnParticles(bp.x, bp.y, '#ffd84f', 14, 100);
+              }
+            }
+          }
+
+          let consumed = false;
+          for (const hz of g.hazards) {
+            if (Math.hypot(b.x - hz.x, b.y - hz.y) < hz.r * 0.55) {
+              consumed = true;
+              setTimeout(() => loseBall(), 0);
+              break;
+            }
+          }
+
+          if (!consumed) {
+            const holeDist = Math.hypot(b.x - g.hole.x, b.y - g.hole.y);
+            if (holeDist < g.hole.r * 0.85) {
+              setTimeout(() => sinkHole(), 0);
+            }
+          }
+        }
+
+        if (g.bannerClearAt && now > g.bannerClearAt) {
+          g.bannerClearAt = 0;
+          setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+        }
+      } else if (cur.phase === 'sunk') {
+        if (g.sunkUntil && now >= g.sunkUntil) {
+          g.sunkUntil = 0;
+          const nextLevel = cur.level + 1;
+          const h2 = buildHole(nextLevel, w, h);
+          g.ball = h2.ball; g.startBall = h2.startBall; g.hole = h2.hole;
+          g.walls = h2.walls; g.bumpers = h2.bumpers; g.hazards = h2.hazards;
+          g.aimAngle = Math.atan2(h2.hole.y - h2.ball.y, h2.hole.x - h2.ball.x);
+          g.aimPower = 0.55;
+          g.staticDirty = true;
+          setUi(prev => ({ ...prev, phase: 'playing', level: nextLevel, par: h2.par, strokes: 0 }));
+        }
+      }
+
+      const trail = g.trail;
+      while (trail.length && now - trail[0].t > 500) trail.shift();
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.94;
+        p.vy *= 0.94;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas && w > 0 && h > 0) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        if (g.staticDirty || !g.staticCanvas || g.staticCanvas.width !== cw || g.staticCanvas.height !== ch) {
+          renderStatic(g, w, h);
+          g.staticDirty = false;
+        }
+        ctx.drawImage(g.staticCanvas, 0, 0, cw, ch);
+
+        if (g.bumpers) {
+          for (const bp of g.bumpers) {
+            const pulse = 0.5 + 0.5 * Math.sin(now / 260 + bp.x);
+            ctx.beginPath();
+            ctx.arc(bp.x, bp.y, bp.r * (1.3 + pulse * 0.25), 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,216,79,0.14)';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(bp.x, bp.y, bp.r, 0, Math.PI * 2);
+            ctx.fillStyle = '#3a2a05';
+            ctx.fill();
+            ctx.strokeStyle = '#ffd84f';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(bp.x, bp.y, bp.r * 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffd84f';
+            ctx.fill();
+          }
+        }
+
+        if (cur.phase === 'playing' && Math.hypot(g.ball.vx, g.ball.vy) < STOP_EPS) {
+          const b = g.ball;
+          const power = g.aimPower || 0.5;
+          const len = 24 + power * 70;
+          const ex = b.x + Math.cos(g.aimAngle) * len;
+          const ey = b.y + Math.sin(g.aimAngle) * len;
+          ctx.save();
+          ctx.setLineDash([6, 6]);
+          ctx.strokeStyle = `rgba(255,255,255,${0.35 + power * 0.4})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(b.x, b.y);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.arc(ex, ey, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.restore();
+        }
+
+        const trail2 = g.trail;
+        if (trail2.length > 1) {
+          ctx.save();
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = '#8fffe6';
+          for (let i = 1; i < trail2.length; i++) {
+            const a = trail2[i - 1], c = trail2[i];
+            const age = (now - c.t) / 500;
+            ctx.globalAlpha = clamp(1 - age, 0, 1) * 0.45;
+            ctx.lineWidth = Math.max(1, 4 * (1 - age));
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(c.x, c.y);
+            ctx.stroke();
+          }
+          ctx.restore();
+          ctx.globalAlpha = 1;
+        }
+
+        if (g.ball && cur.phase !== 'idle') {
+          ctx.beginPath();
+          ctx.arc(g.ball.x, g.ball.y, BALL_R * 1.8, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.18)';
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(g.ball.x, g.ball.y, BALL_R, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        }
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (g.flashColor && now < g.flashUntil) {
+          ctx.fillStyle = g.flashColor;
+          ctx.globalAlpha = 0.16;
+          ctx.fillRect(0, 0, w, h);
+          ctx.globalAlpha = 1;
+        } else if (g.flashColor && now >= g.flashUntil) {
+          g.flashColor = null;
+        }
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [audio, spawnParticles, loseBall, sinkHole]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Streak<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Balls<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Hole<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+      <div className="stat-line" data-testid="par-strokes">{ui.phase === 'playing' || ui.phase === 'sunk' ? `Par ${ui.par} · Stroke ${ui.strokes}` : ' '}</div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div
+          className="putt-stage"
+          ref={wrapRef}
+          data-testid="putt-stage"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerUp}
+        >
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+
+          {ui.phase !== 'playing' && ui.phase !== 'sunk' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">PHOTON PUTT</h1>
+                  <p className="subtitle">Drag in the direction you want to putt — the farther you drag, the harder you hit. Bank off neon walls, ride glowing bumpers for a speed boost, and avoid the magenta voids that swallow your ball. Sink each hole at or under par to build your streak!</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">OUT OF BALLS</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>PUTT AGAIN</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="hint">Drag to aim &amp; putt (or Arrow/A-D to aim, Up/Down for power, Space to putt) — bank off walls, boost off bumpers, dodge the voids!</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

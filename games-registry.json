@@ -4580,5 +4580,26 @@
     "file": "games/2026-11-04/index.html",
     "preview": "games/2026-11-04/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-11-05",
+    "name": "Photon Putt",
+    "date": "2026-11-05",
+    "description": "A neon physics mini-golf arcade game — drag in the direction you want to putt, the farther the drag the harder the hit. Bank shots off glowing walls, ride pulsing bumpers for a speed boost, and dodge magenta void hazards that swallow your ball and cost a life. Sink each hole at or under par to build a streak multiplier, with new procedurally generated holes growing more obstacle-dense every level.",
+    "tagline": "Drag to putt. Bank the walls. Chain the par.",
+    "tags": [
+      "golf",
+      "physics",
+      "precision",
+      "arcade",
+      "casual"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Drag to aim and putt — or Arrow keys / A-D to aim, Up/Down for power, Space to putt | Touch drag on mobile",
+    "folder": "games/2026-11-05",
+    "file": "games/2026-11-05/index.html",
+    "preview": "games/2026-11-05/preview.png",
+    "rating": 4.5
   }
 ]
