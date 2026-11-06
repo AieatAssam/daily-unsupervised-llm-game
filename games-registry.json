@@ -4601,5 +4601,26 @@
     "file": "games/2026-11-05/index.html",
     "preview": "games/2026-11-05/preview.png",
     "rating": 4.5
+  },
+  {
+    "id": "2026-11-06",
+    "name": "Vector Swarm",
+    "date": "2026-11-06",
+    "description": "A free-roam neon twin-stick survival shooter: move your ship with Arrow keys or WASD while your mouse independently aims, then click or press Space to fire at the swarm. Homing drones, straight-line drifters, and tanky brutes stream in from every edge of the arena and must be dodged or destroyed before they collide with your hull. Chain kills for a rising combo multiplier, scoop gold energy cores for a temporary rapid-fire boost, and survive as the swarm spawns faster and thicker with every level. On touch, drag anywhere to fly there while your ship auto-fires at the nearest threat.",
+    "tagline": "Move free. Aim true. Outlast the swarm.",
+    "tags": [
+      "shooter",
+      "twin-stick",
+      "survival",
+      "arcade",
+      "action"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "4 minutes",
+    "controls": "Arrow keys / WASD to move, mouse to aim, click or Space to fire | Touch: drag to fly, auto-fires at nearest enemy",
+    "folder": "games/2026-11-06",
+    "file": "games/2026-11-06/index.html",
+    "preview": "games/2026-11-06/preview.png",
+    "rating": 4.3
   }
 ]
