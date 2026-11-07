@@ -4622,5 +4622,26 @@
     "file": "games/2026-11-06/index.html",
     "preview": "games/2026-11-06/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-11-07",
+    "name": "Orbit Harvest",
+    "date": "2026-11-07",
+    "description": "A neon probe orbits a glowing core forever, automatically speeding up lap after lap. Switch between concentric rings with Arrow Up/Down or W/S, by tapping a ring directly, or with the OUT/IN buttons, to harvest teal orbs and dodge red hazards scattered around each ring. Harvesting fills an energy meter — spend it with Space or the PULSE button to blast every hazard off your current ring in a shockwave. Complete a lap to level up into a faster, denser field with more rings and hazards, chain orbs for a rising combo, and survive as long as you can on three lives.",
+    "tagline": "Orbit forever. Harvest the glow. Dodge the burn.",
+    "tags": [
+      "arcade",
+      "orbit",
+      "collector",
+      "skill",
+      "reflex"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Arrow Up/Down or W/S to switch rings, tap a ring directly, or tap OUT/IN buttons | Space or tap PULSE to blast hazards off your ring",
+    "folder": "games/2026-11-07",
+    "file": "games/2026-11-07/index.html",
+    "preview": "games/2026-11-07/preview.png",
+    "rating": 4.2
   }
 ]

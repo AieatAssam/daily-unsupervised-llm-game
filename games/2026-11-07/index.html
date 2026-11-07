@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Orbit Harvest</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05040d; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 4%, #14102c 0%, #0a0920 55%, #040308 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(79,255,214,0.06), rgba(142,79,255,0.08), rgba(255,108,196,0.06));
+    background-size: 400% 400%;
+    animation: drift 20s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 8px 0;
+    z-index: 5;
+    gap: 4px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #e4dcff;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4fffd6; text-shadow: 0 0 10px #4fffd6; }
+  .combo-val { color: #ff6cc4; text-shadow: 0 0 10px #ff6cc4; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #8e4fff; text-shadow: 0 0 10px #8e4fff; }
+  .stat-line {
+    position: relative;
+    z-index: 5;
+    color: #b7a8e8;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-align: center;
+    padding: 4px 0 0;
+    min-height: 16px;
+  }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 4px 10px;
+    gap: 10px;
+  }
+  .arena-stage {
+    position: relative;
+    width: min(88vw, 400px);
+    aspect-ratio: 1 / 1;
+    max-height: 60%;
+    border-radius: 50%;
+    border: 1px solid rgba(142,79,255,0.2);
+    box-shadow: inset 0 0 40px rgba(142,79,255,0.1), 0 0 30px rgba(79,168,255,0.12);
+    overflow: hidden;
+    touch-action: none;
+    cursor: pointer;
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .banner {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .controls-row {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    width: 100%;
+    max-width: 380px;
+  }
+  .ctrl-btn {
+    flex: 1;
+    min-height: 44px;
+    max-width: 120px;
+    border-radius: 12px;
+    border: 1px solid rgba(142,79,255,0.35);
+    background: rgba(20,14,40,0.7);
+    color: #e4dcff;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
+  .ctrl-btn:active { transform: scale(0.95); }
+  .ctrl-btn.pulse-btn {
+    background: linear-gradient(135deg, rgba(255,108,196,0.25), rgba(142,79,255,0.25));
+    border-color: rgba(255,108,196,0.5);
+  }
+  .ctrl-btn.pulse-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(5,4,12,0.94);
+    border-radius: 50%;
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #8e4fff, 0 0 40px #4fa8ff;
+    margin: 0;
+  }
+  .subtitle {
+    color: #c7b8ff;
+    font-size: 12px;
+    max-width: 260px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #8e4fff, #4fa8ff);
+    border: none;
+    color: #05040c;
+    font-weight: 800;
+    font-size: 17px;
+    letter-spacing: 1px;
+    padding: 14px 34px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 130px;
+    box-shadow: 0 0 25px rgba(142,79,255,0.6), 0 0 45px rgba(79,168,255,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore { color: #fff; font-size: 15px; }
+  .finalscore b { color: #4fffd6; font-size: 20px; }
+  .highscore-line { color: #ffd84f; font-size: 13px; }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #b7a8e8;
+    font-size: 10px;
+    text-align: center;
+    padding: 2px 10px 10px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'orbitHarvestHighScore';
+const START_LIVES = 3;
+const CAPTURE_RAD = 0.13;
+const PULSE_COST = 40;
+const PULSE_WINDOW = 0.65;
+const INVULN_MS = 500;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function angDist(a, b) {
+  const d = Math.abs(a - b) % (Math.PI * 2);
+  return d > Math.PI ? Math.PI * 2 - d : d;
+}
+function ringCountForLevel(level) { return level >= 4 ? 4 : 3; }
+function angularSpeedForLevel(level) { return clamp(0.75 + level * 0.09, 0.75, 2.5); }
+
+function generateField(level, ringCount) {
+  const objects = [];
+  const baseTotal = 7 + level * 2;
+  const hazardFraction = clamp(0.2 + level * 0.025, 0.2, 0.55);
+  const minGap = 0.34;
+  for (let ring = 0; ring < ringCount; ring++) {
+    const perRing = Math.round(baseTotal / ringCount) + (Math.random() < 0.5 ? 0 : 1);
+    const angles = [];
+    let attempts = 0;
+    while (angles.length < perRing && attempts < perRing * 14) {
+      attempts++;
+      const a = Math.random() * Math.PI * 2;
+      if (angDist(a, 0) < 0.4) continue;
+      if (angles.every(x => angDist(x, a) > minGap)) angles.push(a);
+    }
+    for (const a of angles) {
+      const isHazard = Math.random() < hazardFraction;
+      objects.push({ ring, angle: a, type: isHazard ? 'hazard' : 'orb', consumed: false });
+    }
+  }
+  return objects;
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    orb: () => beep(640 + Math.random() * 80, 0.09, 'triangle', 0.08, 980),
+    hazard: () => beep(130, 0.3, 'sawtooth', 0.14, 40),
+    switchRing: () => beep(360, 0.05, 'square', 0.04, 480),
+    pulse: () => beep(220, 0.3, 'sawtooth', 0.1, 700),
+    levelup: () => {
+      beep(420, 0.1, 'triangle', 0.09);
+      setTimeout(() => beep(560, 0.12, 'triangle', 0.09), 90);
+      setTimeout(() => beep(700, 0.16, 'triangle', 0.09), 180);
+    },
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function buildInitialGame(level) {
+  const ringCount = ringCountForLevel(level);
+  return {
+    dims: { w: 320, h: 320 },
+    shipAngle: 0,
+    shipRing: 1,
+    ringCount,
+    objects: generateField(level, ringCount),
+    particles: [],
+    shockwave: null,
+    invulnerableUntil: 0,
+    flashColor: null, flashUntil: 0,
+    bannerClearAt: 0,
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    energy: 0, highScore: initialHigh, banner: '',
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+  const gameRef = useRef(buildInitialGame(1));
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 160) return;
+    for (let i = 0; i < (count || 10); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 50) + Math.random() * (spread || 50);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 320 + Math.random() * 240, maxLife: 560, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const showBanner = useCallback((text) => {
+    const g = gameRef.current;
+    g.bannerClearAt = performance.now() + 900;
+    setUi(prev => ({ ...prev, banner: text }));
+  }, []);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const takeHazardHit = useCallback((cx, cy) => {
+    const g = gameRef.current;
+    const now = performance.now();
+    g.flashColor = '#ff4f4f';
+    g.flashUntil = now + 240;
+    audio.hazard();
+    spawnParticles(cx, cy, '#ff4f6f', 18, 90);
+    showBanner('HIT!');
+    setUi(prev => {
+      const lives = prev.lives - 1;
+      if (lives <= 0) {
+        setTimeout(() => endGame(), 0);
+        return { ...prev, lives: 0, combo: 0, energy: 0 };
+      }
+      return { ...prev, lives, combo: 0, energy: 0 };
+    });
+  }, [audio, spawnParticles, showBanner, endGame]);
+
+  const collectOrb = useCallback((cx, cy) => {
+    const g = gameRef.current;
+    audio.orb();
+    spawnParticles(cx, cy, '#4fffd6', 12, 70);
+    setUi(prev => {
+      const combo = prev.combo + 1;
+      const gained = Math.round(10 * (1 + combo * 0.1));
+      const energy = clamp(prev.energy + 15, 0, 100);
+      return { ...prev, score: prev.score + gained, combo, energy };
+    });
+  }, [audio, spawnParticles]);
+
+  const completeLap = useCallback(() => {
+    const g = gameRef.current;
+    audio.levelup();
+    setUi(prev => {
+      const level = prev.level + 1;
+      g.ringCount = ringCountForLevel(level);
+      g.shipRing = clamp(g.shipRing, 0, g.ringCount - 1);
+      g.objects = generateField(level, g.ringCount);
+      setTimeout(() => showBanner(g.ringCount > ringCountForLevel(level - 1) ? 'NEW RING!' : 'LAP COMPLETE'), 0);
+      return { ...prev, level };
+    });
+  }, [audio, showBanner]);
+
+  const startGame = useCallback(() => {
+    gameRef.current = buildInitialGame(1);
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: START_LIVES,
+      level: 1, energy: 0, banner: '',
+    }));
+  }, []);
+
+  const press = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.phase === 'idle' || cur.phase === 'over') startGame();
+  }, [startGame]);
+
+  const switchRing = useCallback((dir) => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    const g = gameRef.current;
+    const target = clamp(g.shipRing + dir, 0, g.ringCount - 1);
+    if (target !== g.shipRing) {
+      g.shipRing = target;
+      audio.switchRing();
+    }
+  }, [audio]);
+
+  const setRingDirect = useCallback((idx) => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    const g = gameRef.current;
+    const target = clamp(idx, 0, g.ringCount - 1);
+    if (target !== g.shipRing) {
+      g.shipRing = target;
+      audio.switchRing();
+    }
+  }, [audio]);
+
+  const firePulse = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing' || cur.energy < PULSE_COST) return;
+    const g = gameRef.current;
+    let cleared = 0;
+    for (const obj of g.objects) {
+      if (obj.consumed || obj.ring !== g.shipRing || obj.type !== 'hazard') continue;
+      if (angDist(obj.angle, g.shipAngle) < PULSE_WINDOW) {
+        obj.consumed = true;
+        cleared++;
+      }
+    }
+    audio.pulse();
+    g.shockwave = { born: performance.now(), ring: g.shipRing };
+    setUi(prev => ({ ...prev, energy: 0, score: prev.score + cleared * 5 }));
+    if (cleared > 0) showBanner('PULSE CLEAR!');
+  }, [audio, showBanner]);
+
+  const onPointerDown = useCallback((e) => {
+    e.preventDefault();
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    const g = gameRef.current;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const cx = rect.width / 2, cy = rect.height / 2;
+    const px = e.clientX - rect.left - cx;
+    const py = e.clientY - rect.top - cy;
+    const dist = Math.hypot(px, py);
+    const maxR = Math.min(cx, cy) * 0.86;
+    const ringGap = maxR / (g.ringCount + 0.4);
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < g.ringCount; i++) {
+      const r = ringGap * (i + 1.2);
+      const d = Math.abs(dist - r);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    setRingDirect(best);
+  }, [setRingDirect]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (cur.phase === 'idle' || cur.phase === 'over') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGame(); }
+        return;
+      }
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); switchRing(1); }
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); switchRing(-1); }
+      else if (e.code === 'Space') { e.preventDefault(); firePulse(); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, switchRing, firePulse]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        gameRef.current.dims = { w: r.width, h: r.height };
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.033, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = g.dims.w, h = g.dims.h;
+      const now = performance.now();
+      const cx = w / 2, cy = h / 2;
+      const maxR = Math.min(cx, cy) * 0.86;
+      const ringGap = maxR / (g.ringCount + 0.4);
+      const ringRadii = [];
+      for (let i = 0; i < g.ringCount; i++) ringRadii.push(ringGap * (i + 1.2));
+
+      if (cur.phase === 'playing' && w > 0 && h > 0) {
+        const speed = angularSpeedForLevel(cur.level);
+        const prevAngle = g.shipAngle;
+        g.shipAngle += speed * dt;
+        if (g.shipAngle >= Math.PI * 2) {
+          g.shipAngle -= Math.PI * 2;
+          completeLap();
+        }
+
+        const shipR = ringRadii[g.shipRing];
+        for (const obj of g.objects) {
+          if (obj.consumed || obj.ring !== g.shipRing) continue;
+          if (angDist(obj.angle, g.shipAngle) < CAPTURE_RAD) {
+            obj.consumed = true;
+            const ox = cx + ringRadii[obj.ring] * Math.cos(obj.angle);
+            const oy = cy + ringRadii[obj.ring] * Math.sin(obj.angle);
+            if (obj.type === 'orb') collectOrb(ox, oy);
+            else if (now >= g.invulnerableUntil) {
+              g.invulnerableUntil = now + INVULN_MS;
+              takeHazardHit(ox, oy);
+            }
+          }
+        }
+
+        if (g.bannerClearAt && now > g.bannerClearAt) {
+          g.bannerClearAt = 0;
+          setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+        }
+      }
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vx *= 0.94; p.vy *= 0.94;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas && w > 0 && h > 0) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(6, ringGap * 0.55), 0, Math.PI * 2);
+        const coreGlow = 0.5 + 0.5 * Math.sin(now / 260);
+        ctx.fillStyle = 'rgba(142,79,255,' + (0.25 + coreGlow * 0.15) + ')';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(4, ringGap * 0.32), 0, Math.PI * 2);
+        ctx.fillStyle = '#8e4fff';
+        ctx.fill();
+
+        const ringColors = ['rgba(79,255,214,0.25)', 'rgba(79,168,255,0.25)', 'rgba(255,108,196,0.25)', 'rgba(255,216,79,0.25)'];
+        for (let i = 0; i < g.ringCount; i++) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, ringRadii[i], 0, Math.PI * 2);
+          ctx.strokeStyle = i === g.shipRing ? 'rgba(255,255,255,0.5)' : ringColors[i % ringColors.length];
+          ctx.lineWidth = i === g.shipRing ? 2.5 : 1.5;
+          ctx.stroke();
+        }
+
+        if (g.shockwave) {
+          const age = now - g.shockwave.born;
+          if (age < 400) {
+            const r = ringRadii[g.shockwave.ring];
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,108,196,' + (1 - age / 400) + ')';
+            ctx.lineWidth = 6 * (1 - age / 400) + 1;
+            ctx.stroke();
+          } else {
+            g.shockwave = null;
+          }
+        }
+
+        for (const obj of g.objects) {
+          if (obj.consumed) continue;
+          const r = ringRadii[obj.ring];
+          const ox = cx + r * Math.cos(obj.angle);
+          const oy = cy + r * Math.sin(obj.angle);
+          if (obj.type === 'orb') {
+            const pulse = 0.5 + 0.5 * Math.sin(now / 220 + obj.angle * 3);
+            ctx.beginPath();
+            ctx.arc(ox, oy, 7 + pulse * 2, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(79,255,214,0.18)';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(ox, oy, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#4fffd6';
+            ctx.fill();
+          } else {
+            ctx.save();
+            ctx.translate(ox, oy);
+            ctx.rotate(now / 400 + obj.angle);
+            ctx.beginPath();
+            ctx.moveTo(0, -8);
+            ctx.lineTo(8, 0);
+            ctx.lineTo(0, 8);
+            ctx.lineTo(-8, 0);
+            ctx.closePath();
+            ctx.fillStyle = '#ff4f6f';
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        if (cur.phase !== 'idle') {
+          const shipR = ringRadii[g.shipRing] || ringRadii[0] || 0;
+          const sx = cx + shipR * Math.cos(g.shipAngle);
+          const sy = cy + shipR * Math.sin(g.shipAngle);
+          const blinking = now < g.invulnerableUntil && Math.floor(now / 90) % 2 === 0;
+          if (!blinking) {
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(g.shipAngle + Math.PI / 2);
+            ctx.beginPath();
+            ctx.arc(0, 0, 13, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,216,79,0.2)';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(0, -9);
+            ctx.lineTo(7, 7);
+            ctx.lineTo(-7, 7);
+            ctx.closePath();
+            ctx.fillStyle = '#ffd84f';
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (g.flashColor && now < g.flashUntil) {
+          ctx.fillStyle = g.flashColor;
+          ctx.globalAlpha = 0.16;
+          ctx.fillRect(0, 0, w, h);
+          ctx.globalAlpha = 1;
+        } else if (g.flashColor && now >= g.flashUntil) {
+          g.flashColor = null;
+        }
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [collectOrb, takeHazardHit, completeLap]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+      <div className="stat-line" data-testid="status-line">{ui.phase === 'playing' ? ('Energy ' + ui.energy + '%') : ' '}</div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div
+          className="arena-stage"
+          ref={wrapRef}
+          data-testid="arena-stage"
+          onPointerDown={onPointerDown}
+        >
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+
+          {ui.phase !== 'playing' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">ORBIT HARVEST</h1>
+                  <p className="subtitle">Your probe orbits the core forever. Switch rings with Arrow Up/Down or W/S (or tap a ring, or the OUT/IN buttons) to harvest teal orbs and dodge red hazards. Fill energy by harvesting, then press Space or PULSE to blast hazards off your ring.</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">PROBE LOST</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>RELAUNCH</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="controls-row">
+          <button className="ctrl-btn" data-testid="out-btn" onPointerDown={(e) => { e.preventDefault(); switchRing(1); }}>▲ OUT</button>
+          <button
+            className="ctrl-btn pulse-btn"
+            data-testid="pulse-btn"
+            disabled={ui.energy < PULSE_COST}
+            onPointerDown={(e) => { e.preventDefault(); firePulse(); }}
+          >PULSE</button>
+          <button className="ctrl-btn" data-testid="in-btn" onPointerDown={(e) => { e.preventDefault(); switchRing(-1); }}>▼ IN</button>
+        </div>
+      </div>
+
+      <div className="hint">Arrow Up/Down or W/S to switch rings, tap a ring directly, Space/PULSE to blast hazards.</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
