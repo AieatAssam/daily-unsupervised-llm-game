@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Signal Weave</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05040d; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 4%, #101a2c 0%, #0a0e20 55%, #040308 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(79,255,214,0.06), rgba(79,168,255,0.08), rgba(255,108,196,0.06));
+    background-size: 400% 400%;
+    animation: drift 20s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 8px 0;
+    z-index: 5;
+    gap: 4px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #e4ecff;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4fffd6; text-shadow: 0 0 10px #4fffd6; }
+  .combo-val { color: #ff6cc4; text-shadow: 0 0 10px #ff6cc4; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #4fa8ff; text-shadow: 0 0 10px #4fa8ff; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+    gap: 10px;
+  }
+  .weave-stage {
+    position: relative;
+    width: min(92vw, 420px);
+    aspect-ratio: 4 / 3;
+    max-height: 62%;
+    border-radius: 18px;
+    border: 1px solid rgba(79,168,255,0.25);
+    box-shadow: inset 0 0 40px rgba(79,168,255,0.1), 0 0 30px rgba(142,79,255,0.12);
+    overflow: hidden;
+    touch-action: none;
+    cursor: crosshair;
+    background: rgba(8,10,22,0.6);
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .banner {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .controls-row {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    width: 100%;
+    max-width: 380px;
+  }
+  .ctrl-btn {
+    flex: 1;
+    min-height: 44px;
+    max-width: 180px;
+    border-radius: 12px;
+    border: 1px solid rgba(79,168,255,0.35);
+    background: rgba(12,16,34,0.7);
+    color: #e4ecff;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .ctrl-btn:active { transform: scale(0.96); }
+  .ctrl-btn.freeze-btn {
+    background: linear-gradient(135deg, rgba(79,168,255,0.25), rgba(79,255,214,0.25));
+    border-color: rgba(79,255,214,0.5);
+  }
+  .ctrl-btn.freeze-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .energy-fill {
+    position: absolute;
+    left: 0; bottom: 0; top: 0;
+    background: rgba(79,255,214,0.2);
+    z-index: -1;
+    transition: width 0.2s ease;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(5,4,12,0.94);
+    border-radius: 18px;
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4fa8ff, 0 0 40px #4fffd6;
+    margin: 0;
+  }
+  .subtitle {
+    color: #c7d6ff;
+    font-size: 12px;
+    max-width: 280px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4fa8ff, #4fffd6);
+    border: none;
+    color: #05040c;
+    font-weight: 800;
+    font-size: 17px;
+    letter-spacing: 1px;
+    padding: 14px 34px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 130px;
+    box-shadow: 0 0 25px rgba(79,168,255,0.6), 0 0 45px rgba(79,255,214,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore { color: #fff; font-size: 15px; }
+  .finalscore b { color: #4fffd6; font-size: 20px; }
+  .highscore-line { color: #ffd84f; font-size: 13px; }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #b7c8e8;
+    font-size: 10px;
+    text-align: center;
+    padding: 2px 10px 10px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'signalWeaveHighScore';
+const START_LIVES = 3;
+const NODE_CAPTURE_R = 26;
+const HAZARD_PAD = 6;
+const FREEZE_COST = 40;
+const FREEZE_MS = 2500;
+const INVULN_MS = 500;
+const TRAIL_MAX = 24;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+
+function nodesForLevel(level) { return clamp(4 + Math.floor(level / 2), 4, 9); }
+function hazardsForLevel(level) { return clamp(2 + Math.floor(level / 2), 2, 7); }
+function hazardSpeedForLevel(level) { return clamp(42 + level * 7, 42, 150); }
+function timeBudgetForLevel(level) { return clamp(15 - level * 0.7, 6.5, 15); }
+
+function generateLayout(level, w, h) {
+  const pad = 36;
+  const minGap = 46;
+  const nodes = [];
+  let attempts = 0;
+  const count = nodesForLevel(level);
+  while (nodes.length < count && attempts < count * 60) {
+    attempts++;
+    const x = pad + Math.random() * Math.max(1, w - pad * 2);
+    const y = pad + Math.random() * Math.max(1, h - pad * 2);
+    if (nodes.every(n => dist(n.x, n.y, x, y) > minGap)) {
+      nodes.push({ x, y, order: nodes.length + 1, captured: false });
+    }
+  }
+
+  const hazards = [];
+  const hCount = hazardsForLevel(level);
+  const speed = hazardSpeedForLevel(level);
+  let hAttempts = 0;
+  while (hazards.length < hCount && hAttempts < hCount * 60) {
+    hAttempts++;
+    const r = 15 + Math.random() * 7;
+    const x = pad + Math.random() * Math.max(1, w - pad * 2);
+    const y = pad + Math.random() * Math.max(1, h - pad * 2);
+    if (nodes.every(n => dist(n.x, n.y, x, y) > minGap * 0.7) &&
+        hazards.every(hz => dist(hz.x, hz.y, x, y) > r + hz.r + 20)) {
+      const ang = Math.random() * Math.PI * 2;
+      hazards.push({ x, y, r, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, spin: Math.random() * 10 });
+    }
+  }
+
+  return { nodes, hazards };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    capture: () => beep(560 + Math.random() * 120, 0.08, 'triangle', 0.08, 1100),
+    hazard: () => beep(140, 0.32, 'sawtooth', 0.14, 40),
+    freeze: () => beep(300, 0.3, 'sine', 0.09, 900),
+    timeout: () => beep(160, 0.4, 'square', 0.1, 60),
+    levelup: () => {
+      beep(440, 0.1, 'triangle', 0.09);
+      setTimeout(() => beep(580, 0.12, 'triangle', 0.09), 90);
+      setTimeout(() => beep(720, 0.16, 'triangle', 0.09), 180);
+    },
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function buildInitialGame(level) {
+  return {
+    dims: { w: 320, h: 240 },
+    nodes: [],
+    hazards: [],
+    currentIndex: 0,
+    trail: [],
+    particles: [],
+    pointerDown: false,
+    pointerX: -999,
+    pointerY: -999,
+    timeLeft: timeBudgetForLevel(level),
+    timeBudget: timeBudgetForLevel(level),
+    timeoutHandled: false,
+    freezeUntil: 0,
+    invulnerableUntil: 0,
+    flashColor: null, flashUntil: 0,
+    bannerClearAt: 0,
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    energy: 0, highScore: initialHigh, banner: '',
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+  const gameRef = useRef(buildInitialGame(1));
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 160) return;
+    for (let i = 0; i < (count || 10); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 50) + Math.random() * (spread || 50);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 320 + Math.random() * 240, maxLife: 560, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const showBanner = useCallback((text) => {
+    const g = gameRef.current;
+    g.bannerClearAt = performance.now() + 900;
+    setUi(prev => ({ ...prev, banner: text }));
+  }, []);
+
+  const regenLevel = useCallback((level, keepDims) => {
+    const g = gameRef.current;
+    const dims = keepDims ? g.dims : { w: 320, h: 240 };
+    const layout = generateLayout(level, dims.w, dims.h);
+    g.nodes = layout.nodes;
+    g.hazards = layout.hazards;
+    g.currentIndex = 0;
+    g.trail = [];
+    g.timeBudget = timeBudgetForLevel(level);
+    g.timeLeft = g.timeBudget;
+    g.timeoutHandled = false;
+    g.freezeUntil = 0;
+  }, []);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const loseLife = useCallback((reason) => {
+    const g = gameRef.current;
+    audio[reason === 'timeout' ? 'timeout' : 'hazard']();
+    g.flashColor = reason === 'timeout' ? '#ffd84f' : '#ff4f4f';
+    g.flashUntil = performance.now() + 240;
+    showBanner(reason === 'timeout' ? 'SIGNAL LOST!' : 'HIT!');
+    setUi(prev => {
+      const lives = prev.lives - 1;
+      if (lives <= 0) {
+        setTimeout(() => endGame(), 0);
+        return { ...prev, lives: 0, combo: 0, energy: 0 };
+      }
+      setTimeout(() => regenLevel(prev.level, true), 0);
+      return { ...prev, lives, combo: 0, energy: 0 };
+    });
+  }, [audio, showBanner, endGame, regenLevel]);
+
+  const captureNode = useCallback((nx, ny) => {
+    audio.capture();
+    spawnParticles(nx, ny, '#4fffd6', 14, 80);
+    setUi(prev => {
+      const combo = prev.combo + 1;
+      const gained = Math.round(12 * (1 + combo * 0.1));
+      const energy = clamp(prev.energy + 12, 0, 100);
+      return { ...prev, score: prev.score + gained, combo, energy };
+    });
+  }, [audio, spawnParticles]);
+
+  const completeWeave = useCallback(() => {
+    const g = gameRef.current;
+    audio.levelup();
+    setUi(prev => {
+      const bonus = Math.round(60 + g.timeLeft * 9 + prev.combo * 4);
+      const level = prev.level + 1;
+      setTimeout(() => { regenLevel(level, true); showBanner('WEAVE COMPLETE!'); }, 0);
+      return { ...prev, level, score: prev.score + bonus };
+    });
+  }, [audio, regenLevel, showBanner]);
+
+  const startGame = useCallback(() => {
+    gameRef.current = buildInitialGame(1);
+    const dims = wrapRef.current ? wrapRef.current.getBoundingClientRect() : { width: 320, height: 240 };
+    gameRef.current.dims = { w: dims.width, h: dims.height };
+    regenLevel(1, true);
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: START_LIVES,
+      level: 1, energy: 0, banner: '',
+    }));
+  }, [regenLevel]);
+
+  const press = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.phase === 'idle' || cur.phase === 'over') startGame();
+  }, [startGame]);
+
+  const fireFreeze = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing' || cur.energy < FREEZE_COST) return;
+    const g = gameRef.current;
+    g.freezeUntil = performance.now() + FREEZE_MS;
+    audio.freeze();
+    showBanner('HAZARDS FROZEN');
+    setUi(prev => ({ ...prev, energy: prev.energy - FREEZE_COST }));
+  }, [audio, showBanner]);
+
+  const toLocal = useCallback((clientX, clientY) => {
+    const rect = wrapRef.current.getBoundingClientRect();
+    return {
+      x: clamp(clientX - rect.left, 0, rect.width),
+      y: clamp(clientY - rect.top, 0, rect.height),
+    };
+  }, []);
+
+  const onPointerDown = useCallback((e) => {
+    e.preventDefault();
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    const g = gameRef.current;
+    const p = toLocal(e.clientX, e.clientY);
+    g.pointerDown = true;
+    g.pointerX = p.x;
+    g.pointerY = p.y;
+    g.trail.push({ x: p.x, y: p.y, t: performance.now() });
+  }, [toLocal]);
+
+  const onPointerMove = useCallback((e) => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing' || !gameRef.current.pointerDown) return;
+    e.preventDefault();
+    const g = gameRef.current;
+    const p = toLocal(e.clientX, e.clientY);
+    g.pointerX = p.x;
+    g.pointerY = p.y;
+    g.trail.push({ x: p.x, y: p.y, t: performance.now() });
+    if (g.trail.length > TRAIL_MAX) g.trail.splice(0, g.trail.length - TRAIL_MAX);
+  }, [toLocal]);
+
+  const onPointerUp = useCallback((e) => {
+    const g = gameRef.current;
+    g.pointerDown = false;
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (cur.phase === 'idle' || cur.phase === 'over') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGame(); }
+        return;
+      }
+      if (e.code === 'Space') { e.preventDefault(); fireFreeze(); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, fireFreeze]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        gameRef.current.dims = { w: r.width, h: r.height };
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.033, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = g.dims.w, h = g.dims.h;
+      const now = performance.now();
+
+      if (cur.phase === 'playing' && w > 0 && h > 0) {
+        const frozen = now < g.freezeUntil;
+
+        if (!frozen) {
+          for (const hz of g.hazards) {
+            hz.x += hz.vx * dt;
+            hz.y += hz.vy * dt;
+            if (hz.x - hz.r < 0 || hz.x + hz.r > w) { hz.vx *= -1; hz.x = clamp(hz.x, hz.r, w - hz.r); }
+            if (hz.y - hz.r < 0 || hz.y + hz.r > h) { hz.vy *= -1; hz.y = clamp(hz.y, hz.r, h - hz.r); }
+          }
+        }
+
+        g.timeLeft -= dt;
+        if (g.timeLeft <= 0 && !g.timeoutHandled) {
+          g.timeLeft = 0;
+          g.timeoutHandled = true;
+          setTimeout(() => loseLife('timeout'), 0);
+        }
+
+        if (g.pointerDown) {
+          const nextNode = g.nodes.find(n => n.order === g.currentIndex + 1 && !n.captured);
+          if (nextNode && dist(g.pointerX, g.pointerY, nextNode.x, nextNode.y) <= NODE_CAPTURE_R) {
+            nextNode.captured = true;
+            g.currentIndex++;
+            captureNode(nextNode.x, nextNode.y);
+            if (g.currentIndex >= g.nodes.length) {
+              setTimeout(() => completeWeave(), 0);
+            }
+          }
+          if (!frozen && now >= g.invulnerableUntil) {
+            for (const hz of g.hazards) {
+              if (dist(g.pointerX, g.pointerY, hz.x, hz.y) <= hz.r + HAZARD_PAD) {
+                g.invulnerableUntil = now + INVULN_MS;
+                spawnParticles(hz.x, hz.y, '#ff4f6f', 16, 90);
+                setTimeout(() => loseLife('hazard'), 0);
+                break;
+              }
+            }
+          }
+        }
+
+        if (g.bannerClearAt && now > g.bannerClearAt) {
+          g.bannerClearAt = 0;
+          setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+        }
+      }
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vx *= 0.94; p.vy *= 0.94;
+      }
+
+      while (g.trail.length && now - g.trail[0].t > 500) g.trail.shift();
+
+      const canvas = canvasRef.current;
+      if (canvas && w > 0 && h > 0) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        ctx.strokeStyle = 'rgba(79,168,255,0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let gx = 0; gx < w; gx += 28) { ctx.moveTo(gx, 0); ctx.lineTo(gx, h); }
+        for (let gy = 0; gy < h; gy += 28) { ctx.moveTo(0, gy); ctx.lineTo(w, gy); }
+        ctx.stroke();
+
+        const signalPulse = 0.4 + 0.6 * Math.abs(Math.sin(now / 240));
+        ctx.beginPath();
+        ctx.arc(14, 14, 5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(79,255,214,' + signalPulse + ')';
+        ctx.fill();
+
+        if (cur.phase === 'playing') {
+          const frac = clamp(g.timeLeft / g.timeBudget, 0, 1);
+          const barColor = frac > 0.5 ? '#4fffd6' : frac > 0.22 ? '#ffd84f' : '#ff4f6f';
+          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+          ctx.fillRect(10, 8, w - 20, 6);
+          ctx.fillStyle = barColor;
+          ctx.fillRect(10, 8, (w - 20) * frac, 6);
+        }
+
+        const frozen = now < g.freezeUntil;
+        for (const hz of g.hazards) {
+          hz.spin += dt * (frozen ? 0.4 : 3);
+          const cs = Math.cos(hz.spin), sn = Math.sin(hz.spin);
+          const pulse = 0.5 + 0.5 * Math.sin(now / 200 + hz.x);
+          ctx.beginPath();
+          ctx.arc(hz.x, hz.y, hz.r + pulse * 2, 0, Math.PI * 2);
+          ctx.fillStyle = frozen ? 'rgba(120,200,255,0.2)' : 'rgba(255,79,111,0.18)';
+          ctx.fill();
+          const pts = [[0, -hz.r], [hz.r, 0], [0, hz.r], [-hz.r, 0]];
+          ctx.beginPath();
+          for (let i = 0; i < pts.length; i++) {
+            const [px, py] = pts[i];
+            const rx = hz.x + px * cs - py * sn;
+            const ry = hz.y + px * sn + py * cs;
+            if (i === 0) ctx.moveTo(rx, ry); else ctx.lineTo(rx, ry);
+          }
+          ctx.closePath();
+          ctx.fillStyle = frozen ? '#a8e0ff' : '#ff4f6f';
+          ctx.fill();
+        }
+
+        for (const n of g.nodes) {
+          const isNext = !n.captured && n.order === g.currentIndex + 1;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, isNext ? 16 + 3 * Math.sin(now / 180) : 12, 0, Math.PI * 2);
+          ctx.fillStyle = n.captured ? 'rgba(79,255,214,0.18)' : isNext ? 'rgba(255,216,79,0.22)' : 'rgba(150,170,220,0.1)';
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, 7, 0, Math.PI * 2);
+          ctx.fillStyle = n.captured ? '#4fffd6' : isNext ? '#ffd84f' : '#6c7dab';
+          ctx.fill();
+          ctx.fillStyle = n.captured ? '#06211c' : '#120f00';
+          ctx.font = 'bold 10px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(n.order), n.x, n.y + 0.5);
+        }
+
+        if (g.trail.length > 1) {
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          const BUCKETS = 3;
+          for (let bIdx = 0; bIdx < BUCKETS; bIdx++) {
+            const loT = bIdx * (500 / BUCKETS), hiT = (bIdx + 1) * (500 / BUCKETS);
+            const alpha = clamp(1 - (loT + hiT) / 2 / 500, 0, 1);
+            ctx.strokeStyle = 'rgba(79,255,214,' + (alpha * 0.8) + ')';
+            ctx.lineWidth = 4 * alpha + 1;
+            ctx.beginPath();
+            let moved = false;
+            for (let i = 1; i < g.trail.length; i++) {
+              const a = g.trail[i - 1], b = g.trail[i];
+              const age = now - b.t;
+              if (age < loT || age >= hiT) { moved = false; continue; }
+              if (!moved) { ctx.moveTo(a.x, a.y); moved = true; }
+              ctx.lineTo(b.x, b.y);
+            }
+            ctx.stroke();
+          }
+        }
+
+        if (g.pointerDown && cur.phase === 'playing') {
+          ctx.beginPath();
+          ctx.arc(g.pointerX, g.pointerY, 6, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        }
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (g.flashColor && now < g.flashUntil) {
+          ctx.fillStyle = g.flashColor;
+          ctx.globalAlpha = 0.16;
+          ctx.fillRect(0, 0, w, h);
+          ctx.globalAlpha = 1;
+        } else if (g.flashColor && now >= g.flashUntil) {
+          g.flashColor = null;
+        }
+
+        if (frozen) {
+          ctx.fillStyle = 'rgba(79,168,255,0.06)';
+          ctx.fillRect(0, 0, w, h);
+        }
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [captureNode, completeWeave, loseLife, spawnParticles]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div
+          className="weave-stage"
+          ref={wrapRef}
+          data-testid="arena-stage"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        >
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+
+          {ui.phase !== 'playing' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">SIGNAL WEAVE</h1>
+                  <p className="subtitle">Drag across the field to connect the glowing nodes in order, 1 to N. Red hazards drift the grid — touching one mid-drag breaks your signal and costs a life. Charge energy by capturing nodes, then press Space or FREEZE to stall every hazard.</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">SIGNAL LOST</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>RECONNECT</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="controls-row">
+          <button
+            className="ctrl-btn freeze-btn"
+            data-testid="freeze-btn"
+            disabled={ui.energy < FREEZE_COST}
+            onPointerDown={(e) => { e.preventDefault(); fireFreeze(); }}
+          >
+            <span className="energy-fill" style={{ width: ui.energy + '%' }}></span>
+            FREEZE ({ui.energy}%)
+          </button>
+        </div>
+      </div>
+
+      <div className="hint">Drag to connect nodes 1→N in order. Dodge drifting hazards. Space/FREEZE stalls them when charged.</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

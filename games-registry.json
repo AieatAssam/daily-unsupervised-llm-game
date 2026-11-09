@@ -4645,5 +4645,26 @@
     "file": "games/2026-11-07/index.html",
     "preview": "games/2026-11-07/preview.png",
     "rating": 4.2
+  },
+  {
+    "id": "2026-11-09",
+    "name": "Signal Weave",
+    "date": "2026-11-09",
+    "description": "Drag across a neon grid to connect glowing nodes in order, 1 through N, while diamond-shaped hazards drift and bounce around the field. Touch a hazard mid-drag and your signal breaks — progress resets and a life cracks. Capturing nodes charges an energy meter; spend it with Space or the FREEZE button to stall every hazard for a few seconds, buying a safe window to finish the weave. Complete the sequence before the burning timer hits zero to bank a time-and-combo bonus and advance into a denser, faster level. Lose all three lives and the signal is lost for good.",
+    "tagline": "Weave the path. Dodge the drift. Beat the burn.",
+    "tags": [
+      "drawing",
+      "connect-the-dots",
+      "arcade",
+      "timing",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Drag (mouse or touch) across the field to connect nodes in order — Space or tap FREEZE to stall hazards when charged",
+    "folder": "games/2026-11-09",
+    "file": "games/2026-11-09/index.html",
+    "preview": "games/2026-11-09/preview.png",
+    "rating": 4.4
   }
 ]
