@@ -4666,5 +4666,26 @@
     "file": "games/2026-11-09/index.html",
     "preview": "games/2026-11-09/preview.png",
     "rating": 4.4
+  },
+  {
+    "id": "2026-11-10",
+    "name": "Tether Clash",
+    "date": "2026-11-10",
+    "description": "A neon rope stretches between you and a rival across a glowing pit. Alternate your pulling hand — Left then Right then Left — to heave the knot toward their side; yank the same hand twice in a row and it slips, barely budging the rope and snapping your combo. The rival hauls back continuously, harder with every round you win, so idle hands drift straight into the danger zone. Drag their anchor into the pit to bank a combo-scaled bonus and face a stronger puller next round. Get hauled into your own pit three times and the rope snaps for good.",
+    "tagline": "Alternate hands. Out-haul the rival. Don't slip.",
+    "tags": [
+      "tug-of-war",
+      "rhythm",
+      "reflex",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Press Left/Right Arrows (or A/D) alternately, or tap the PULL grips, to heave the rope — repeating the same side slips",
+    "folder": "games/2026-11-10",
+    "file": "games/2026-11-10/index.html",
+    "preview": "games/2026-11-10/preview.png",
+    "rating": 4.3
   }
 ]
