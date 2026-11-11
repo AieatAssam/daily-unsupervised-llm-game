@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Vault Spin</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05040d; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 4%, #1c1030 0%, #0a0e20 55%, #040308 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(255,196,79,0.06), rgba(142,79,255,0.08), rgba(79,255,214,0.06));
+    background-size: 400% 400%;
+    animation: drift 22s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 8px 0;
+    z-index: 5;
+    gap: 4px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #e4ecff;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .combo-val { color: #ff6cc4; text-shadow: 0 0 10px #ff6cc4; }
+  .lives-val { color: #4fffd6; text-shadow: 0 0 10px #4fffd6; }
+  .level-val { color: #8e7bff; text-shadow: 0 0 10px #8e7bff; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+    gap: 10px;
+  }
+  .vault-stage {
+    position: relative;
+    width: min(80vw, 340px);
+    aspect-ratio: 1 / 1;
+    max-height: 48%;
+    border-radius: 50%;
+    border: 1px solid rgba(142,123,255,0.25);
+    box-shadow: inset 0 0 40px rgba(142,123,255,0.1), 0 0 30px rgba(255,196,79,0.12);
+    overflow: hidden;
+    touch-action: none;
+    background: rgba(8,10,22,0.6);
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .banner {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .controls-row {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    width: 100%;
+    max-width: 380px;
+  }
+  .ctrl-btn {
+    flex: 1;
+    min-height: 52px;
+    max-width: 140px;
+    border-radius: 12px;
+    border: 1px solid rgba(142,123,255,0.35);
+    background: rgba(12,16,34,0.7);
+    color: #e4ecff;
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .ctrl-btn:active { transform: scale(0.95); }
+  .rotate-btn {
+    background: linear-gradient(135deg, rgba(142,123,255,0.28), rgba(142,123,255,0.1));
+    border-color: rgba(142,123,255,0.55);
+    color: #dcd3ff;
+  }
+  .crack-btn {
+    background: linear-gradient(135deg, rgba(255,196,79,0.3), rgba(255,196,79,0.1));
+    border-color: rgba(255,196,79,0.6);
+    color: #ffefc2;
+    font-size: 15px;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(5,4,12,0.94);
+    border-radius: 50%;
+    z-index: 10;
+    text-align: center;
+    padding: 14px 18px;
+    overflow-y: auto;
+  }
+  .title {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: #fff;
+    text-shadow: 0 0 20px #8e7bff, 0 0 40px #ffd84f;
+    margin: 0;
+  }
+  .subtitle {
+    color: #c7d6ff;
+    font-size: 10.5px;
+    max-width: 220px;
+    line-height: 1.4;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #8e7bff, #ffd84f);
+    border: none;
+    color: #05040c;
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 1px;
+    padding: 12px 26px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 44px;
+    min-width: 110px;
+    box-shadow: 0 0 25px rgba(142,123,255,0.6), 0 0 45px rgba(255,216,79,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore { color: #fff; font-size: 13px; }
+  .finalscore b { color: #ffd84f; font-size: 18px; }
+  .highscore-line { color: #4fffd6; font-size: 11px; }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #b7c8e8;
+    font-size: 10px;
+    text-align: center;
+    padding: 2px 10px 10px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'vaultSpinHighScore';
+const START_LIVES = 3;
+const ROTATE_SPEED = 170; // deg/sec while held
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function norm360(a) { let x = a % 360; if (x < 0) x += 360; return x; }
+function angleDiff(a, b) { return ((a - b + 540) % 360) - 180; }
+
+function tumblerParamsForLevel(level) {
+  const width = clamp(66 - level * 5, 16, 66);
+  const driftMag = 10 + level * 5.5;
+  const timeMs = clamp(7200 - level * 260, 2600, 7200);
+  return { width, driftMag, timeMs };
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    tick: () => beep(900, 0.04, 'square', 0.04),
+    crack: (perfect) => {
+      beep(520, 0.09, 'triangle', 0.09);
+      setTimeout(() => beep(720, 0.12, 'triangle', 0.09), 80);
+      if (perfect) setTimeout(() => beep(980, 0.16, 'triangle', 0.1), 160);
+    },
+    fail: () => beep(180, 0.28, 'sawtooth', 0.12, 60),
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function buildInitialGame() {
+  return {
+    dims: { w: 320, h: 320 },
+    needleAngle: 0,
+    targetCenter: 90,
+    targetWidth: 66,
+    driftSpeed: 12,
+    timeLeft: 7200,
+    timeTotal: 7200,
+    resolved: false,
+    particles: [],
+    flashColor: null, flashUntil: 0,
+    bannerClearAt: 0,
+    held: { left: false, right: false },
+    dragging: false,
+    lastTickSecond: -1,
+  };
+}
+
+function spawnTumbler(g, level, keepAngle) {
+  const { width, driftMag, timeMs } = tumblerParamsForLevel(level);
+  g.targetCenter = Math.random() * 360;
+  g.targetWidth = width;
+  g.driftSpeed = driftMag * (Math.random() < 0.5 ? 1 : -1);
+  g.timeLeft = timeMs;
+  g.timeTotal = timeMs;
+  g.resolved = false;
+  g.lastTickSecond = -1;
+  if (!keepAngle) g.needleAngle = Math.random() * 360;
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    highScore: initialHigh, banner: '',
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+  const gameRef = useRef(buildInitialGame());
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 160) return;
+    for (let i = 0; i < (count || 10); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 50) + Math.random() * (spread || 50);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 320 + Math.random() * 240, maxLife: 560, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const showBanner = useCallback((text) => {
+    const g = gameRef.current;
+    g.bannerClearAt = performance.now() + 900;
+    setUi(prev => ({ ...prev, banner: text }));
+  }, []);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const needleTip = useCallback((g, angleDeg, radiusFrac) => {
+    const w = g.dims.w, h = g.dims.h;
+    const cx = w / 2, cy = h / 2;
+    const r = Math.min(w, h) / 2 * radiusFrac;
+    const rad = (angleDeg - 90) * Math.PI / 180;
+    return { x: cx + Math.cos(rad) * r, y: cy + Math.sin(rad) * r };
+  }, []);
+
+  const loseLife = useCallback((reason) => {
+    const g = gameRef.current;
+    audio.fail();
+    g.flashColor = '#ff4f6f';
+    g.flashUntil = performance.now() + 240;
+    showBanner(reason);
+    const tip = needleTip(g, g.needleAngle, 0.88);
+    spawnParticles(tip.x, tip.y, '#ff4f6f', 14, 70);
+    setUi(prev => {
+      const lives = prev.lives - 1;
+      if (lives <= 0) {
+        setTimeout(() => endGame(), 0);
+        return { ...prev, lives: 0, combo: 0 };
+      }
+      setTimeout(() => {
+        spawnTumbler(gameRef.current, prev.level, false);
+      }, 0);
+      return { ...prev, lives, combo: 0 };
+    });
+  }, [audio, showBanner, endGame, needleTip, spawnParticles]);
+
+  const crack = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    const g = gameRef.current;
+    if (g.resolved) return;
+    const diff = Math.abs(angleDiff(g.needleAngle, g.targetCenter));
+    const inZone = diff <= g.targetWidth / 2;
+    if (!inZone) {
+      g.resolved = true;
+      loseLife('WRONG ALIGNMENT!');
+      return;
+    }
+    g.resolved = true;
+    const perfect = diff <= g.targetWidth * 0.2;
+    audio.crack(perfect);
+    showBanner(perfect ? 'PERFECT CRACK!' : 'TUMBLER CRACKED!');
+    const tip = needleTip(g, g.needleAngle, 0.88);
+    spawnParticles(tip.x, tip.y, perfect ? '#ffd84f' : '#4fffd6', perfect ? 22 : 14, 90);
+    setUi(prev => {
+      const nextCombo = prev.combo + 1;
+      const mult = 1 + Math.min(nextCombo, 10) * 0.15;
+      const gained = Math.round(100 * mult) + (perfect ? 50 : 0);
+      const totalCracks = (prev._cracks || 0) + 1;
+      const level = Math.floor(totalCracks / 3) + 1;
+      setTimeout(() => {
+        spawnTumbler(gameRef.current, level, false);
+      }, 0);
+      return { ...prev, combo: nextCombo, score: prev.score + gained, level, _cracks: totalCracks };
+    });
+  }, [audio, showBanner, needleTip, spawnParticles, loseLife]);
+
+  const startGame = useCallback(() => {
+    const g = gameRef.current;
+    g.particles = [];
+    g.held = { left: false, right: false };
+    g.dragging = false;
+    const dims = wrapRef.current ? wrapRef.current.getBoundingClientRect() : { width: 320, height: 320 };
+    g.dims = { w: dims.width, h: dims.height };
+    spawnTumbler(g, 1, false);
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: START_LIVES, level: 1, banner: '', _cracks: 0,
+    }));
+  }, []);
+
+  const press = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.phase === 'idle' || cur.phase === 'over') startGame();
+  }, [startGame]);
+
+  const setAngleFromPointer = useCallback((clientX, clientY) => {
+    const stage = wrapRef.current;
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = clientX - cx, dy = clientY - cy;
+    const deg = norm360(Math.atan2(dy, dx) * 180 / Math.PI + 90);
+    gameRef.current.needleAngle = deg;
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (cur.phase === 'idle' || cur.phase === 'over') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGame(); }
+        return;
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); gameRef.current.held.left = true; }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); gameRef.current.held.right = true; }
+      else if (e.code === 'Space') { if (!e.repeat) { e.preventDefault(); crack(); } }
+    }
+    function onKeyUp(e) {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') gameRef.current.held.left = false;
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') gameRef.current.held.right = false;
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
+  }, [startGame, crack]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        gameRef.current.dims = { w: r.width, h: r.height };
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.033, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = g.dims.w, h = g.dims.h;
+      const now = performance.now();
+
+      if (cur.phase === 'playing' && w > 0 && h > 0) {
+        if (g.held.left && !g.held.right) g.needleAngle = norm360(g.needleAngle - ROTATE_SPEED * dt);
+        else if (g.held.right && !g.held.left) g.needleAngle = norm360(g.needleAngle + ROTATE_SPEED * dt);
+
+        g.targetCenter = norm360(g.targetCenter + g.driftSpeed * dt);
+
+        if (!g.resolved) {
+          g.timeLeft -= dt * 1000;
+          const secLeft = Math.ceil(g.timeLeft / 1000);
+          if (secLeft <= 3 && secLeft >= 0 && secLeft !== g.lastTickSecond) {
+            g.lastTickSecond = secLeft;
+            audio.tick();
+          }
+          if (g.timeLeft <= 0) {
+            g.resolved = true;
+            loseLife("TIME'S UP!");
+          }
+        }
+
+        if (g.bannerClearAt && now > g.bannerClearAt) {
+          g.bannerClearAt = 0;
+          setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+        }
+      }
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vx *= 0.94; p.vy *= 0.94;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas && w > 0 && h > 0) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        const cx = w / 2, cy = h / 2;
+        const outerR = Math.min(w, h) / 2 - 4;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(14,12,30,0.9)';
+        ctx.fill();
+        ctx.restore();
+
+        // tick marks
+        for (let i = 0; i < 24; i++) {
+          const a = (i / 24) * 360;
+          const rad = (a - 90) * Math.PI / 180;
+          const r1 = outerR * 0.86, r2 = outerR * 0.94;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(rad) * r1, cy + Math.sin(rad) * r1);
+          ctx.lineTo(cx + Math.cos(rad) * r2, cy + Math.sin(rad) * r2);
+          ctx.strokeStyle = 'rgba(200,210,255,0.18)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
+        if (cur.phase === 'playing') {
+          // countdown ring
+          const frac = clamp(g.timeLeft / g.timeTotal, 0, 1);
+          const ringColor = frac > 0.5 ? '#4fffd6' : frac > 0.22 ? '#ffd84f' : '#ff4f6f';
+          ctx.beginPath();
+          ctx.arc(cx, cy, outerR - 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+          ctx.strokeStyle = ringColor;
+          ctx.lineWidth = 4;
+          ctx.shadowColor = ringColor;
+          ctx.shadowBlur = 10;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // target zone arc
+          const halfW = (g.targetWidth / 2) * Math.PI / 180;
+          const centerRad = (g.targetCenter - 90) * Math.PI / 180;
+          const zoneR = outerR * 0.78;
+          ctx.beginPath();
+          ctx.arc(cx, cy, zoneR, centerRad - halfW, centerRad + halfW);
+          ctx.lineWidth = outerR * 0.26;
+          ctx.strokeStyle = 'rgba(79,255,214,0.35)';
+          ctx.shadowColor = '#4fffd6';
+          ctx.shadowBlur = 16;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // inner perfect band
+          const innerHalfW = (g.targetWidth * 0.2) * Math.PI / 180;
+          ctx.beginPath();
+          ctx.arc(cx, cy, zoneR, centerRad - innerHalfW, centerRad + innerHalfW);
+          ctx.lineWidth = outerR * 0.26;
+          ctx.strokeStyle = 'rgba(255,216,79,0.5)';
+          ctx.stroke();
+        }
+
+        // needle
+        const needleRad = (g.needleAngle - 90) * Math.PI / 180;
+        const nx = cx + Math.cos(needleRad) * outerR * 0.88;
+        const ny = cy + Math.sin(needleRad) * outerR * 0.88;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(nx, ny);
+        ctx.strokeStyle = '#ff6cc4';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#ff6cc4';
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.beginPath();
+        ctx.arc(nx, ny, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff6cc4';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#e4ecff';
+        ctx.fill();
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (g.flashColor && now < g.flashUntil) {
+          ctx.fillStyle = g.flashColor;
+          ctx.globalAlpha = 0.18;
+          ctx.beginPath();
+          ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        } else if (g.flashColor && now >= g.flashUntil) {
+          g.flashColor = null;
+        }
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [loseLife]);
+
+  const onStagePointerDown = useCallback((e) => {
+    if (uiRef.current.phase !== 'playing') return;
+    gameRef.current.dragging = true;
+    setAngleFromPointer(e.clientX, e.clientY);
+  }, [setAngleFromPointer]);
+  const onStagePointerMove = useCallback((e) => {
+    if (!gameRef.current.dragging) return;
+    setAngleFromPointer(e.clientX, e.clientY);
+  }, [setAngleFromPointer]);
+  const onStagePointerUp = useCallback(() => { gameRef.current.dragging = false; }, []);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div
+          className="vault-stage"
+          ref={wrapRef}
+          data-testid="arena-stage"
+          onPointerDown={onStagePointerDown}
+          onPointerMove={onStagePointerMove}
+          onPointerUp={onStagePointerUp}
+          onPointerLeave={onStagePointerUp}
+        >
+          <canvas className="game-canvas" ref={canvasRef} data-testid="canvas"></canvas>
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+
+          {ui.phase !== 'playing' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">VAULT SPIN</h1>
+                  <p className="subtitle">Rotate the dial with Arrow keys / A-D, the ROTATE buttons, or drag directly on the dial. Line the needle up inside the glowing zone, then press Space or CRACK to pop the tumbler before time burns out. Wrong alignment or a timeout cracks a shield.</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">VAULT SEALED</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>RETRY</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="controls-row">
+          <button
+            className="ctrl-btn rotate-btn"
+            data-testid="rotate-left-btn"
+            onPointerDown={(e) => { e.preventDefault(); gameRef.current.held.left = true; }}
+            onPointerUp={(e) => { e.preventDefault(); gameRef.current.held.left = false; }}
+            onPointerLeave={() => { gameRef.current.held.left = false; }}
+          >◄ ROTATE</button>
+          <button
+            className="ctrl-btn crack-btn"
+            data-testid="crack-btn"
+            onPointerDown={(e) => { e.preventDefault(); crack(); }}
+          >CRACK</button>
+          <button
+            className="ctrl-btn rotate-btn"
+            data-testid="rotate-right-btn"
+            onPointerDown={(e) => { e.preventDefault(); gameRef.current.held.right = true; }}
+            onPointerUp={(e) => { e.preventDefault(); gameRef.current.held.right = false; }}
+            onPointerLeave={() => { gameRef.current.held.right = false; }}
+          >ROTATE ►</button>
+        </div>
+      </div>
+
+      <div className="hint">Drag the dial or hold Arrow keys / A-D to rotate, then press Space or CRACK while aligned.</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

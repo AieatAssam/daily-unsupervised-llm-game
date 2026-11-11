@@ -4687,5 +4687,26 @@
     "file": "games/2026-11-10/index.html",
     "preview": "games/2026-11-10/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-11-11",
+    "name": "Vault Spin",
+    "date": "2026-11-11",
+    "description": "A glowing vault dial fills the stage, its needle ready to rotate and a bright target arc drifting around the rim. Drag the dial directly, hold Arrow keys / A-D, or tap the ROTATE buttons to spin the needle, then press Space or CRACK the instant it sits inside the zone to pop the tumbler — land inside the inner gold band for a Perfect bonus. A burning countdown ring races against you on every tumbler, and cracking while misaligned or letting the ring run out both cost a shield. Chain cracks for a rising combo multiplier and climb the levels as the zone narrows and drifts faster. Lose all three shields and the vault seals for good.",
+    "tagline": "Spin the dial. Time the crack. Don't miss the zone.",
+    "tags": [
+      "precision",
+      "timing",
+      "safecracking",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Drag the dial, hold Arrow keys / A-D or the ROTATE buttons to spin the needle, then press Space or tap CRACK while aligned with the target zone",
+    "folder": "games/2026-11-11",
+    "file": "games/2026-11-11/index.html",
+    "preview": "games/2026-11-11/preview.png",
+    "rating": 4.4
   }
 ]
