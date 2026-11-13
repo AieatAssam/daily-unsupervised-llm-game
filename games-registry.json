@@ -4687,5 +4687,26 @@
     "file": "games/2026-11-10/index.html",
     "preview": "games/2026-11-10/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-11-13",
+    "name": "Beam Pivot",
+    "date": "2026-11-13",
+    "description": "A neon laser fires forever from its source across a grid of empty cells. Click or tap any cell — or move a cursor with Arrow keys / the D-pad and press Space / ROTATE — to cycle it through empty, /, and \\ mirrors, bending the beam's path. Route it onto the glowing target and hold the connection to charge a hit before the round timer burns out; red blocker cells swallow the beam outright, so you have to detour around them. Successful charges relocate the target and, every couple of levels, drop in another blocker, while missed charges cost a life and reset your combo.",
+    "tagline": "Bend mirrors. Hold the beam on target. Beat the clock.",
+    "tags": [
+      "puzzle",
+      "laser",
+      "routing",
+      "reflex",
+      "arcade"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Click/tap a grid cell to cycle its mirror (empty → / → \\), or move the cursor with Arrow keys / WASD / the D-pad and press Space or ROTATE to cycle the selected cell — route the beam onto the target and hold it there to charge a hit",
+    "folder": "games/2026-11-13",
+    "file": "games/2026-11-13/index.html",
+    "preview": "games/2026-11-13/preview.png",
+    "rating": 4.2
   }
 ]

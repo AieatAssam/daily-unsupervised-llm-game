@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Beam Pivot</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05040d; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    position: relative;
+    background: radial-gradient(circle at 50% 4%, #101a2c 0%, #0a0e20 55%, #040308 100%);
+    overflow: hidden;
+  }
+  .bg-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(120deg, rgba(79,168,255,0.07), rgba(166,79,255,0.08), rgba(79,255,214,0.06));
+    background-size: 400% 400%;
+    animation: drift 20s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 8px 0;
+    z-index: 5;
+    gap: 4px;
+  }
+  .hud-item {
+    flex: 1;
+    text-align: center;
+    color: #e4ecff;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hud-value {
+    font-size: 18px;
+    font-weight: 700;
+    display: block;
+    margin-top: 2px;
+  }
+  .score-val { color: #4fffd6; text-shadow: 0 0 10px #4fffd6; }
+  .combo-val { color: #ff6cc4; text-shadow: 0 0 10px #ff6cc4; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .level-val { color: #4fa8ff; text-shadow: 0 0 10px #4fa8ff; }
+  .field-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    min-height: 0;
+    padding: 6px 10px;
+    gap: 10px;
+  }
+  .beam-stage {
+    position: relative;
+    width: min(94vw, 440px);
+    aspect-ratio: 7 / 5;
+    max-height: 58%;
+    border-radius: 18px;
+    border: 1px solid rgba(79,168,255,0.25);
+    box-shadow: inset 0 0 40px rgba(79,168,255,0.1), 0 0 30px rgba(166,79,255,0.14);
+    overflow: hidden;
+    touch-action: none;
+    background: rgba(8,10,22,0.6);
+  }
+  canvas.game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .banner {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd84f;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #ffd84f;
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .controls-row {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    width: 100%;
+    max-width: 420px;
+  }
+  .ctrl-btn {
+    flex: 1;
+    min-height: 48px;
+    max-width: 100px;
+    border-radius: 10px;
+    border: 1px solid rgba(79,168,255,0.35);
+    background: rgba(12,16,34,0.7);
+    color: #e4ecff;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    position: relative;
+  }
+  .ctrl-btn:active { transform: scale(0.93); }
+  .dir-btn {
+    background: linear-gradient(135deg, rgba(79,168,255,0.28), rgba(79,168,255,0.1));
+    border-color: rgba(79,168,255,0.55);
+    color: #bfe0ff;
+  }
+  .rotate-btn-el {
+    background: linear-gradient(135deg, rgba(166,79,255,0.32), rgba(255,108,196,0.14));
+    border-color: rgba(255,108,196,0.55);
+    color: #ffd3ee;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(5,4,12,0.94);
+    border-radius: 18px;
+    z-index: 10;
+    text-align: center;
+    padding: 14px 18px;
+    overflow-y: auto;
+  }
+  .title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 20px #4fa8ff, 0 0 40px #a64fff;
+    margin: 0;
+  }
+  .subtitle {
+    color: #c7d6ff;
+    font-size: 12px;
+    max-width: 320px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  button.start-btn {
+    background: linear-gradient(135deg, #4fa8ff, #a64fff);
+    border: none;
+    color: #05040c;
+    font-weight: 800;
+    font-size: 17px;
+    letter-spacing: 1px;
+    padding: 14px 34px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 48px;
+    min-width: 130px;
+    box-shadow: 0 0 25px rgba(79,168,255,0.6), 0 0 45px rgba(166,79,255,0.4);
+    transition: transform 0.12s ease;
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .finalscore { color: #fff; font-size: 15px; }
+  .finalscore b { color: #4fffd6; font-size: 20px; }
+  .highscore-line { color: #ffd84f; font-size: 13px; }
+  .hint {
+    position: relative;
+    z-index: 5;
+    color: #b7c8e8;
+    font-size: 10px;
+    text-align: center;
+    padding: 2px 10px 8px;
+    opacity: 0.75;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useState, useCallback, useMemo } = React;
+
+const HIGH_SCORE_KEY = 'beamPivotHighScore';
+const START_LIVES = 3;
+const ROWS = 5, COLS = 7;
+const SRC_R = 2, SRC_C = 0;
+const MAX_BLOCKERS = 9;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function cellKey(r, c) { return r + ',' + c; }
+
+function emptyMirrors() {
+  return Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+}
+
+function pickTarget(blockers) {
+  let tries = 0;
+  while (tries < 200) {
+    tries++;
+    const r = Math.floor(Math.random() * ROWS);
+    const c = 3 + Math.floor(Math.random() * (COLS - 3));
+    if (r === SRC_R && c === SRC_C) continue;
+    if (blockers.has(cellKey(r, c))) continue;
+    return { r, c };
+  }
+  return { r: SRC_R, c: COLS - 1 };
+}
+
+function addBlocker(blockers, target) {
+  let tries = 0;
+  while (tries < 100) {
+    tries++;
+    const r = Math.floor(Math.random() * ROWS);
+    const c = 1 + Math.floor(Math.random() * (COLS - 1));
+    const key = cellKey(r, c);
+    if (r === SRC_R && c <= SRC_C + 1) continue;
+    if (r === target.r && c === target.c) continue;
+    if (blockers.has(key)) continue;
+    blockers.add(key);
+    return;
+  }
+}
+
+function traceBeam(mirrors, blockers) {
+  let r = SRC_R, c = SRC_C, dx = 1, dy = 0;
+  const path = [{ r, c }];
+  const visited = new Set();
+  for (let steps = 0; steps < 80; steps++) {
+    const m = mirrors[r][c];
+    if (m === 1) { const ndx = -dy, ndy = -dx; dx = ndx; dy = ndy; }
+    else if (m === 2) { const ndx = dy, ndy = dx; dx = ndx; dy = ndy; }
+    const nr = r + dy, nc = c + dx;
+    if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) break;
+    if (blockers.has(cellKey(nr, nc))) { path.push({ r: nr, c: nc }); break; }
+    const key = nr + ',' + nc + ',' + dx + ',' + dy;
+    if (visited.has(key)) break;
+    visited.add(key);
+    r = nr; c = nc;
+    path.push({ r, c });
+  }
+  return path;
+}
+
+function roundDurationForLevel(level) {
+  return Math.max(3.4, 9 - (level - 1) * 0.35);
+}
+
+function useAudio() {
+  const ctxRef = useRef(null);
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new AC();
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    return ctxRef.current;
+  }, []);
+
+  const beep = useCallback((freq, dur, type, vol, slideTo) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      if (slideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), now + dur);
+      gain.gain.value = vol == null ? 0.08 : vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* audio unavailable */ }
+  }, [getCtx]);
+
+  return useMemo(() => ({
+    rotate: () => beep(360 + Math.random() * 60, 0.05, 'square', 0.05, 320),
+    tick: () => beep(620, 0.05, 'triangle', 0.05),
+    hit: () => {
+      beep(520, 0.09, 'triangle', 0.09);
+      setTimeout(() => beep(700, 0.1, 'triangle', 0.09), 80);
+      setTimeout(() => beep(920, 0.16, 'triangle', 0.09), 160);
+    },
+    fail: () => beep(220, 0.3, 'sawtooth', 0.11, 70),
+    gameover: () => beep(90, 0.55, 'sawtooth', 0.12, 40),
+  }), [beep]);
+}
+
+function buildInitialGame() {
+  return {
+    dims: { w: 440, h: 320 },
+    layout: { cellSize: 40, offX: 0, offY: 0 },
+    mirrors: emptyMirrors(),
+    blockers: new Set(),
+    target: { r: SRC_R, c: COLS - 1 },
+    charge: 0,
+    lastTickThresh: 0,
+    timeLeft: 9,
+    roundDuration: 9,
+    resolved: false,
+    particles: [],
+    flashColor: null, flashUntil: 0,
+    bannerClearAt: 0,
+  };
+}
+
+function App() {
+  const wrapRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  const initialHigh = (() => {
+    const v = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const [ui, setUi] = useState({
+    phase: 'idle', score: 0, combo: 0, lives: START_LIVES, level: 1,
+    highScore: initialHigh, banner: '', cursor: { r: 2, c: 3 }, rotateTick: 0,
+  });
+  const uiRef = useRef(ui);
+  useEffect(() => { uiRef.current = ui; }, [ui]);
+
+  const audio = useAudio();
+  const gameRef = useRef(buildInitialGame());
+
+  const spawnParticles = useCallback((cx, cy, color, count, spread) => {
+    const parts = gameRef.current.particles;
+    if (parts.length > 160) return;
+    for (let i = 0; i < (count || 10); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = (spread || 50) + Math.random() * (spread || 50);
+      parts.push({
+        x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        life: 320 + Math.random() * 240, maxLife: 560, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }, []);
+
+  const showBanner = useCallback((text) => {
+    const g = gameRef.current;
+    g.bannerClearAt = performance.now() + 900;
+    setUi(prev => ({ ...prev, banner: text }));
+  }, []);
+
+  const initRound = useCallback((level) => {
+    const g = gameRef.current;
+    const duration = roundDurationForLevel(level);
+    g.target = pickTarget(g.blockers);
+    g.roundDuration = duration;
+    g.timeLeft = duration;
+    g.charge = 0;
+    g.lastTickThresh = 0;
+    g.resolved = false;
+  }, []);
+
+  const endGame = useCallback(() => {
+    const cur = uiRef.current;
+    const newHigh = Math.max(cur.score, cur.highScore);
+    localStorage.setItem(HIGH_SCORE_KEY, String(newHigh));
+    audio.gameover();
+    setUi(prev => ({ ...prev, phase: 'over', highScore: newHigh }));
+  }, [audio]);
+
+  const onTimeout = useCallback(() => {
+    const g = gameRef.current;
+    audio.fail();
+    g.flashColor = '#ff4f6f';
+    g.flashUntil = performance.now() + 240;
+    showBanner('TIME OUT!');
+    setUi(prev => {
+      const lives = prev.lives - 1;
+      if (lives <= 0) {
+        setTimeout(() => endGame(), 0);
+        return { ...prev, lives: 0, combo: 0 };
+      }
+      setTimeout(() => initRound(prev.level), 0);
+      return { ...prev, lives, combo: 0 };
+    });
+  }, [audio, showBanner, endGame, initRound]);
+
+  const onHit = useCallback(() => {
+    const g = gameRef.current;
+    const cellSize = g.layout.cellSize || 40;
+    const cx = g.layout.offX + (g.target.c + 0.5) * cellSize;
+    const cy = g.layout.offY + (g.target.r + 0.5) * cellSize;
+    spawnParticles(cx, cy, '#ffd84f', 22, 90);
+    audio.hit();
+    showBanner('CHARGED!');
+    setUi(prev => {
+      const nextCombo = prev.combo + 1;
+      const gained = 50 + nextCombo * 8;
+      const level = prev.level + 1;
+      if (level % 2 === 0 && g.blockers.size < MAX_BLOCKERS) addBlocker(g.blockers, g.target);
+      setTimeout(() => initRound(level), 0);
+      return { ...prev, score: prev.score + gained, combo: nextCombo, level };
+    });
+  }, [audio, showBanner, spawnParticles, initRound]);
+
+  const moveCursor = useCallback((dr, dc) => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    setUi(prev => ({
+      ...prev,
+      cursor: {
+        r: clamp(prev.cursor.r + dr, 0, ROWS - 1),
+        c: clamp(prev.cursor.c + dc, 0, COLS - 1),
+      },
+    }));
+  }, []);
+
+  const rotateCell = useCallback((r, c) => {
+    const cur = uiRef.current;
+    if (cur.phase !== 'playing') return;
+    const g = gameRef.current;
+    const blocked = (r === SRC_R && c === SRC_C) || g.blockers.has(cellKey(r, c)) ||
+      (r === g.target.r && c === g.target.c);
+    if (!blocked) {
+      g.mirrors[r][c] = (g.mirrors[r][c] + 1) % 3;
+      audio.rotate();
+    }
+    setUi(prev => ({ ...prev, cursor: { r, c }, rotateTick: prev.rotateTick + 1 }));
+  }, [audio]);
+
+  const rotateCursor = useCallback(() => {
+    const cur = uiRef.current;
+    rotateCell(cur.cursor.r, cur.cursor.c);
+  }, [rotateCell]);
+
+  const handleCanvasPoint = useCallback((clientX, clientY) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left, y = clientY - rect.top;
+    const g = gameRef.current;
+    const { cellSize, offX, offY } = g.layout;
+    if (!cellSize) return;
+    const c = Math.floor((x - offX) / cellSize);
+    const r = Math.floor((y - offY) / cellSize);
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+    rotateCell(r, c);
+  }, [rotateCell]);
+
+  const startGame = useCallback(() => {
+    const g = gameRef.current;
+    g.mirrors = emptyMirrors();
+    g.blockers = new Set();
+    addBlocker(g.blockers, { r: SRC_R, c: COLS - 1 });
+    addBlocker(g.blockers, { r: SRC_R, c: COLS - 1 });
+    addBlocker(g.blockers, { r: SRC_R, c: COLS - 1 });
+    g.particles = [];
+    const dims = wrapRef.current ? wrapRef.current.getBoundingClientRect() : { width: 440, height: 320 };
+    g.dims = { w: dims.width, h: dims.height };
+    setUi(prev => ({
+      ...prev, phase: 'playing', score: 0, combo: 0, lives: START_LIVES, level: 1, banner: '',
+      cursor: { r: 2, c: 3 }, rotateTick: 0,
+    }));
+    initRound(1);
+  }, [initRound]);
+
+  const press = useCallback(() => {
+    const cur = uiRef.current;
+    if (cur.phase === 'idle' || cur.phase === 'over') startGame();
+  }, [startGame]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const cur = uiRef.current;
+      if (cur.phase === 'idle' || cur.phase === 'over') {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGame(); }
+        return;
+      }
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); moveCursor(-1, 0); }
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); moveCursor(1, 0); }
+      else if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); moveCursor(0, -1); }
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); moveCursor(0, 1); }
+      else if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); rotateCursor(); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [startGame, moveCursor, rotateCursor]);
+
+  useEffect(() => {
+    function updateDims() {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        gameRef.current.dims = { w: r.width, h: r.height };
+      }
+    }
+    updateDims();
+    window.addEventListener('resize', updateDims);
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  useEffect(() => {
+    let raf;
+    let last = performance.now();
+    const loop = (t) => {
+      const dt = Math.min(0.033, (t - last) / 1000);
+      last = t;
+      const cur = uiRef.current;
+      const g = gameRef.current;
+      const w = g.dims.w, h = g.dims.h;
+      const now = performance.now();
+
+      const path = traceBeam(g.mirrors, g.blockers);
+      const onTarget = path.some(p => p.r === g.target.r && p.c === g.target.c);
+
+      if (cur.phase === 'playing' && w > 0 && h > 0 && !g.resolved) {
+        g.timeLeft -= dt;
+        if (onTarget) {
+          g.charge = clamp(g.charge + dt * 130, 0, 100);
+        } else {
+          g.charge = clamp(g.charge - dt * 90, 0, 100);
+        }
+        const thresh = Math.floor(g.charge / 25);
+        if (thresh > g.lastTickThresh && g.charge < 100) {
+          g.lastTickThresh = thresh;
+          audio.tick();
+        }
+        if (g.charge >= 100) {
+          g.resolved = true;
+          setTimeout(() => onHit(), 0);
+        } else if (g.timeLeft <= 0) {
+          g.resolved = true;
+          setTimeout(() => onTimeout(), 0);
+        }
+        if (g.bannerClearAt && now > g.bannerClearAt) {
+          g.bannerClearAt = 0;
+          setUi(prev => (prev.banner ? { ...prev, banner: '' } : prev));
+        }
+      }
+
+      const parts = g.particles;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.life -= dt * 1000;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vx *= 0.94; p.vy *= 0.94;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas && w > 0 && h > 0) {
+        const cw = Math.max(1, Math.round(w));
+        const ch = Math.max(1, Math.round(h));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+
+        const cellSize = Math.max(1, Math.min(w / COLS, h / ROWS));
+        const offX = (w - cellSize * COLS) / 2;
+        const offY = (h - cellSize * ROWS) / 2;
+        g.layout = { cellSize, offX, offY };
+        const cellCenter = (r, c) => ({ x: offX + (c + 0.5) * cellSize, y: offY + (r + 0.5) * cellSize });
+
+        // grid lines
+        ctx.strokeStyle = 'rgba(120,150,220,0.14)';
+        ctx.lineWidth = 1;
+        for (let r = 0; r <= ROWS; r++) {
+          ctx.beginPath(); ctx.moveTo(offX, offY + r * cellSize); ctx.lineTo(offX + COLS * cellSize, offY + r * cellSize); ctx.stroke();
+        }
+        for (let c = 0; c <= COLS; c++) {
+          ctx.beginPath(); ctx.moveTo(offX + c * cellSize, offY); ctx.lineTo(offX + c * cellSize, offY + ROWS * cellSize); ctx.stroke();
+        }
+
+        // blockers
+        ctx.fillStyle = 'rgba(255,79,111,0.28)';
+        ctx.strokeStyle = 'rgba(255,79,111,0.8)';
+        ctx.lineWidth = 2;
+        g.blockers.forEach(key => {
+          const [r, c] = key.split(',').map(Number);
+          const pad = cellSize * 0.12;
+          ctx.fillRect(offX + c * cellSize + pad, offY + r * cellSize + pad, cellSize - pad * 2, cellSize - pad * 2);
+          ctx.strokeRect(offX + c * cellSize + pad, offY + r * cellSize + pad, cellSize - pad * 2, cellSize - pad * 2);
+        });
+
+        // mirrors (double-stroke glow, cheaper than shadowBlur)
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const m = g.mirrors[r][c];
+            if (!m) continue;
+            const { x, y } = cellCenter(r, c);
+            const half = cellSize * 0.34;
+            ctx.beginPath();
+            if (m === 1) { ctx.moveTo(x - half, y + half); ctx.lineTo(x + half, y - half); }
+            else { ctx.moveTo(x - half, y - half); ctx.lineTo(x + half, y + half); }
+            ctx.lineWidth = Math.max(4, cellSize * 0.2);
+            ctx.strokeStyle = 'rgba(79,168,255,0.28)';
+            ctx.stroke();
+            ctx.lineWidth = Math.max(2, cellSize * 0.08);
+            ctx.strokeStyle = '#8fd0ff';
+            ctx.stroke();
+          }
+        }
+
+        // beam path (double-stroke glow)
+        if (cur.phase === 'playing') {
+          const glowColor = onTarget ? 'rgba(255,216,79,0.35)' : 'rgba(79,255,214,0.3)';
+          const coreColor = onTarget ? '#ffe8a3' : '#9affe8';
+          ctx.beginPath();
+          path.forEach((p, i) => {
+            const { x, y } = cellCenter(p.r, p.c);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          });
+          ctx.lineWidth = Math.max(5, cellSize * 0.24);
+          ctx.strokeStyle = glowColor;
+          ctx.stroke();
+          ctx.lineWidth = Math.max(2, cellSize * 0.09);
+          ctx.strokeStyle = coreColor;
+          ctx.stroke();
+        }
+
+        // source
+        {
+          const { x, y } = cellCenter(SRC_R, SRC_C);
+          ctx.beginPath(); ctx.arc(x, y, cellSize * 0.32, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(79,168,255,0.22)'; ctx.fill();
+          ctx.beginPath(); ctx.arc(x, y, cellSize * 0.2, 0, Math.PI * 2);
+          ctx.fillStyle = '#4fa8ff'; ctx.fill();
+        }
+
+        // target
+        if (cur.phase === 'playing') {
+          const { x, y } = cellCenter(g.target.r, g.target.c);
+          const pulse = 0.5 + 0.5 * Math.sin(now / 160);
+          ctx.beginPath(); ctx.arc(x, y, cellSize * 0.38 + pulse * 2, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255,216,79,0.18)'; ctx.fill();
+          ctx.beginPath(); ctx.arc(x, y, cellSize * 0.22, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffd84f'; ctx.fill();
+          // charge ring
+          ctx.beginPath();
+          ctx.lineWidth = Math.max(2, cellSize * 0.08);
+          ctx.strokeStyle = '#fff';
+          ctx.arc(x, y, cellSize * 0.42, -Math.PI / 2, -Math.PI / 2 + (g.charge / 100) * Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // cursor
+        if (cur.phase === 'playing') {
+          const { x, y } = cellCenter(cur.cursor.r, cur.cursor.c);
+          const blink = 0.4 + 0.6 * Math.abs(Math.sin(now / 240));
+          ctx.strokeStyle = 'rgba(255,255,255,' + blink + ')';
+          ctx.lineWidth = 2;
+          const half = cellSize * 0.46;
+          ctx.strokeRect(x - half, y - half, half * 2, half * 2);
+        }
+
+        // round timer bar
+        if (cur.phase === 'playing') {
+          const frac = clamp(g.timeLeft / g.roundDuration, 0, 1);
+          const barColor = frac > 0.5 ? '#4fffd6' : frac > 0.25 ? '#ffd84f' : '#ff4f6f';
+          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+          ctx.fillRect(10, 8, w - 20, 6);
+          ctx.fillStyle = barColor;
+          ctx.fillRect(10, 8, (w - 20) * frac, 6);
+        }
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (g.flashColor && now < g.flashUntil) {
+          ctx.fillStyle = g.flashColor;
+          ctx.globalAlpha = 0.16;
+          ctx.fillRect(0, 0, w, h);
+          ctx.globalAlpha = 1;
+        } else if (g.flashColor && now >= g.flashUntil) {
+          g.flashColor = null;
+        }
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [audio, onHit, onTimeout]);
+
+  return (
+    <div className="app">
+      <div className="bg-grad"></div>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Combo<span className="hud-value combo-val" data-testid="combo">{ui.combo}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{ui.lives}</span></div>
+        <div className="hud-item">Level<span className="hud-value level-val" data-testid="level">{ui.level}</span></div>
+      </div>
+
+      <div className="field-wrap" data-testid="play-field">
+        <div className="beam-stage" ref={wrapRef} data-testid="arena-stage">
+          <canvas
+            className="game-canvas"
+            ref={canvasRef}
+            data-testid="canvas"
+            onPointerDown={(e) => { e.preventDefault(); handleCanvasPoint(e.clientX, e.clientY); }}
+          ></canvas>
+          <div className="banner" data-testid="banner">{ui.banner || ' '}</div>
+          <span
+            data-testid="cursor-state"
+            data-r={ui.cursor.r}
+            data-c={ui.cursor.c}
+            data-tick={ui.rotateTick}
+            style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
+          ></span>
+
+          {ui.phase !== 'playing' && (
+            <div className="overlay">
+              {ui.phase === 'idle' && (
+                <React.Fragment>
+                  <h1 className="title">BEAM PIVOT</h1>
+                  <p className="subtitle">Click/tap a grid cell (or move the cursor with Arrow keys / the D-pad and press Space / ROTATE) to cycle a mirror: empty, then /, then \. Route the laser onto the glowing target and hold it there to charge a hit before the timer burns out. Red blocks swallow the beam — route around them. Three missed charges and the beam goes dark.</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>START</button>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                </React.Fragment>
+              )}
+              {ui.phase === 'over' && (
+                <React.Fragment>
+                  <h1 className="title">BEAM LOST</h1>
+                  <p className="finalscore">Score: <b>{ui.score}</b></p>
+                  <p className="highscore-line">High Score: {ui.highScore}</p>
+                  <button className="start-btn" data-testid="start-btn" onClick={press}>RETRY</button>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="controls-row">
+          <button className="ctrl-btn dir-btn" data-testid="left-btn" onPointerDown={(e) => { e.preventDefault(); moveCursor(0, -1); }}>◄</button>
+          <button className="ctrl-btn dir-btn" data-testid="up-btn" onPointerDown={(e) => { e.preventDefault(); moveCursor(-1, 0); }}>▲</button>
+          <button className="ctrl-btn dir-btn" data-testid="down-btn" onPointerDown={(e) => { e.preventDefault(); moveCursor(1, 0); }}>▼</button>
+          <button className="ctrl-btn dir-btn" data-testid="right-btn" onPointerDown={(e) => { e.preventDefault(); moveCursor(0, 1); }}>►</button>
+          <button className="ctrl-btn rotate-btn-el" data-testid="rotate-btn" onPointerDown={(e) => { e.preventDefault(); rotateCursor(); }}>ROTATE</button>
+        </div>
+      </div>
+
+      <div className="hint">Click/tap cells or move + ROTATE to redirect the beam onto the target. Hold it there to charge.</div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
