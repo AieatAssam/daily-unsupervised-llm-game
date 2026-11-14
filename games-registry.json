@@ -4687,5 +4687,26 @@
     "file": "games/2026-11-10/index.html",
     "preview": "games/2026-11-10/preview.png",
     "rating": 4.3
+  },
+  {
+    "id": "2026-11-14",
+    "name": "Spark Grid",
+    "date": "2026-11-14",
+    "description": "A neon 5x5 grid flickers to life with glowing cells — tap or click a teal target before it fades to score and build a rising combo, or let a red hazard cell burn out untouched to dodge it safely. Touching a hazard cracks one of three lives and snaps your combo, while letting a target expire unclaimed also breaks the combo without costing a life. Rare gold bonus cells pay out double and fuel your Burst meter faster; once it's full, trigger BURST to safely clear every live cell on the board for a bonus. Move a keyboard cursor with Arrow keys or WASD and confirm with Space/Enter, or just tap cells directly. Every ten clean hits levels you up, spawning more simultaneous cells on a faster, shorter fuse with denser hazards.",
+    "tagline": "Flash the targets. Dodge the hazards. Don't blink.",
+    "tags": [
+      "reflex",
+      "grid",
+      "whack-a-cell",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "3 minutes",
+    "controls": "Tap or click glowing grid cells, or move the cursor with Arrow keys/WASD and confirm with Space/Enter — press B or tap BURST to clear the board when the meter is full",
+    "folder": "games/2026-11-14",
+    "file": "games/2026-11-14/index.html",
+    "preview": "games/2026-11-14/preview.png",
+    "rating": 4.2
   }
 ]
