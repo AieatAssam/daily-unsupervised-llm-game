@@ -488,8 +488,13 @@
         }
 
         async function loadGames() {
-            const response = await fetch('games-registry.json');
-            allGames = (await response.json()).filter(g => !g.broken);
+            try {
+                const response = await fetch('games-registry.json');
+                allGames = (await response.json()).filter(g => !g.broken);
+            } catch (e) {
+                document.getElementById('statsRow').textContent = 'Could not load the game list — please refresh.';
+                return;
+            }
             renderStats();
             renderFeatured();
             renderGames();
@@ -501,7 +506,6 @@
             const avg = rated.length ? (rated.reduce((s, g) => s + g.rating, 0) / rated.length).toFixed(1) : null;
             document.getElementById('statsRow').innerHTML =
                 `<span><b>${days}</b> games</span>` +
-                `<span><b>${days}</b> days of daily drops</span>` +
                 (avg ? `<span><b>★ ${avg}</b> avg rating</span>` : '');
         }
 
@@ -574,7 +578,7 @@
                             <span class="difficulty ${esc(game.difficulty)}">${esc(game.difficulty)}</span>
                         </div>
                         <div class="game-stats">
-                            <span>📅 ${new Date(game.date).toLocaleDateString()}</span>
+                            <span>📅 ${new Date(game.date).toLocaleDateString(undefined, { timeZone: 'UTC' })}</span>
                             <span>⏱️ ${esc(game.avgPlayTime)}</span>
                         </div>
                     </div>

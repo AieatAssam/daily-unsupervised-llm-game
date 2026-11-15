@@ -1,0 +1,3 @@
+// Shared vocabulary for registry `genre` and `input` fields.
+export const GENRES = ['reflex-tap', 'one-button-timing', 'dodge-survival', 'shooter', 'runner', 'platformer', 'physics-launch', 'stacking', 'paddle-brick', 'snake-trail', 'rhythm', 'memory-sequence', 'odd-one-out', 'match-merge', 'logic-routing', 'rotation-puzzle', 'typing-word', 'drawing-tracing', 'tower-defense', 'resource-management', 'orbit-gravity', 'color-sort-switch', 'maze', 'racing', 'card-push-luck', 'balance', 'territory', 'other'];
+export const INPUTS = ['tap-targets', 'one-button', 'hold-release', 'drag', 'aim-release', 'keys-move', 'pointer-follow', 'typing', 'swipe', 'draw', 'multi'];

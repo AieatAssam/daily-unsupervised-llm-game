@@ -1,12 +1,12 @@
 {
-  "name": "daily-flashy-games",
+  "name": "neon-game-arcade",
   "version": "1.0.0",
   "description": "Automated daily game generation with Claude Code",
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "test:ui": "playwright test --ui",
-    "test:report": "playwright show-report",
+    "validate": "node scripts/validate-registry.mjs",
+    "idea": "node scripts/idea-brief.mjs",
     "serve": "http-server -p 8080 -c-1"
   },
   "keywords": [

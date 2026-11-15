@@ -213,7 +213,7 @@
 <script type="text/babel">
 const { useRef, useEffect, useState, useCallback, useMemo } = React;
 
-const HIGH_SCORE_KEY = 'tetherClashHighScore';
+const HIGH_SCORE_KEY = 'arcade.2026-11-10.best';
 const START_LIVES = 3;
 const POS_START = 50;
 const POS_MIN = 0;
@@ -297,6 +297,8 @@ function App() {
   });
   const uiRef = useRef(ui);
   useEffect(() => { uiRef.current = ui; }, [ui]);
+  // Test contract (AGENTS.md): live phase + score for the play-test suite.
+  window.__game = { phase: ui.phase === 'idle' ? 'menu' : ui.phase, score: ui.score };
 
   const audio = useAudio();
   const gameRef = useRef(buildInitialGame());

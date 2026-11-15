@@ -1,345 +1,54 @@
-# 🕹️ Neon Game Arcade
+# 🎮 Neon Game Arcade
 
-**A new addictive, beautiful web game generated automatically every single day by Claude Code!**
+A browser arcade that grows by one original game every day, designed, built, play-tested and shipped by Claude with no human in the loop. Each game is a single self-contained HTML file; the gallery is a static page on GitHub Pages.
 
-Each game features:
-- ✨ Stunning neon aesthetics with particle effects
-- 🎵 Synthesizer sound effects
-- 📱 Mobile-responsive design
-- 🏆 High score tracking
-- 🎯 Instantly addictive gameplay
+## How it works
 
-## 🚀 How It Works
+| Workflow | When | What it does |
+|---|---|---|
+| [`daily-game.yml`](.github/workflows/daily-game.yml) | 03:00 UTC daily | **Author** (Claude Haiku 5.5) picks a concept from the idea brief and builds the game → **gate** play-tests it → **critic** (fresh context) plays it, scores a rubric and fixes weaknesses → **gate** again → commit to `main` → deploy. |
+| [`weekly-maintenance.yml`](.github/workflows/weekly-maintenance.yml) | Sundays 04:23 UTC, or manually with a `focus` note | Runs every game's tests, then Claude Sonnet 5.5 repairs the failures, upgrades five older games to the real play-test suite (fixing what it exposes), removes duplicates, and ships the result. Also deletes leftover work branches. |
+| [`deploy-pages.yml`](.github/workflows/deploy-pages.yml) | On push to `main` / called by the others | Publishes the repo to GitHub Pages. |
 
-1. **GitHub Actions** runs daily at 3 AM UTC
-2. **Official Claude Code Action** (`anthropics/claude-code-action@v1`) executes
-3. **Checks existing games** to avoid duplicates
-4. Generates a completely unique game from scratch
-5. **Creates automated tests** for the game
-6. **Runs tests** to ensure quality
-7. Creates preview image, updates registry
-8. Commits everything automatically
-9. **Deploys to GitHub Pages** only if all tests pass
-10. **Your game collection grows every day!**
+Nothing is pushed until the final gate passes, so a failed run leaves no branches or half-finished games behind — it just uploads its play-test evidence as a workflow artifact.
 
-## 📁 Project Structure
+All agent instructions live in [`AGENTS.md`](AGENTS.md). Models are set in the `env:` block at the top of each workflow.
 
-```
-daily-flashy-games/
-├── .github/
-│   └── workflows/
-│       └── daily-game.yml          # GitHub Actions workflow (3 jobs)
-├── games/                           # Generated game files
-│   ├── 2026-02-15/
-│   │   ├── game.jsx
-│   │   ├── game.test.js
-│   │   └── preview.png
-│   ├── 2026-02-16/
-│   │   ├── game.jsx
-│   │   ├── game.test.js
-│   │   └── preview.png
-│   └── ...
-├── CLAUDE.md                        # Instructions for Claude Code
-├── index.html                       # Main gallery UI
-├── games-registry.json              # Game metadata
-├── package.json                     # Test dependencies
-├── playwright.config.js             # Test configuration
-└── README.md                        # This file
-```
+### Keeping games original
 
-## ⚙️ Setup Instructions
+`games-registry.json` records a `genre`, `input` and one-line `mechanic` for every game. [`scripts/idea-brief.mjs`](scripts/idea-brief.mjs) turns that into a daily brief — which genres are saturated, what the last ten games were, every mechanic already used — plus three date-seeded random prompts (genre × input × twist × theme) so the author is not left to its own habits. `--similar "<mechanic>"` checks a concept against the arcade; `--dupes` lists likely duplicate pairs for the weekly run.
 
-### 1. Create GitHub Repository
+### Keeping games good
+
+Every new game implements a tiny contract (`window.__game = { phase, score }`, a `start-btn`, a known `localStorage` key) and ships a small bot that plays it well. [`scripts/game-suite.js`](scripts/game-suite.js) uses those to actually play the game: it must boot cleanly, not kill an idle player, score under skilled play, end, save the best score, restart, survive input mashing, work by touch at 375px and hold a playable frame rate. The run leaves a filmstrip in `playtest/<id>/` that the critic reads before playing the game itself in a real browser.
+
+[`scripts/gate.sh`](scripts/gate.sh) is the merge gate. It also rejects any run that touched files outside the game's own folder and its registry entry, so tests cannot be made to pass by editing the test machinery.
+
+## Setup (once)
+
+1. **Token:** run `claude setup-token` locally and save the result as the repository secret `CLAUDE_CODE_OAUTH_TOKEN` (Settings → Secrets and variables → Actions). If the daily run starts failing within a minute or two with an authentication or usage-limit error, regenerate the token or check the plan's usage.
+2. **Actions permissions:** Settings → Actions → General → Workflow permissions → *Read and write*.
+3. **Pages:** Settings → Pages → Source → *GitHub Actions*.
+
+## Local development
 
 ```bash
-git init daily-flashy-games
-cd daily-flashy-games
+npm install && npx playwright install chromium
+npm run serve                              # gallery at http://localhost:8080
+npm run idea                               # today's idea brief
+npx playwright test games/2026-11-10       # play-test one game
+npm test                                   # every game (slow)
+npm run validate                           # registry ↔ disk consistency
 ```
 
-### 2. Add Files
+## Layout
 
-Copy all files from this template:
-- `CLAUDE.md` (Claude Code instructions)
-- `index.html` (Game gallery)
-- `games-registry.json` (Initial registry)
-- `.github/workflows/daily-game.yml` (Automation)
-
-### 3. Create Necessary Folders
-
-```bash
-mkdir -p games previews .github/workflows
+```
+games/YYYY-MM-DD/{index.html, game.test.js, preview.png}
+games-registry.json        the gallery's data and the arcade's memory
+index.html                 gallery
+scripts/                   idea brief, play-test suite, validator, gate
+AGENTS.md                  instructions for the agents
 ```
 
-### 4. Configure GitHub Secrets
-
-**Important:** See [OAUTH_SETUP.md](OAUTH_SETUP.md) for detailed authentication instructions.
-
-**Quick steps:**
-
-Go to your repository Settings → Secrets and variables → Actions → New repository secret:
-
-**Secret Name:** `CLAUDE_CODE_OAUTH_TOKEN`  
-**Secret Value:** Your Claude Code OAuth token
-
-**To get your OAuth token:**
-
-1. Install Claude Code CLI (if not already installed):
-   ```bash
-   npm install -g @anthropic-ai/claude-code
-   ```
-
-2. Generate OAuth token (Pro and Max users only):
-   ```bash
-   claude setup-token
-   ```
-   This will output your OAuth token directly in the terminal.
-
-3. Copy the token value (starts with `oauth_`)
-
-4. Add it as the `CLAUDE_CODE_OAUTH_TOKEN` secret in GitHub
-
-**Note:** This OAuth token uses your Claude Pro subscription directly - no separate API billing!
-
-**Need help?** See [OAUTH_SETUP.md](OAUTH_SETUP.md) for troubleshooting and detailed guides.
-
-### 5. Enable GitHub Actions
-
-- Go to repository Settings → Actions → General
-- Set "Workflow permissions" to "Read and write permissions"
-- Save changes
-
-### 6. Enable GitHub Pages
-
-GitHub Pages deployment happens automatically after tests pass:
-- Go to Settings → Pages
-- Source: "GitHub Actions" (not "Deploy from branch")
-- Save
-
-Your gallery will be live at: `https://yourusername.github.io/daily-flashy-games`
-
-### 7. Install Test Dependencies (Optional for Local Testing)
-
-```bash
-npm install
-npx playwright install
-```
-
-To run tests locally:
-```bash
-npm test                 # Run all tests
-npm run test:ui          # Run with UI mode
-npm run test:report      # View HTML report
-```
-
-## 🎯 Manual Trigger
-
-You can manually trigger game generation:
-
-1. Go to "Actions" tab in your repo
-2. Select "Daily Game Generator" workflow
-3. Click "Run workflow"
-4. Select branch (main)
-5. Run workflow
-
-## 🎨 Game Examples
-
-The system generates diverse games like:
-
-- **Neon Stack** - Sliding blocks with perfect timing
-- **Chromatic Catch** - Color-matching falling orbs
-- **Gravity Well** - Navigate through orbital physics
-- **Rhythm Runner** - Platform jumping to the beat
-- **Reflex Reactor** - Simon-says with escalating patterns
-- **Pattern Blitz** - Fast pattern matching
-- **Neon Dodge** - Bullet-hell lite with particles
-
-Each game is unique, flashy, and addictive!
-
-## 📊 Workflow Details
-
-### Three-Stage Pipeline:
-
-**Stage 1: Generate Game** 🎨
-Uses the official `anthropics/claude-code-action@v1`:
-1. Action reads `CLAUDE.md` instructions via prompt parameter
-2. Checks `games-registry.json` for existing games
-3. Analyzes last 7 games to avoid duplicate mechanics
-4. Generates unique game concept
-5. Creates date folder: `games/YYYY-MM-DD/`
-6. Writes complete React JSX game to `game.jsx` (~500-800 lines)
-7. Creates automated test file `game.test.js` with 6 required tests:
-   - Game loads without errors
-   - Core elements render properly
-   - Responds to user input
-   - Handles rapid interactions
-   - Works on mobile viewport (375px)
-   - localStorage persists high scores
-8. Implements particle effects, sounds, neon aesthetics
-9. Generates 1200x630px preview image to `preview.png`
-10. Updates games-registry.json with folder paths
-11. Commits to main branch automatically
-
-**Stage 2: Test Game** ✅
-1. Checks out latest code with new game
-2. Installs Playwright test framework
-3. Spins up local web server
-4. Runs all 6 automated tests
-5. Takes screenshots on failures
-6. Generates HTML test report
-7. **Pipeline stops here if any test fails**
-
-**Stage 3: Deploy** 🚀
-1. Only runs if all tests pass
-2. Uploads site to GitHub Pages
-3. Deploys new version with today's game
-4. Gallery updates automatically
-5. Creates deployment summary
-
-### What Claude Code Does Each Day:
-
-**Duplicate Prevention:**
-- Reads and analyzes existing games
-- Checks mechanics, input methods, aesthetics
-- Ensures new game is unique enough
-- Considers last 7 games to avoid repetition
-
-**Game Implementation:**
-- 60fps smooth animations
-- Particle effects system
-- Web Audio API sounds
-- Score tracking + localStorage
-- Mobile responsive controls
-- Progressive difficulty
-
-**Automated Testing:**
-- Creates comprehensive test suite
-- Validates game functionality
-- Ensures mobile compatibility
-- Checks error-free execution
-- Verifies storage persistence
-
-**Quality Assurance:**
-- All 6 tests must pass
-- No console errors allowed
-- Mobile viewport tested (375px)
-- Touch and mouse input verified
-- Performance validated
-
-### Quality Standards:
-
-Every game must have:
-- ✅ Unique mechanics (checked against registry)
-- ✅ Different from last 7 games
-- ✅ **All 6 automated tests passing**
-- ✅ No console errors
-- ✅ 60fps smooth animations
-- ✅ Particle effects
-- ✅ Sound effects
-- ✅ High score persistence
-- ✅ Beautiful neon aesthetic
-- ✅ Mobile responsive (375px tested)
-- ✅ Touch and mouse input supported
-
-**Deployment Gate:** GitHub Pages only updates if ALL tests pass. This ensures every published game works flawlessly!
-
-## 🛠️ Troubleshooting
-
-### Games Not Generating?
-
-1. Check Actions tab for workflow errors
-2. Verify `CLAUDE_CODE_OAUTH_TOKEN` secret is set correctly
-3. Ensure workflow has write permissions
-4. Check if the "generate-game" job completed
-5. Look for Claude Code CLI installation errors
-6. **OAuth token expired?** Re-run `claude setup-token` and update the secret
-
-### Tests Failing?
-
-1. Check the "test-game" job in Actions
-2. Download test artifacts to see screenshots
-3. View HTML test report in artifacts
-4. Common issues:
-   - Game not loading in time (increase timeouts)
-   - Console errors (check game code)
-   - localStorage not working (check game implementation)
-   - Mobile viewport issues (check responsive CSS)
-
-### Deployment Not Working?
-
-1. Verify tests passed first (deployment only runs after tests)
-2. Check Settings → Pages is set to "GitHub Actions"
-3. Look for deployment job errors in Actions
-4. Ensure Pages environment is enabled
-5. Check if id-token permission is granted
-
-### Gallery Not Loading?
-
-1. Verify `games-registry.json` has valid JSON
-2. Check browser console for errors
-3. Ensure file paths are correct
-4. Verify games folder exists
-5. Check if GitHub Pages is deployed
-
-### Duplicate Games Being Generated?
-
-Claude Code should prevent this, but if it happens:
-1. Check if `games-registry.json` is being read correctly
-2. Verify the duplicate prevention logic in CLAUDE.md
-3. Manually remove duplicate from registry
-4. Delete duplicate game files
-
-### Test Locally Before Committing:
-
-```bash
-# Install dependencies
-npm install
-
-# Run specific game test
-npx playwright test games/2026-02-15-game-name.test.js
-
-# Run with UI (helpful for debugging)
-npx playwright test --ui
-
-# Generate and view report
-npx playwright test
-npx playwright show-report
-```
-
-### Want to Customize?
-
-- **Game frequency**: Edit cron schedule in `.github/workflows/daily-game.yml`
-- **Game style**: Modify requirements in `CLAUDE.md`
-- **Gallery UI**: Edit `index.html` styling/layout
-- **Game tags**: Update filter options in both files
-
-## 📝 License
-
-This is your project! Games are generated fresh daily by Claude Code following your instructions.
-
-## 🎪 Gallery Features
-
-- 🔍 **Search** by name or description
-- 🏷️ **Filter** by tags (action, puzzle, reflex, casual)
-- 📊 **Filter** by difficulty (easy, medium, hard)
-- ⭐ **Featured** section for newest game
-- 📱 **Responsive** grid layout
-- 🎮 **Fullscreen** game player
-- ⌨️ **ESC** to close games
-
-## 🚀 Future Ideas
-
-- Add leaderboards with backend
-- Social sharing of high scores
-- Game ratings and favorites
-- Weekly "Best of" compilations
-- Tournament mode with brackets
-- Multiplayer games
-- Achievement system
-
----
-
-**Start Date:** When you first run the workflow  
-**New Game:** Every day at 3 AM UTC  
-**Total Games:** Infinite! ♾️
-
-Enjoy your ever-growing arcade! 🎮✨
+MIT licensed.
