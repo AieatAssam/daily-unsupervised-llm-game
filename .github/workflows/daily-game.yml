@@ -30,7 +30,7 @@ jobs:
       shipped: ${{ steps.ship.outputs.shipped }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -44,7 +44,7 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.date.outputs.skip != 'true'
         with:
           node-version: '22'
@@ -147,7 +147,7 @@ jobs:
 
       - name: Upload play-test evidence
         if: always() && steps.date.outputs.skip != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playtest-${{ steps.date.outputs.date }}
           path: |

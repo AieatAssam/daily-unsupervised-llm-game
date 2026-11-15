@@ -7,7 +7,7 @@ A browser arcade that grows by one original game every day, designed, built, pla
 | Workflow | When | What it does |
 |---|---|---|
 | [`daily-game.yml`](.github/workflows/daily-game.yml) | 03:00 UTC daily | **Author** (Claude Haiku 5.5) picks a concept from the idea brief and builds the game → **gate** play-tests it → **critic** (fresh context) plays it, scores a rubric and fixes weaknesses → **gate** again → commit to `main` → deploy. |
-| [`weekly-maintenance.yml`](.github/workflows/weekly-maintenance.yml) | Sundays 04:23 UTC, or manually with a `focus` note | Runs every game's tests, then Claude Sonnet 5.5 repairs the failures, upgrades five older games to the real play-test suite (fixing what it exposes), removes duplicates, and ships the result. Also deletes leftover work branches. |
+| [`weekly-maintenance.yml`](.github/workflows/weekly-maintenance.yml) | Sundays 04:23 UTC, or manually with a `focus` note | Runs every game's tests, then Claude Sonnet 5.5 repairs the failures, upgrades ten older games to the real play-test suite (fixing what it exposes), removes duplicates, and ships the result. Also deletes leftover work branches. |
 | [`deploy-pages.yml`](.github/workflows/deploy-pages.yml) | On push to `main` / called by the others | Publishes the repo to GitHub Pages. |
 
 Nothing is pushed until the final gate passes, so a failed run leaves no branches or half-finished games behind — it just uploads its play-test evidence as a workflow artifact.
