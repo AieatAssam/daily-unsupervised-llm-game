@@ -32,7 +32,7 @@ It prints genre saturation, the last 10 games, every existing mechanic, and thre
 
 1. Write three one-line concepts, one per seed. Describe the **core loop** — what the player does every second and how they fail — not the theme.
 2. Check each: `node scripts/idea-brief.mjs --similar "<core loop in ≤12 words>"`. Read the top hits.
-3. Keep the concept furthest from everything that exists. If all three are close to existing games, change the loop itself and check again.
+3. Keep the concept furthest from everything that exists. A top score of 0.25 or more means too close; if all three are, change the loop itself and check again.
 
 A new theme, new colours or an extra power-up on an existing loop is a duplicate. The test: could a player of the existing game play yours without learning anything new? Then it is a duplicate. Today's game must also differ in **both genre and input** from each of the last 10 games.
 
@@ -56,7 +56,9 @@ window.__game = { phase: 'menu' | 'playing' | 'over', score: 0 };
 
 - `<button data-testid="start-btn">` is visible in `menu` and `over`, and starts/restarts the game. Restart resets the score to 0.
 - At game over, the best score is saved to `localStorage['arcade.YYYY-MM-DD.best']`.
-- The game must end: a player who stops playing reaches `over` (lives, timer, or collapse). An idle player must survive at least the first 3 seconds.
+- The game must end: a player who stops playing reaches `over` within 90 seconds (lives, timer, or collapse), but not within the first 3 seconds.
+- Use Pointer Events for input so mouse and touch share one code path.
+- Expose what a bot needs to play well as read-only state: `data-testid` / `data-*` attributes on DOM elements, or extra fields on `window.__game` for canvas games (e.g. `targets: [{x, y, color}]` in page coordinates). State only — never functions that perform actions or set the score.
 
 Design bar:
 
@@ -77,7 +79,8 @@ import { defineGameSuite } from '../../scripts/game-suite.js';
 defineGameSuite({
   id: 'YYYY-MM-DD',
   // Play WELL for roughly 8–15 seconds. Must earn points.
-  // With { mobile: true } use touch (locator.tap / page.touchscreen), never the keyboard.
+  // With { mobile: true } use only what a phone has: locator.tap() for taps,
+  // page.mouse down/move/up for drags (it fires pointer events). Never the keyboard.
   play: async (page, { mobile }) => { /* ... */ },
   // Optional: how to lose on purpose. Omit if doing nothing loses within 90s.
   lose: async (page) => { /* ... */ },
@@ -90,7 +93,6 @@ defineGameSuite({
 
 ```bash
 npx playwright test games/YYYY-MM-DD
-node scripts/validate-registry.mjs   # after step 6
 ```
 
 The suite checks: clean boot with no JS errors, non-blank menu, no instant death, skilled play scores (first point < 20s), the game ends, best score saved, restart resets, input mashing does not stall it, playable by touch at 375px, acceptable frame rate. Fix the game, not the test.
@@ -99,7 +101,7 @@ The suite checks: clean boot with no JS errors, non-blank menu, no instant death
 
 The suite writes `playtest/YYYY-MM-DD/` (gitignored): `play-NN.png` frames every 1.5s, `over.png`, `mobile.png`, `metrics.json`. Open the images. Check that the frames show a readable, attractive game where something is happening, that the HUD is legible, and that the mobile frame is not cramped or clipped. Fix what looks wrong and re-run.
 
-Copy the most exciting mid-play frame (score and effects visible) to `games/YYYY-MM-DD/preview.png`.
+If `agent-browser` is available, also play a round by hand. Copy the most exciting mid-play frame (score and effects visible) to `games/YYYY-MM-DD/preview.png`.
 
 ### 6. Register it
 
@@ -110,6 +112,8 @@ Append to `games-registry.json` (copy the shape of the last entry):
 - `genre`, `input`: from `scripts/taxonomy.mjs`. Use `other` only if nothing fits.
 - `mechanic`: the core loop in ≤12 words — action and fail condition, no theme words. Future ideation depends on this being accurate.
 - `rating`: honest, 3.5–5.0. 4.0 = solid, 4.5 = you'd show it to a friend, 4.8+ = exceptional. Most games are 3.8–4.4.
+
+Then run `node scripts/validate-registry.mjs` until it passes.
 
 Do not commit, push or switch branches — the workflow does that after its own gate passes. Never leave other files behind (`playwright-report/`, `test-results/`, screenshots, logs).
 

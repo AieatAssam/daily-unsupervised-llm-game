@@ -3992,5 +3992,29 @@
     "genre": "other",
     "input": "tap-targets",
     "mechanic": "alternate left and right pulls to heave rope; repeating same side slips and breaks combo"
+  },
+  {
+    "id": "2026-11-15",
+    "name": "Parcel Rail",
+    "date": "2026-11-15",
+    "description": "A glowing cart rolls along the track you draw. Drag from the nib at the cart's front to lay rail ahead of it, or tap a stop to lay a straight rail straight to it. The cart is carrying one parcel colour; a stop of that colour pulses, and rolling through it delivers for a combo-scaled score and a new parcel colour. Rolling through a stop of the wrong colour costs a life and resets the combo. Every six deliveries the level rises: the cart speeds up, the ink budget for rail ahead shrinks and another stop appears. Let the rail run out in front of the cart and it derails.",
+    "tagline": "Draw the track. Deliver the colour. Never run dry.",
+    "tags": [
+      "routing",
+      "draw",
+      "neon",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Drag from the glowing nib to draw rail ahead of the cart; tap a stop to route a straight rail to it",
+    "folder": "games/2026-11-15",
+    "file": "games/2026-11-15/index.html",
+    "preview": "games/2026-11-15/preview.png",
+    "rating": 3.9,
+    "genre": "snake-trail",
+    "input": "draw",
+    "mechanic": "draw track for cart: matching stops score, wrong costs life, stall ends"
   }
 ]
