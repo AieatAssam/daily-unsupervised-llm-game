@@ -1,0 +1,148 @@
+name: Weekly Maintenance
+
+on:
+  schedule:
+    # Sunday 04:23 UTC — clear of the daily 03:00 run
+    - cron: '23 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      focus:
+        description: 'Optional: a specific problem to fix (e.g. "2026-05-04 car is invisible on mobile")'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: arcade-writes
+  cancel-in-progress: false
+
+env:
+  REPAIR_MODEL: claude-sonnet-5-5
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      shipped: ${{ steps.ship.outputs.shipped }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Delete leftover work branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # No workflow pushes work branches any more; anything matching these
+          # prefixes is debris from an older pipeline or an aborted run.
+          gh api "repos/$GITHUB_REPOSITORY/branches" --paginate -q '.[].name' \
+            | grep -E '^(game|fix|sanitise)/' \
+            | while read -r b; do
+                echo "deleting $b"
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$b" || true
+              done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install test + browser tooling
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm install -g agent-browser
+          agent-browser install --with-deps
+          npx skills add vercel-labs/agent-browser --skill agent-browser -a claude-code -y
+
+      - name: Start local server
+        run: |
+          npx http-server . -p 8080 -c-1 -s &
+          curl -sf --retry 10 --retry-connrefused --retry-delay 1 http://localhost:8080/ > /dev/null
+
+      - name: Health check — run every game's tests
+        run: |
+          node scripts/validate-registry.mjs 2>&1 | tee health.log || true
+          # Failures are the input to the repair step, not a reason to stop.
+          npx playwright test --reporter=line 2>&1 | tail -n 400 >> health.log || true
+          tail -n 5 health.log
+
+      - name: Repair failing games, remove duplicates
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --model ${{ env.REPAIR_MODEL }}
+            --dangerously-skip-permissions
+          prompt: |
+            Read AGENTS.md in full first. Reply in terse fragments — nobody reads
+            this output.
+
+            TASK: weekly maintenance, following "Weekly maintenance" in AGENTS.md.
+
+            1. health.log holds the registry validation and the failure summary from
+               running every game's test suite. For each failing game (and every
+               registry entry with "broken": true): reproduce with
+               `npx playwright test games/<id>`, find the root cause, repair the game,
+               re-run until it passes. Work through as many as you can, worst first.
+               A failure that only reproduces intermittently is a flaky test: make the
+               test deterministic rather than touching the game.
+            2. Run `node scripts/idea-brief.mjs --dupes` and resolve true duplicates.
+            3. Owner's request for this run (may be empty): "${{ github.event.inputs.focus }}"
+               If present, handle it first; verify by playing the game with
+               agent-browser at http://localhost:8080/games/<id>/index.html.
+            4. Finish with `node scripts/validate-registry.mjs` passing.
+
+            You may only change files under games/<id>/ (index.html, game.test.js,
+            preview.png) and games-registry.json. Do not commit or push. If nothing
+            needs fixing, change nothing.
+
+      - name: Gate
+        run: scripts/gate.sh
+
+      - name: Ship to main
+        id: ship
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git add -A games games-registry.json
+          if git diff --cached --quiet; then
+            echo "Arcade is healthy — nothing to ship"
+            exit 0
+          fi
+          N=$(git diff --cached --name-only | grep -E '^games/[0-9-]+/' | cut -d/ -f2 | sort -u | wc -l | tr -d ' ')
+          git config user.name "Arcade Maintenance Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "🧹 Weekly maintenance: $N game(s) repaired or removed"
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git pull --rebase "$REMOTE" main
+          git push "$REMOTE" HEAD:main
+          echo "shipped=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintenance
+          path: |
+            health.log
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  deploy:
+    needs: maintain
+    if: needs.maintain.outputs.shipped == 'true'
+    uses: ./.github/workflows/deploy-pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

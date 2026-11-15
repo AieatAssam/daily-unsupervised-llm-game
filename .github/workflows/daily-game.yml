@@ -1,4 +1,4 @@
-name: Daily Game Generator
+name: Daily Game
 
 on:
   schedule:
@@ -9,237 +9,158 @@ permissions:
   contents: write
   pages: write
   id-token: write
-  pull-requests: write
 
 concurrency:
-  # Not "pages": the called deploy-pages workflow holds that group, and
-  # sharing it here would deadlock the workflow against its own deploy job
-  group: "daily-game"
+  # Shared with weekly-maintenance: both push to main, so they must not overlap.
+  # Not "pages" — the called deploy workflow holds that group.
+  group: arcade-writes
   cancel-in-progress: false
 
+env:
+  AUTHOR_MODEL: claude-haiku-5-5
+  CRITIC_MODEL: claude-haiku-5-5
+
 jobs:
-  generate-game:
+  # One job, no pushed work branch: the game only ever reaches the remote as a
+  # commit on main after the final gate passes, so failed runs leave nothing behind.
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     outputs:
-      game-generated: ${{ steps.check-changes.outputs.game-generated }}
-      branch-name: ${{ steps.create-branch.outputs.branch-name }}
+      shipped: ${{ steps.ship.outputs.shipped }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Create branch for new game
-        id: create-branch
+      - name: Pick the date
+        id: date
         run: |
-          TODAY=$(date +'%Y-%m-%d')
-          BRANCH_NAME="game/$TODAY"
-          echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          git checkout -b "$BRANCH_NAME"
-
-      - name: Configure Git
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "Daily Game Bot"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Cache agent-browser Chromium
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: agent-browser-chromium-${{ runner.os }}
-
-      - name: Install agent-browser
-        run: |
-          npm install -g agent-browser http-server
-          agent-browser install --with-deps
-
-      - name: Install Claude Code skills (agent-browser + caveman)
-        run: |
-          npx skills add vercel-labs/agent-browser --skill agent-browser -a claude-code -y
-          # caveman: ultra-terse output mode — pipeline output is never read by
-          # humans, so minimize tokens spent on prose
-          npx skills add JuliusBrussee/caveman --skill caveman -a claude-code -y || echo "caveman skill unavailable, prompt fallback applies"
-
-      - name: Start local HTTP server
-        run: |
-          http-server . -p 8080 --cors -c-1 &
-          echo "HTTP_SERVER_PID=$!" >> $GITHUB_ENV
-          sleep 2
-          curl -sf http://localhost:8080/ > /dev/null && echo "HTTP server up"
-
-      - name: Generate Daily Game with Claude Code
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: |
-            --model claude-sonnet-5
-            --dangerously-skip-permissions
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt: |
-            OUTPUT STYLE: caveman ultra mode. Nobody reads this pipeline's chat
-            output — keep every text response to the absolute minimum tokens
-            (terse fragments, no pleasantries, no narration, no summaries).
-            Spend tokens on files and tool calls, not prose. Code and committed
-            files must remain normal, high-quality, and complete.
-
-            TASK: Generate today's daily game following all instructions in CLAUDE.md.
-
-            Work in the current directory, relative paths only. HTTP server is
-            live at http://localhost:8080. agent-browser skill installed —
-            commands: open <url> | snapshot | screenshot <path> | wait <ms>.
-
-            Required steps (all in one run):
-            1. Read games-registry.json; new game must be mechanically unique vs last 7.
-            2. Create games/YYYY-MM-DD/index.html (single standalone HTML,
-               React 18 + Babel from unpkg CDN, <script type="text/babel">).
-            3. Create games/YYYY-MM-DD/game.test.js with all 7 required tests
-               loading /games/YYYY-MM-DD/index.html, using the playability
-               harness in scripts/playability-harness.js (controls produce
-               observable change, mobile playable at 375px, performance >=
-               30fps). Copy the structure of example-game.test.js or the most
-               recent game's test file.
-            4. Verify with agent-browser: open the game, wait 3000, screenshot,
-               snapshot, interact, confirm response. Fix and re-verify if broken.
-            5. Screenshot mid-action gameplay to games/YYYY-MM-DD/preview.png.
-            6. Add registry entry (include a "rating" number 3.5-5.0 — honest
-               self-assessment of polish and fun).
-            7. Commit everything. NEVER commit test artifacts (playwright-report/,
-               test-results/, *.png outside the game folder, logs).
-
-            Game not done until agent-browser confirms it renders and responds.
-
-      - name: Stop HTTP server
-        if: always()
-        run: kill $HTTP_SERVER_PID 2>/dev/null || true
-
-      - name: Check for changes
-        id: check-changes
-        run: |
-          # Never let runtime artifacts sneak into the commit
-          rm -rf playwright-report test-results .claude/skills .agents skills-lock.json output.txt
-          git add -A
-
-          STAGED_COUNT=$(git diff --staged --name-only | wc -l | tr -d ' ')
-          COMMITS_AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
-
-          if [ "$STAGED_COUNT" -gt 0 ]; then
-            git commit -m "🎮 Daily Game Generated - $(date +'%Y-%m-%d')"
-            echo "game-generated=true" >> $GITHUB_OUTPUT
-          elif [ "$COMMITS_AHEAD" -gt 0 ]; then
-            echo "game-generated=true" >> $GITHUB_OUTPUT
-          else
-            echo "game-generated=false" >> $GITHUB_OUTPUT
+          DATE=$(date -u +%F)
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+          if [ -d "games/$DATE" ]; then
+            echo "games/$DATE already exists — nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
-          git diff origin/main...HEAD --stat || true
 
-      - name: Push branch
-        if: steps.check-changes.outputs.game-generated == 'true'
-        run: git push origin "${{ steps.create-branch.outputs.branch-name }}"
-
-  test-games:
-    needs: generate-game
-    if: needs.generate-game.outputs.game-generated == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      tests-passed: ${{ steps.run-tests.outputs.tests-passed }}
-
-    steps:
-      - name: Checkout branch
-        uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: steps.date.outputs.skip != 'true'
         with:
-          ref: ${{ needs.generate-game.outputs.branch-name }}
-          fetch-depth: 0
+          node-version: '22'
+          cache: npm
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
+      - name: Install test + browser tooling
+        if: steps.date.outputs.skip != 'true'
         run: |
           npm ci
           npx playwright install --with-deps chromium
+          npm install -g agent-browser
+          agent-browser install --with-deps
+          npx skills add vercel-labs/agent-browser --skill agent-browser -a claude-code -y
 
-      - name: Validate registry
-        run: node scripts/validate-registry.mjs
-
-      - name: Run tests for changed games only
-        id: run-tests
+      - name: Start local server
+        if: steps.date.outputs.skip != 'true'
         run: |
-          git fetch origin main
-          # Only test games touched by this branch — the full 100+ game suite
-          # is slow and flaky (CDN load); unchanged games were already gated
-          # on their own merge day.
-          TEST_FILES=$(git diff --name-only origin/main...HEAD -- 'games/**' \
-            | cut -d/ -f1-2 | sort -u \
-            | while read -r d; do [ -f "$d/game.test.js" ] && echo "$d/game.test.js"; done)
+          npx http-server . -p 8080 -c-1 -s &
+          curl -sf --retry 10 --retry-connrefused --retry-delay 1 http://localhost:8080/ > /dev/null
 
-          if [ -z "$TEST_FILES" ]; then
-            echo "No changed games with tests — failing: daily run must produce a tested game"
-            echo "tests-passed=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
+      - name: Author — design and build the game
+        if: steps.date.outputs.skip != 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --model ${{ env.AUTHOR_MODEL }}
+            --dangerously-skip-permissions
+          prompt: |
+            Read AGENTS.md in full first; it is the spec. Reply in terse fragments —
+            nobody reads this output.
 
-          echo "Testing: $TEST_FILES"
-          if npx playwright test $TEST_FILES; then
-            echo "tests-passed=true" >> $GITHUB_OUTPUT
-          else
-            echo "tests-passed=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
+            TASK: build the daily game for ${{ steps.date.outputs.date }} by following
+            "Building the daily game" in AGENTS.md, steps 1–6, in order.
 
-      - name: Upload test results
-        if: failure()
+            - Start with `node scripts/idea-brief.mjs --date ${{ steps.date.outputs.date }}`
+              and do the three-concept comparison before writing any code.
+            - Server: http://localhost:8080. Playwright and agent-browser are installed.
+            - You may only create/modify games/${{ steps.date.outputs.date }}/{index.html,game.test.js,preview.png}
+              and append one entry to games-registry.json. Any other change fails the run.
+            - Done means: `npx playwright test games/${{ steps.date.outputs.date }}` and
+              `node scripts/validate-registry.mjs` both pass, and you have looked at the
+              frames in playtest/${{ steps.date.outputs.date }}/.
+            - Do not commit or push.
+
+      - name: Gate (first pass — feeds the critic)
+        if: steps.date.outputs.skip != 'true'
+        id: gate1
+        continue-on-error: true
+        run: scripts/gate.sh "${{ steps.date.outputs.date }}" 2>&1 | tee gate.log
+
+      - name: Critic — play it, judge it, fix it
+        if: steps.date.outputs.skip != 'true' && hashFiles(format('games/{0}/index.html', steps.date.outputs.date)) != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --model ${{ env.CRITIC_MODEL }}
+            --dangerously-skip-permissions
+          prompt: |
+            Read AGENTS.md in full first. Reply in terse fragments.
+
+            TASK: you are the critic for games/${{ steps.date.outputs.date }}/, written by
+            another agent. Follow "Reviewing a game (critic pass)" in AGENTS.md.
+
+            - The automated gate result is in gate.log (status: ${{ steps.gate1.outcome }}).
+              If it failed, fix those failures first — in the game, not the suite.
+            - Then play the game yourself at
+              http://localhost:8080/games/${{ steps.date.outputs.date }}/index.html
+              with agent-browser, read the screenshots, look at
+              playtest/${{ steps.date.outputs.date }}/, and score the rubric.
+            - Fix anything scoring ≤ 2, re-run
+              `npx playwright test games/${{ steps.date.outputs.date }}`, refresh
+              preview.png if the look changed, and set an honest registry rating.
+            - Same file limits as the author: only games/${{ steps.date.outputs.date }}/
+              and that game's entry in games-registry.json. Do not commit or push.
+
+      - name: Gate (final)
+        if: steps.date.outputs.skip != 'true'
+        run: scripts/gate.sh "${{ steps.date.outputs.date }}"
+
+      - name: Ship to main
+        if: steps.date.outputs.skip != 'true'
+        id: ship
+        env:
+          DATE: ${{ steps.date.outputs.date }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAME=$(jq -r --arg d "$DATE" '.[] | select(.id == $d) | .name' games-registry.json)
+          git config user.name "Daily Game Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "games/$DATE" games-registry.json
+          git commit -m "🎮 Daily Game: $NAME - $DATE"
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git pull --rebase "$REMOTE" main
+          git push "$REMOTE" HEAD:main
+          echo "shipped=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload play-test evidence
+        if: always() && steps.date.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: playtest-${{ steps.date.outputs.date }}
           path: |
+            playtest/
             playwright-report/
-            test-results/
+            gate.log
+            games/${{ steps.date.outputs.date }}/
           retention-days: 7
-
-  merge-to-main:
-    needs: [generate-game, test-games]
-    if: needs.test-games.outputs.tests-passed == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Configure Git
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "Daily Game Bot"
-
-      - name: Merge to main
-        run: |
-          git fetch origin
-          git checkout main
-          git merge --no-ff origin/${{ needs.generate-game.outputs.branch-name }} -m "Merge daily game from ${{ needs.generate-game.outputs.branch-name }}"
-          git push origin main
-
-      - name: Delete branch
-        run: git push origin --delete ${{ needs.generate-game.outputs.branch-name }}
+          if-no-files-found: ignore
 
   deploy:
-    needs: merge-to-main
+    needs: build
+    if: needs.build.outputs.shipped == 'true'
     uses: ./.github/workflows/deploy-pages.yml
     permissions:
       contents: read
