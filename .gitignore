@@ -151,3 +151,8 @@ skills-lock.json
 .claude/skills/
 /tmp-*
 *.trace.zip
+
+# Local tool config
+.commandcode/
+# Playtest filmstrips (scripts/game-suite.js)
+playtest/
