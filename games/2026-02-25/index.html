@@ -36,7 +36,7 @@
     // ─── Game ─────────────────────────────────────────────────────────────────
     const BALL_R      = 12;
     const BALL_Y_FRAC = 0.38;
-    const HI_KEY      = 'voidDescent_highScore';  // contains 'highScore' for test detection
+    const HI_KEY      = 'arcade.2026-02-25.best';  // contains 'highScore' for test detection
     const COLORS      = ['#ff3399','#33ffcc','#ff9933','#aa44ff','#33aaff','#ffdd00','#ff6644'];
 
     // Initialise localStorage immediately (outside React) so it exists before any test check
@@ -44,6 +44,7 @@
 
     const Game = () => {
       const canvasRef = useRef(null);
+      const btnRef = useRef(null);
 
       useEffect(() => {
         const canvas = canvasRef.current;
@@ -148,10 +149,28 @@
         canvas.addEventListener('pointerup',     onPointerUp);
         canvas.addEventListener('pointercancel', onPointerUp);
 
+        const btn = btnRef.current;
+        const onBtn = e => { e.stopPropagation(); if (G.phase !== 'playing') startGame(); };
+        btn.addEventListener('click', onBtn);
+
         // ── Main loop ─────────────────────────────────────────────────────────
         let raf;
         const loop = () => {
           raf = requestAnimationFrame(loop);
+          {
+            const r = canvas.getBoundingClientRect();
+            const hh = canvas.height * BALL_Y_FRAC;
+            window.__game = {
+              phase: G.phase === 'dead' ? 'over' : G.phase === 'playing' ? 'playing' : 'menu',
+              score: G.score,
+              ball: { x: r.left + G.bx, y: r.top + hh, r: BALL_R },
+              bounds: { left: r.left, right: r.left + canvas.width },
+              barriers: G.barriers.map(b => ({ y: r.top + b.y, gapLeft: r.left + b.gx - b.gap / 2 + BALL_R, gapRight: r.left + b.gx + b.gap / 2 - BALL_R })),
+              crystals: G.crystals.map(c => ({ x: r.left + c.x, y: r.top + c.y })),
+            };
+            btn.style.display = G.phase === 'playing' ? 'none' : 'block';
+            btn.textContent = G.phase === 'start' ? 'START' : 'PLAY AGAIN';
+          }
           const w = canvas.width, h = canvas.height;
           const BALL_Y   = h * BALL_Y_FRAC;
           const topEdge  = BALL_Y - BALL_R - G.barH / 2;
@@ -404,6 +423,7 @@
 
         return () => {
           cancelAnimationFrame(raf);
+          btn.removeEventListener('click', onBtn);
           window.removeEventListener('resize', resize);
           window.removeEventListener('keydown', kd);
           window.removeEventListener('keyup',   ku);
@@ -415,7 +435,12 @@
       }, []);
 
       return (
-        <div style={{ width: '100vw', height: '100vh', background: '#05051a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#05051a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          <button ref={btnRef} data-testid="start-btn" onPointerDown={e => e.stopPropagation()}
+            style={{ position: 'absolute', left: '50%', bottom: '8%', transform: 'translateX(-50%)', zIndex: 5,
+              minWidth: 180, minHeight: 52, fontSize: 18, fontWeight: 'bold', letterSpacing: 3, color: '#000',
+              background: 'linear-gradient(135deg,#33ffcc,#aa44ff)', border: 'none', borderRadius: 10,
+              boxShadow: '0 0 24px #33ffcc', cursor: 'pointer' }}>START</button>
           <canvas ref={canvasRef} id="game-canvas" style={{ display: 'block', cursor: 'none', touchAction: 'none' }} />
         </div>
       );

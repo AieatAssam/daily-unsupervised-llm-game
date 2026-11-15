@@ -194,7 +194,7 @@
     const BASE_LIFETIME        = 10000;  // 10 seconds base lifetime
     const MAX_LIVES            = 3;
     const INITIAL_SPAWN_INTERVAL = 2400;
-    const STORAGE_KEY          = 'circuitBlazeHighScore';
+    const STORAGE_KEY          = 'arcade.2026-02-21.best';
 
     // ── Line-segment intersection ────────────────────────────
     function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
@@ -941,15 +941,30 @@
 
       // ── Global drag-release fallback ─────────────────────────
       useEffect(() => {
-        const onMouseUp  = (e) => { if (S.isDragging) handlePointerUp(e); };
-        const onTouchEnd = (e) => { if (S.isDragging) handlePointerUp(e); };
-        window.addEventListener('mouseup',  onMouseUp);
-        window.addEventListener('touchend', onTouchEnd, { passive: false });
-        return () => {
-          window.removeEventListener('mouseup',  onMouseUp);
-          window.removeEventListener('touchend', onTouchEnd);
-        };
+        const onUp = (e) => { if (S.isDragging) handlePointerUp(e); };
+        window.addEventListener('pointerup', onUp);
+        return () => window.removeEventListener('pointerup', onUp);
       }, [handlePointerUp]);
+
+      // ── Test contract: live state in page coordinates ────────
+      useEffect(() => {
+        const pub = () => {
+          const c = canvasRef.current;
+          const r = c ? c.getBoundingClientRect() : { left: 0, top: 0, width: 1, height: 1 };
+          const kx = c ? r.width / c.width : 1, ky = c ? r.height / c.height : 1;
+          window.__game = {
+            phase: S.phase === 'gameover' ? 'over' : S.phase === 'playing' ? 'playing' : 'menu',
+            score: S.score || 0,
+            nodes: (S.nodes || []).map(n => ({
+              id: n.id, color: n.colorIdx, x: r.left + n.x * kx, y: r.top + n.y * ky,
+              timeLeft: n.timeLeft, ready: n.scale >= 0.99,
+            })),
+          };
+        };
+        pub();
+        const id = setInterval(pub, 50);
+        return () => clearInterval(id);
+      }, []);
 
       // ── Keyboard ─────────────────────────────────────────────
       useEffect(() => {
@@ -970,12 +985,9 @@
           <canvas
             ref={canvasRef}
             style={{ display: 'block', width: '100%', height: '100%' }}
-            onMouseDown={handlePointerDown}
-            onMouseMove={handlePointerMove}
-            onMouseUp={handlePointerUp}
-            onTouchStart={handlePointerDown}
-            onTouchMove={handlePointerMove}
-            onTouchEnd={handlePointerUp}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
           />
 
           {/* HUD */}
@@ -1018,7 +1030,7 @@
 
           {/* Intro */}
           {ui.phase === 'intro' && (
-            <div className="screen" onMouseDown={handlePointerDown} onTouchStart={handlePointerDown}>
+            <div className="screen" onPointerDown={handlePointerDown}>
               <div className="title">CIRCUIT BLAZE</div>
               <div className="subtitle">Connect matching nodes before they expire</div>
               <div className="instructions">
@@ -1027,7 +1039,7 @@
                 <div className="inst-row">A <span>PAIR</span> burning out costs only <span>1 LIFE</span></div>
                 <div className="inst-row">Cross connections for <span>LIGHTNING SPARKS!</span></div>
               </div>
-              <button className="start-btn" onMouseDown={e => { e.stopPropagation(); handlePointerDown(e); }}>
+              <button className="start-btn" data-testid="start-btn" onPointerDown={e => { e.stopPropagation(); handlePointerDown(e); }}>
                 IGNITE
               </button>
               {ui.highScore > 0 && (
@@ -1040,7 +1052,7 @@
 
           {/* Game Over */}
           {ui.phase === 'gameover' && (
-            <div className="screen" onMouseDown={handlePointerDown} onTouchStart={handlePointerDown}>
+            <div className="screen" onPointerDown={handlePointerDown}>
               <div style={{ fontSize: 'clamp(16px,4vw,28px)', color: '#ff4488', letterSpacing: 4, textShadow: '0 0 15px #ff4488' }}>
                 CIRCUIT BROKEN
               </div>
@@ -1052,8 +1064,9 @@
               )}
               <button
                 className="start-btn"
+                data-testid="start-btn"
                 style={{ marginTop: 30, borderColor: '#ff00ff', color: '#ff00ff', boxShadow: '0 0 20px rgba(255,0,255,0.3)' }}
-                onMouseDown={e => { e.stopPropagation(); handlePointerDown(e); }}
+                onPointerDown={e => { e.stopPropagation(); handlePointerDown(e); }}
               >
                 RETRY
               </button>

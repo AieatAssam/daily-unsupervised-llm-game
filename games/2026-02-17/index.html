@@ -67,7 +67,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, useRef, useCallback } = React;
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
     // Word bank by difficulty tier
     const WORD_BANKS = {
@@ -221,8 +221,9 @@
       const [phase, setPhase] = useState('menu'); // menu, playing, gameover
       const [score, setScore] = useState(0);
       const [highScore, setHighScore] = useState(() => {
-        try { return parseInt(localStorage.getItem('wordblitz_highScore') || '0'); } catch(e) { return 0; }
+        try { return parseInt(localStorage.getItem('arcade.2026-02-17.best') || localStorage.getItem('wordblitz_highScore') || '0'); } catch(e) { return 0; }
       });
+      const isTouch = useMemo(() => (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || window.innerWidth < 600, []);
       const [combo, setCombo] = useState(0);
       const [maxCombo, setMaxCombo] = useState(0);
       const [lives, setLives] = useState(5);
@@ -291,11 +292,16 @@
       typedRef.current = typedInput;
       activeWordIdRef.current = activeWordId;
       phaseRef.current = phase;
+      window.__game = {
+        phase: phase === 'gameover' ? 'over' : phase, score,
+        words: words.map(w => ({ id: w.id, text: w.text, progress: w.progress })),
+        typed: typedInput,
+      };
 
       // Speed config per level
       const getSpeedConfig = (lvl) => {
-        const base = 0.000008;
-        const speed = base + (lvl - 1) * 0.000004;
+        const base = 0.000025;
+        const speed = base + (lvl - 1) * 0.000005;
         const maxWords = Math.min(3 + Math.floor(lvl / 2), 8);
         const spawnInterval = Math.max(3000 - lvl * 200, 1000);
         return { speed, maxWords, spawnInterval };
@@ -321,7 +327,7 @@
         const fontSize = 18 + Math.floor(Math.random() * 12);
         const id = ++wordIdRef.current;
 
-        setWords(prev => [...prev, {
+        const nw = [...wordsRef.current, {
           id,
           text,
           color,
@@ -330,7 +336,9 @@
           progress: 0,
           startTime: Date.now(),
           speed: cfg.speed + (Math.random() - 0.5) * 0.000002,
-        }]);
+        }];
+        wordsRef.current = nw;
+        setWords(nw);
       }, []);
 
       const addParticles = useCallback((x, y, color, count = 12) => {
@@ -366,24 +374,20 @@
           let lostLife = false;
           let lostWordId = null;
 
-          setWords(prev => {
-            const cfg = getSpeedConfig(levelRef.current);
-            const updated = prev.map(w => ({
-              ...w,
-              progress: (now - w.startTime) * w.speed,
-            }));
-
-            const alive = updated.filter(w => {
-              if (w.progress >= 1) {
-                lostLife = true;
-                lostWordId = w.id;
-                return false;
-              }
-              return true;
-            });
-
-            return alive;
+          const updated = wordsRef.current.map(w => ({
+            ...w,
+            progress: (now - w.startTime) * w.speed,
+          }));
+          const alive = updated.filter(w => {
+            if (w.progress >= 1) {
+              lostLife = true;
+              lostWordId = w.id;
+              return false;
+            }
+            return true;
           });
+          wordsRef.current = alive;
+          setWords(alive);
 
           if (lostLife) {
             playSound(audioCtxRef.current, 'miss');
@@ -404,9 +408,9 @@
               playSound(audioCtxRef.current, 'gameover');
               const finalScore = scoreRef.current;
               try {
-                const stored = parseInt(localStorage.getItem('wordblitz_highScore') || '0');
+                const stored = parseInt(localStorage.getItem('arcade.2026-02-17.best') || '0');
                 if (finalScore > stored) {
-                  localStorage.setItem('wordblitz_highScore', String(finalScore));
+                  localStorage.setItem('arcade.2026-02-17.best', String(finalScore));
                   setHighScore(finalScore);
                 }
               } catch(e) {}
@@ -547,7 +551,8 @@
               newCombo >= 3 ? '28px' : '22px');
 
             // Remove word
-            setWords(prev => prev.filter(w => w.id !== targetWord.id));
+            wordsRef.current = wordsRef.current.filter(w => w.id !== targetWord.id);
+            setWords(wordsRef.current);
             setTypedInput('');
             typedRef.current = '';
             setActiveWordId(null);
@@ -684,7 +689,7 @@
               <div>&#9654; Speed increases every 5 words</div>
             </div>
 
-            <button onClick={startGame} style={{
+            <button data-testid="start-btn" onClick={startGame} style={{
               padding: '18px 56px',
               fontSize: '22px',
               fontFamily: 'Courier New, monospace',
@@ -780,7 +785,7 @@
               </div>
             </div>
 
-            <button onClick={startGame} style={{
+            <button data-testid="start-btn" onClick={startGame} style={{
               padding: '16px 48px',
               fontSize: '20px',
               fontFamily: 'Courier New, monospace',
@@ -895,6 +900,20 @@
             </div>
           ))}
 
+          {/* On-screen keyboard for touch devices */}
+          {isTouch && (
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 60, padding: '4px', background: 'rgba(0,0,10,0.85)', touchAction: 'none' }}>
+              {['qwertyuiop', 'asdfghjkl', 'zxcvbnm⌫'].map(row => (
+                <div key={row} style={{ display: 'flex', justifyContent: 'center', gap: '3px', marginBottom: '3px' }}>
+                  {[...row].map(ch => (
+                    <button key={ch} data-testid={'key-' + ch}
+                      onPointerDown={e => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: ch === '⌫' ? 'Backspace' : ch, bubbles: true })); }}
+                      style={{ flex: '1 1 0', maxWidth: '40px', height: '44px', fontSize: '18px', fontFamily: 'Courier New, monospace', fontWeight: 'bold', color: '#0ff', background: '#102', border: '1px solid #0ff6', borderRadius: '6px', padding: 0, touchAction: 'none' }}>{ch}</button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
           {/* Danger zone indicator */}
           <div style={{
             position: 'absolute', bottom: 0, left: 0, right: 0, height: '6px',
@@ -935,7 +954,7 @@
           <div
             onClick={focusHiddenInput}
             style={{
-              position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+              position: 'absolute', bottom: isTouch ? '184px' : '20px', left: '50%', transform: 'translateX(-50%)',
               background: 'rgba(0,0,0,0.7)',
               border: `2px solid ${activeWordId ? (words.find(w=>w.id===activeWordId)?.color || '#00ffff') : 'rgba(255,255,255,0.3)'}`,
               borderRadius: '8px',

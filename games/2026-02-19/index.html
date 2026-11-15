@@ -35,7 +35,7 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
-    const HS_KEY = 'vortexShiftHighScore';
+    const HS_KEY = 'arcade.2026-02-19.best';
     const TWO_PI = Math.PI * 2;
 
     // ─── Audio helpers ───────────────────────────────────────────────────────────
@@ -233,7 +233,6 @@
         // Start / restart
         if (gs.phase === 'menu' || gs.phase === 'gameover') {
           gsRef.current = makeGameState();
-          spawnBarrier(gsRef.current); // first barrier right away
           setUi(prev => ({
             ...prev,
             phase: 'playing',
@@ -293,6 +292,17 @@
           const W = canvas.width, H = canvas.height;
           const cx = W / 2, cy = H / 2;
           const gs = gsRef.current;
+          {
+            const dd = 1 + (gs.frame || 0) / 5500;
+            window.__game = {
+              phase: gs.phase === 'gameover' ? 'over' : gs.phase,
+              score: gs.score || 0,
+              minR: gs.minR, maxR: gs.maxR,
+              angSpd: 0.021 * dd, spirSpd: Math.min(W, H) * 0.00145 * dd,
+              player: gs.player ? { angle: gs.player.angle, radius: gs.player.radius, direction: gs.player.direction } : null,
+              barriers: (gs.barriers || []).map(b => ({ radius: b.radius, gapAngle: b.gapAngle, gapSize: b.gapSize, rotSpd: b.rotSpd })),
+            };
+          }
 
           // ── Background ───────────────────────────────────────────────────
           ctx.fillStyle = '#050012';
@@ -648,7 +658,7 @@
                 textShadow: '0 0 22px #fff',
                 animation: 'blink 1.3s ease-in-out infinite',
               }}>
-                CLICK TO BEGIN
+                TAP TO BEGIN
               </div>
             </div>
           )}
@@ -708,15 +718,26 @@
                 textShadow: '0 0 18px #fff',
                 animation: 'blink 1.3s ease-in-out infinite',
               }}>
-                CLICK TO RETRY
+                TAP TO RETRY
               </div>
             </div>
           )}
 
+          {phase !== 'playing' && (
+            <button data-testid="start-btn"
+              onPointerDown={e => { e.stopPropagation(); }}
+              onClick={handleInput}
+              style={{
+                position: 'absolute', left: '50%', bottom: '8%', transform: 'translateX(-50%)', zIndex: 5,
+                minWidth: 160, minHeight: 48, fontSize: 18, fontWeight: 'bold', letterSpacing: 4,
+                color: '#000', background: 'linear-gradient(135deg,#00ffcc,#ff44ff)', border: 'none',
+                borderRadius: 10, boxShadow: '0 0 24px #00ffcc', cursor: 'pointer',
+              }}>{phase === 'menu' ? 'START' : 'RETRY'}</button>
+          )}
           {/* Transparent input capture layer */}
           <div
-            onClick={handleInput}
-            onTouchEnd={e => { e.preventDefault(); handleInput(); }}
+            data-testid="play-area"
+            onPointerDown={e => { e.preventDefault(); handleInput(); }}
             style={{
               position: 'absolute', inset: 0,
               cursor: 'pointer',
