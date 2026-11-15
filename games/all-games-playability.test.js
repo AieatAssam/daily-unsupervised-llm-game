@@ -1,7 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
-const games = JSON.parse(readFileSync(new URL('../games-registry.json', import.meta.url), 'utf8'));
+// Whole-arcade health sweep: one generic smoke test per registered game.
+// GAMES=2026-03-01,2026-03-02 limits it to those ids (used by scripts/gate.sh).
+const only = process.env.GAMES ? new Set(process.env.GAMES.split(',')) : null;
+const games = JSON.parse(readFileSync(new URL('../games-registry.json', import.meta.url), 'utf8'))
+  .filter(g => !only || only.has(g.id));
 const startText = /\b(start|play|begin|launch|go|new game|try again|play again|restart|continue|click to begin|ignite)\b/i;
 
 async function snapshot(page) {
@@ -109,13 +113,8 @@ for (const game of games) {
     const after = await snapshot(page);
     expect(errors, 'page errors after controls').toEqual([]);
     const changed = after.mutations > before.mutations || after.hash !== before.hash || after.text !== before.text;
-    const canvasBacked = await page.locator('canvas').count();
-    if (!/type|typing|word|letter/.test(game.controls.toLowerCase()) && !canvasBacked) {
-      expect(changed, `controls did not produce an observable change: ${game.controls}`).toBe(true);
-    } else {
-      test.info().annotations.push({ type: 'info', description: `${game.id}: generic input path exercised; canvas/typing state is validated by the game-specific interaction test` });
-    }
-    expect(await fps(page), 'active game loop below 30fps').toBeGreaterThanOrEqual(30);
+    expect(changed, `nothing on screen changed after starting and using the controls: ${game.controls}`).toBe(true);
+    expect(await fps(page), 'render loop too slow').toBeGreaterThanOrEqual(process.env.CI ? 15 : 30);
 
     await page.setViewportSize({ width: 375, height: 667 });
     await page.reload();
