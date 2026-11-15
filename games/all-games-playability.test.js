@@ -108,11 +108,13 @@ for (const game of games) {
 
     await installProbe(page);
     const before = await snapshot(page);
+    const shotBefore = await page.screenshot();
     await clickStart(page);
     await exerciseControls(page, game.controls);
     const after = await snapshot(page);
     expect(errors, 'page errors after controls').toEqual([]);
-    const changed = after.mutations > before.mutations || after.hash !== before.hash || after.text !== before.text;
+    const changed = after.mutations > before.mutations || after.hash !== before.hash || after.text !== before.text
+      || !shotBefore.equals(await page.screenshot());
     expect(changed, `nothing on screen changed after starting and using the controls: ${game.controls}`).toBe(true);
     expect(await fps(page), 'render loop too slow').toBeGreaterThanOrEqual(process.env.CI ? 15 : 30);
 

@@ -95,15 +95,19 @@ jobs:
                re-run until it passes. Work through as many as you can, worst first.
                A failure that only reproduces intermittently is a flaky test: make the
                test deterministic rather than touching the game.
-            2. Run `node scripts/idea-brief.mjs --dupes` and resolve true duplicates.
-            3. Owner's request for this run (may be empty): "${{ github.event.inputs.focus }}"
+            2. Upgrade this week's batch of legacy games to the play-test contract and
+               fix whatever the real suite exposes ("Upgrade legacy games" in AGENTS.md):
+               `grep -L defineGameSuite games/*/game.test.js | head -5`
+               Finish one game completely (tests green) before starting the next.
+            3. Run `node scripts/idea-brief.mjs --dupes` and resolve true duplicates.
+            4. Owner's request for this run (may be empty): "${{ github.event.inputs.focus }}"
                If present, handle it first; verify by playing the game with
                agent-browser at http://localhost:8080/games/<id>/index.html.
-            4. Finish with `node scripts/validate-registry.mjs` passing.
+            5. Finish with `node scripts/validate-registry.mjs` passing.
 
             You may only change files under games/<id>/ (index.html, game.test.js,
             preview.png) and games-registry.json. Do not commit or push. If nothing
-            needs fixing, change nothing.
+            is failing, steps 2–3 are still the job.
 
       - name: Gate
         run: scripts/gate.sh
