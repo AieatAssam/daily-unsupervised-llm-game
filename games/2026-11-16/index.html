@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Stair Shift</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; background: #05040d; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif; color: #e8f6ff;
+    touch-action: none; user-select: none;
+  }
+  #root { height: 100%; }
+  .app {
+    --fw: min(calc(100vw - 24px), calc((100vh - 150px) * 0.6));
+    height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; position: relative; overflow: hidden;
+    background: radial-gradient(circle at 50% 0%, #1b1446 0%, #0a0a1f 55%, #040308 100%);
+  }
+  .drift {
+    position: absolute; inset: 0; pointer-events: none; opacity: .5;
+    background: linear-gradient(120deg, rgba(56,248,255,.07), rgba(255,95,210,.08), rgba(157,255,74,.05));
+    background-size: 400% 400%; animation: drift 18s ease-in-out infinite;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud { width: var(--fw); display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; position: relative; }
+  .cell { background: rgba(10,12,30,.7); border: 1px solid rgba(56,248,255,.2); border-radius: 10px; padding: 6px 4px; }
+  .cell span { display: block; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #7f8fb0; }
+  .cell b { font-size: 18px; color: #e8f6ff; text-shadow: 0 0 8px rgba(56,248,255,.6); }
+  .lives b { color: #ff5fd2; text-shadow: 0 0 8px rgba(255,95,210,.7); letter-spacing: 2px; }
+  .stage {
+    width: var(--fw); aspect-ratio: 360 / 600; position: relative; touch-action: none;
+    border-radius: 14px; overflow: hidden; border: 1px solid rgba(56,248,255,.25);
+    box-shadow: 0 0 28px rgba(56,248,255,.12);
+  }
+  .stage canvas { width: 100%; height: 100%; display: block; }
+  .overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(5,4,13,.55);
+  }
+  .card {
+    text-align: center; padding: 18px 16px; max-width: 86%;
+    background: rgba(10,12,30,.88); border: 1px solid rgba(56,248,255,.35); border-radius: 14px;
+    box-shadow: 0 0 30px rgba(56,248,255,.2);
+  }
+  .card h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: 2px; color: #38f8ff; text-shadow: 0 0 14px rgba(56,248,255,.8); }
+  .card h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: 2px; color: #ff5fd2; text-shadow: 0 0 14px rgba(255,95,210,.8); }
+  .card p { margin: 0; font-size: 14px; line-height: 1.45; color: #c9d6f0; }
+  .final { margin: 6px 0; font-size: 15px; color: #c9d6f0; }
+  .final b { font-size: 22px; color: #e8f6ff; }
+  .start-btn {
+    min-height: 48px; min-width: 160px; margin-top: 14px; padding: 12px 28px;
+    font-size: 18px; font-weight: 800; letter-spacing: 1px; border: none; border-radius: 999px; cursor: pointer;
+    color: #05040d; background: linear-gradient(90deg, #38f8ff, #ff5fd2);
+    box-shadow: 0 0 18px rgba(255,95,210,.5);
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const BEST_KEY = 'arcade.2026-11-16.best';
+const W = 360, H = 600;
+const COLS = 5, WC = 2;            // walker sits in the centre column
+const CW = 52, GX = (W - COLS * CW) / 2;
+const RH = 22;                     // step thickness
+const LINE = 496;                  // a step is judged when its bottom reaches this line
+const WALK_Y = 520, RAIL_Y = 540;
+const colX = i => GX + i * CW + CW / 2;
+
+function loadBest() { try { return parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0; } catch (e) { return 0; } }
+function saveBest(v) { try { localStorage.setItem(BEST_KEY, String(v)); } catch (e) {} }
+
+function makeRow(n) {
+  // Every row has at least one step, and any column is at most 2 slides from the walker.
+  const cells = [0, 0, 0, 0, 0];
+  const first = Math.floor(Math.random() * COLS);
+  cells[first] = 1;
+  const pTwo = Math.min(0.4, Math.max(0, (n - 6) * 0.02));
+  if (Math.random() < pTwo) {
+    let j; do { j = Math.floor(Math.random() * COLS); } while (j === first);
+    cells[j] = 1;
+  }
+  return { y: -RH, cells, shifts: 0, off: 0 };
+}
+
+function freshState(best) {
+  return {
+    phase: 'menu', score: 0, lives: 3, combo: 0, best,
+    rows: [], successes: 0, speed: 100, spacing: 120,
+    shake: 0, walkDy: 0, walkLift: 0, flash: 0,
+    particles: [], pops: [], drag: null, t: 0, sync: null,
+  };
+}
+
+// ---------- audio (created on first input) ----------
+let AC = null;
+function ensureAudio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; } }
+  if (AC && AC.state === 'suspended') AC.resume();
+}
+function tone(f0, f1, dur, type = 'sine', vol = 0.12) {
+  if (!AC) return;
+  const t = AC.currentTime;
+  const o = AC.createOscillator(), gn = AC.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  gn.gain.setValueAtTime(vol, t);
+  gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(gn).connect(AC.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
+// ---------- game logic ----------
+function shiftFront(g, dir) {
+  if (g.phase !== 'playing') return;
+  let front = null;
+  for (const r of g.rows) if (!front || r.y > front.y) front = r;
+  if (!front || front.y + RH >= LINE) return;          // too late to slide it
+  const old = front.cells, nc = [0, 0, 0, 0, 0];
+  for (let i = 0; i < COLS; i++) nc[(i + dir + COLS) % COLS] = old[i];
+  front.cells = nc;
+  front.shifts += 1;
+  front.off = -dir * CW;                                // animate from the old column
+  tone(520, 680, 0.06, 'triangle', 0.08);
+}
+
+function burst(g, x, y, color, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 200;
+    g.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, life: 0, max: 0.5 + Math.random() * 0.4, color, size: 1.5 + Math.random() * 2.5 });
+  }
+  if (g.particles.length > 260) g.particles.splice(0, g.particles.length - 260);
+}
+
+function pop(g, text, x, y, color) { g.pops.push({ text, x, y, life: 0, color }); }
+
+function endGame(g) {
+  g.phase = 'over';
+  g.best = Math.max(g.best, g.score);
+  saveBest(g.best);
+  tone(300, 70, 0.6, 'triangle', 0.14);
+}
+
+function judge(g, r) {
+  g.rows.splice(g.rows.indexOf(r), 1);
+  if (r.cells[WC] === 1) {
+    g.combo += 1;
+    const mult = 1 + Math.min(3, Math.floor(g.combo / 3));
+    const perfect = r.shifts === 0;
+    const pts = (10 + (perfect ? 5 : 0)) * mult;
+    g.score += pts;
+    g.successes += 1;
+    g.speed = Math.min(200, 100 + g.successes * 4);
+    g.spacing = Math.max(96, 120 - g.successes * 1.2);
+    g.walkLift = 1;
+    burst(g, colX(WC), LINE - RH / 2, '#38f8ff', 22);
+    pop(g, '+' + pts + (perfect ? ' PERFECT' : ''), colX(WC), LINE - 34, perfect ? '#ff5fd2' : '#38f8ff');
+    if (perfect) tone(1320, 1760, 0.18, 'sine', 0.12); else tone(880, 1320, 0.14, 'sine', 0.12);
+  } else {
+    g.combo = 0;
+    g.lives -= 1;
+    g.shake = 0.35; g.walkDy = 1; g.flash = 1;
+    burst(g, colX(WC), WALK_Y, '#ff3b6b', 34);
+    pop(g, 'MISS', colX(WC), LINE - 34, '#ff3b6b');
+    tone(180, 60, 0.3, 'sawtooth', 0.1);
+    if (g.lives <= 0) endGame(g);
+  }
+  if (g.sync) g.sync();
+}
+
+function step(g, dt) {
+  g.t += dt;
+  g.shake = Math.max(0, g.shake - dt);
+  g.flash = Math.max(0, g.flash - dt * 2.5);
+  g.walkDy += (0 - g.walkDy) * Math.min(1, dt * 9);
+  g.walkLift += (0 - g.walkLift) * Math.min(1, dt * 10);
+
+  if (g.phase === 'playing') {
+    const top = g.rows.reduce((m, r) => Math.min(m, r.y), Infinity);
+    if (g.rows.length === 0 || top >= g.spacing) g.rows.push(makeRow(g.successes));
+    for (const r of g.rows) {
+      r.y += g.speed * dt;
+      r.off += (0 - r.off) * Math.min(1, dt * 16);
+    }
+    for (const r of g.rows.slice()) if (r.y + RH >= LINE) judge(g, r);
+  } else {
+    for (const r of g.rows) r.off += (0 - r.off) * Math.min(1, dt * 16);
+  }
+
+  for (const p of g.particles) { p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 320 * dt; }
+  g.particles = g.particles.filter(p => p.life < p.max);
+  for (const p of g.pops) { p.life += dt; p.y -= 38 * dt; }
+  g.pops = g.pops.filter(p => p.life < 0.9);
+}
+
+// ---------- drawing ----------
+function frontRowOf(rows) {
+  let f = null;
+  for (const r of rows) if (!f || r.y > f.y) f = r;
+  return f;
+}
+
+function drawRow(ctx, r, isFront, canShift) {
+  const y = r.y;
+  for (let i = 0; i < COLS; i++) {
+    const x = GX + i * CW + r.off + 4;
+    if (r.cells[i]) {
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = '#38f8ff';
+      ctx.fillRect(x - 3, y - 3, CW - 2, RH + 6);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = isFront ? '#9ffdff' : '#38f8ff';
+      ctx.fillRect(x, y, CW - 8, RH);
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.fillRect(x, y, CW - 8, 3);
+    } else {
+      ctx.strokeStyle = 'rgba(56,248,255,0.2)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 10 + 0.5, y + 7 + 0.5, CW - 28, RH - 14);
+    }
+  }
+  if (isFront && canShift) {
+    ctx.fillStyle = '#ff5fd2';
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.moveTo(GX - 10, y + RH / 2 - 7); ctx.lineTo(GX - 20, y + RH / 2); ctx.lineTo(GX - 10, y + RH / 2 + 7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(GX + COLS * CW + 10, y + RH / 2 - 7); ctx.lineTo(GX + COLS * CW + 20, y + RH / 2); ctx.lineTo(GX + COLS * CW + 10, y + RH / 2 + 7); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function draw(ctx, g) {
+  ctx.save();
+  if (g.shake > 0) ctx.translate((Math.random() - 0.5) * g.shake * 18, (Math.random() - 0.5) * g.shake * 18);
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#16104a'); bg.addColorStop(1, '#05040d');
+  ctx.fillStyle = bg; ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  // column guides and the walker's drop lane
+  for (let i = 0; i <= COLS; i++) { ctx.fillStyle = 'rgba(56,248,255,0.06)'; ctx.fillRect(GX + i * CW - 0.5, 0, 1, H); }
+  const bx = colX(WC);
+  const beam = ctx.createLinearGradient(0, 0, 0, RAIL_Y);
+  beam.addColorStop(0, 'rgba(255,95,210,0)'); beam.addColorStop(1, 'rgba(255,95,210,0.2)');
+  ctx.fillStyle = beam; ctx.fillRect(bx - CW / 2 + 8, 0, CW - 16, RAIL_Y);
+
+  // rail the walker stands on
+  ctx.globalAlpha = 0.55; ctx.fillStyle = '#ff5fd2';
+  ctx.fillRect(GX, RAIL_Y, COLS * CW, 2);
+  ctx.globalAlpha = 1;
+
+  // landing marker: the line where steps are judged
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(GX, LINE, COLS * CW, 1);
+
+  const front = frontRowOf(g.rows);
+  const canShift = g.phase === 'playing' && front && front.y + RH < LINE;
+  for (const r of g.rows) drawRow(ctx, r, r === front, canShift);
+
+  // walker
+  const wy = WALK_Y - g.walkLift * 12 + g.walkDy * 26;
+  const halo = ctx.createRadialGradient(bx, wy, 2, bx, wy, 28);
+  halo.addColorStop(0, 'rgba(255,95,210,0.6)'); halo.addColorStop(1, 'rgba(255,95,210,0)');
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(bx, wy, 28, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(bx, wy, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ff5fd2'; ctx.beginPath(); ctx.arc(bx, wy, 5.5, 0, Math.PI * 2); ctx.fill();
+
+  // particles (additive)
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of g.particles) {
+    ctx.globalAlpha = Math.max(0, 1 - p.life / p.max);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+
+  // score pops
+  ctx.textAlign = 'center';
+  ctx.font = '800 15px Segoe UI, Arial, sans-serif';
+  for (const p of g.pops) {
+    ctx.globalAlpha = Math.max(0, 1 - p.life / 0.9);
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+
+  if (g.flash > 0) {
+    ctx.globalAlpha = g.flash * 0.18; ctx.fillStyle = '#ff3b6b'; ctx.fillRect(-20, -20, W + 40, H + 40); ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+function publish(g) {
+  const front = frontRowOf(g.rows);
+  window.__game = {
+    phase: g.phase,
+    score: g.score,
+    best: g.best,
+    lives: g.lives,
+    combo: g.combo,
+    walker: WC,                 // column index the walker stands in
+    line: LINE,                 // y where a step is judged
+    rowH: RH,
+    canShift: !!(g.phase === 'playing' && front && front.y + RH < LINE),
+    rows: g.rows.map(r => ({ y: r.y, cells: r.cells.slice(), shifts: r.shifts })),
+  };
+}
+
+// ---------- React shell ----------
+function StairShift() {
+  const [ui, setUi] = useState({ phase: 'menu', score: 0, combo: 0, lives: 3, best: loadBest() });
+  const G = useRef(null);
+  if (G.current === null) G.current = freshState(loadBest());
+  const stageRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const g = G.current;
+    g.sync = () => setUi(u => ({ ...u, phase: g.phase, score: g.score, combo: g.combo, lives: g.lives, best: g.best }));
+    publish(g);
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    let last = performance.now(), raf = 0;
+    const frame = now => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      step(g, dt);
+      draw(ctx, g);
+      publish(g);
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+
+    const onKey = e => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') shiftFront(g, -1);
+      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') shiftFront(g, 1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('keydown', onKey); };
+  }, []);
+
+  const toX = e => {
+    const r = stageRef.current.getBoundingClientRect();
+    return (e.clientX - r.left) / r.width * W;
+  };
+  const onDown = e => {
+    if (e.target.closest && e.target.closest('.overlay')) return;
+    ensureAudio();
+    G.current.drag = { x: toX(e) };
+  };
+  const onUp = e => {
+    const g = G.current;
+    const d = g.drag;
+    g.drag = null;
+    if (!d || (e.target.closest && e.target.closest('.overlay'))) return;
+    const x = toX(e), dx = x - d.x;
+    // a swipe slides the step with the gesture; a tap slides it toward the tapped side
+    const dir = Math.abs(dx) >= 18 ? (dx < 0 ? -1 : 1) : (x < W / 2 ? -1 : 1);
+    shiftFront(g, dir);
+  };
+
+  const start = () => {
+    ensureAudio();
+    const g = G.current;
+    Object.assign(g, freshState(g.best), { phase: 'playing', sync: g.sync });
+    g.sync();
+  };
+
+  const mult = 1 + Math.min(3, Math.floor(ui.combo / 3));
+
+  return (
+    <div className="app">
+      <div className="drift" />
+      <div className="hud">
+        <div className="cell"><span>Score</span><b data-testid="score">{ui.score}</b></div>
+        <div className="cell"><span>Best</span><b data-testid="best">{ui.best}</b></div>
+        <div className="cell"><span>Combo</span><b data-testid="combo">x{mult}</b></div>
+        <div className="cell lives"><span>Lives</span><b data-testid="lives">{'♥'.repeat(Math.max(0, ui.lives))}</b></div>
+      </div>
+      <div className="stage" data-testid="stage" ref={stageRef}
+           onPointerDown={onDown} onPointerUp={onUp}>
+        <canvas ref={canvasRef} />
+        {ui.phase !== 'playing' && (
+          <div className="overlay">
+            {ui.phase === 'menu' ? (
+              <div className="card">
+                <h1>STAIR SHIFT</h1>
+                <p>Steps fall toward the walker. Tap a side or swipe to slide the lowest step, and land one above the walker.</p>
+                <button className="start-btn" data-testid="start-btn" onClick={start}>Start</button>
+              </div>
+            ) : (
+              <div className="card">
+                <h2>FALLEN</h2>
+                <div className="final">Score <b data-testid="final-score">{ui.score}</b></div>
+                <div className="final">Best <b>{ui.best}</b></div>
+                <p>A walker with no step above it drops through the rail.</p>
+                <button className="start-btn" data-testid="start-btn" onClick={start}>Play again</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<StairShift />);
+</script>
+</body>
+</html>

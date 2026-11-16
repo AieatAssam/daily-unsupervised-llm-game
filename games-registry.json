@@ -4016,5 +4016,29 @@
     "genre": "snake-trail",
     "input": "draw",
     "mechanic": "draw track for cart: matching stops score, wrong costs life, stall ends"
+  },
+  {
+    "id": "2026-11-16",
+    "name": "Stair Shift",
+    "date": "2026-11-16",
+    "description": "Steps fall down the arcade shaft one at a time, and a glowing walker waits on the rail below. Tap the left or right side of the screen, or swipe, to slide the lowest step one column at a time. A step must land over the walker, and it counts for more if it needed no slides. Chain catches for a combo multiplier that tops out at x4. Each landed step speeds the fall and tightens the gap to the next one. A step that lands elsewhere drops the walker through the rail and costs a life; three misses end the run.",
+    "tagline": "Slide the step. Catch the walker. Mind the gap.",
+    "tags": [
+      "stacking",
+      "swipe",
+      "neon",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "1 minute",
+    "controls": "Tap the left or right half of the screen, or swipe, to slide the lowest falling step one column",
+    "folder": "games/2026-11-16",
+    "file": "games/2026-11-16/index.html",
+    "preview": "games/2026-11-16/preview.png",
+    "rating": 3.8,
+    "genre": "stacking",
+    "input": "swipe",
+    "mechanic": "slide falling steps sideways so one lands over walker; miss costs life"
   }
 ]
