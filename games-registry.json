@@ -4040,5 +4040,29 @@
     "genre": "stacking",
     "input": "swipe",
     "mechanic": "slide falling steps sideways so one lands over walker; miss costs life"
+  },
+  {
+    "id": "2026-11-17",
+    "name": "Curb Lock",
+    "date": "2026-11-17",
+    "description": "Cars roll down four neon lanes toward the curb. Hold on the road to raise a concrete barrier in the lane under your pointer, and drag across lanes to build in another. A barrier shatters on the first car it catches, and the higher it catches a car, the more it scores. Raising barriers drains a concrete meter that refills slowly, so tall barriers cost you the next lane. Traffic learns: most cars head for the lane you have been building in lately, marked TRAFFIC at the top. A car that reaches the curb uncovered costs a life; three end the run. Catch chains build a combo multiplier up to x4.",
+    "tagline": "Hold the lane. Lock the curb. Read the traffic.",
+    "tags": [
+      "tower-defense",
+      "hold-release",
+      "neon",
+      "arcade",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "1 minute",
+    "controls": "Hold to raise a barrier in the lane under your pointer; drag to switch lanes",
+    "folder": "games/2026-11-17",
+    "file": "games/2026-11-17/index.html",
+    "preview": "games/2026-11-17/preview.png",
+    "rating": 4.0,
+    "genre": "tower-defense",
+    "input": "hold-release",
+    "mechanic": "hold to raise barrier per lane; uncaught car past curb costs life"
   }
 ]

@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Curb Lock</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; background: #05040d; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif; color: #e8f6ff;
+    touch-action: none; user-select: none;
+  }
+  #root { height: 100%; }
+  .app {
+    --fw: min(calc(100vw - 24px), calc((100vh - 150px) * 0.6));
+    height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; position: relative; overflow: hidden;
+    background: radial-gradient(circle at 50% 0%, #1a1240 0%, #0a0a1f 55%, #040308 100%);
+  }
+  .drift {
+    position: absolute; inset: 0; pointer-events: none; opacity: .5;
+    background: linear-gradient(120deg, rgba(56,248,255,.07), rgba(255,95,210,.08), rgba(255,211,74,.05));
+    background-size: 400% 400%; animation: drift 18s ease-in-out infinite;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud { width: var(--fw); display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; position: relative; }
+  .cell { background: rgba(10,12,30,.7); border: 1px solid rgba(56,248,255,.2); border-radius: 10px; padding: 6px 4px; }
+  .cell span { display: block; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #7f8fb0; }
+  .cell b { font-size: 18px; color: #e8f6ff; text-shadow: 0 0 8px rgba(56,248,255,.6); }
+  .lives b { color: #ff5fd2; text-shadow: 0 0 8px rgba(255,95,210,.7); letter-spacing: 2px; }
+  .stage {
+    width: var(--fw); aspect-ratio: 360 / 600; position: relative; touch-action: none;
+    border-radius: 14px; overflow: hidden; border: 1px solid rgba(56,248,255,.25);
+    box-shadow: 0 0 28px rgba(56,248,255,.12);
+  }
+  .stage canvas { width: 100%; height: 100%; display: block; }
+  .overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(5,4,13,.55);
+  }
+  .card {
+    text-align: center; padding: 18px 16px; max-width: 86%;
+    background: rgba(10,12,30,.88); border: 1px solid rgba(56,248,255,.35); border-radius: 14px;
+    box-shadow: 0 0 30px rgba(56,248,255,.2);
+  }
+  .card h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: 2px; color: #38f8ff; text-shadow: 0 0 14px rgba(56,248,255,.8); }
+  .card h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: 2px; color: #ff5fd2; text-shadow: 0 0 14px rgba(255,95,210,.8); }
+  .card p { margin: 0; font-size: 14px; line-height: 1.45; color: #c9d6f0; }
+  .final { margin: 6px 0; font-size: 15px; color: #c9d6f0; }
+  .final b { font-size: 22px; color: #e8f6ff; }
+  .start-btn {
+    min-height: 48px; min-width: 160px; margin-top: 14px; padding: 12px 28px;
+    font-size: 18px; font-weight: 800; letter-spacing: 1px; border: none; border-radius: 999px; cursor: pointer;
+    color: #05040d; background: linear-gradient(90deg, #38f8ff, #ff5fd2);
+    box-shadow: 0 0 18px rgba(255,95,210,.5);
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const BEST_KEY = 'arcade.2026-11-17.best';
+const W = 360, H = 600;
+const LANES = 4, LW = W / LANES;
+const CURB = 530;                 // y of the curb: a car that gets here unblocked costs a life
+const CARW = 46, CARH = 30;
+const MAXH = 340;                 // tallest barrier (top at y=190)
+const GROW = 320, COST = 0.2;     // px/s raised while held, energy spent per px
+const REGEN = 24;                 // energy per second, always
+const HIST = 6;                   // builds remembered for traffic habit learning
+const laneX = i => i * LW + LW / 2;
+
+function loadBest() { try { return parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0; } catch (e) { return 0; } }
+function saveBest(v) { try { localStorage.setItem(BEST_KEY, String(v)); } catch (e) {} }
+
+function freshState(best) {
+  return {
+    phase: 'menu', score: 0, lives: 3, combo: 0, best,
+    cars: [], barriers: [null, null, null, null], energy: 100,
+    held: null, history: [], spawnT: 1.4, successes: 0,
+    shake: 0, flash: 0, particles: [], pops: [], t: 0, sync: null,
+  };
+}
+
+// ---------- audio (created on first input) ----------
+let AC = null;
+function ensureAudio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; } }
+  if (AC && AC.state === 'suspended') AC.resume();
+}
+function tone(f0, f1, dur, type = 'sine', vol = 0.12) {
+  if (!AC) return;
+  const t = AC.currentTime;
+  const o = AC.createOscillator(), gn = AC.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  gn.gain.setValueAtTime(vol, t);
+  gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(gn).connect(AC.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
+// ---------- game logic ----------
+function speedOf(g) { return Math.min(230, 95 + g.successes * 2.5); }
+function gapOf(g) { return Math.max(0.55, 1.5 - g.successes * 0.025); }
+
+// Traffic learns: most of the time a car takes the lane you built in most often lately.
+function pickLane(g) {
+  if (g.history.length && Math.random() < 0.6) {
+    const count = [0, 0, 0, 0];
+    g.history.forEach(l => count[l]++);
+    let best = 0;
+    for (let i = 1; i < LANES; i++) if (count[i] > count[best]) best = i;
+    return best;
+  }
+  return Math.floor(Math.random() * LANES);
+}
+
+function burst(g, x, y, color, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 220;
+    g.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, life: 0, max: 0.45 + Math.random() * 0.4, color, size: 1.5 + Math.random() * 2.5 });
+  }
+  if (g.particles.length > 240) g.particles.splice(0, g.particles.length - 240);
+}
+function pop(g, text, x, y, color) { g.pops.push({ text, x, y, life: 0, color }); }
+
+function endGame(g) {
+  g.phase = 'over';
+  g.held = null;
+  g.best = Math.max(g.best, g.score);
+  saveBest(g.best);
+  tone(300, 70, 0.6, 'triangle', 0.14);
+}
+
+// Releasing (or sliding off) a lane commits its barrier to traffic memory.
+function commit(g, lane) {
+  const b = g.barriers[lane];
+  if (b && b.h >= 40) {
+    g.history.push(lane);
+    if (g.history.length > HIST) g.history.shift();
+  }
+}
+
+function setHeld(g, lane) {
+  if (g.held === lane) return;
+  if (g.held !== null) commit(g, g.held);
+  g.held = lane;
+  if (lane !== null) tone(440 + lane * 60, 520 + lane * 60, 0.05, 'triangle', 0.05);
+}
+
+function step(g, dt) {
+  g.t += dt;
+  g.shake = Math.max(0, g.shake - dt);
+  g.flash = Math.max(0, g.flash - dt * 2.5);
+  for (const p of g.particles) { p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 320 * dt; }
+  g.particles = g.particles.filter(p => p.life < p.max);
+  for (const p of g.pops) { p.life += dt; p.y -= 36 * dt; }
+  g.pops = g.pops.filter(p => p.life < 0.9);
+
+  if (g.phase !== 'playing') return;
+
+  // raise the barrier under the pointer while energy lasts
+  g.energy = Math.min(100, g.energy + REGEN * dt);
+  if (g.held !== null) {
+    let b = g.barriers[g.held];
+    if (!b) b = g.barriers[g.held] = { lane: g.held, h: 0 };
+    const grow = Math.min(GROW * dt, MAXH - b.h, g.energy / COST);
+    if (grow > 0) { b.h += grow; g.energy -= grow * COST; }
+  }
+
+  // traffic
+  g.spawnT -= dt;
+  if (g.spawnT <= 0) {
+    const lane = pickLane(g);
+    g.cars.push({ lane, y: -CARH - 6, spd: speedOf(g) * (0.9 + Math.random() * 0.2), hue: ['#38f8ff', '#ffd34a', '#9dff4a', '#ff5fd2'][Math.floor(Math.random() * 4)] });
+    g.spawnT = gapOf(g) * (0.85 + Math.random() * 0.3);
+  }
+
+  for (const c of g.cars.slice()) {
+    c.y += c.spd * dt;
+    const b = g.barriers[c.lane];
+    const bottom = c.y + CARH;
+    if (b && b.h > 0 && bottom >= CURB - b.h) {
+      // caught: the barrier shatters, points scale with how high it caught the car
+      g.cars.splice(g.cars.indexOf(c), 1);
+      g.barriers[c.lane] = null;
+      g.combo += 1;
+      const mult = 1 + Math.min(3, Math.floor(g.combo / 3));
+      const pts = (10 + Math.floor(b.h / 40)) * mult;
+      g.score += pts;
+      g.successes += 1;
+      const x = laneX(c.lane), y = CURB - b.h;
+      burst(g, x, y, '#ffd34a', 24);
+      pop(g, '+' + pts, x, y - 14, g.combo >= 3 ? '#ff5fd2' : '#ffd34a');
+      tone(700 + Math.random() * 200, 1200, 0.12, 'sine', 0.1);
+      if (g.sync) g.sync();
+    } else if (bottom >= CURB) {
+      // slipped past the curb
+      g.cars.splice(g.cars.indexOf(c), 1);
+      g.lives -= 1;
+      g.combo = 0;
+      g.shake = 0.35; g.flash = 1;
+      burst(g, laneX(c.lane), CURB, '#ff3b6b', 30);
+      pop(g, 'SLIPPED', laneX(c.lane), CURB - 20, '#ff3b6b');
+      tone(180, 60, 0.3, 'sawtooth', 0.1);
+      if (g.lives <= 0) { endGame(g); if (g.sync) g.sync(); return; }
+      if (g.sync) g.sync();
+    }
+  }
+}
+
+// ---------- drawing ----------
+function drawCar(ctx, c) {
+  const x = laneX(c.lane) - CARW / 2, y = c.y;
+  ctx.save();
+  ctx.globalAlpha = 0.25; ctx.fillStyle = c.hue;
+  ctx.fillRect(x - 4, y - 4, CARW + 8, CARH + 8);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = c.hue;
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, CARW, CARH, 7) : ctx.rect(x, y, CARW, CARH); ctx.fill();
+  ctx.fillStyle = 'rgba(5,4,13,.7)';
+  ctx.fillRect(x + 7, y + 5, CARW - 14, 9);            // windscreen (faces the curb)
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x + 6, y + CARH - 5, 6, 3);             // headlights at the front
+  ctx.fillRect(x + CARW - 12, y + CARH - 5, 6, 3);
+  ctx.restore();
+}
+
+function draw(ctx, g) {
+  ctx.save();
+  if (g.shake > 0) ctx.translate((Math.random() - 0.5) * g.shake * 18, (Math.random() - 0.5) * g.shake * 18);
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#171142'); bg.addColorStop(1, '#06050f');
+  ctx.fillStyle = bg; ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  // lanes
+  for (let i = 1; i < LANES; i++) {
+    ctx.fillStyle = 'rgba(56,248,255,0.12)';
+    for (let y = 0; y < CURB; y += 26) ctx.fillRect(i * LW - 1, y + (g.t * 40) % 26, 2, 12);
+  }
+
+  // traffic habit: the lane cars are drawn toward gets a faint marker at the top
+  if (g.history.length) {
+    const count = [0, 0, 0, 0];
+    g.history.forEach(l => count[l]++);
+    let fav = 0;
+    for (let i = 1; i < LANES; i++) if (count[i] > count[fav]) fav = i;
+    ctx.fillStyle = 'rgba(255,211,74,' + (0.08 + 0.05 * Math.sin(g.t * 4)).toFixed(3) + ')';
+    ctx.fillRect(fav * LW + 2, 0, LW - 4, CURB);
+    ctx.fillStyle = 'rgba(255,211,74,0.75)';
+    ctx.font = '700 10px Segoe UI, Arial, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('TRAFFIC', laneX(fav), 14);
+  }
+
+  // barriers: cyan while held, pink once committed
+  g.barriers.forEach((b, i) => {
+    if (!b || b.h <= 0) return;
+    const x = i * LW + 12, w = LW - 24, top = CURB - b.h;
+    const live = g.held === i;
+    const col = live ? '#38f8ff' : '#ff5fd2';
+    ctx.globalAlpha = 0.3; ctx.fillStyle = col;
+    ctx.fillRect(x - 4, top - 4, w + 8, b.h + 8);
+    ctx.globalAlpha = 1;
+    const grad = ctx.createLinearGradient(x, top, x, CURB);
+    grad.addColorStop(0, col); grad.addColorStop(1, 'rgba(20,10,40,0.9)');
+    ctx.fillStyle = grad; ctx.fillRect(x, top, w, b.h);
+    ctx.fillStyle = 'rgba(5,4,13,0.55)';
+    for (let y = top + 8; y < CURB; y += 16) ctx.fillRect(x, y, w, 5);
+    ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.7; ctx.fillRect(x, top, w, 2); ctx.globalAlpha = 1;
+  });
+
+  // curb
+  ctx.globalAlpha = 0.6; ctx.fillStyle = '#9dff4a';
+  ctx.fillRect(0, CURB, W, 2);
+  ctx.globalAlpha = 0.12; ctx.fillRect(0, CURB + 2, W, 24);
+  ctx.globalAlpha = 1;
+
+  // cars
+  for (const c of g.cars) drawCar(ctx, c);
+
+  // energy bar under the curb
+  const ey = 572;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(20, ey, W - 40, 10);
+  const eCol = g.energy < 25 ? '#ff3b6b' : '#38f8ff';
+  ctx.fillStyle = eCol; ctx.fillRect(20, ey, (W - 40) * g.energy / 100, 10);
+  ctx.fillStyle = '#7f8fb0'; ctx.font = '700 10px Segoe UI, Arial, sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('CONCRETE', 20, ey - 4);
+
+  // particles (additive)
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of g.particles) {
+    ctx.globalAlpha = Math.max(0, 1 - p.life / p.max);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign = 'center';
+  ctx.font = '800 15px Segoe UI, Arial, sans-serif';
+  for (const p of g.pops) {
+    ctx.globalAlpha = Math.max(0, 1 - p.life / 0.9);
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+
+  if (g.flash > 0) {
+    ctx.globalAlpha = g.flash * 0.18; ctx.fillStyle = '#ff3b6b'; ctx.fillRect(-20, -20, W + 40, H + 40); ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+function publish(g) {
+  window.__game = {
+    phase: g.phase,
+    score: g.score,
+    best: g.best,
+    lives: g.lives,
+    combo: g.combo,
+    energy: Math.round(g.energy),
+    held: g.held,
+    curb: CURB,
+    laneWidth: LW,
+    cars: g.cars.map(c => ({ lane: c.lane, y: c.y, bottom: c.y + CARH })),
+    barriers: g.barriers.map((b, i) => (b && b.h > 0 ? { lane: i, h: b.h, top: CURB - b.h, live: g.held === i } : null)).filter(Boolean),
+  };
+}
+
+// ---------- React shell ----------
+function CurbLock() {
+  const [ui, setUi] = useState({ phase: 'menu', score: 0, combo: 0, lives: 3, best: loadBest() });
+  const G = useRef(null);
+  if (G.current === null) G.current = freshState(loadBest());
+  const stageRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const g = G.current;
+    g.sync = () => setUi(u => ({ ...u, phase: g.phase, score: g.score, combo: g.combo, lives: g.lives, best: g.best }));
+    publish(g);
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    let last = performance.now(), raf = 0;
+    const frame = now => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      step(g, dt);
+      draw(ctx, g);
+      publish(g);
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const toGame = e => {
+    const r = stageRef.current.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
+  };
+  const laneAt = x => Math.max(0, Math.min(LANES - 1, Math.floor(x / LW)));
+
+  const onDown = e => {
+    const g = G.current;
+    if (g.phase !== 'playing' || (e.target.closest && e.target.closest('.overlay'))) return;
+    ensureAudio();
+    try { stageRef.current.setPointerCapture(e.pointerId); } catch (err) {}
+    setHeld(g, laneAt(toGame(e).x));
+  };
+  const onMove = e => {
+    const g = G.current;
+    if (g.held === null) return;
+    setHeld(g, laneAt(toGame(e).x));
+  };
+  const onUp = () => {
+    const g = G.current;
+    if (g.held !== null) setHeld(g, null);
+  };
+
+  const start = () => {
+    ensureAudio();
+    const g = G.current;
+    Object.assign(g, freshState(g.best), { phase: 'playing', sync: g.sync });
+    g.sync();
+  };
+
+  return (
+    <div className="app">
+      <div className="drift" />
+      <div className="hud">
+        <div className="cell"><span>Score</span><b data-testid="score">{ui.score}</b></div>
+        <div className="cell"><span>Best</span><b data-testid="best">{ui.best}</b></div>
+        <div className="cell"><span>Combo</span><b data-testid="combo">x{1 + Math.min(3, Math.floor(ui.combo / 3))}</b></div>
+        <div className="cell lives"><span>Lives</span><b data-testid="lives">{'♥'.repeat(Math.max(0, ui.lives))}</b></div>
+      </div>
+      <div className="stage" data-testid="stage" ref={stageRef}
+           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+        <canvas ref={canvasRef} />
+        {ui.phase !== 'playing' && (
+          <div className="overlay">
+            {ui.phase === 'menu' ? (
+              <div className="card">
+                <h1>CURB LOCK</h1>
+                <p>Cars roll down four lanes. Hold to raise a barrier in your lane, drag to switch lanes, and stop every car before the curb.</p>
+                <button className="start-btn" data-testid="start-btn" onClick={start}>Start</button>
+              </div>
+            ) : (
+              <div className="card">
+                <h2>GRIDLOCK</h2>
+                <div className="final">Score <b data-testid="final-score">{ui.score}</b></div>
+                <div className="final">Best <b>{ui.best}</b></div>
+                <p>Three cars slipped past the curb.</p>
+                <button className="start-btn" data-testid="start-btn" onClick={start}>Play again</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<CurbLock />);
+</script>
+</body>
+</html>
