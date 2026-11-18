@@ -4064,5 +4064,29 @@
     "genre": "tower-defense",
     "input": "hold-release",
     "mechanic": "hold to raise barrier per lane; uncaught car past curb costs life"
+  },
+  {
+    "id": "2026-11-18",
+    "name": "Reagent Clash",
+    "date": "2026-11-18",
+    "description": "Molecules drift down three lanes toward a sample line, each tinted either like the reference swatch at the top or in the clashing opposite hue. Tap a clashing molecule while it sits in the sample window to bank points; the closer to the line, the bigger the PRECISE bonus. Tapping a matching molecule contaminates the batch and a clashing one that drifts past the line uncaught also costs a life. Consecutive clean samples build a chain multiplier up to x5. Drift speed and the share of clashing molecules rise over time, and three lives end the run.",
+    "tagline": "Tap the one that clashes. Let the rest drift.",
+    "tags": [
+      "odd-one-out",
+      "one-button",
+      "chemistry",
+      "neon",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "1 minute",
+    "controls": "Tap the clashing-hue molecule while it crosses the sample line",
+    "folder": "games/2026-11-18",
+    "file": "games/2026-11-18/index.html",
+    "preview": "games/2026-11-18/preview.png",
+    "rating": 4.0,
+    "genre": "odd-one-out",
+    "input": "one-button",
+    "mechanic": "tap clashing-hue molecule crossing sample line; matching or missed clashers cost life"
   }
 ]

@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Reagent Clash</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05040d; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none; user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    background: radial-gradient(circle at 50% 0%, #181636 0%, #0a0920 55%, #040308 100%);
+    overflow: hidden;
+  }
+  .hud {
+    width: 100%; max-width: 480px;
+    display: flex; justify-content: space-around; gap: 4px;
+    padding: 8px 8px 0; flex: none;
+  }
+  .hud-item {
+    flex: 1; text-align: center; color: #e4ecff;
+    font-size: 10px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.85;
+  }
+  .hud-value { font-size: 18px; font-weight: 700; display: block; margin-top: 2px; }
+  .score-val { color: #4fffd6; text-shadow: 0 0 10px #4fffd6; }
+  .mult-val { color: #ff6cc4; text-shadow: 0 0 10px #ff6cc4; }
+  .lives-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .best-val { color: #4fa8ff; text-shadow: 0 0 10px #4fa8ff; }
+  .ref {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    margin-top: 6px; flex: none; color: #cfd8ff; font-size: 12px; letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .chip {
+    width: 22px; height: 22px; border-radius: 6px;
+    box-shadow: 0 0 12px currentColor, inset 0 0 0 2px rgba(255,255,255,0.25);
+  }
+  .field-wrap {
+    position: relative; flex: 1; min-height: 0; width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    padding: 6px 0 10px;
+  }
+  canvas {
+    display: block; height: 100%; width: auto; max-width: calc(100vw - 24px);
+    aspect-ratio: 360 / 600; touch-action: none; border-radius: 14px;
+    box-shadow: 0 0 0 1px rgba(120,170,255,0.25), 0 0 30px rgba(79,168,255,0.15);
+    cursor: crosshair;
+  }
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; text-align: center;
+    background: rgba(5,4,13,0.72); padding: 20px; color: #e4ecff; z-index: 4;
+  }
+  .overlay h1 {
+    margin: 0; font-size: 34px; letter-spacing: 2px;
+    color: #4fffd6; text-shadow: 0 0 18px #4fffd6, 0 0 40px rgba(79,255,214,0.4);
+  }
+  .overlay h2 {
+    margin: 0; font-size: 26px; color: #ff6cc4; text-shadow: 0 0 14px #ff6cc4;
+  }
+  .overlay p { margin: 0; max-width: 290px; font-size: 15px; line-height: 1.45; color: #cfd8ff; }
+  .overlay .stat { font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #9fb0e0; }
+  .overlay .stat b { color: #e4ecff; font-size: 20px; margin-left: 6px; }
+  [data-testid="start-btn"] {
+    min-width: 200px; min-height: 52px; padding: 12px 26px; border-radius: 26px;
+    border: 2px solid #4fffd6; background: rgba(79,255,214,0.12); color: #4fffd6;
+    font-size: 17px; font-weight: 700; letter-spacing: 1px; cursor: pointer;
+    box-shadow: 0 0 18px rgba(79,255,214,0.45), inset 0 0 12px rgba(79,255,214,0.2);
+    touch-action: manipulation;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// Logical playfield. Canvas is drawn at 2x and scaled by CSS.
+const W = 360, H = 600;
+const SENSOR_Y = 470;   // sample line
+const WIN = 34;         // half-height of the sampling window around the line
+const R = 20;           // molecule radius
+const HIT = R + 26;     // generous tap radius around a molecule
+const LANES = [90, 180, 270];
+const BEST_KEY = 'arcade.2026-11-18.best';
+
+const hueGap = (a, b) => { const d = Math.abs(((a - b) % 360 + 360) % 360); return d > 180 ? 360 - d : d; };
+const readBest = () => { try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (e) { return 0; } };
+const multOf = streak => Math.min(5, 1 + Math.floor(streak / 3));
+
+// ---------- audio (created on first user input) ----------
+let actx = null;
+function ensureAudio() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; } }
+  if (actx && actx.state === 'suspended') actx.resume();
+}
+function tone(f, dur = 0.12, type = 'sine', vol = 0.14, slideTo = 0) {
+  if (!actx || actx.state !== 'running') return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(actx.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
+// ---------- state (refs only; the loop never re-renders React) ----------
+function freshRun(best, swatch) {
+  return {
+    phase: 'playing', t: 0, spawnAcc: 0.4, nextId: 1,
+    mols: [], parts: [], pops: [], ripples: [],
+    score: 0, lives: 3, streak: 0, best, swatch,
+    shake: 0, flash: 0, glow: 0, dirty: true,
+  };
+}
+
+function burst(s, x, y, hue, n, grey = false) {
+  for (let i = 0; i < n && s.parts.length < 240; i++) {
+    const a = Math.random() * Math.PI * 2, v = 40 + Math.random() * 150;
+    s.parts.push({
+      x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+      life: 0.5 + Math.random() * 0.5, max: 0,
+      size: 1.5 + Math.random() * 2.5,
+      hue: grey ? 0 : hue, sat: grey ? 0 : 100,
+    });
+    const p = s.parts[s.parts.length - 1];
+    p.max = p.life;
+  }
+}
+
+function endRun(s) {
+  s.phase = 'over';
+  s.best = Math.max(readBest(), s.score);
+  try { localStorage.setItem(BEST_KEY, String(s.best)); } catch (e) {}
+  tone(150, 0.6, 'sawtooth', 0.12, 40);
+  s.dirty = true;
+}
+
+function loseLife(s, x, y, why) {
+  s.lives--;
+  s.streak = 0;
+  s.shake = 10;
+  s.flash = 1;
+  burst(s, x, y, 0, 16, true);
+  s.pops.push({ x, y: Math.min(y, SENSOR_Y) - 22, text: why === 'missed' ? 'MISSED' : 'CONTAMINATED', hue: 355, life: 1 });
+  tone(why === 'missed' ? 110 : 170, 0.3, why === 'missed' ? 'sine' : 'sawtooth', 0.16, 60);
+  s.dirty = true;
+  if (s.lives <= 0) endRun(s);
+}
+
+function update(s, dt) {
+  s.t += dt;
+  const speed = Math.min(340, 150 + s.t * 4.5);
+  const interval = Math.max(0.5, 1.0 - s.t * 0.01);
+  const oddChance = Math.min(0.5, 0.42 + s.t * 0.004);
+
+  s.spawnAcc -= dt;
+  if (s.spawnAcc <= 0) {
+    s.spawnAcc += interval;
+    // the very first molecule always clashes, so the opening point is quick and fair
+    const odd = s.nextId === 1 || Math.random() < oddChance;
+    const jitter = (Math.random() - 0.5) * 24;
+    const hue = ((odd ? s.swatch + 180 : s.swatch) + jitter + 360) % 360;
+    s.mols.push({
+      id: s.nextId++, x: LANES[Math.floor(Math.random() * LANES.length)], y: -R,
+      hue, odd, judged: false, gone: false, spin: Math.random() * 6,
+    });
+  }
+
+  for (const m of s.mols) {
+    m.y += speed * dt;
+    m.spin += dt * 2.5;
+    if (!m.judged && m.y > SENSOR_Y + WIN) {
+      m.judged = true;
+      if (m.odd && s.phase === 'playing') loseLife(s, m.x, SENSOR_Y + WIN, 'missed');
+    }
+  }
+  s.mols = s.mols.filter(m => !m.gone && m.y < H + R * 2);
+}
+
+function tap(s, x, y) {
+  let target = null, bd = Infinity;
+  for (const m of s.mols) {
+    if (m.judged || m.gone || Math.abs(m.y - SENSOR_Y) > WIN) continue;
+    const d = Math.hypot(m.x - x, m.y - y);
+    if (d <= HIT && d < bd) { bd = d; target = m; }
+  }
+  if (!target) {
+    s.ripples.push({ x, y, life: 0.35 });
+    return;
+  }
+  target.gone = true;
+  if (target.odd) {
+    const precise = Math.abs(target.y - SENSOR_Y) <= 8;
+    const pts = 10 * multOf(s.streak) + (precise ? 5 : 0);
+    s.score += pts;
+    s.streak++;
+    s.glow = 0.6;
+    burst(s, target.x, target.y, target.hue, 24);
+    s.pops.push({ x: target.x, y: target.y - 24, text: (precise ? 'PRECISE +' : '+') + pts, hue: target.hue, life: 1 });
+    tone(480 + Math.min(s.streak, 14) * 45, 0.16, 'triangle', 0.14);
+    s.dirty = true;
+  } else {
+    loseLife(s, target.x, target.y, 'contaminated');
+  }
+}
+
+// ---------- rendering ----------
+function makeBackground() {
+  const c = document.createElement('canvas');
+  c.width = W * 2; c.height = H * 2;
+  const x = c.getContext('2d');
+  x.scale(2, 2);
+  const g = x.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0d0b2a'); g.addColorStop(1, '#04030c');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  x.strokeStyle = 'rgba(120,170,255,0.07)'; x.lineWidth = 1;
+  for (let i = 0; i <= W; i += 30) { x.beginPath(); x.moveTo(i + 0.5, 0); x.lineTo(i + 0.5, H); x.stroke(); }
+  for (let j = 0; j <= H; j += 30) { x.beginPath(); x.moveTo(0, j + 0.5); x.lineTo(W, j + 0.5); x.stroke(); }
+  // lane guides
+  x.strokeStyle = 'rgba(255,255,255,0.04)';
+  LANES.forEach(l => { x.beginPath(); x.moveTo(l, 0); x.lineTo(l, H); x.stroke(); });
+  const v = x.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  x.fillStyle = v; x.fillRect(0, 0, W, H);
+  return c;
+}
+
+function drawMol(ctx, m, inWin) {
+  const { x, y, hue } = m;
+  const g = ctx.createRadialGradient(x - 6, y - 6, 2, x, y, R + 8);
+  g.addColorStop(0, `hsl(${hue},100%,88%)`);
+  g.addColorStop(0.45, `hsl(${hue},100%,60%)`);
+  g.addColorStop(1, `hsla(${hue},100%,40%,0)`);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, R + 8, 0, Math.PI * 2); ctx.fill();
+
+  // orbit ring + two orbiting atoms (tilted ellipse)
+  const sp = m.spin, rx = R + 6, ry = (R + 6) * 0.42;
+  ctx.strokeStyle = `hsla(${hue},100%,78%,0.5)`; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, sp, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = `hsl(${hue},100%,92%)`;
+  for (let k = 0; k < 2; k++) {
+    const a = sp * 1.7 + k * Math.PI;
+    const px = Math.cos(a) * rx, py = Math.sin(a) * ry;
+    ctx.beginPath();
+    ctx.arc(x + px * Math.cos(sp) - py * Math.sin(sp), y + px * Math.sin(sp) + py * Math.cos(sp), 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (inWin) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, R + 14, 0, Math.PI * 2); ctx.stroke();
+  }
+}
+
+function draw(ctx, s, bg) {
+  ctx.setTransform(2, 0, 0, 2, 0, 0);
+  const sh = s.shake;
+  ctx.save();
+  if (sh > 0) ctx.translate((Math.random() - 0.5) * sh * 2, (Math.random() - 0.5) * sh * 2);
+  ctx.drawImage(bg, 0, 0, W, H);
+
+  // sample window + line
+  ctx.fillStyle = 'rgba(79,255,214,0.07)';
+  ctx.fillRect(0, SENSOR_Y - WIN, W, WIN * 2);
+  ctx.fillStyle = 'rgba(79,255,214,0.18)';
+  ctx.fillRect(0, SENSOR_Y - 5, W, 10);
+  ctx.fillStyle = '#4fffd6';
+  ctx.fillRect(0, SENSOR_Y - 1, W, 2);
+  ctx.fillStyle = 'rgba(79,255,214,0.8)';
+  ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'right';
+  ctx.fillText('SAMPLE LINE', W - 10, SENSOR_Y - WIN - 6);
+
+  ctx.globalCompositeOperation = 'lighter';
+  if (s.glow > 0) {
+    ctx.fillStyle = `rgba(79,255,214,${s.glow * 0.15})`;
+    ctx.fillRect(0, SENSOR_Y - WIN, W, WIN * 2);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  for (const m of s.mols) if (!m.gone) drawMol(ctx, m, Math.abs(m.y - SENSOR_Y) <= WIN);
+
+  // ripples (tap that hit nothing)
+  for (const r of s.ripples) {
+    ctx.strokeStyle = `rgba(228,236,255,${r.life * 2})`; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(r.x, r.y, (0.35 - r.life) * 60 + 6, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of s.parts) {
+    const a = Math.max(0, p.life / p.max);
+    ctx.fillStyle = p.sat ? `hsla(${p.hue},100%,65%,${a})` : `rgba(200,210,230,${a * 0.6})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + a * 0.5), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+  for (const p of s.pops) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.hue === 355 ? '#ff5a7a' : `hsl(${p.hue},100%,70%)`;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  if (s.flash > 0) {
+    ctx.fillStyle = `rgba(255,60,100,${s.flash * 0.22})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function step(s, dt) {
+  for (const p of s.parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; p.life -= dt; }
+  s.parts = s.parts.filter(p => p.life > 0);
+  for (const q of s.pops) { q.y -= 40 * dt; q.life -= dt * 1.1; }
+  s.pops = s.pops.filter(q => q.life > 0);
+  for (const r of s.ripples) r.life -= dt;
+  s.ripples = s.ripples.filter(r => r.life > 0);
+  s.shake = Math.max(0, s.shake - dt * 30);
+  s.flash = Math.max(0, s.flash - dt * 3);
+  s.glow = Math.max(0, s.glow - dt * 2);
+}
+
+// Read-only snapshot for bots and tests. Coordinates are CSS px relative to the canvas.
+function publish(s, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = rect.width / W, sy = rect.height / H;
+  window.__game = {
+    phase: s.phase,
+    score: s.score,
+    lives: s.lives,
+    streak: s.streak,
+    best: s.best,
+    swatchHue: s.swatch,
+    sensorY: SENSOR_Y * sy,
+    windowHalf: WIN * sy,
+    radius: R * sx,
+    field: { w: rect.width, h: rect.height },
+    molecules: s.mols
+      .filter(m => !m.gone && !m.judged && m.y > -R && m.y < H)
+      .map(m => ({ x: m.x * sx, y: m.y * sy, hue: Math.round(m.hue) })),
+  };
+}
+
+function App() {
+  const [ui, setUi] = useState({ phase: 'menu', score: 0, lives: 3, streak: 0, best: readBest(), swatch: 200 });
+  const canvasRef = useRef(null);
+  const gs = useRef(null);
+  if (gs.current === null) gs.current = { ...freshRun(readBest(), 200), phase: 'menu', dirty: true };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    canvas.width = W * 2; canvas.height = H * 2;
+    const ctx = canvas.getContext('2d');
+    const bg = makeBackground();
+    const s = gs.current;
+    let raf, last = performance.now();
+    const frame = now => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (s.phase === 'playing') update(s, dt);
+      step(s, dt);
+      draw(ctx, s, bg);
+      publish(s, canvas);
+      if (s.dirty) {
+        s.dirty = false;
+        setUi({ phase: s.phase, score: s.score, lives: s.lives, streak: s.streak, best: s.best, swatch: s.swatch });
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const start = () => {
+    ensureAudio();
+    const s = gs.current;
+    const next = freshRun(readBest(), Math.floor(Math.random() * 360));
+    Object.assign(s, next, { dirty: true });
+    tone(360, 0.1, 'triangle', 0.12, 620);
+  };
+
+  const onDown = e => {
+    ensureAudio();
+    const s = gs.current;
+    if (s.phase !== 'playing') return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * W / rect.width;
+    const y = (e.clientY - rect.top) * H / rect.height;
+    tap(s, x, y);
+  };
+
+  const mult = multOf(ui.streak);
+  return (
+    <div className="app">
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Best<span className="hud-value best-val">{ui.best}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="lives">{'♥'.repeat(Math.max(0, ui.lives))}</span></div>
+        <div className="hud-item">Chain<span className="hud-value mult-val">x{mult}</span></div>
+      </div>
+      <div className="ref">
+        <span>Reference</span>
+        <span className="chip" data-testid="swatch" style={{ background: `hsl(${ui.swatch},100%,60%)`, color: `hsl(${ui.swatch},100%,60%)` }} />
+        <span>Tap the clashing one</span>
+      </div>
+      <div className="field-wrap">
+        <canvas data-testid="field" ref={canvasRef} onPointerDown={onDown} />
+        {ui.phase === 'menu' && (
+          <div className="overlay">
+            <h1>REAGENT CLASH</h1>
+            <p>Molecules drift down. Tap the one whose colour <b>clashes</b> with the reference swatch as it crosses the sample line. Matching ones contaminate the batch.</p>
+            <button data-testid="start-btn" onClick={start}>Start sampling</button>
+          </div>
+        )}
+        {ui.phase === 'over' && (
+          <div className="overlay">
+            <h2>BATCH RUINED</h2>
+            <div className="stat">Score<b>{ui.score}</b></div>
+            <div className="stat">Best<b>{ui.best}</b></div>
+            <button data-testid="start-btn" onClick={start}>Sample again</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
