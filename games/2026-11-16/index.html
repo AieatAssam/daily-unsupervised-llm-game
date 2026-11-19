@@ -363,6 +363,7 @@ function StairShift() {
   const onDown = e => {
     if (e.target.closest && e.target.closest('.overlay')) return;
     ensureAudio();
+    e.currentTarget.setPointerCapture(e.pointerId);   // keep the release on the stage even if the finger leaves it
     G.current.drag = { x: toX(e) };
   };
   const onUp = e => {

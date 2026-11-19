@@ -347,6 +347,7 @@ function CurbLock() {
   if (G.current === null) G.current = freshState(loadBest());
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
+  const ptr = useRef(null);   // the one pointer that owns the hold; extra fingers are ignored
 
   useEffect(() => {
     const g = G.current;
@@ -380,24 +381,28 @@ function CurbLock() {
 
   const onDown = e => {
     const g = G.current;
-    if (g.phase !== 'playing' || (e.target.closest && e.target.closest('.overlay'))) return;
+    if (g.phase !== 'playing' || ptr.current !== null || (e.target.closest && e.target.closest('.overlay'))) return;
     ensureAudio();
+    ptr.current = e.pointerId;
     try { stageRef.current.setPointerCapture(e.pointerId); } catch (err) {}
     setHeld(g, laneAt(toGame(e).x));
   };
   const onMove = e => {
     const g = G.current;
-    if (g.held === null) return;
+    if (g.held === null || e.pointerId !== ptr.current) return;
     setHeld(g, laneAt(toGame(e).x));
   };
-  const onUp = () => {
+  const onUp = e => {
     const g = G.current;
+    if (e.pointerId !== ptr.current) return;
+    ptr.current = null;
     if (g.held !== null) setHeld(g, null);
   };
 
   const start = () => {
     ensureAudio();
     const g = G.current;
+    ptr.current = null;
     Object.assign(g, freshState(g.best), { phase: 'playing', sync: g.sync });
     g.sync();
   };
