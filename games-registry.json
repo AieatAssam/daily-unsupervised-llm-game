@@ -4088,5 +4088,29 @@
     "genre": "odd-one-out",
     "input": "one-button",
     "mechanic": "tap clashing-hue molecule crossing sample line; matching or missed clashers cost life"
+  },
+  {
+    "id": "2026-11-19",
+    "name": "Waggle Route",
+    "date": "2026-11-19",
+    "description": "A bee sits on a row of leaves at the hive. You queue its next hops (up, flat or down to the next column) and WAIT beats in a plan tray, with a dashed forecast showing exactly where each beat lands. When you press FLY the bee runs the whole plan on a beat clock. Nectar flowers on landed leaves score with a chain multiplier. Wasps flip between two leaves of their column every beat, so a landing on the wrong beat stings and a hop onto a missing leaf slips; either costs a life and sends the bee back to the hive. Clearing a route to the far end gives a bonus and a longer route with more wasps and a faster beat. Planning runs out after ten seconds, and three lives end the run.",
+    "tagline": "Plan the flight. Then watch it fly.",
+    "tags": [
+      "planning",
+      "bees",
+      "timing",
+      "neon",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Arrow keys or on-screen arrows queue hops, Space or WAIT pauses a beat, Enter or FLY runs the plan",
+    "folder": "games/2026-11-19",
+    "file": "games/2026-11-19/index.html",
+    "preview": "games/2026-11-19/preview.png",
+    "rating": 4.0,
+    "genre": "logic-routing",
+    "input": "keys-move",
+    "mechanic": "queue hops and waits to time wasps; hit or slip costs life"
   }
 ]

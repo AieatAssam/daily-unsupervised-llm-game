@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Waggle Route</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05040d; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none; user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    background: radial-gradient(circle at 50% 0%, #2a1f06 0%, #0d0a18 55%, #040308 100%);
+    overflow: hidden; color: #e4ecff;
+  }
+  .hud {
+    width: 100%; max-width: 480px; flex: none;
+    display: flex; justify-content: space-around; gap: 4px; padding: 8px 8px 0;
+  }
+  .hud-item {
+    flex: 1; text-align: center; font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; opacity: 0.85;
+  }
+  .hud-value { font-size: 18px; font-weight: 700; display: block; margin-top: 2px; }
+  .score-val { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .best-val { color: #4fa8ff; text-shadow: 0 0 10px #4fa8ff; }
+  .lives-val { color: #ff6cc4; text-shadow: 0 0 10px #ff6cc4; }
+  .mult-val { color: #5dff9a; text-shadow: 0 0 10px #5dff9a; }
+  .field-wrap {
+    position: relative; flex: 1; min-height: 0; width: 100%;
+    display: flex; align-items: center; justify-content: center; padding: 6px 0;
+  }
+  canvas {
+    display: block; height: 100%; width: auto; max-width: calc(100vw - 16px);
+    aspect-ratio: 360 / 400; touch-action: none; border-radius: 14px;
+    box-shadow: 0 0 0 1px rgba(255,216,79,0.25), 0 0 30px rgba(255,216,79,0.12);
+  }
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; text-align: center;
+    background: rgba(5,4,13,0.74); padding: 20px; z-index: 4;
+  }
+  .overlay h1 {
+    margin: 0; font-size: 34px; letter-spacing: 2px; color: #ffd84f;
+    text-shadow: 0 0 18px #ffd84f, 0 0 40px rgba(255,216,79,0.4);
+  }
+  .overlay h2 { margin: 0; font-size: 26px; color: #ff6cc4; text-shadow: 0 0 14px #ff6cc4; }
+  .overlay p { margin: 0; max-width: 300px; font-size: 15px; line-height: 1.45; color: #cfd8ff; }
+  .overlay .stat { font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #9fb0e0; }
+  .overlay .stat b { color: #e4ecff; font-size: 20px; margin-left: 6px; }
+  [data-testid="start-btn"] {
+    min-width: 200px; min-height: 52px; padding: 12px 26px; border-radius: 26px;
+    border: 2px solid #ffd84f; background: rgba(255,216,79,0.12); color: #ffd84f;
+    font-size: 17px; font-weight: 700; letter-spacing: 1px; cursor: pointer;
+    box-shadow: 0 0 18px rgba(255,216,79,0.4), inset 0 0 12px rgba(255,216,79,0.2);
+    touch-action: manipulation;
+  }
+  .tray {
+    flex: none; width: 100%; max-width: 360px; padding: 6px 10px 0;
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;
+  }
+  .slot {
+    height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; color: #ffd84f;
+    background: rgba(255,255,255,0.04); box-shadow: inset 0 0 0 1px rgba(255,216,79,0.18);
+  }
+  .slot.empty { color: rgba(255,255,255,0.22); font-size: 11px; font-weight: 400; }
+  .slot.on { background: rgba(255,216,79,0.16); box-shadow: inset 0 0 0 1px #ffd84f, 0 0 10px rgba(255,216,79,0.35); }
+  .pad {
+    flex: none; width: 100%; max-width: 360px; padding: 8px 10px 10px;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+  }
+  .pad button {
+    min-height: 48px; border-radius: 12px; font-size: 18px; font-weight: 700; color: #e4ecff;
+    border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06);
+    touch-action: none; cursor: pointer; font-family: inherit; padding: 0;
+  }
+  .pad button.fly {
+    background: rgba(93,255,154,0.14); border-color: #5dff9a; color: #5dff9a;
+    box-shadow: 0 0 14px rgba(93,255,154,0.35);
+  }
+  .pad button.small { font-size: 12px; letter-spacing: 1px; }
+  .pad button:active { transform: scale(0.96); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// Logical playfield; canvas is drawn at 2x and scaled by CSS.
+const W = 360, H = 400;
+const BEST_KEY = 'arcade.2026-11-19.best';
+const ROW_Y = [330, 262, 194, 126];   // rows 0..3, bottom to top
+const PLAN_TIME = 10;                 // seconds to plan before the bee is sent anyway
+const GLYPH = { U: '↗', F: '→', D: '↘', W: 'WAIT' };
+const KEYMAP = { U: 'ArrowUp', F: 'ArrowRight', D: 'ArrowDown', W: 'Space' };
+const CLR = { leaf: '#5dff9a', flower: '#ff6cc4', wasp: '#ffd84f', hot: '#ff3b5c', aim: '#4fd8ff', bee: '#ffd84f' };
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const readBest = () => { try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (e) { return 0; } };
+const saveBest = v => { try { localStorage.setItem(BEST_KEY, String(v)); } catch (e) {} };
+
+// Seeded PRNG so each route is the same every attempt.
+function rngFor(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Route n: columns 1..L, each with a main leaf (a walkable path) and sometimes an
+// alternate leaf. Wasp columns have two leaves and the wasp alternates between
+// them every beat, so the planner has to time the landing (or WAIT).
+// No two wasp columns are adjacent, so waiting on the previous column is always safe.
+function makeRoute(n) {
+  const rnd = rngFor(n * 7919 + 101);
+  const L = Math.min(12, 4 + n);
+  const cols = [{ leaves: [{ row: 1, flower: false }], wasp: null }];
+  let m = 1, prevWasp = false;
+  for (let i = 1; i <= L; i++) {
+    m = clamp(m + [-1, 0, 0, 1][Math.floor(rnd() * 4)], 0, 3);
+    const leaves = [{ row: m, flower: rnd() < 0.45 }];
+    const alt = [0, 1, 2, 3].filter(r => r !== m);
+    const wantWasp = n >= 2 && i >= 2 && !prevWasp && rnd() < Math.min(0.5, 0.2 + 0.08 * n);
+    let wasp = null;
+    if (wantWasp || rnd() < 0.3) {
+      const a = alt[Math.floor(rnd() * alt.length)];
+      leaves.push({ row: a, flower: rnd() < 0.4 });
+      if (wantWasp) wasp = { rows: [Math.min(m, a), Math.max(m, a)], phase: rnd() < 0.5 ? 0 : 1 };
+    }
+    cols.push({ leaves, wasp });
+    prevWasp = !!wasp;
+  }
+  return {
+    n, L, cols,
+    beatLen: Math.max(0.42, 0.62 - 0.03 * (n - 1)),
+    maxPlan: Math.min(16, L + 5),
+  };
+}
+
+// Wasp row at absolute beat t.
+const rowAt = (w, t) => w.rows[(t + w.phase) % 2];
+
+// Deterministic preview of a plan. Used for the on-screen forecast AND the real flight,
+// so what you see is exactly what happens.
+function simulate(route, from, beat0, plan) {
+  const out = [];
+  let c = from.c, r = from.r;
+  for (let k = 0; k < plan.length; k++) {
+    const tok = plan[k], t = beat0 + k + 1;
+    let nc = c, nr = r, kind = 'wait', flower = false;
+    if (tok !== 'W') {
+      nc = c + 1;
+      nr = r + (tok === 'U' ? 1 : tok === 'D' ? -1 : 0);
+      kind = 'hop';
+      const leaf = nr >= 0 && nr <= 3 ? route.cols[nc].leaves.find(l => l.row === nr) : null;
+      if (!leaf) { out.push({ kind: 'fall', c: nc, r: clamp(nr, 0, 3), t }); return out; }
+      flower = leaf.flower;
+    }
+    const w = route.cols[nc].wasp;
+    if (w && rowAt(w, t) === nr) { out.push({ kind: 'hit', c: nc, r: nr, t }); return out; }
+    const goal = kind === 'hop' && nc === route.L;
+    out.push({ kind, c: nc, r: nr, t, flower, goal });
+    c = nc; r = nr;
+    if (goal) return out;
+  }
+  return out;
+}
+
+// ---------- audio (created on first user input) ----------
+let actx = null;
+function ensureAudio() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; } }
+  if (actx && actx.state === 'suspended') actx.resume();
+}
+function tone(f, dur = 0.12, type = 'sine', vol = 0.12, slideTo = 0, delay = 0) {
+  if (!actx || actx.state !== 'running') return;
+  const t = actx.currentTime + delay;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(actx.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
+// ---------- pre-rendered sprites ----------
+function glowSprite(hex) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, hex);
+  gr.addColorStop(0.3, hex + '99');
+  gr.addColorStop(1, hex + '00');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  return c;
+}
+let SPR = null;
+function sprites() {
+  if (!SPR) {
+    const bg = document.createElement('canvas');
+    bg.width = W * 2; bg.height = H * 2;
+    const g = bg.getContext('2d');
+    g.scale(2, 2);
+    const grd = g.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, '#1c1406'); grd.addColorStop(1, '#070510');
+    g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    // faint hex lattice
+    g.strokeStyle = 'rgba(255,216,79,0.07)'; g.lineWidth = 1;
+    const hr = 18, hw = hr * Math.sqrt(3);
+    for (let row = -1; row < H / (hr * 1.5) + 1; row++) {
+      for (let col = -1; col < W / hw + 1; col++) {
+        const cx = col * hw + (row % 2 ? hw / 2 : 0), cy = row * hr * 1.5;
+        g.beginPath();
+        for (let k = 0; k < 6; k++) {
+          const a = Math.PI / 3 * k + Math.PI / 6;
+          const x = cx + hr * Math.cos(a), y = cy + hr * Math.sin(a);
+          k ? g.lineTo(x, y) : g.moveTo(x, y);
+        }
+        g.closePath(); g.stroke();
+      }
+    }
+    SPR = {
+      bg,
+      leaf: glowSprite(CLR.leaf), flower: glowSprite(CLR.flower),
+      wasp: glowSprite(CLR.wasp), bee: glowSprite(CLR.bee), hot: glowSprite(CLR.hot),
+      aim: glowSprite(CLR.aim),
+    };
+  }
+  return SPR;
+}
+
+// ---------- game state (refs only; the loop re-renders React only on discrete events) ----------
+function freshState(best) {
+  const route = makeRoute(1);
+  return {
+    phase: 'menu', stage: 'plan', R: 1, route,
+    bee: { c: 0, r: 1, fall: false }, disp: null,
+    beat: 0, plan: [], preview: [], timer: PLAN_TIME,
+    steps: [], si: 0, acc: 0, pause: 0, after: null,
+    score: 0, lives: 3, streak: 0, best,
+    msg: '', msgT: 0, parts: [], pops: [], rings: [],
+    shake: 0, flash: 0, wasp: [], time: 0,
+  };
+}
+
+function burst(S, x, y, color, n) {
+  for (let i = 0; i < n && S.parts.length < 220; i++) {
+    const a = Math.random() * Math.PI * 2, v = 40 + Math.random() * 130;
+    S.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 30, life: 0.5 + Math.random() * 0.4, max: 0.9, color, size: 1.5 + Math.random() * 2.5 });
+  }
+}
+function pop(S, x, y, text, color) { S.pops.push({ x, y, text, color, life: 1 }); }
+function say(S, text, t = 1.2) { S.msg = text; S.msgT = t; }
+
+// Read-only snapshot for bots and tests. Coordinates are logical stage units (360 x 400).
+function publish(S) {
+  window.__game = {
+    phase: S.phase,
+    score: S.score,
+    best: S.best,
+    lives: S.lives,
+    streak: S.streak,
+    stage: S.stage,
+    beat: S.beat,
+    bee: { col: S.bee.c, row: S.bee.r, fall: S.bee.fall },
+    plan: S.plan.slice(),
+    maxPlan: S.route.maxPlan,
+    planTimeLeft: Math.max(0, Number(S.timer.toFixed(2))),
+    route: { n: S.route.n, L: S.route.L, cols: S.route.cols },
+  };
+}
+
+function startGame(S) {
+  ensureAudio();
+  const best = readBest();
+  Object.assign(S, freshState(best), { phase: 'playing', best });
+  S.disp = null;
+  publish(S);
+}
+
+function endGame(S) {
+  S.phase = 'over';
+  if (S.score > S.best) { S.best = S.score; saveBest(S.best); }
+  S.plan = []; S.preview = [];
+  tone(180, 0.6, 'sawtooth', 0.14, 50);
+  publish(S);
+}
+
+function refreshPreview(S) {
+  S.preview = S.stage === 'plan' ? simulate(S.route, S.bee, S.beat, S.plan) : [];
+}
+
+function addTok(S, tok) {
+  if (S.phase !== 'playing' || S.stage !== 'plan') return false;
+  if (S.plan.length >= S.route.maxPlan) { say(S, 'PLAN FULL', 0.8); return false; }
+  S.plan.push(tok);
+  refreshPreview(S);
+  tone(640 + S.plan.length * 40, 0.06, 'triangle', 0.08);
+  publish(S);
+  return true;
+}
+
+function undo(S) {
+  if (S.phase !== 'playing' || S.stage !== 'plan' || !S.plan.length) return false;
+  S.plan.pop();
+  refreshPreview(S);
+  publish(S);
+  return true;
+}
+
+function launch(S) {
+  if (S.phase !== 'playing' || S.stage !== 'plan' || !S.plan.length) return false;
+  S.steps = simulate(S.route, S.bee, S.beat, S.plan);
+  S.si = 0; S.acc = 0; S.stage = 'fly';
+  S.plan = []; S.preview = [];
+  say(S, '', 0);
+  publish(S);
+  return true;
+}
+
+function beginPlan(S) {
+  S.stage = 'plan'; S.timer = PLAN_TIME; S.steps = []; S.preview = [];
+  publish(S);
+}
+
+// Bee lost a life: sent back to the hive and the route restarts (flowers already eaten stay eaten).
+function loseLife(S, pauseSec, after) {
+  S.lives--;
+  S.streak = 0;
+  S.stage = 'abort'; S.pause = pauseSec; S.after = after;
+  S.steps = []; S.preview = [];
+  publish(S);
+}
+
+function applyStep(S) {
+  const st = S.steps[S.si++];
+  S.beat = st.t;
+  const sx = colX(S, st.c);
+  if (st.kind === 'hit') {
+    S.bee = { c: st.c, r: st.r, fall: false };
+    burst(S, sx, rowY(st.r), CLR.hot, 26);
+    S.shake = 10; S.flash = 0.45;
+    tone(160, 0.25, 'sawtooth', 0.16, 60);
+    say(S, 'STUNG!', 1.0);
+    loseLife(S, 1.1, 'retry');
+    return;
+  }
+  if (st.kind === 'fall') {
+    S.bee = { c: st.c, r: st.r, fall: true };
+    burst(S, sx, rowY(0) + 30, CLR.hot, 14);
+    S.shake = 6; S.flash = 0.25;
+    tone(330, 0.3, 'triangle', 0.16, 70);
+    say(S, 'SLIPPED!', 1.0);
+    loseLife(S, 1.1, 'retry');
+    return;
+  }
+  S.bee = { c: st.c, r: st.r, fall: false };
+  if (st.flower) {
+    S.streak++;
+    const mult = Math.min(5, S.streak);
+    const pts = 100 * mult;
+    S.score += pts;
+    S.route.cols[st.c].leaves.find(l => l.row === st.r).flower = false;
+    burst(S, sx, rowY(st.r) - 12, CLR.flower, 16);
+    pop(S, sx, rowY(st.r) - 26, '+' + pts + (mult > 1 ? ' x' + mult : ''), CLR.flower);
+    tone(880, 0.12, 'sine', 0.12, 1320);
+  } else if (st.kind === 'hop') {
+    S.streak = 0;
+    tone(520, 0.08, 'sine', 0.08);
+  }
+  if (st.goal) {
+    const bonus = 250 + 50 * S.R;
+    S.score += bonus;
+    S.stage = 'clear'; S.pause = 1.4; S.after = 'next'; S.steps = []; S.preview = [];
+    S.rings.push({ x: sx, y: rowY(st.r), life: 1 });
+    say(S, 'ROUTE CLEAR  +' + bonus, 1.4);
+    [660, 830, 990, 1320].forEach((f, i) => tone(f, 0.18, 'triangle', 0.1, 0, i * 0.08));
+    publish(S);
+    return;
+  }
+  if (S.si >= S.steps.length) {
+    beginPlan(S);
+    return;
+  }
+  publish(S);
+}
+
+function finishPause(S) {
+  if (S.after === 'next') {
+    S.R++;
+    S.route = makeRoute(S.R);
+    S.bee = { c: 0, r: 1, fall: false };
+    S.disp = null;
+    S.wasp = [];
+  } else if (S.after === 'retry') {
+    S.bee = { c: 0, r: 1, fall: false };
+  }
+  if (S.lives <= 0) { endGame(S); return; }
+  S.msg = ''; S.after = null;
+  beginPlan(S);
+}
+
+function stall(S) {
+  say(S, 'NO FLIGHT PLAN', 1.0);
+  tone(110, 0.35, 'square', 0.1, 70);
+  loseLife(S, 1.1, 'stay');
+}
+
+function colX(S, c) {
+  const L = S.route.L;
+  const step = Math.min(50, 300 / L);
+  const start = (W - L * step) / 2;
+  return start + c * step;
+}
+function rowY(r) { return ROW_Y[clamp(r, 0, 3)]; }
+
+function update(S, dt) {
+  S.time += dt;
+  for (const p of S.parts) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 160 * dt; }
+  S.parts = S.parts.filter(p => p.life > 0);
+  for (const p of S.pops) p.life -= dt * 0.9;
+  S.pops = S.pops.filter(p => p.life > 0);
+  for (const r of S.rings) r.life -= dt * 0.9;
+  S.rings = S.rings.filter(r => r.life > 0);
+  S.shake = Math.max(0, S.shake - dt * 30);
+  S.flash = Math.max(0, S.flash - dt * 2.5);
+  if (S.msgT > 0) { S.msgT -= dt; if (S.msgT <= 0 && S.stage === 'plan') S.msg = ''; }
+
+  if (S.phase === 'playing') {
+    if (S.stage === 'plan') {
+      S.timer -= dt;
+      if (S.timer <= 0) {
+        if (S.plan.length) launch(S);
+        else stall(S);
+      }
+    } else if (S.stage === 'fly') {
+      S.acc += dt;
+      if (S.acc >= S.route.beatLen) {
+        S.acc -= S.route.beatLen;
+        applyStep(S);
+      }
+    } else if (S.stage === 'abort' || S.stage === 'clear') {
+      S.pause -= dt;
+      if (S.pause <= 0) finishPause(S);
+    }
+  }
+
+  // ease bee and wasps toward their logical positions
+  const tx = colX(S, S.bee.c), ty = S.bee.fall ? rowY(0) + 70 : rowY(S.bee.r);
+  if (!S.disp) S.disp = { x: tx, y: ty };
+  const k = Math.min(1, dt * 14);
+  S.disp.x += (tx - S.disp.x) * k;
+  S.disp.y += (ty - S.disp.y) * k;
+  S.route.cols.forEach((col, c) => {
+    if (!col.wasp) return;
+    const target = rowY(rowAt(col.wasp, S.beat));
+    if (S.wasp[c] === undefined) S.wasp[c] = target;
+    S.wasp[c] += (target - S.wasp[c]) * Math.min(1, dt * 10);
+  });
+}
+
+// ---------- drawing ----------
+function drawGlow(ctx, img, x, y, r, alpha = 1) {
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(img, x - r, y - r, r * 2, r * 2);
+  ctx.globalAlpha = 1;
+}
+
+function draw(ctx, S) {
+  const spr = sprites();
+  ctx.save();
+  ctx.setTransform(2, 0, 0, 2, 0, 0);
+  if (S.shake > 0) ctx.translate((Math.random() - 0.5) * S.shake, (Math.random() - 0.5) * S.shake);
+  ctx.drawImage(spr.bg, 0, 0, W, H);
+
+  const L = S.route.L;
+  const step = Math.min(50, 300 / L);
+  const cy = (r) => rowY(r);
+  ctx.globalCompositeOperation = 'lighter';
+
+  // leaves, flowers, wasp lanes
+  S.route.cols.forEach((col, c) => {
+    const x = colX(S, c);
+    if (c === 0) {
+      // hive
+      drawGlow(ctx, spr.bee, x, cy(1), 30, 0.35);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#ffb938';
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = Math.PI / 3 * k;
+        const px = x + 13 * Math.cos(a), py = cy(1) + 13 * Math.sin(a);
+        k ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#fff1a8'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      return;
+    }
+    if (col.wasp) {
+      ctx.setLineDash([3, 4]);
+      ctx.strokeStyle = 'rgba(255,216,79,0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, cy(col.wasp.rows[0])); ctx.lineTo(x, cy(col.wasp.rows[1])); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    for (const lf of col.leaves) {
+      const y = cy(lf.row), w = Math.min(step * 0.72, 34);
+      drawGlow(ctx, spr.leaf, x, y, w * 0.9, 0.35);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#2bd672';
+      ctx.beginPath(); ctx.roundRect(x - w / 2, y - 4, w, 8, 4); ctx.fill();
+      ctx.fillStyle = '#b8ffd2';
+      ctx.fillRect(x - w / 2 + 2, y - 3, w - 4, 2);
+      ctx.globalCompositeOperation = 'lighter';
+      if (lf.flower) {
+        const pulse = 1 + 0.12 * Math.sin(S.time * 6 + c);
+        drawGlow(ctx, spr.flower, x, y - 12, 14 * pulse, 0.9);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = CLR.flower;
+        ctx.beginPath(); ctx.arc(x, y - 12, 4.5 * pulse, 0, Math.PI * 2); ctx.fill();
+        ctx.globalCompositeOperation = 'lighter';
+      }
+    }
+    if (col.wasp) {
+      const wy = S.wasp[c] !== undefined ? S.wasp[c] : cy(rowAt(col.wasp, S.beat));
+      const buzz = Math.sin(S.time * 50 + c) * 1.5;
+      drawGlow(ctx, spr.wasp, x, wy, 18, 0.8);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = CLR.wasp;
+      ctx.beginPath(); ctx.arc(x, wy + buzz * 0.2, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#140f00';
+      ctx.fillRect(x - 4, wy - 4 + buzz * 0.2, 2.2, 8.5);
+      ctx.fillRect(x + 1.5, wy - 4 + buzz * 0.2, 2.2, 8.5);
+      ctx.globalCompositeOperation = 'lighter';
+    }
+  });
+
+  // forecast of the queued plan
+  if (S.stage === 'plan' && S.preview.length) {
+    let px = colX(S, S.bee.c), py = rowY(S.bee.r);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = 'rgba(79,216,255,0.85)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(px, py);
+    for (const st of S.preview) {
+      const nx = colX(S, st.c), ny = rowY(st.r);
+      if (st.kind === 'wait') { ctx.lineTo(nx, ny); }
+      else {
+        ctx.quadraticCurveTo((px + nx) / 2, Math.min(py, ny) - 22, nx, ny);
+      }
+      px = nx; py = ny;
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    S.preview.forEach((st, i) => {
+      const x = colX(S, st.c), y = rowY(st.r);
+      ctx.fillStyle = 'rgba(79,216,255,0.95)';
+      ctx.beginPath(); ctx.arc(x, y + 14, 6.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#04101a'; ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(i + 1), x, y + 14.5);
+      if (st.kind === 'hit' || st.kind === 'fall') {
+        const yy = st.kind === 'fall' ? rowY(0) + 40 : y;
+        ctx.strokeStyle = CLR.hot; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(x - 9, yy - 9); ctx.lineTo(x + 9, yy + 9);
+        ctx.moveTo(x + 9, yy - 9); ctx.lineTo(x - 9, yy + 9); ctx.stroke();
+      }
+      if (st.goal) {
+        ctx.strokeStyle = CLR.leaf; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.stroke();
+      }
+    });
+    ctx.globalCompositeOperation = 'lighter';
+  }
+
+  // rings
+  for (const r of S.rings) {
+    ctx.strokeStyle = `rgba(93,255,154,${r.life})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(r.x, r.y, (1 - r.life) * 110 + 10, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // bee
+  const bx = S.disp ? S.disp.x : colX(S, S.bee.c);
+  const by = S.disp ? S.disp.y : rowY(S.bee.r);
+  drawGlow(ctx, spr.bee, bx, by, 22, 0.55);
+  ctx.globalCompositeOperation = 'source-over';
+  const flap = Math.sin(S.time * 45) * 0.5 + 0.5;
+  ctx.fillStyle = 'rgba(207,234,255,0.8)';
+  ctx.beginPath(); ctx.ellipse(bx - 3, by - 7, 5, 2 + flap * 4, -0.4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(bx + 3, by - 7, 5, 2 + (1 - flap) * 4, 0.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = CLR.bee;
+  ctx.beginPath(); ctx.ellipse(bx, by, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1a1200';
+  ctx.fillRect(bx - 2.5, by - 6, 2, 12); ctx.fillRect(bx + 1, by - 6, 2, 12);
+  ctx.globalCompositeOperation = 'lighter';
+
+  // particles, popups
+  for (const p of S.parts) {
+    const a = Math.max(0, p.life / p.max);
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = a;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + a * 0.5), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const p of S.pops) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color; ctx.font = 'bold 16px Arial';
+    ctx.fillText(p.text, p.x, p.y - (1 - p.life) * 22);
+  }
+  ctx.globalAlpha = 1;
+
+  // HUD text on canvas
+  ctx.fillStyle = 'rgba(228,236,255,0.9)';
+  ctx.font = 'bold 11px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('ROUTE ' + S.route.n, 12, 14);
+  ctx.textAlign = 'right';
+  ctx.fillText(S.stage === 'plan' ? 'PLAN ' + S.plan.length + '/' + S.route.maxPlan : 'IN FLIGHT', W - 12, 14);
+  ctx.textAlign = 'center';
+  ctx.font = '12px Arial'; ctx.fillStyle = 'rgba(207,216,255,0.85)';
+  if (S.phase === 'playing' && S.stage === 'plan') {
+    ctx.fillText('queue hops ↗ → ↘ or WAIT, then FLY', W / 2, 36);
+  }
+  if (S.msg && S.msgT > 0) {
+    ctx.font = 'bold 22px Arial';
+    ctx.fillStyle = S.msg.startsWith('ROUTE') ? CLR.leaf : CLR.hot;
+    ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 12;
+    ctx.fillText(S.msg, W / 2, 62);
+    ctx.shadowBlur = 0;
+  }
+  // planning timer bar
+  if (S.phase === 'playing' && S.stage === 'plan') {
+    const f = clamp(S.timer / PLAN_TIME, 0, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(12, 384, W - 24, 5);
+    ctx.fillStyle = f < 0.3 ? CLR.hot : CLR.aim;
+    ctx.fillRect(12, 384, (W - 24) * f, 5);
+  }
+  if (S.flash > 0) {
+    ctx.fillStyle = `rgba(255,59,92,${S.flash * 0.35})`;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+  }
+  ctx.restore();
+}
+
+// ---------- React shell ----------
+function Slots({ plan, max }) {
+  const cells = [];
+  for (let i = 0; i < max; i++) {
+    const tok = plan[i];
+    cells.push(
+      <div key={i} className={'slot' + (tok ? ' on' : ' empty')}>
+        {tok ? (tok === 'W' ? 'W' : GLYPH[tok]) : i + 1}
+      </div>
+    );
+  }
+  return <div className="tray" data-testid="plan-tray">{cells}</div>;
+}
+
+function App() {
+  const [, setV] = useState(0);
+  const uiRef = useRef(() => {});
+  uiRef.current = () => setV(v => v + 1);
+  const ui = () => uiRef.current();
+  const SR = useRef(null);
+  if (!SR.current) SR.current = freshState(readBest());
+  const S = SR.current;
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    canvas.width = W * 2; canvas.height = H * 2;
+    const ctx = canvas.getContext('2d');
+    publish(S);
+    let raf, last = performance.now();
+    const frame = now => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const sig = [S.phase, S.stage, S.score, S.lives, S.streak, S.R, S.plan.length, S.best].join('|');
+      update(S, dt);
+      draw(ctx, S);
+      const sig2 = [S.phase, S.stage, S.score, S.lives, S.streak, S.R, S.plan.length, S.best].join('|');
+      if (sig2 !== sig) ui();
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+
+    const onKey = e => {
+      if (S.phase !== 'playing') return;
+      let tok = null;
+      if (e.key === 'ArrowUp') tok = 'U';
+      else if (e.key === 'ArrowRight') tok = 'F';
+      else if (e.key === 'ArrowDown') tok = 'D';
+      else if (e.code === 'Space') tok = 'W';
+      if (tok) { e.preventDefault(); if (addTok(S, tok)) ui(); return; }
+      if (e.key === 'Backspace') { e.preventDefault(); if (undo(S)) ui(); return; }
+      if (e.key === 'Enter') { e.preventDefault(); if (launch(S)) ui(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('keydown', onKey); };
+  }, []);
+
+  const press = (fn) => (e) => {
+    e.preventDefault();
+    ensureAudio();
+    if (fn(S)) ui();
+  };
+  const onStart = () => { startGame(S); ui(); };
+
+  const padBtn = (tok, testid) => (
+    <button tabIndex={-1} data-testid={testid} onPointerDown={press(s => addTok(s, tok))}>
+      {tok === 'W' ? 'WAIT' : GLYPH[tok]}
+    </button>
+  );
+
+  return (
+    <div className="app" data-stage={S.stage} data-phase={S.phase}>
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-value score-val" data-testid="hud-score">{S.score}</span></div>
+        <div className="hud-item">Best<span className="hud-value best-val">{S.best}</span></div>
+        <div className="hud-item">Lives<span className="hud-value lives-val" data-testid="hud-lives">{'♥'.repeat(Math.max(0, S.lives))}</span></div>
+        <div className="hud-item">Chain<span className="hud-value mult-val">x{Math.min(5, Math.max(1, S.streak))}</span></div>
+      </div>
+      <div className="field-wrap">
+        <canvas ref={canvasRef} data-testid="stage" aria-label="Flight stage" />
+        {S.phase === 'menu' && (
+          <div className="overlay">
+            <h1>WAGGLE ROUTE</h1>
+            <p>Queue the bee's hops ahead of time, then press FLY and watch it run your route. Land on nectar, time WAIT past the wasps.</p>
+            <button data-testid="start-btn" onClick={onStart}>Start</button>
+          </div>
+        )}
+        {S.phase === 'over' && (
+          <div className="overlay">
+            <h2>GROUNDED</h2>
+            <div className="stat">Score<b>{S.score}</b></div>
+            <div className="stat">Best<b>{S.best}</b></div>
+            <div className="stat">Route reached<b>{S.R}</b></div>
+            <button data-testid="start-btn" onClick={onStart}>Fly again</button>
+          </div>
+        )}
+      </div>
+      <Slots plan={S.plan} max={S.route.maxPlan} />
+      <div className="pad">
+        {padBtn('U', 'tok-up')}
+        {padBtn('F', 'tok-flat')}
+        {padBtn('D', 'tok-down')}
+        <button className="small" tabIndex={-1} data-testid="tok-wait" onPointerDown={press(s => addTok(s, 'W'))}>WAIT</button>
+        <button className="small" tabIndex={-1} data-testid="undo-btn" onPointerDown={press(undo)}>UNDO</button>
+        <button className="fly" tabIndex={-1} data-testid="fly-btn" onPointerDown={press(launch)}>FLY</button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
