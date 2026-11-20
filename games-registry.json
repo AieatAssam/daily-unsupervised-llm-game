@@ -4112,5 +4112,29 @@
     "genre": "logic-routing",
     "input": "keys-move",
     "mechanic": "queue hops and waits to time wasps; hit or slip costs life"
+  },
+  {
+    "id": "2026-11-20",
+    "name": "Dead Air",
+    "date": "2026-11-20",
+    "description": "A hand hovers over a music studio board. Quiet cyan cards drift down toward a floor line; any you leave untouched land in the pot, with a streak multiplier. Loud magenta static drifts down too: move your pointer onto it to mute it for points, or let it hit the floor and lose a life. Touching a quiet card mutes it and wipes the unbanked pot (a BUST). Tap the VAULT below the floor to bank the pot into your score; unbanked silence is lost when the signal dies. Loud cards come faster and more often over time. Three leaks end the run.",
+    "tagline": "Catch the noise. Keep the silence.",
+    "tags": [
+      "risk",
+      "music",
+      "push-your-luck",
+      "neon",
+      "skill"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Move pointer or drag finger to steer your hand; tap the VAULT to bank SILENCE",
+    "folder": "games/2026-11-20",
+    "file": "games/2026-11-20/index.html",
+    "preview": "games/2026-11-20/preview.png",
+    "rating": 4.0,
+    "genre": "card-push-luck",
+    "input": "pointer-follow",
+    "mechanic": "touch loud cards, avoid quiet ones; bank pot; leaked loud costs life"
   }
 ]
