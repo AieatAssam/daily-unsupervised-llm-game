@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Steam Dispatch</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05040d; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none; user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  .app {
+    position: relative; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    background: radial-gradient(circle at 50% 0%, #142a33 0%, #0a0c18 55%, #040308 100%);
+    overflow: hidden; padding-bottom: 8px;
+  }
+  .drift {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(120deg, rgba(79,255,214,0.05), rgba(255,216,79,0.05), rgba(79,168,255,0.06));
+    background-size: 400% 400%;
+    animation: drift 18s ease-in-out infinite;
+  }
+  @keyframes drift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .hud {
+    position: relative; z-index: 5; width: 100%; max-width: 340px;
+    display: flex; justify-content: space-around; padding: 8px 4px 2px;
+  }
+  .hud-item {
+    flex: 1; text-align: center; color: #e8eeff;
+    font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.85;
+  }
+  .hud-val { display: block; font-size: 18px; font-weight: 800; margin-top: 2px; letter-spacing: 0; }
+  .c-cyan { color: #4fffd6; text-shadow: 0 0 10px #4fffd6; }
+  .c-mag { color: #ff4fa3; text-shadow: 0 0 10px #ff4fa3; }
+  .c-gold { color: #ffd84f; text-shadow: 0 0 10px #ffd84f; }
+  .c-blue { color: #4fa8ff; text-shadow: 0 0 10px #4fa8ff; }
+  .coal {
+    position: relative; z-index: 5; width: 100%; max-width: 340px;
+    display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px;
+    color: #e8eeff; font-size: 10px; letter-spacing: 1.5px; opacity: 0.85;
+  }
+  .coal-track {
+    flex: 1; height: 8px; border-radius: 4px; overflow: hidden;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(79,255,214,0.25);
+  }
+  .coal-fill {
+    height: 100%; width: 70%; border-radius: 4px;
+    background: linear-gradient(90deg, #ff4fa3, #ffd84f 45%, #4fffd6);
+    box-shadow: 0 0 10px rgba(255,216,79,0.6);
+  }
+  .board-wrap {
+    position: relative; z-index: 2; width: min(340px, 100%);
+  }
+  canvas.board {
+    display: block; width: 100%; height: auto; aspect-ratio: 340 / 360;
+    touch-action: none; border-radius: 14px;
+    border: 1px solid rgba(79,255,214,0.22);
+    box-shadow: 0 0 22px rgba(79,255,214,0.12);
+  }
+  .overlay {
+    position: absolute; inset: 0; z-index: 4; border-radius: 14px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(5,4,13,0.78); color: #e8eeff; text-align: center; padding: 18px;
+  }
+  .title {
+    margin: 0 0 10px; font-size: 30px; font-weight: 900; letter-spacing: 3px;
+    color: #4fffd6; text-shadow: 0 0 14px #4fffd6, 0 0 30px rgba(79,255,214,0.4);
+  }
+  .over-line {
+    margin: 0 0 6px; font-size: 22px; font-weight: 900; letter-spacing: 3px;
+    color: #ff4fa3; text-shadow: 0 0 12px #ff4fa3;
+  }
+  .overlay p { margin: 6px 0; font-size: 14px; line-height: 1.45; max-width: 290px; opacity: 0.92; }
+  .overlay .hint { color: #ffd84f; font-size: 12px; }
+  button.start-btn {
+    margin-top: 16px; min-width: 180px; min-height: 52px; padding: 12px 28px;
+    font-size: 18px; font-weight: 800; letter-spacing: 2px; color: #05040d;
+    background: linear-gradient(90deg, #4fffd6, #ffd84f);
+    border: none; border-radius: 14px; cursor: pointer; touch-action: none;
+    box-shadow: 0 0 18px rgba(79,255,214,0.55);
+  }
+  button.start-btn:active { transform: scale(0.94); }
+  .readout {
+    position: relative; z-index: 3; display: flex; gap: 8px; justify-content: center;
+    margin: 10px 0 8px; height: 44px;
+  }
+  .slot {
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; border: 1px solid rgba(255,216,79,0.35);
+    background: rgba(255,216,79,0.06); color: #ffd84f;
+    font: 800 22px ui-monospace, Menlo, Consolas, monospace;
+    text-shadow: 0 0 10px rgba(255,216,79,0.7);
+  }
+  .keypad {
+    position: relative; z-index: 3; width: min(340px, 100%);
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+    transition: opacity 0.2s;
+  }
+  .keypad.off { opacity: 0.4; }
+  .key {
+    min-height: 48px; border-radius: 10px; cursor: pointer;
+    background: #120e24; color: #4fffd6; font: 800 20px ui-monospace, Menlo, Consolas, monospace;
+    border: 1px solid rgba(79,255,214,0.4);
+    box-shadow: inset 0 0 12px rgba(79,255,214,0.08), 0 0 8px rgba(79,255,214,0.15);
+    touch-action: none;
+  }
+  .key:active { background: #1f1842; transform: translateY(1px); }
+  .key-del {
+    grid-column: 1 / -1; min-height: 44px; font-size: 14px; letter-spacing: 2px;
+    color: #ff4fa3; border-color: rgba(255,79,163,0.45);
+    box-shadow: inset 0 0 12px rgba(255,79,163,0.08), 0 0 8px rgba(255,79,163,0.15);
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ---- constants -------------------------------------------------------------
+const W = 340, H = 360;
+const LANES = [100, 180, 260];          // track centre lines (canvas px)
+const LETTERS = 'RAILSTOW';             // every station code is spelled from these
+const COAL_MAX = 100, COAL_START = 70;
+const LIVES_START = 3;
+const SWEEP = 1.2;                      // seconds for the scanner to cross the yard
+const CAR = 34, GAP = 4, NOSE = 12;
+const BEST_KEY = 'arcade.2026-11-21.best';
+const lenOf = cars => NOSE + cars * CAR + (cars - 1) * GAP;
+
+// ---- state -----------------------------------------------------------------
+function readBest() {
+  return parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
+}
+
+function newSim(best) {
+  return {
+    phase: 'menu', t: 0, spawnIn: 0.6, nextId: 1,
+    trains: [], parts: [], pops: [],
+    scanT: 0, scanX: null,
+    coal: COAL_START, lives: LIVES_START, combo: 0, score: 0, best,
+    buffer: '', shake: 0, flash: 0, flashRGB: '255,79,163',
+    dirty: true,
+  };
+}
+
+let sim = newSim(readBest());
+let audio = null;
+
+// ---- sound -----------------------------------------------------------------
+function ensureAudio() {
+  if (!audio) {
+    try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+  if (audio && audio.state === 'suspended') audio.resume();
+}
+function blip(freq, dur, type = 'triangle', vol = 0.08, slide = 0) {
+  if (!audio) return;
+  const t = audio.currentTime;
+  const o = audio.createOscillator();
+  const g = audio.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(audio.destination);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+}
+
+// ---- helpers ---------------------------------------------------------------
+function burst(s, x, y, rgb, n, speed) {
+  for (let i = 0; i < n && s.parts.length < 220; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = speed * (0.4 + Math.random() * 0.6);
+    s.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, rgb, size: 1.5 + Math.random() * 2.5 });
+  }
+}
+function pop(s, x, y, text, rgb) {
+  s.pops.push({ x, y, text, rgb, life: 1 });
+}
+function mult(combo) {
+  return 1 + Math.min(4, Math.floor(combo / 3));
+}
+
+// Pick a code no active train shares, and no active train's code is a prefix
+// of (or prefixed by) — so a typed buffer is never ambiguous.
+function pickCode(s, len) {
+  for (let tries = 0; tries < 200; tries++) {
+    let c = '';
+    for (let i = 0; i < len; i++) c += LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    const clash = s.trains.some(tr => tr.code.startsWith(c) || c.startsWith(tr.code));
+    if (!clash) return c;
+  }
+  return null;
+}
+
+function spawn(s) {
+  const heavy = Math.random() < Math.min(0.4, 0.1 + 0.005 * s.t);
+  const cars = heavy ? 3 : 1;
+  // A lane is free if its last train has moved far enough left to leave a gap.
+  const free = [0, 1, 2].filter(li => s.trains.every(tr => tr.lane !== li || tr.x + tr.len <= W - 40));
+  if (!free.length) return false;
+  const code = pickCode(s, heavy ? 4 : 3);
+  if (!code) return false;
+  const lane = free[Math.floor(Math.random() * free.length)];
+  s.trains.push({
+    id: s.nextId++, lane, cars, heavy, code, codeLen: code.length,
+    len: lenOf(cars), x: W + 4, flashUntil: 0,
+  });
+  return true;
+}
+
+function gameOver(s) {
+  s.phase = 'over';
+  s.buffer = '';
+  if (s.score > s.best) {
+    s.best = s.score;
+    try { localStorage.setItem(BEST_KEY, String(s.best)); } catch (e) {}
+  }
+  blip(220, 0.6, 'sawtooth', 0.09, 0.2);
+  s.dirty = true;
+}
+
+function dispatch(s, tr) {
+  s.trains.splice(s.trains.indexOf(tr), 1);
+  const m = mult(s.combo);
+  const pts = (tr.heavy ? 30 : 10) * m;
+  s.score += pts;
+  s.combo++;
+  s.coal = Math.min(COAL_MAX, s.coal + (tr.heavy ? 14 : 6));
+  const cx = tr.x + tr.len / 2, cy = LANES[tr.lane];
+  const rgb = tr.heavy ? '255,79,163' : '79,255,214';
+  burst(s, cx, cy, rgb, tr.heavy ? 36 : 18, 150);
+  burst(s, cx, cy, '255,216,79', 8, 90);
+  pop(s, cx, cy - 34, `+${pts}`, '255,216,79');
+  if (tr.heavy) pop(s, cx, cy + 30, 'HEAVY LOAD', rgb);
+  blip(620 + s.combo * 30, 0.12, 'triangle', 0.09, 1.6);
+}
+
+function wrong(s) {
+  s.coal -= 6;
+  s.combo = 0;
+  s.shake = 0.3;
+  s.flash = 0.8;
+  s.flashRGB = '255,79,163';
+  pop(s, W / 2, 30, 'MISFEED -6', '255,79,163');
+  blip(160, 0.2, 'sawtooth', 0.07, 0.6);
+  if (s.coal <= 0) gameOver(s);
+}
+
+function typed(s, ch) {
+  const buf = s.buffer + ch;
+  const hit = s.trains.find(tr => tr.code === buf);
+  if (hit) {
+    s.buffer = '';
+    dispatch(s, hit);
+  } else if (s.trains.some(tr => tr.code.startsWith(buf))) {
+    s.buffer = buf;
+    blip(660, 0.04, 'square', 0.04);
+  } else {
+    s.buffer = '';
+    wrong(s);
+  }
+  s.dirty = true;
+}
+
+function updateFx(s, dt) {
+  s.parts = s.parts.filter(p => {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 60 * dt; p.vx *= 0.97;
+    p.life -= dt * 1.4;
+    return p.life > 0;
+  });
+  s.pops = s.pops.filter(p => {
+    p.y -= 26 * dt; p.life -= dt * 0.9;
+    return p.life > 0;
+  });
+}
+
+// One simulation tick. Per-frame state stays here, not in React.
+function step(s, dt) {
+  s.shake = Math.max(0, s.shake - dt);
+  s.flash = Math.max(0, s.flash - dt * 2.5);
+  updateFx(s, dt);
+  if (s.phase !== 'playing') return;
+
+  s.t += dt;
+  s.coal -= (3 + 0.05 * s.t) * dt;
+  const speed = Math.min(82, 26 + 0.45 * s.t);
+
+  s.spawnIn -= dt;
+  if (s.spawnIn <= 0) {
+    const gap = Math.max(1.1, 2.6 - 0.02 * s.t) * (0.85 + Math.random() * 0.3);
+    s.spawnIn = spawn(s) ? gap : 0.3;
+  }
+
+  // The scanner sweeps left to right; any train whose centre it crosses lights
+  // its code for a short flash. Between sweeps the codes are hidden.
+  const P = Math.max(2.2, 3.2 - 0.012 * s.t);
+  const prevPh = s.scanT % P;
+  s.scanT += dt;
+  const ph = s.scanT % P;
+  const xAt = q => -40 + (q / SWEEP) * (W + 200);
+  const wrapped = ph < prevPh;
+  const cur = ph < SWEEP ? xAt(ph) : null;
+  const prev = wrapped ? -41 : (prevPh < SWEEP ? xAt(prevPh) : -41);
+  s.scanX = cur;
+  const flashLen = Math.max(0.9, 1.4 - 0.01 * s.t);
+  if (cur !== null) {
+    for (const tr of s.trains) {
+      const cx = tr.x + tr.len / 2;
+      if (prev < cx && cx <= cur) {
+        tr.flashUntil = s.t + flashLen;
+        blip(1320, 0.05, 'sine', 0.025);
+      }
+    }
+  }
+
+  for (const tr of s.trains) tr.x -= speed * dt;
+
+  for (let i = s.trains.length - 1; i >= 0; i--) {
+    const tr = s.trains[i];
+    if (tr.x + tr.len < 0) {
+      s.trains.splice(i, 1);
+      s.lives--;
+      s.combo = 0;
+      s.shake = 0.4;
+      s.flash = 1;
+      s.flashRGB = '255,79,163';
+      pop(s, 40, LANES[tr.lane] - 34, 'ESCAPED', '255,79,163');
+      blip(180, 0.3, 'sawtooth', 0.08, 0.5);
+      s.dirty = true;
+    }
+  }
+  if (s.lives <= 0) return gameOver(s);
+  if (s.coal <= 0) { s.coal = 0; return gameOver(s); }
+}
+
+// ---- rendering -------------------------------------------------------------
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawTrain(ctx, s, tr) {
+  const y = LANES[tr.lane];
+  const lit = s.t < tr.flashUntil;
+  const base = tr.heavy ? '255,79,163' : '79,255,214';
+  ctx.save();
+  ctx.shadowColor = `rgba(${base},${lit ? 0.9 : 0.4})`;
+  ctx.shadowBlur = lit ? 16 : 6;
+  // nose points left (direction of travel)
+  ctx.fillStyle = `rgba(${base},${lit ? 0.95 : 0.55})`;
+  ctx.beginPath();
+  ctx.moveTo(tr.x, y);
+  ctx.lineTo(tr.x + NOSE, y - 14);
+  ctx.lineTo(tr.x + NOSE, y + 14);
+  ctx.closePath();
+  ctx.fill();
+  for (let c = 0; c < tr.cars; c++) {
+    const cx = tr.x + NOSE + c * (CAR + GAP);
+    ctx.fillStyle = `rgba(${base},${lit ? 0.95 : 0.55})`;
+    rr(ctx, cx, y - 14, CAR, 28, 5);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(5,4,13,0.78)';
+    rr(ctx, cx + 6, y - 8, CAR - 12, 10, 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(5,4,13,0.9)';
+    ctx.beginPath(); ctx.arc(cx + 9, y + 15, 3.5, 0, Math.PI * 2); ctx.arc(cx + CAR - 9, y + 15, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = lit ? 16 : 6;
+  }
+  ctx.restore();
+
+  // code: visible only during a scanner flash
+  const cx = tr.x + tr.len / 2;
+  ctx.save();
+  ctx.font = 'bold 15px ui-monospace, Menlo, Consolas, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (lit) {
+    ctx.shadowColor = `rgba(${base},0.9)`;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(tr.code.split('').join(' '), cx, y - 26);
+  } else {
+    ctx.fillStyle = 'rgba(232,238,255,0.3)';
+    ctx.fillText(Array(tr.codeLen).fill('?').join(' '), cx, y - 26);
+  }
+  ctx.restore();
+}
+
+function draw(ctx, s) {
+  ctx.save();
+  if (s.shake > 0) ctx.translate((Math.random() - 0.5) * s.shake * 16, (Math.random() - 0.5) * s.shake * 16);
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0d1424');
+  bg.addColorStop(1, '#05040d');
+  ctx.fillStyle = bg;
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  // faint yard grid
+  ctx.strokeStyle = 'rgba(79,255,214,0.05)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 34) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+
+  // track
+  for (const y of LANES) {
+    ctx.fillStyle = 'rgba(79,168,255,0.35)';
+    ctx.fillRect(0, y - 16, W, 2);
+    ctx.fillRect(0, y + 16, W, 2);
+    ctx.fillStyle = 'rgba(79,168,255,0.12)';
+    for (let x = 0; x < W; x += 18) ctx.fillRect(x, y - 18, 3, 36);
+  }
+
+  // exit gate on the left: trains that cross it are lost
+  const gate = ctx.createLinearGradient(0, 0, 14, 0);
+  gate.addColorStop(0, 'rgba(255,79,163,0.55)');
+  gate.addColorStop(1, 'rgba(255,79,163,0)');
+  ctx.fillStyle = gate;
+  ctx.fillRect(0, 0, 14, H);
+
+  // scanner beam
+  if (s.phase === 'playing' && s.scanX !== null) {
+    const g = ctx.createLinearGradient(s.scanX - 28, 0, s.scanX + 28, 0);
+    g.addColorStop(0, 'rgba(79,255,214,0)');
+    g.addColorStop(0.5, 'rgba(79,255,214,0.30)');
+    g.addColorStop(1, 'rgba(79,255,214,0)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.fillRect(s.scanX - 28, 0, 56, H);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  for (const tr of s.trains) drawTrain(ctx, s, tr);
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of s.parts) {
+    ctx.fillStyle = `rgba(${p.rgb},${Math.max(0, p.life)})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life + 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  for (const p of s.pops) {
+    ctx.fillStyle = `rgba(${p.rgb},${Math.max(0, p.life)})`;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+
+  if (s.flash > 0) {
+    ctx.fillStyle = `rgba(${s.flashRGB},${s.flash * 0.18})`;
+    ctx.fillRect(-20, -20, W + 40, H + 40);
+  }
+  ctx.restore();
+}
+
+// Read-only view for tests and bots. Codes are included only while lit.
+function snapshot(s) {
+  return {
+    phase: s.phase,
+    score: s.score,
+    best: s.best,
+    lives: s.lives,
+    coal: Math.round(s.coal),
+    combo: s.combo,
+    buffer: s.buffer,
+    trains: s.trains.map(tr => ({
+      id: tr.id,
+      x: Math.round(tr.x),
+      len: tr.len,
+      lane: LANES[tr.lane],
+      heavy: tr.heavy,
+      codeLen: tr.codeLen,
+      code: s.t < tr.flashUntil ? tr.code : null,
+    })),
+  };
+}
+function uiOf(s) {
+  return { phase: s.phase, score: s.score, best: s.best, lives: s.lives, combo: s.combo, buffer: s.buffer };
+}
+
+// ---- actions ---------------------------------------------------------------
+function startGame() {
+  ensureAudio();
+  sim = newSim(sim.best);
+  sim.phase = 'playing';
+  sim.spawnIn = 0.6;
+  sim.dirty = true;
+  blip(523, 0.12, 'triangle', 0.08);
+}
+function pressKey(ch) {
+  if (sim.phase !== 'playing') return;
+  ensureAudio();
+  typed(sim, ch);
+}
+function delKey() {
+  if (sim.phase !== 'playing') return;
+  ensureAudio();
+  sim.buffer = sim.buffer.slice(0, -1);
+  sim.dirty = true;
+}
+
+// ---- component -------------------------------------------------------------
+function App() {
+  const [ui, setUi] = useState(() => uiOf(sim));
+  const canvasRef = useRef(null);
+  const coalRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    let raf;
+    let last = performance.now();
+    const frame = now => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      step(sim, dt);
+      draw(ctx, sim);
+      if (coalRef.current) {
+        coalRef.current.style.width = `${Math.max(0, Math.min(100, sim.coal))}%`;
+        coalRef.current.style.filter = sim.coal < 25 ? 'hue-rotate(-40deg) brightness(1.2)' : 'none';
+      }
+      window.__game = snapshot(sim);
+      if (sim.dirty) {
+        sim.dirty = false;
+        setUi(uiOf(sim));
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+
+    const onKey = e => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code === 'Backspace') { e.preventDefault(); delKey(); return; }
+      const m = /^Key([A-Z])$/.exec(e.code || '');
+      if (m && LETTERS.includes(m[1])) pressKey(m[1]);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  const playing = ui.phase === 'playing';
+  const mult_ = mult(ui.combo);
+
+  return (
+    <div className="app">
+      <div className="drift" />
+      <div className="hud">
+        <div className="hud-item">Score<span className="hud-val c-cyan" data-testid="score">{ui.score}</span></div>
+        <div className="hud-item">Best<span className="hud-val c-gold">{ui.best}</span></div>
+        <div className="hud-item">Lives<span className="hud-val c-mag">{ui.lives > 0 ? '♥'.repeat(ui.lives) : '—'}</span></div>
+        <div className="hud-item">Combo<span className="hud-val c-blue">x{mult_}</span></div>
+      </div>
+      <div className="coal">
+        <span>COAL</span>
+        <div className="coal-track"><div className="coal-fill" ref={coalRef} /></div>
+      </div>
+      <div className="board-wrap">
+        <canvas ref={canvasRef} className="board" data-testid="board" />
+        {!playing && (
+          <div className="overlay">
+            {ui.phase === 'menu' ? (
+              <>
+                <h1 className="title">STEAM DISPATCH</h1>
+                <p>Type each train's code while it is lit. Keep the coal up.</p>
+                <p className="hint">Magenta = heavy: 4 letters, triple points and coal.</p>
+              </>
+            ) : (
+              <>
+                <p className="over-line">DEPOT CLOSED</p>
+                <p>Score <b>{ui.score}</b> · Best <b>{ui.best}</b></p>
+              </>
+            )}
+            <button className="start-btn" data-testid="start-btn" onClick={startGame}>
+              {ui.phase === 'menu' ? 'START' : 'PLAY AGAIN'}
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="readout" data-testid="buffer" data-value={ui.buffer}>
+        {[0, 1, 2, 3].map(i => <span key={i} className="slot">{ui.buffer[i] || ''}</span>)}
+      </div>
+      <div className={`keypad${playing ? '' : ' off'}`}>
+        {LETTERS.split('').map(ch => (
+          <button key={ch} className="key" data-testid={`key-${ch}`}
+            onPointerDown={e => { e.preventDefault(); pressKey(ch); }}>{ch}</button>
+        ))}
+        <button className="key key-del" data-testid="key-del"
+          onPointerDown={e => { e.preventDefault(); delKey(); }}>⌫ DEL</button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -4136,5 +4136,29 @@
     "genre": "card-push-luck",
     "input": "pointer-follow",
     "mechanic": "touch loud cards, avoid quiet ones; bank pot; leaked loud costs life"
+  },
+  {
+    "id": "2026-11-21",
+    "name": "Steam Dispatch",
+    "date": "2026-11-21",
+    "description": "A depot scanner sweeps across a rail yard every few seconds. Trains roll in from the right in three lanes, each with a 3-letter code (magenta heavy trains take 4 letters and pay triple). Codes only show while the scanner flashes over a train, so you must catch and remember them. Spell the code with the letter keys (or your keyboard); the train dispatches and refuels your coal. Wrong letters burn coal and reset your combo. Coal drains constantly and faster over time. Trains that roll off the left gate unsent cost a life. Three lives or empty coal closes the depot.",
+    "tagline": "Catch the code. Feed the boiler.",
+    "tags": [
+      "typing",
+      "memory",
+      "resource",
+      "railway",
+      "neon"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "2 minutes",
+    "controls": "Tap letter keys (or type on keyboard) to spell the lit code; DEL or Backspace to fix",
+    "folder": "games/2026-11-21",
+    "file": "games/2026-11-21/index.html",
+    "preview": "games/2026-11-21/preview.png",
+    "rating": 4,
+    "genre": "memory-sequence",
+    "input": "typing",
+    "mechanic": "type flashed train codes before escape; mistakes burn coal, escapes cost life"
   }
 ]
