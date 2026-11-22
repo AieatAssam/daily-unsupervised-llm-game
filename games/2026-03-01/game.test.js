@@ -1,80 +1,51 @@
-import { test, expect } from '@playwright/test';
+import { defineGameSuite } from '../../scripts/game-suite.js';
 
-test.describe('2026-03-01 Neon Flood', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/games/2026-03-01/index.html');
-    await page.waitForLoadState('networkidle');
-  });
-
-  test('game loads without errors', async ({ page }) => {
-    const errors = [];
-    page.on('pageerror', error => errors.push(error));
-    await page.waitForTimeout(2000);
-    expect(errors).toHaveLength(0);
-  });
-
-  test('game renders core elements', async ({ page }) => {
-    const gameContent = await page.textContent('body');
-    expect(gameContent).toBeTruthy();
-    expect(gameContent.length).toBeGreaterThan(0);
-    // Should show the game title and flood percentage
-    expect(gameContent).toContain('NEON FLOOD');
-    expect(gameContent).toContain('FLOODED');
-  });
-
-  test('game responds to user input', async ({ page }) => {
-    // Click on game area
-    await page.click('body');
-    await page.waitForTimeout(500);
-
-    // Verify React root rendered
-    const hasCanvas    = await page.locator('canvas').count();
-    const hasReactRoot = await page.locator('[class*="game"], [id*="game"]').count();
-    expect(hasCanvas + hasReactRoot).toBeGreaterThan(0);
-  });
-
-  test('game handles rapid interactions', async ({ page }) => {
-    // Rapid clicks on the body
-    for (let i = 0; i < 10; i++) {
-      await page.click('body');
-      await page.waitForTimeout(50);
+// Greedy bot: pick the colour that captures the most cells each move.
+async function pickBest(page, mobile) {
+  const idx = await page.evaluate(() => {
+    const g = window.__game;
+    if (g.phase !== 'playing') return -1;
+    const grid = g.grid, n = grid.length;
+    const flood = (cols) => {
+      const seen = new Set(['0,0']); const q = [[0, 0]];
+      while (q.length) {
+        const [r, c] = q.pop();
+        for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const a = r + dr, b = c + dc, k = a + ',' + b;
+          if (a >= 0 && b >= 0 && a < n && b < n && !seen.has(k) && cols(a, b)) { seen.add(k); q.push([a, b]); }
+        }
+      }
+      return seen;
+    };
+    const own = flood((a, b) => grid[a][b] === grid[0][0]);
+    let best = -1, bestN = -1;
+    for (let i = 0; i < 6; i++) {
+      if (i === g.playerColor) continue;
+      const seen = flood((a, b) => own.has(a + ',' + b) || grid[a][b] === i);
+      if (seen.size > bestN) { bestN = seen.size; best = i; }
     }
-
-    // Should still be responsive
-    const errors = [];
-    page.on('pageerror', error => errors.push(error));
-    await page.waitForTimeout(500);
-    expect(errors).toHaveLength(0);
+    return best;
   });
+  if (idx < 0) return false;
+  const loc = page.locator(`[data-testid="color-${idx}"]`);
+  if (mobile) await loc.tap(); else await loc.click();
+  return true;
+}
 
-  test('game works on mobile viewport', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
-    await page.reload();
-    await page.waitForLoadState('networkidle');
-
-    const errors = [];
-    page.on('pageerror', error => errors.push(error));
-
-    // Click interaction (works on both touch and non-touch contexts)
-    await page.click('body');
-    await page.waitForTimeout(500);
-
-    expect(errors).toHaveLength(0);
-  });
-
-  test('localStorage high score works', async ({ page }) => {
-    // Allow some time for the game to initialize
-    await page.click('body');
-    await page.waitForTimeout(1000);
-
-    // Check localStorage for score-related keys
-    const storage = await page.evaluate(() => {
-      return Object.keys(localStorage).filter(k =>
-        k.includes('highScore') || k.includes('score') || k.includes('best')
-      );
-    });
-
-    // Should have at least one score-related key
-    expect(storage.length).toBeGreaterThan(0);
-  });
+defineGameSuite({
+  id: '2026-03-01',
+  play: async (page, { mobile }) => {
+    for (let i = 0; i < 12; i++) {
+      if (!(await pickBest(page, mobile))) break;
+      await page.waitForTimeout(150);
+    }
+  },
+  // Lose on purpose: alternate between two colours until moves run out.
+  lose: async (page) => {
+    for (let i = 0; i < 40; i++) {
+      if ((await page.evaluate(() => window.__game.phase)) !== 'playing') break;
+      const pc = await page.evaluate(() => window.__game.playerColor);
+      await page.locator(`[data-testid="color-${pc === 0 ? 1 : 0}"]`).click();
+    }
+  },
 });

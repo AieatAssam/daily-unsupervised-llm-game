@@ -174,6 +174,7 @@
       const [flashColor,  setFlashColor]  = useState(null);
       const [cellSize,    setCellSize]    = useState(computeCellSize);
       const [comboAnim,   setComboAnim]   = useState(false);
+      const [started,     setStarted]     = useState(false);
 
       const canvasRef  = useRef(null);
       const animRef    = useRef(null);
@@ -244,7 +245,7 @@
 
       /* ── Color pick handler ─────────────────────────────────────── */
       function handleColorPick(colorIdx) {
-        if (gameOver || won) return;
+        if (!started || gameOver || won) return;
         if (colorIdx === playerColor) return;
 
         const { grid: ng, captured } = applyFlood(grid, territory, colorIdx, GRID_SIZE);
@@ -321,6 +322,7 @@
       }
 
       function restart() {
+        setStarted(true);
         setGrid(makeGrid(GRID_SIZE));
         setMoves(0);
         setScore(0);
@@ -332,8 +334,19 @@
         pRef.current = [];
       }
 
+      useEffect(() => {
+        if (gameOver || won) {
+          const k = 'arcade.2026-03-01.best';
+          if (score > Number(localStorage.getItem(k) || 0)) localStorage.setItem(k, String(score));
+        }
+      }, [gameOver, won, score]);
+      window.__game = {
+        phase: !started ? 'menu' : (gameOver || won) ? 'over' : 'playing',
+        score, grid, playerColor, won,
+      };
+
       const gridWidth = cellSize * GRID_SIZE + (GRID_SIZE - 1);
-      const btnSize   = Math.max(32, Math.min(44, Math.floor((gridWidth - 40) / NUM_COLORS)));
+      const btnSize   = 44;
 
       /* ── Render ─────────────────────────────────────────────────── */
       return (
@@ -456,6 +469,7 @@
               return (
                 <button
                   key={i}
+                  data-testid={`color-${i}`}
                   onClick={() => handleColorPick(i)}
                   style={{
                     width: btnSize, height: btnSize,
@@ -482,8 +496,25 @@
             PICK A COLOR · FLOOD YOUR TERRITORY FROM THE CORNER
           </div>
 
+          {!started && (
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 50,
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,0,0.85)', padding: 20, textAlign: 'center',
+            }}>
+              <div style={{ color: '#fff', fontSize: 30, fontWeight: 900, letterSpacing: '0.15em', textShadow: '0 0 18px #00f5ff', marginBottom: 14 }}>NEON FLOOD</div>
+              <div style={{ color: '#aaa', fontSize: 14, marginBottom: 20 }}>Pick colors to flood the grid from the top-left corner. Cover 60% before moves run out.</div>
+              <button data-testid="start-btn" onClick={restart} style={{
+                minWidth: 160, minHeight: 48, padding: '10px 28px', fontSize: 18, fontWeight: 900,
+                background: '#00f5ff', color: '#000', border: 'none', borderRadius: 10,
+                cursor: 'pointer', boxShadow: '0 0 28px #00f5ff',
+              }}>START</button>
+            </div>
+          )}
+
           {/* Win / Game Over overlay */}
-          {(gameOver || won) && (
+          {started && (gameOver || won) && (
             <div style={{
               position: 'absolute', inset: 0, zIndex: 50,
               display: 'flex', flexDirection: 'column',
@@ -535,7 +566,7 @@
                     NEXT LEVEL →
                   </button>
                 )}
-                <button onClick={restart} style={{
+                <button data-testid="start-btn" onClick={restart} style={{
                   padding: 'clamp(10px,2.5vw,14px) clamp(20px,5vw,32px)',
                   fontSize: 'clamp(14px,3.2vw,18px)', fontWeight: 900,
                   background: won ? 'transparent' : '#ff006e',

@@ -18,7 +18,6 @@
   <div id="root"></div>
   <script type="text/babel">
     const { useEffect, useRef } = React;
-
     // ── Constants ────────────────────────────────────────────────────────────
     const GW = 400, GH = 620;
     const GRAVITY = 0.28;
@@ -26,13 +25,11 @@
     const APEX_WIN_BASE = 620; // ms window at tier 0
     const APEX_WIN_MIN  = 260; // ms floor
     const HS_KEY = 'apexBurst_highScore';
-
     const COLORS = [
       '#ff00ff', '#00ffff', '#ff6600', '#00ff88',
       '#ffff00', '#ff4488', '#44aaff', '#88ff44',
       '#ff8844', '#44ffcc', '#cc44ff', '#ff2266',
     ];
-
     // ── Audio ────────────────────────────────────────────────────────────────
     let _ac = null;
     function getAC() {
@@ -76,7 +73,6 @@
       beep(f, 'sine', 0.18, 0.5, 0);
       beep(f * 1.5, 'sine', 0.14, 0.3, 0.12);
     }
-
     // ── Ball factory ─────────────────────────────────────────────────────────
     let _bid = 0;
     function spawnBall(tier) {
@@ -101,7 +97,6 @@
         sparkAng: 0,
       };
     }
-
     // ── Particle factory ─────────────────────────────────────────────────────
     function mkParticles(x, y, color, n) {
       n = n || 20;
@@ -120,7 +115,6 @@
       }
       return pts;
     }
-
     // ── Ring spark factory (for apex indicator) ──────────────────────────────
     function mkSparks(x, y, color) {
       const pts = [];
@@ -135,8 +129,8 @@
       }
       return pts;
     }
-
     // ── Main component ───────────────────────────────────────────────────────
+    window.__game = { phase: 'menu', score: 0 };
     const Game = () => {
       const canvasRef = useRef(null);
       const gRef = useRef({
@@ -156,8 +150,8 @@
         comboFlash: 0,       // border glow on combo
       });
       const animRef = useRef(null);
+      const btnRef = useRef(null);
       const lastRef = useRef(null);
-
       // ── Input handler ──────────────────────────────────────────────────────
       function handleInput(clientX, clientY) {
         const canvas = canvasRef.current; if (!canvas) return;
@@ -166,9 +160,13 @@
         const x = (clientX - rect.left) * sx;
         const y = (clientY - rect.top) * sy;
         const G = gRef.current;
-
-        if (G.phase === 'idle') {
-          // Start game
+        if (G.phase === 'idle' || G.phase === 'gameover') { startGame(); return; }
+        if (G.phase !== 'playing') return;
+        tryHit(x, y);
+      }
+      function startGame() {
+        const G = gRef.current;
+        {
           G.phase = 'playing';
           G.score = 0; G.combo = 0; G.lives = 3;
           G.balls = []; G.particles = []; G.floaters = [];
@@ -177,16 +175,10 @@
           // Immediately save key so localStorage test passes
           localStorage.setItem(HS_KEY, G.highScore);
           G.balls.push(spawnBall(0));
-          return;
         }
-
-        if (G.phase === 'gameover') {
-          G.phase = 'idle';
-          return;
-        }
-
-        if (G.phase !== 'playing') return;
-
+      }
+      function tryHit(x, y) {
+        const G = gRef.current;
         // Try to hit a ball
         let hit = false;
         for (let i = G.balls.length - 1; i >= 0; i--) {
@@ -231,16 +223,13 @@
         // No penalty for clicking empty space
         void hit;
       }
-
       useEffect(() => {
         const canvas = canvasRef.current; if (!canvas) return;
-
         // ── Draw ─────────────────────────────────────────────────────────────
         function draw() {
           const G = gRef.current;
           const ctx = canvas.getContext('2d');
           const t = Date.now();
-
           // Animated gradient background
           G.bgT += 0.0018;
           const h1 = (G.bgT * 55) % 360;
@@ -250,7 +239,6 @@
           bg.addColorStop(1, `hsl(${h2},72%,10%)`);
           ctx.fillStyle = bg;
           ctx.fillRect(0, 0, GW, GH);
-
           // Subtle dot grid
           ctx.fillStyle = 'rgba(255,255,255,0.022)';
           for (let gx = 30; gx < GW; gx += 50) {
@@ -258,7 +246,6 @@
               ctx.beginPath(); ctx.arc(gx, gy, 1.5, 0, Math.PI * 2); ctx.fill();
             }
           }
-
           // Combo border glow
           if (G.comboFlash > 0) {
             G.comboFlash = Math.max(0, G.comboFlash - 0.03);
@@ -270,14 +257,12 @@
             ctx.strokeRect(0, 0, GW, GH);
             ctx.restore();
           }
-
           // Death flash
           if (G.deadFlash > 0) {
             ctx.fillStyle = `rgba(255,0,80,${G.deadFlash * 0.38})`;
             ctx.fillRect(0, 0, GW, GH);
             G.deadFlash = Math.max(0, G.deadFlash - 0.042);
           }
-
           // Particles
           for (let i = G.particles.length - 1; i >= 0; i--) {
             const p = G.particles[i];
@@ -292,20 +277,16 @@
             ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, Math.PI * 2); ctx.fill();
             ctx.restore();
           }
-
           // Balls
           G.balls.forEach(b => {
             if (b.state === 'dead') return;
-
             const isApex = b.state === 'apex';
-
             // Expanding ring + "HIT!" label at apex
             if (isApex) {
               const prog = 1 - b.apexTimer / b.apexWin; // 0→1 as window expires
               const rr = b.r + prog * 34;
               const ringAlpha = (1 - prog) * 0.92;
               const pulse = Math.sin(t * 0.022) * 0.35 + 0.65;
-
               ctx.save();
               ctx.globalAlpha = ringAlpha;
               ctx.strokeStyle = b.color;
@@ -313,7 +294,6 @@
               ctx.lineWidth = 3 + pulse * 2;
               ctx.beginPath(); ctx.arc(b.x, b.y, rr, 0, Math.PI * 2); ctx.stroke();
               ctx.restore();
-
               // Second fainter ring
               ctx.save();
               ctx.globalAlpha = ringAlpha * 0.45;
@@ -321,7 +301,6 @@
               ctx.lineWidth = 1.5;
               ctx.beginPath(); ctx.arc(b.x, b.y, rr + 10, 0, Math.PI * 2); ctx.stroke();
               ctx.restore();
-
               // "HIT!" label
               ctx.save();
               ctx.globalAlpha = Math.min(1, ringAlpha * 1.3);
@@ -332,7 +311,6 @@
               ctx.fillText('HIT!', b.x, b.y - b.r - 14);
               ctx.restore();
             }
-
             // Ball glow + gradient fill
             const glow = isApex ? 28 : 12;
             const pulse = isApex ? Math.sin(t * 0.020) * 0.08 + 1 : 1;
@@ -348,7 +326,6 @@
             ctx.fillStyle = gr;
             ctx.beginPath(); ctx.arc(b.x, b.y, b.r * pulse, 0, Math.PI * 2); ctx.fill();
             ctx.restore();
-
             // Spark dots orbiting ball at apex
             if (isApex) {
               b.sparkAng = (b.sparkAng || 0) + 0.08;
@@ -366,7 +343,6 @@
               }
             }
           });
-
           // Floating score texts
           for (let i = G.floaters.length - 1; i >= 0; i--) {
             const f = G.floaters[i];
@@ -381,7 +357,6 @@
             ctx.fillText(f.text, f.x, f.y);
             ctx.restore();
           }
-
           // Flash message (combo announce)
           if (G.flashMsg) {
             const fm = G.flashMsg;
@@ -398,7 +373,6 @@
               ctx.restore();
             }
           }
-
           // ── HUD (score, combo, lives) ──────────────────────────────────────
           if (G.phase === 'playing' || G.phase === 'gameover') {
             // Score (top-left)
@@ -409,7 +383,6 @@
             ctx.textAlign = 'left';
             ctx.fillText(G.score, 16, 46);
             ctx.restore();
-
             // Combo (top-center)
             if (G.combo >= 2) {
               const cColors = ['#ffff00', '#ff9900', '#ff0088', '#cc00ff'];
@@ -422,7 +395,6 @@
               ctx.fillText(`x${G.combo} COMBO`, GW / 2, 40);
               ctx.restore();
             }
-
             // Lives (top-right, 3 orbs)
             for (let i = 0; i < 3; i++) {
               const alive = i < G.lives;
@@ -442,11 +414,9 @@
               ctx.restore();
             }
           }
-
           // ── Idle screen ───────────────────────────────────────────────────
           if (G.phase === 'idle') {
             const p = Math.sin(t * 0.0028) * 0.5 + 0.5;
-
             // Title
             ctx.save();
             ctx.fillStyle = '#00ffff';
@@ -455,7 +425,6 @@
             ctx.textAlign = 'center';
             ctx.fillText('APEX BURST', GW / 2, GH * 0.25);
             ctx.restore();
-
             // Tagline
             ctx.save();
             ctx.fillStyle = `rgba(255,255,255,${0.6 + p * 0.35})`;
@@ -463,7 +432,6 @@
             ctx.textAlign = 'center';
             ctx.fillText('Tap balls at their PEAK for PERFECT!', GW / 2, GH * 0.37);
             ctx.restore();
-
             // Best score
             if (G.highScore > 0) {
               ctx.save();
@@ -474,16 +442,14 @@
               ctx.fillText(`BEST: ${G.highScore}`, GW / 2, GH * 0.47);
               ctx.restore();
             }
-
             // Start prompt
             ctx.save();
             ctx.fillStyle = '#00ffff';
             ctx.shadowBlur = 10 + p * 10; ctx.shadowColor = '#00ffff';
             ctx.font = `bold ${20 + p * 3}px monospace`;
             ctx.textAlign = 'center';
-            ctx.fillText('Click  /  Tap  to  start', GW / 2, GH * 0.58);
+            ctx.fillText('Tap balls at their peak', GW / 2, GH * 0.56);
             ctx.restore();
-
             // Instructions
             ctx.save();
             ctx.fillStyle = 'rgba(160,160,160,0.75)';
@@ -493,7 +459,6 @@
             ctx.fillText('Click DURING the flash  =  PERFECT  +max points', GW / 2, GH * 0.76);
             ctx.fillText('Miss 3 balls  =  game over', GW / 2, GH * 0.82);
             ctx.restore();
-
             // Animated demo balls (2 decorative rising balls)
             const demoT = t * 0.001;
             for (let d = 0; d < 2; d++) {
@@ -511,14 +476,12 @@
               ctx.restore();
             }
           }
-
           // ── Game Over screen ──────────────────────────────────────────────
           if (G.phase === 'gameover') {
             ctx.save();
             ctx.fillStyle = 'rgba(0,0,0,0.75)';
             ctx.fillRect(0, 0, GW, GH);
             ctx.restore();
-
             ctx.save();
             ctx.fillStyle = '#ff4488';
             ctx.shadowBlur = 36; ctx.shadowColor = '#ff4488';
@@ -526,7 +489,6 @@
             ctx.textAlign = 'center';
             ctx.fillText('GAME OVER', GW / 2, GH * 0.33);
             ctx.restore();
-
             ctx.save();
             ctx.fillStyle = '#ffffff';
             ctx.shadowBlur = 14; ctx.shadowColor = '#fff';
@@ -534,7 +496,6 @@
             ctx.textAlign = 'center';
             ctx.fillText(`Score: ${G.score}`, GW / 2, GH * 0.45);
             ctx.restore();
-
             if (G.score > 0 && G.score >= G.highScore) {
               ctx.save();
               ctx.fillStyle = '#ffff00';
@@ -551,25 +512,22 @@
               ctx.fillText(`Best: ${G.highScore}`, GW / 2, GH * 0.545);
               ctx.restore();
             }
-
             const p2 = Math.sin(t * 0.006) * 0.5 + 0.5;
             ctx.save();
             ctx.fillStyle = '#00ffff';
             ctx.shadowBlur = 12 + p2 * 10; ctx.shadowColor = '#00ffff';
             ctx.font = 'bold 21px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText('Tap to play again', GW / 2, GH * 0.66);
+            
             ctx.restore();
           }
         }
-
         // ── Game loop ─────────────────────────────────────────────────────────
         function tick(now) {
           if (!lastRef.current) lastRef.current = now;
           const dt = Math.min(now - lastRef.current, 50);
           lastRef.current = now;
           const G = gRef.current;
-
           if (G.phase === 'playing') {
             // Spawn timer
             const spawnInterval = Math.max(850, 2300 - G.diffTier * 210);
@@ -582,18 +540,14 @@
               }
               G.spawnTimer = spawnInterval + (Math.random() - 0.5) * 320;
             }
-
             // Update balls
             for (let i = G.balls.length - 1; i >= 0; i--) {
               const b = G.balls[i];
               if (b.state === 'dead') { G.balls.splice(i, 1); continue; }
-
               b.x += b.vx; b.y += b.vy; b.vy += GRAVITY;
-
               // Wall bounce
               if (b.x < b.r) { b.x = b.r; b.vx = Math.abs(b.vx); }
               if (b.x > GW - b.r) { b.x = GW - b.r; b.vx = -Math.abs(b.vx); }
-
               // State machine
               if (b.state === 'rising' && b.vy >= 0) {
                 // Reached apex
@@ -618,29 +572,34 @@
                     G.highScore = G.score;
                     localStorage.setItem(HS_KEY, G.highScore);
                   }
+                  localStorage.setItem('arcade.2026-03-05.best', G.highScore);
                   sndGameOver();
                 }
               }
             }
-
             // Difficulty
             G.diffTier = Math.floor(G.score / 180);
           }
-
           draw();
+          const rc = canvas.getBoundingClientRect();
+          const k = rc.width / GW;
+          window.__game = {
+            phase: G.phase === 'idle' ? 'menu' : G.phase === 'gameover' ? 'over' : 'playing',
+            score: G.score,
+            lives: G.lives,
+            balls: G.balls.filter(b => b.state !== 'dead').map(b => ({
+              x: rc.left + b.x * k, y: rc.top + b.y * k, state: b.state,
+            })),
+          };
+          if (btnRef.current) btnRef.current.style.display = G.phase === 'playing' ? 'none' : 'block';
           animRef.current = requestAnimationFrame(tick);
         }
-
         // ── Event listeners ───────────────────────────────────────────────────
         const onMouse = (e) => {
           e.preventDefault();
           handleInput(e.clientX, e.clientY);
         };
-        const onTouch = (e) => {
-          e.preventDefault();
-          const t = e.changedTouches[0];
-          handleInput(t.clientX, t.clientY);
-        };
+
         const onKey = (e) => {
           if (e.code === 'Space' || e.code === 'Enter') {
             const G = gRef.current;
@@ -650,22 +609,18 @@
             }
           }
         };
-
-        canvas.addEventListener('mousedown', onMouse);
-        canvas.addEventListener('touchstart', onTouch, { passive: false });
+        canvas.addEventListener('pointerdown', onMouse);
         window.addEventListener('keydown', onKey);
         animRef.current = requestAnimationFrame(tick);
-
         return () => {
-          canvas.removeEventListener('mousedown', onMouse);
-          canvas.removeEventListener('touchstart', onTouch);
+          canvas.removeEventListener('pointerdown', onMouse);
           window.removeEventListener('keydown', onKey);
           cancelAnimationFrame(animRef.current);
         };
       }, []);
-
       return (
         <div style={{
+          position: 'relative',
           width: '100%',
           height: '100%',
           display: 'flex',
@@ -688,10 +643,15 @@
               userSelect: 'none',
             }}
           />
+          <button ref={btnRef} data-testid="start-btn" onClick={startGame} style={{
+            position: 'absolute', left: '50%', top: '64%', transform: 'translateX(-50%)',
+            minWidth: 150, minHeight: 48, fontSize: 18, fontWeight: 900, fontFamily: 'monospace',
+            background: '#00ffff', color: '#000', border: 'none', borderRadius: 10,
+            cursor: 'pointer', boxShadow: '0 0 24px #00ffff', zIndex: 5,
+          }}>PLAY</button>
         </div>
       );
     };
-
     ReactDOM.render(<Game />, document.getElementById('root'));
   </script>
 </body>
