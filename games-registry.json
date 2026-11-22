@@ -4160,5 +4160,29 @@
     "genre": "memory-sequence",
     "input": "typing",
     "mechanic": "type flashed train codes before escape; mistakes burn coal, escapes cost life"
+  },
+  {
+    "id": "2026-11-22",
+    "name": "Windrow",
+    "date": "2026-11-22",
+    "description": "Each round the wind direction shows at the top and a few red storm cells appear on the board. Pull down like a slingshot from anywhere and release to plant up to three seeds; the pull sets the target cell. Planted seeds take root when the gust sweeps across the board column by column. A rooted seed claims its cell and pushes a claim one step downwind, scoring points that multiply with combo. A seed planted on a storm burns and costs a life; a round with no seeds is a drought and costs a life too. Claims fade over a few rounds, and the gust speeds up and storms multiply as the rounds go on. Three lives end the run.",
+    "tagline": "Plan the planting. Let the wind do the rest.",
+    "tags": [
+      "territory",
+      "weather",
+      "plan",
+      "slingshot",
+      "neon"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "1-2 minutes",
+    "controls": "Drag down like a slingshot anywhere, then release to plant a seed where the ghost marker sits",
+    "folder": "games/2026-11-22",
+    "file": "games/2026-11-22/index.html",
+    "preview": "games/2026-11-22/preview.png",
+    "rating": 3.8,
+    "genre": "territory",
+    "input": "aim-release",
+    "mechanic": "aim-release seeds onto cells before sweep; storm hits, empty turns cost life"
   }
 ]

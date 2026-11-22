@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Windrow</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #03040b; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none; user-select: none;
+  }
+  #root { position: fixed; inset: 0; }
+  canvas.stage {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    touch-action: none; cursor: crosshair;
+  }
+  .hud {
+    position: fixed; top: 10px; left: 0; right: 0;
+    display: flex; justify-content: space-around; gap: 4px;
+    padding: 0 6px; pointer-events: none; color: #e6f0ff;
+  }
+  .hud div { flex: 1; text-align: center; }
+  .hud span {
+    display: block; font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; opacity: 0.7;
+  }
+  .hud b {
+    display: block; font-size: 18px;
+    text-shadow: 0 0 10px rgba(79,255,214,0.8);
+  }
+  .hud .lives b { color: #ff5c7a; text-shadow: 0 0 10px rgba(255,92,122,0.8); letter-spacing: 2px; }
+  .overlay {
+    position: fixed; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    pointer-events: none; padding: 16px;
+  }
+  .panel {
+    pointer-events: auto; max-width: 320px; width: 100%;
+    text-align: center; color: #e6f0ff; padding: 24px 20px;
+    background: rgba(6,10,26,0.82);
+    border: 1px solid rgba(79,255,214,0.5); border-radius: 18px;
+    box-shadow: 0 0 30px rgba(79,255,214,0.25), inset 0 0 24px rgba(90,170,255,0.12);
+  }
+  .kicker { font-size: 11px; letter-spacing: 2px; opacity: 0.6; text-transform: uppercase; }
+  h1 {
+    margin: 6px 0 10px; font-size: 40px; letter-spacing: 4px;
+    color: #4fffd6; text-shadow: 0 0 14px rgba(79,255,214,0.9), 0 0 36px rgba(255,92,200,0.5);
+  }
+  .panel p { font-size: 15px; line-height: 1.4; margin: 0 0 18px; opacity: 0.9; }
+  .stats { display: flex; justify-content: space-around; margin: 0 0 18px; }
+  .stats div { font-size: 11px; letter-spacing: 1px; opacity: 0.7; text-transform: uppercase; }
+  .stats b { display: block; font-size: 26px; opacity: 1; color: #fff; letter-spacing: 0; }
+  .btn {
+    min-width: 180px; min-height: 52px; padding: 0 24px;
+    font-size: 18px; font-weight: 700; letter-spacing: 2px;
+    color: #03150f; background: linear-gradient(120deg, #4fffd6, #7fb8ff);
+    border: none; border-radius: 26px; cursor: pointer;
+    box-shadow: 0 0 22px rgba(79,255,214,0.6);
+  }
+  .btn:active { transform: scale(0.97); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+/* ---------- constants & contract ---------- */
+const ID = '2026-11-22';
+const BEST_KEY = `arcade.${ID}.best`;
+const COLS = 6, ROWS = 6, GAIN = 2.4, MAX_SEEDS = 3, MAX_MULT = 4, LIVES_START = 3;
+const GLOW = { cyan: '79,255,214', gold: '255,226,120', red: '255,70,110', pink: '255,92,200', white: '210,245,255' };
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const grid = v => Array.from({ length: COLS }, () => Array(ROWS).fill(v));
+
+function makeSprite(rgb) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, `rgba(${rgb},1)`);
+  g.addColorStop(0.3, `rgba(${rgb},0.45)`);
+  g.addColorStop(1, `rgba(${rgb},0)`);
+  x.fillStyle = g;
+  x.fillRect(0, 0, 64, 64);
+  return c;
+}
+const SPR = { cyan: makeSprite(GLOW.cyan), gold: makeSprite(GLOW.gold), red: makeSprite(GLOW.red) };
+
+/* ---------- game state (per-frame, kept out of React) ---------- */
+let G = null;
+let CTX = null;
+let DPR = 1;
+let AC = null;
+let pub = () => {};
+
+function freshState(best) {
+  return {
+    phase: 'menu', mode: 'plan', round: 0, score: 0, best,
+    lives: LIVES_START, combo: 0, wind: 1,
+    storms: grid(false), claims: grid(null), seeds: [],
+    planDur: 1, modeT: 0, gustK: 0, gustT: 0, gustStep: 300,
+    rootedNow: 0, scorchNow: 0, drought: false,
+    aim: null, parts: [], pops: [], shake: 0, lay: null, pulse: 0,
+    banner: ''
+  };
+}
+G = freshState((() => { try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (e) { return 0; } })());
+
+function layout(W, H) {
+  let cell = Math.max(36, Math.min(64, Math.floor((W - 36) / COLS)));
+  cell = Math.min(cell, Math.floor((H - 300) / ROWS));
+  const x0 = Math.round((W - cell * COLS) / 2);
+  const y0 = Math.round(clamp(H * 0.2, 118, 150));
+  return { W, H, cell, x0, y0, L: { x: W / 2, y: y0 + ROWS * cell + 78 } };
+}
+const cellCenter = (c, r) => ({ x: G.lay.x0 + (c + 0.5) * G.lay.cell, y: G.lay.y0 + (r + 0.5) * G.lay.cell });
+function targetCell(dx, dy) {
+  // slingshot: pulling down-left launches up-right
+  const { x0, y0, cell, L } = G.lay;
+  const tx = L.x - dx * GAIN, ty = L.y - dy * GAIN;
+  return { c: clamp(Math.floor((tx - x0) / cell), 0, COLS - 1), r: clamp(Math.floor((ty - y0) / cell), 0, ROWS - 1) };
+}
+const mult = () => 1 + Math.min(MAX_MULT - 1, Math.floor(G.combo / 2));
+const colAt = k => (G.wind > 0 ? k : COLS - 1 - k);
+
+/* ---------- audio ---------- */
+function audio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; } }
+  return AC;
+}
+function tone(f, dur, type = 'sine', vol = 0.07, slide = 0) {
+  const a = audio();
+  if (!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  const t = a.currentTime;
+  o.type = type;
+  o.frequency.setValueAtTime(f, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f * slide), t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(a.destination);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+}
+
+/* ---------- fx ---------- */
+function burst(x, y, rgb, n, sp) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = sp * (0.4 + Math.random());
+    G.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 1, life: 1, dec: 0.02 + Math.random() * 0.02, s: 1 + Math.random() * 2.2, rgb });
+  }
+  if (G.parts.length > 260) G.parts.splice(0, G.parts.length - 260);
+}
+function popText(x, y, text, rgb) { G.pops.push({ x, y, text, rgb, life: 1 }); }
+
+/* ---------- round flow ---------- */
+function snapshot() {
+  return { phase: G.phase, score: G.score, best: G.best, lives: G.lives, combo: G.combo, mult: mult(), round: G.round };
+}
+function publish() { pub(); }
+
+function startGame() {
+  audio();
+  G.phase = 'playing';
+  G.score = 0; G.lives = LIVES_START; G.combo = 0; G.round = 0;
+  G.claims = grid(null); G.storms = grid(false);
+  G.parts = []; G.pops = []; G.aim = null; G.shake = 0;
+  beginRound();
+  publish();
+}
+
+function beginRound() {
+  G.round++;
+  G.mode = 'plan'; G.modeT = 0;
+  G.planDur = Math.max(3600, 7000 - (G.round - 1) * 250);
+  G.gustStep = Math.max(190, 320 - (G.round - 1) * 12);
+  G.wind = Math.random() < 0.5 ? -1 : 1;
+  G.seeds = []; G.rootedNow = 0; G.scorchNow = 0; G.drought = false;
+  const want = Math.min(8, 2 + Math.floor((G.round - 1) / 2));
+  let placed = 0, guard = 0;
+  while (placed < want && guard++ < 500) {
+    const c = Math.floor(Math.random() * COLS), r = Math.floor(Math.random() * ROWS);
+    if (!G.storms[c][r]) { G.storms[c][r] = true; placed++; }
+  }
+  G.banner = '';
+}
+
+function tryPlant(dx, dy) {
+  if (Math.hypot(dx, dy) < 10 || G.phase !== 'playing' || G.mode !== 'plan' || G.seeds.length >= MAX_SEEDS) return;
+  const t = targetCell(dx, dy);
+  if (G.seeds.some(s => s.c === t.c && s.r === t.r)) return;
+  G.seeds.push(t);
+  const p = cellCenter(t.c, t.r);
+  burst(p.x, p.y, GLOW.gold, 8, 2);
+  tone(640, 0.09, 'triangle', 0.05, 1.5);
+}
+
+function startGust() {
+  G.drought = G.seeds.length === 0;
+  G.mode = 'gust'; G.gustK = 0; G.gustT = 0;
+  G.rootedNow = 0; G.scorchNow = 0; G.aim = null;
+  G.shake = 4;
+  G.banner = G.drought ? 'DROUGHT' : 'GUST!';
+  tone(260, 0.3, 'triangle', 0.06, 2.2);
+  publish();
+}
+
+function processCol(c) {
+  const rooted = [];
+  for (let r = 0; r < ROWS; r++) {
+    const p = cellCenter(c, r);
+    const storm = G.storms[c][r];
+    if (storm && G.claims[c][r]) {
+      G.claims[c][r] = null;
+      burst(p.x, p.y, GLOW.red, 10, 2.5);
+    }
+    const i = G.seeds.findIndex(s => s.c === c && s.r === r);
+    if (i < 0) continue;
+    G.seeds.splice(i, 1);
+    if (storm) {
+      G.scorchNow = 1;
+      burst(p.x, p.y, GLOW.red, 22, 4);
+      popText(p.x, p.y, 'BURNT', GLOW.red);
+      tone(150, 0.35, 'sawtooth', 0.07, 0.5);
+    } else {
+      G.claims[c][r] = { ttl: 4 };
+      const pts = 10 * mult();
+      G.score += pts;
+      G.rootedNow++;
+      rooted.push(r);
+      burst(p.x, p.y, GLOW.cyan, 14, 3);
+      popText(p.x, p.y - 6, `+${pts}`, GLOW.cyan);
+      tone(520 + c * 60, 0.12, 'sine', 0.06, 1.6);
+    }
+  }
+  // claimed cells push their claim one step downwind if the cell is clear
+  for (const r of rooted) {
+    const nc = c + G.wind;
+    if (nc < 0 || nc >= COLS || G.storms[nc][r] || G.claims[nc][r] || G.seeds.some(s => s.c === nc && s.r === r)) continue;
+    G.claims[nc][r] = { ttl: 3 };
+    const pts = 5 * mult();
+    G.score += pts;
+    const p = cellCenter(nc, r);
+    burst(p.x, p.y, GLOW.cyan, 6, 1.6);
+    popText(p.x, p.y, `+${pts}`, GLOW.white);
+  }
+  publish();
+}
+
+function finishGust() {
+  if (G.drought) {
+    G.lives--; G.combo = 0; G.banner = 'DROUGHT  −1 LIFE';
+  } else if (G.scorchNow) {
+    G.lives--; G.combo = 0; G.banner = 'SCORCHED  −1 LIFE'; G.shake = 12;
+  } else {
+    G.combo++; G.banner = `${G.rootedNow} ROOTED  ·  COMBO ×${mult()}`;
+  }
+  G.mode = 'settle'; G.modeT = 0;
+  publish();
+}
+
+function endRound() {
+  for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+    const cl = G.claims[c][r];
+    if (cl && --cl.ttl <= 0) G.claims[c][r] = null;
+  }
+  G.storms = grid(false);
+  if (G.lives <= 0) gameOver();
+  else beginRound();
+}
+
+function gameOver() {
+  G.phase = 'over'; G.mode = 'over'; G.aim = null;
+  if (G.score > G.best) G.best = G.score;
+  try { localStorage.setItem(BEST_KEY, String(G.best)); } catch (e) {}
+  tone(200, 0.6, 'sawtooth', 0.07, 0.3);
+  publish();
+}
+
+/* ---------- simulation ---------- */
+function update(dt) {
+  G.pulse += dt;
+  if (G.phase === 'playing') {
+    if (G.mode === 'plan') {
+      G.modeT += dt;
+      if (G.modeT >= G.planDur) startGust();
+    } else if (G.mode === 'gust') {
+      G.gustT += dt;
+      while (G.mode === 'gust' && G.gustT >= G.gustStep) {
+        G.gustT -= G.gustStep;
+        processCol(colAt(G.gustK));
+        G.gustK++;
+        if (G.gustK >= COLS) finishGust();
+      }
+    } else if (G.mode === 'settle') {
+      G.modeT += dt;
+      if (G.modeT >= 900) endRound();
+    }
+  }
+  const k = dt / 16;
+  for (const p of G.parts) {
+    p.x += p.vx * k; p.y += p.vy * k; p.vy += 0.05 * k; p.life -= p.dec * k;
+  }
+  G.parts = G.parts.filter(p => p.life > 0);
+  for (const p of G.pops) { p.y -= 0.5 * k; p.life -= dt / 900; }
+  G.pops = G.pops.filter(p => p.life > 0);
+  G.shake = Math.max(0, G.shake - dt / 40);
+}
+
+/* ---------- rendering ---------- */
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function draw(now) {
+  const ctx = CTX, { W, H, cell, x0, y0, L } = G.lay;
+  const bw = COLS * cell, bh = ROWS * cell;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const bg = ctx.createRadialGradient(W / 2, H * 0.1, 20, W / 2, H * 0.5, Math.max(W, H));
+  bg.addColorStop(0, '#16235a'); bg.addColorStop(0.6, '#0a0e24'); bg.addColorStop(1, '#03040b');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  if (G.shake > 0) ctx.translate((Math.random() - 0.5) * G.shake, (Math.random() - 0.5) * G.shake);
+
+  // board panel
+  rr(ctx, x0 - 8, y0 - 8, bw + 16, bh + 16, 16);
+  ctx.fillStyle = 'rgba(8,12,30,0.82)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(90,170,255,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+
+  // empty cells
+  for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+    rr(ctx, x0 + c * cell + 4, y0 + r * cell + 4, cell - 8, cell - 8, 9);
+    ctx.fillStyle = 'rgba(120,180,255,0.05)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(120,180,255,0.14)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // claimed territory: additive glow, then solid tiles
+  ctx.globalCompositeOperation = 'lighter';
+  for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+    const cl = G.claims[c][r]; if (!cl) continue;
+    const p = cellCenter(c, r), a = clamp(cl.ttl / 4, 0.3, 1);
+    ctx.globalAlpha = 0.45 * a;
+    ctx.drawImage(SPR.cyan, p.x - cell * 0.8, p.y - cell * 0.8, cell * 1.6, cell * 1.6);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+    const cl = G.claims[c][r]; if (!cl) continue;
+    const a = clamp(cl.ttl / 4, 0.3, 1);
+    rr(ctx, x0 + c * cell + 6, y0 + r * cell + 6, cell - 12, cell - 12, 8);
+    ctx.fillStyle = `rgba(${GLOW.cyan},${0.14 + 0.22 * a})`; ctx.fill();
+    ctx.strokeStyle = `rgba(${GLOW.cyan},${0.9 * a})`; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  // storms: hatched red, pulsing — the telegraph for burning seeds
+  const pulse = 0.5 + 0.5 * Math.sin(now / 150);
+  for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+    if (!G.storms[c][r]) continue;
+    const x = x0 + c * cell + 4, y = y0 + r * cell + 4, s = cell - 8;
+    rr(ctx, x, y, s, s, 9);
+    ctx.fillStyle = `rgba(255,60,100,${0.16 + 0.1 * pulse})`; ctx.fill();
+    ctx.save();
+    rr(ctx, x, y, s, s, 9); ctx.clip();
+    ctx.strokeStyle = `rgba(${GLOW.red},0.5)`; ctx.lineWidth = 2;
+    for (let k = -s; k < s * 2; k += 10) {
+      ctx.beginPath(); ctx.moveTo(x + k, y + s); ctx.lineTo(x + k + s, y); ctx.stroke();
+    }
+    ctx.restore();
+    rr(ctx, x, y, s, s, 9);
+    ctx.strokeStyle = `rgba(${GLOW.red},${0.6 + 0.35 * pulse})`; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  // gust front sweeping across columns
+  if (G.mode === 'gust' && G.gustK < COLS) {
+    const cx = x0 + colAt(G.gustK) * cell + cell / 2;
+    const g = ctx.createLinearGradient(cx - cell, 0, cx + cell, 0);
+    g.addColorStop(0, 'rgba(190,245,255,0)');
+    g.addColorStop(0.5, 'rgba(190,245,255,0.42)');
+    g.addColorStop(1, 'rgba(190,245,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - cell, y0 - 6, cell * 2, bh + 12);
+  }
+
+  // planted seeds
+  for (const s of G.seeds) {
+    const p = cellCenter(s.c, s.r);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(SPR.gold, p.x - cell * 0.6, p.y - cell * 0.6, cell * 1.2, cell * 1.2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.beginPath(); ctx.arc(p.x, p.y, cell * 0.13, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff6c2'; ctx.fill();
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath(); ctx.arc(p.x, p.y, cell * 0.28, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${GLOW.gold},0.7)`; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // aim preview: where the seed will land if released now
+  if (G.aim && G.mode === 'plan') {
+    const dx = G.aim.x - G.aim.sx, dy = G.aim.y - G.aim.sy;
+    const t = targetCell(dx, dy), p = cellCenter(t.c, t.r);
+    const storm = G.storms[t.c][t.r];
+    const taken = G.seeds.some(s => s.c === t.c && s.r === t.r);
+    const full = G.seeds.length >= MAX_SEEDS;
+    const col = (storm || full) ? GLOW.red : taken ? '150,160,180' : GLOW.cyan;
+    ctx.setLineDash([5, 7]);
+    ctx.beginPath(); ctx.moveTo(L.x, L.y); ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = `rgba(${col},0.75)`; ctx.lineWidth = 2; ctx.stroke();
+    ctx.setLineDash([]);
+    rr(ctx, x0 + t.c * cell + 2, y0 + t.r * cell + 2, cell - 4, cell - 4, 10);
+    ctx.strokeStyle = `rgba(${col},0.95)`; ctx.lineWidth = 3; ctx.stroke();
+    ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.fillStyle = `rgb(${col})`;
+    if (storm) ctx.fillText('BURNS', p.x, p.y + cell * 0.42);
+    else if (full) ctx.fillText('ALL 3 PLANTED', L.x, L.y - 60);
+    // slingshot band
+    ctx.setLineDash([4, 5]);
+    ctx.beginPath(); ctx.moveTo(G.aim.sx, G.aim.sy); ctx.lineTo(G.aim.x, G.aim.y);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(G.aim.sx, G.aim.sy, 6, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fill();
+  }
+
+  // plan timer under the board
+  if (G.mode === 'plan') {
+    const f = clamp(1 - G.modeT / G.planDur, 0, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(x0, y0 + bh + 10, bw, 4);
+    const tg = ctx.createLinearGradient(x0, 0, x0 + bw, 0);
+    tg.addColorStop(0, `rgb(${GLOW.cyan})`); tg.addColorStop(1, `rgb(${GLOW.pink})`);
+    ctx.fillStyle = tg;
+    ctx.fillRect(x0, y0 + bh + 10, bw * f, 4);
+  }
+
+  // wind indicator above board
+  const wcx = W / 2, wy = y0 - 20;
+  const wind = G.wind;
+  ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(190,245,255,0.75)';
+  ctx.fillText('WIND', wcx, wy - 10);
+  ctx.beginPath(); ctx.moveTo(wcx - 40 * wind, wy); ctx.lineTo(wcx + 40 * wind, wy);
+  ctx.strokeStyle = `rgba(${GLOW.white},${0.6 + 0.3 * pulse})`; ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(wcx + 40 * wind, wy); ctx.lineTo(wcx + 28 * wind, wy - 7); ctx.lineTo(wcx + 28 * wind, wy + 7); ctx.closePath();
+  ctx.fillStyle = `rgba(${GLOW.white},0.9)`; ctx.fill();
+
+  // launcher
+  const lg = SPR.cyan;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.55;
+  ctx.drawImage(lg, L.x - cell * 0.9, L.y - cell * 0.9, cell * 1.8, cell * 1.8);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.beginPath(); ctx.arc(L.x, L.y, 18, 0, Math.PI * 2);
+  ctx.fillStyle = '#0b1230'; ctx.fill();
+  ctx.strokeStyle = `rgba(${GLOW.cyan},0.95)`; ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(L.x, L.y, 6, 0, Math.PI * 2); ctx.fillStyle = `rgb(${GLOW.cyan})`; ctx.fill();
+
+  // seed pips
+  const left = MAX_SEEDS - G.seeds.length;
+  for (let i = 0; i < MAX_SEEDS; i++) {
+    const px = L.x + (i - (MAX_SEEDS - 1) / 2) * 26, py = L.y - 40;
+    ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2);
+    if (i < left) { ctx.fillStyle = `rgb(${GLOW.gold})`; ctx.fill(); }
+    else { ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.5; ctx.stroke(); }
+  }
+
+  // particles
+  for (const p of G.parts) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.s, 0, Math.PI * 2);
+    ctx.fillStyle = `rgb(${p.rgb})`; ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // score pops
+  ctx.font = 'bold 15px Arial'; ctx.textAlign = 'center';
+  for (const p of G.pops) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = `rgb(${p.rgb})`;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+
+  // banner + hint (not shaken)
+  ctx.textAlign = 'center';
+  if (G.phase === 'playing') {
+    const txt = G.mode === 'plan' ? `PLAN  ·  ${G.seeds.length}/${MAX_SEEDS} SEEDS` : G.banner;
+    ctx.font = 'bold 15px Arial';
+    ctx.fillStyle = G.mode === 'gust' ? 'rgb(210,245,255)' : G.banner.includes('−1') ? `rgb(${GLOW.red})` : `rgb(${GLOW.cyan})`;
+    ctx.fillText(txt, W / 2, y0 - 62);
+    if (G.mode === 'plan') {
+      ctx.font = '13px Arial'; ctx.fillStyle = 'rgba(230,240,255,0.8)';
+      ctx.fillText('pull down like a slingshot · let go to plant · avoid red storms', W / 2, L.y + 50);
+    }
+  }
+}
+
+/* ---------- live state for tests & bots (read-only) ---------- */
+function sync() {
+  const { W, H, cell, x0, y0, L } = G.lay;
+  const storms = [], claims = [];
+  for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+    if (G.storms[c][r]) storms.push({ c, r });
+    if (G.claims[c][r]) claims.push({ c, r, ttl: G.claims[c][r].ttl });
+  }
+  window.__game = {
+    phase: G.phase, score: G.score, best: G.best,
+    mode: G.mode, round: G.round, lives: G.lives, combo: G.combo, mult: mult(), wind: G.wind,
+    width: W, height: H,
+    board: { x0, y0, cell, cols: COLS, rows: ROWS },
+    launcher: { x: L.x, y: L.y },
+    gain: GAIN, maxSeeds: MAX_SEEDS,
+    storms, claims,
+    seeds: G.seeds.map(s => ({ c: s.c, r: s.r })),
+    planMsLeft: G.mode === 'plan' ? Math.max(0, Math.round(G.planDur - G.modeT)) : 0
+  };
+}
+
+/* ---------- React shell: menus only; the loop lives in refs ---------- */
+function App() {
+  const [ui, setUi] = useState(snapshot);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const cv = canvasRef.current;
+    CTX = cv.getContext('2d');
+    pub = () => setUi(snapshot());
+
+    const resize = () => {
+      DPR = Math.min(2, window.devicePixelRatio || 1);
+      const W = window.innerWidth, H = window.innerHeight;
+      cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+      G.lay = layout(W, H);
+    };
+    resize();
+
+    const down = e => {
+      audio();
+      if (G.phase !== 'playing' || G.mode !== 'plan' || G.aim) return;
+      G.aim = { id: e.pointerId, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY };
+      try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    };
+    const move = e => { if (G.aim && e.pointerId === G.aim.id) { G.aim.x = e.clientX; G.aim.y = e.clientY; } };
+    const up = e => {
+      if (!G.aim || e.pointerId !== G.aim.id) return;
+      const a = G.aim; G.aim = null;
+      tryPlant(a.x - a.sx, a.y - a.sy);
+    };
+    const cancel = e => { if (G.aim && e.pointerId === G.aim.id) G.aim = null; };
+    cv.addEventListener('pointerdown', down);
+    cv.addEventListener('pointermove', move);
+    cv.addEventListener('pointerup', up);
+    cv.addEventListener('pointercancel', cancel);
+    window.addEventListener('resize', resize);
+
+    let raf, last = performance.now();
+    const loop = now => {
+      const dt = Math.min(50, now - last);
+      last = now;
+      update(dt);
+      draw(now);
+      sync();
+      raf = requestAnimationFrame(loop);
+    };
+    sync();
+    raf = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+      cv.removeEventListener('pointerdown', down);
+      cv.removeEventListener('pointermove', move);
+      cv.removeEventListener('pointerup', up);
+      cv.removeEventListener('pointercancel', cancel);
+      pub = () => {};
+    };
+  }, []);
+
+  return (
+    <>
+      <canvas className="stage" ref={canvasRef} />
+      {ui.phase !== 'menu' && (
+        <div className="hud">
+          <div><span>Score</span><b>{ui.score}</b></div>
+          <div><span>Best</span><b>{ui.best}</b></div>
+          <div className="lives"><span>Lives</span><b>{'♥'.repeat(Math.max(0, ui.lives))}</b></div>
+          <div><span>Mult</span><b>×{ui.mult}</b></div>
+        </div>
+      )}
+      {ui.phase === 'menu' && (
+        <div className="overlay">
+          <div className="panel">
+            <div className="kicker">Daily arcade · {ID}</div>
+            <h1>WINDROW</h1>
+            <p>Pull down like a slingshot and let go to plant seeds on clear cells before the gust sweeps across. Storms burn seeds.</p>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>START</button>
+          </div>
+        </div>
+      )}
+      {ui.phase === 'over' && (
+        <div className="overlay">
+          <div className="panel">
+            <div className="kicker">Depot lost</div>
+            <h1>GUST OVER</h1>
+            <div className="stats">
+              <div>Score<b>{ui.score}</b></div>
+              <div>Best<b>{ui.best}</b></div>
+              <div>Round<b>{ui.round}</b></div>
+            </div>
+            <button className="btn" data-testid="start-btn" onClick={startGame}>PLAY AGAIN</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
