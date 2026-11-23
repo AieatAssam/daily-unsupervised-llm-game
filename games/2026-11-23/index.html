@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Boiler Quota</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #03040b; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none; user-select: none;
+  }
+  #root { position: fixed; inset: 0; }
+  canvas.stage {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    touch-action: none; cursor: pointer;
+  }
+  .overlay {
+    position: fixed; inset: 0; display: flex;
+    align-items: flex-end; justify-content: center;
+    padding: 16px 16px 6vh; pointer-events: none;
+  }
+  .panel {
+    pointer-events: auto; max-width: 340px; width: 100%;
+    text-align: center; color: #e6f0ff; padding: 20px 18px 22px;
+    background: rgba(6,10,26,0.86);
+    border: 1px solid rgba(79,255,214,0.5); border-radius: 18px;
+    box-shadow: 0 0 30px rgba(79,255,214,0.25), inset 0 0 24px rgba(90,170,255,0.12);
+  }
+  .kicker { font-size: 11px; letter-spacing: 2px; opacity: 0.6; text-transform: uppercase; }
+  h1 {
+    margin: 6px 0 8px; font-size: 36px; letter-spacing: 3px;
+    color: #4fffd6; text-shadow: 0 0 14px rgba(79,255,214,0.9), 0 0 36px rgba(255,92,200,0.5);
+  }
+  .panel p { font-size: 15px; line-height: 1.4; margin: 0 0 10px; opacity: 0.92; }
+  .panel p.small { font-size: 12px; opacity: 0.6; margin: 0 0 16px; }
+  .stats { display: flex; justify-content: space-around; margin: 0 0 18px; }
+  .stats div { font-size: 11px; letter-spacing: 1px; opacity: 0.7; text-transform: uppercase; }
+  .stats b { display: block; font-size: 26px; opacity: 1; color: #fff; letter-spacing: 0; }
+  button {
+    min-width: 200px; min-height: 48px; padding: 12px 32px;
+    font-size: 18px; font-weight: 700; letter-spacing: 2px;
+    color: #03040b; background: linear-gradient(90deg, #4fffd6, #ff5cc8);
+    border: 0; border-radius: 999px; cursor: pointer;
+    box-shadow: 0 0 22px rgba(79,255,214,0.6);
+    touch-action: manipulation;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const ID = '2026-11-23';
+const BEST_KEY = 'arcade.' + ID + '.best';
+const HOLD_NEEDED = 0.6;   // seconds a match must be held
+const MIN_SEG = 8;         // no segment shorter than this (units of 100)
+const LOCK_SLOP = 6;       // px of movement that turns a tap into a drag
+const SEG_COLORS = ['#23e8ff', '#ff4fd8', '#ffc247'];
+const SEG_NAMES = ['A', 'B', 'C'];
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// Test contract: kept live, read-only state for bots.
+window.__game = { phase: 'menu', score: 0 };
+
+const G = {
+  phase: 'menu', score: 0, best: 0, lives: 3, combo: 0, hits: 0,
+  elapsed: 0, time: 0,
+  // Bar is 0..100 units. Boundaries b1 < b2 split it into segments A | B | C.
+  b1: 33, b2: 66,
+  locks: [false, false, false], blocked: [0, 0, 0],
+  goal: [33, 33, 34], goalShown: [33, 33, 34],
+  tTotal: 8, tLeft: 8, hold: 0,
+  shake: 0, flash: 0, parts: [], pops: [], drag: null,
+  canvas: null, ctx: null,
+  W: 0, H: 0, dpr: 1,
+  barX: 0, barY: 0, barW: 300, barH: 64, ghostY: 0, ghostH: 26,
+};
+try { G.best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch (e) {}
+
+let pushUi = () => {};
+let audioCtx = null;
+
+const segs = () => [G.b1, G.b2 - G.b1, 100 - G.b2];
+const px = u => G.barX + (u / 100) * G.barW;
+const unitAt = x => ((x - G.barX) / G.barW) * 100;
+const tolNow = () => Math.max(3.5, 9 - G.elapsed / 30);
+const tTotalNow = () => Math.max(2.6, 8 - G.elapsed / 25);
+const segErrors = () => segs().map((v, i) => Math.abs(v - G.goal[i]));
+
+function newGoal() {
+  for (;;) {
+    const a = 12 + Math.floor(Math.random() * 48);
+    const b = 12 + Math.floor(Math.random() * 48);
+    const c = 100 - a - b;
+    if (c >= 12 && c <= 60) { G.goal = [a, b, c]; break; }
+  }
+  G.tTotal = tTotalNow();
+  G.tLeft = G.tTotal;
+  G.hold = 0;
+}
+
+// ---------- audio ----------
+function audio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol, slide) {
+  const ac = audio();
+  if (!ac) return;
+  const t = ac.currentTime;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type || 'sine';
+  o.frequency.setValueAtTime(freq, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
+  g.gain.setValueAtTime(vol || 0.06, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(ac.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
+// ---------- fx ----------
+function burst(x, y, color, n, speed) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = speed * (0.3 + Math.random() * 0.7);
+    G.parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: 1, c: color });
+  }
+  if (G.parts.length > 400) G.parts.splice(0, G.parts.length - 400);
+}
+function pop(text, x, y, color) {
+  G.pops.push({ text, x, y, life: 1, c: color });
+}
+
+// ---------- flow ----------
+function startGame() {
+  audio();
+  Object.assign(G, {
+    phase: 'playing', score: 0, lives: 3, combo: 0, hits: 0, elapsed: 0,
+    b1: 33, b2: 66, locks: [false, false, false], blocked: [0, 0, 0],
+    shake: 0, flash: 0, drag: null,
+  });
+  G.parts = [];
+  G.pops = [];
+  newGoal();
+  G.goalShown = G.goal.slice();
+  tone(520, 0.1, 'triangle', 0.05);
+  pushUi({ phase: 'playing', score: 0, best: G.best, lives: 3 });
+}
+
+function endGame() {
+  G.phase = 'over';
+  G.drag = null;
+  G.best = Math.max(G.best, G.score);
+  try { localStorage.setItem(BEST_KEY, String(G.best)); } catch (e) {}
+  tone(120, 0.6, 'sawtooth', 0.08, 0.3);
+  pushUi({ phase: 'over', score: G.score, best: G.best, lives: 0 });
+}
+
+function succeed() {
+  const tol = tolNow();
+  const prec = clamp(1 - worstErr() / tol, 0, 1);
+  const timeFrac = clamp(G.tLeft / G.tTotal, 0, 1);
+  const mult = 1 + 0.25 * Math.min(G.combo, 8);
+  const pts = Math.round((100 + prec * 60 + timeFrac * 50) * mult);
+  G.score += pts;
+  G.combo++;
+  G.hits++;
+  const cx = G.barX + G.barW / 2, cy = G.barY + G.barH / 2;
+  burst(cx, cy, '#4fffd6', 46, 420);
+  burst(cx, cy, '#ffffff', 16, 240);
+  pop('+' + pts, cx, G.ghostY + 60, '#4fffd6');
+  if (prec > 0.8) pop('PRECISE', cx, G.ghostY + 84, '#ffffff');
+  if (G.combo >= 3) pop('COMBO x' + G.combo, cx, G.ghostY + 108, '#ffc247');
+  G.flash = 0;
+  tone(660, 0.12, 'triangle', 0.07);
+  tone(990, 0.2, 'triangle', 0.05);
+  newGoal();
+  pushUi({ phase: 'playing', score: G.score, best: G.best, lives: G.lives });
+}
+
+function worstErr() { return Math.max(...segErrors()); }
+
+function miss() {
+  G.lives--;
+  G.combo = 0;
+  G.shake = 0.6;
+  G.flash = 0.5;
+  const cx = G.barX + G.barW / 2, cy = G.barY + G.barH / 2;
+  burst(cx, cy, '#ff5c7a', 30, 300);
+  pop('MISSED', cx, G.ghostY + 60, '#ff5c7a');
+  tone(180, 0.3, 'sawtooth', 0.07, 0.5);
+  if (G.lives <= 0) { endGame(); return; }
+  newGoal();
+  pushUi({ phase: 'playing', score: G.score, best: G.best, lives: G.lives });
+}
+
+// ---------- simulation ----------
+function step(dt) {
+  G.time += dt;
+  G.shake = Math.max(0, G.shake - dt * 2);
+  G.flash = Math.max(0, G.flash - dt * 2.5);
+  G.blocked = G.blocked.map(v => Math.max(0, v - dt));
+  for (let i = 0; i < 3; i++) G.goalShown[i] += (G.goal[i] - G.goalShown[i]) * Math.min(1, dt * 7);
+  for (const p of G.parts) { p.life -= dt * 1.6; p.vy += 260 * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  G.parts = G.parts.filter(p => p.life > 0);
+  for (const q of G.pops) { q.life -= dt * 0.9; q.y -= 30 * dt; }
+  G.pops = G.pops.filter(q => q.life > 0);
+
+  if (G.phase !== 'playing') return;
+  G.elapsed += dt;
+  const inBand = worstErr() <= tolNow();
+  if (inBand) {
+    G.hold += dt;
+    if (G.hold >= HOLD_NEEDED) { succeed(); return; }
+  } else {
+    G.hold = Math.max(0, G.hold - dt * 0.5);
+  }
+  G.tLeft -= dt;
+  if (G.tLeft <= 0) miss();
+}
+
+// ---------- input ----------
+function canvasPoint(e) {
+  const r = G.canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function flashLocked(i) {
+  if (G.blocked[i] > 0) return;
+  G.blocked[i] = 0.35;
+  tone(140, 0.05, 'square', 0.03);
+}
+function onDown(e) {
+  audio();
+  if (G.phase !== 'playing') return;
+  const p = canvasPoint(e);
+  const inHandleY = p.y >= G.barY - 24 && p.y <= G.barY + G.barH + 24;
+  const d1 = Math.abs(p.x - px(G.b1)), d2 = Math.abs(p.x - px(G.b2));
+  if (inHandleY && Math.min(d1, d2) <= 26) {
+    G.drag = { kind: d1 <= d2 ? 'h1' : 'h2', sx: p.x, sy: p.y, moved: false };
+  } else if (p.y >= G.barY && p.y <= G.barY + G.barH && p.x >= G.barX && p.x <= G.barX + G.barW) {
+    const u = unitAt(p.x);
+    G.drag = { kind: 'seg', seg: u < G.b1 ? 0 : (u < G.b2 ? 1 : 2), sx: p.x, sy: p.y, moved: false };
+  } else {
+    return;
+  }
+  G.canvas.setPointerCapture(e.pointerId);
+}
+function onMove(e) {
+  const d = G.drag;
+  if (!d) return;
+  const p = canvasPoint(e);
+  if (!d.moved && Math.hypot(p.x - d.sx, p.y - d.sy) > LOCK_SLOP) d.moved = true;
+  if (d.kind === 'h1') {
+    if (G.locks[0] || G.locks[1]) { flashLocked(G.locks[0] ? 0 : 1); return; }
+    G.b1 = clamp(unitAt(p.x), MIN_SEG, G.b2 - MIN_SEG);
+  } else if (d.kind === 'h2') {
+    if (G.locks[1] || G.locks[2]) { flashLocked(G.locks[1] ? 1 : 2); return; }
+    G.b2 = clamp(unitAt(p.x), G.b1 + MIN_SEG, 100 - MIN_SEG);
+  } else {
+    return;
+  }
+  if (Math.random() < 0.3) burst(px(d.kind === 'h1' ? G.b1 : G.b2), G.barY + G.barH / 2, '#ffffff', 2, 90);
+}
+function onUp() {
+  const d = G.drag;
+  G.drag = null;
+  if (!d || d.kind !== 'seg' || d.moved || G.phase !== 'playing') return;
+  G.locks[d.seg] = !G.locks[d.seg];
+  tone(G.locks[d.seg] ? 330 : 520, 0.09, 'square', 0.04);
+  const starts = [0, G.b1, G.b2];
+  const width = segs()[d.seg];
+  const cx = px(starts[d.seg] + width / 2);
+  pop(G.locks[d.seg] ? 'LOCKED' : 'FREE', cx, G.barY + G.barH + 40, G.locks[d.seg] ? '#ffc247' : '#9fb4d9');
+}
+
+// ---------- render ----------
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function draw() {
+  const ctx = G.ctx, W = G.W, H = G.H;
+  ctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
+  const bg = ctx.createRadialGradient(W / 2, H * 0.3, 20, W / 2, H / 2, Math.max(W, H) * 0.75);
+  bg.addColorStop(0, '#1a1140');
+  bg.addColorStop(1, '#03040b');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  if (G.shake > 0) {
+    const s = G.shake * 10;
+    ctx.translate((Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
+  }
+
+  // scrolling grid
+  ctx.strokeStyle = 'rgba(140,110,255,0.10)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const off = (G.time * 24) % 40;
+  for (let y = off; y < H; y += 40) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  for (let x = (W % 40) / 2; x < W; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  ctx.stroke();
+
+  const { barX, barY, barW, barH, ghostY, ghostH } = G;
+  const tol = tolNow();
+  const s = segs();
+  const playing = G.phase === 'playing';
+
+  // ghost guides at the goal boundaries
+  if (playing || G.phase === 'menu') {
+    const gx1 = px(G.goal[0]), gx2 = px(G.goal[0] + G.goal[1]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.setLineDash([4, 5]);
+    for (const gx of [gx1, gx2]) {
+      ctx.beginPath(); ctx.moveTo(gx, barY - 14); ctx.lineTo(gx, ghostY + ghostH + 14); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // ghost bar: where the segments should be
+  let x = barX;
+  const ghostFx = G.goalShown.slice();
+  for (let i = 0; i < 3; i++) {
+    const w = (ghostFx[i] / 100) * barW;
+    ctx.fillStyle = `rgba(${['35,232,255', '255,79,216', '255,194,71'][i]},0.12)`;
+    ctx.fillRect(x, ghostY, w, ghostH);
+    ctx.strokeStyle = SEG_COLORS[i];
+    ctx.globalAlpha = 0.75;
+    ctx.setLineDash([6, 4]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x + 1, ghostY + 1, w - 2, ghostH - 2);
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(230,240,255,0.85)';
+    ctx.font = '700 12px Segoe UI, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(G.goal[i]), x + w / 2, ghostY + ghostH / 2 + 1);
+    x += w;
+  }
+
+  // live bar frame
+  ctx.fillStyle = 'rgba(8,10,28,0.92)';
+  rr(ctx, barX - 6, barY - 6, barW + 12, barH + 12, 14);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(79,255,214,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // live segments
+  x = barX;
+  for (let i = 0; i < 3; i++) {
+    const w = (s[i] / 100) * barW;
+    const ok = Math.abs(s[i] - G.goal[i]) <= tol;
+    const grad = ctx.createLinearGradient(0, barY, 0, barY + barH);
+    grad.addColorStop(0, SEG_COLORS[i]);
+    grad.addColorStop(1, `rgba(${['35,232,255', '255,79,216', '255,194,71'][i]},0.35)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(x + 1, barY, Math.max(0, w - 2), barH);
+    if (ok && playing) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(x + 2, barY + 1, Math.max(0, w - 4), barH - 2);
+    }
+    if (G.locks[i]) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x + 1, barY, Math.max(0, w - 2), barH); ctx.clip();
+      ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+      ctx.lineWidth = 2;
+      for (let k = -barH; k < w + barH; k += 12) {
+        ctx.beginPath(); ctx.moveTo(x + k, barY + barH); ctx.lineTo(x + k + barH, barY); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (G.blocked[i] > 0) {
+      ctx.strokeStyle = `rgba(255,92,122,${Math.min(1, G.blocked[i] * 3)})`;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x + 2, barY + 1, Math.max(0, w - 4), barH - 2);
+    }
+    ctx.fillStyle = '#05060f';
+    ctx.font = '800 20px Segoe UI, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(Math.round(s[i])), x + w / 2, barY + barH / 2 - (G.locks[i] ? 8 : 0));
+    if (G.locks[i]) {
+      ctx.font = '700 10px Segoe UI, Arial, sans-serif';
+      ctx.fillStyle = '#05060f';
+      ctx.fillText('LOCKED', x + w / 2, barY + barH / 2 + 12);
+    }
+    x += w;
+  }
+
+  // hold meter under the live bar
+  if (playing) {
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    rr(ctx, barX, barY + barH + 12, barW, 6, 3);
+    ctx.fill();
+    ctx.fillStyle = '#4fffd6';
+    rr(ctx, barX, barY + barH + 12, barW * clamp(G.hold / HOLD_NEEDED, 0, 1), 6, 3);
+    ctx.fill();
+  }
+
+  // goal timer above the bar
+  if (playing) {
+    const frac = clamp(G.tLeft / G.tTotal, 0, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(barX, barY - 30, barW, 6);
+    ctx.fillStyle = G.tLeft < 2 ? '#ff5c7a' : '#4fffd6';
+    ctx.fillRect(barX, barY - 30, barW * frac, 6);
+    ctx.fillStyle = 'rgba(230,240,255,0.6)';
+    ctx.font = '700 11px Segoe UI, Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('MATCH THE GHOST', barX, barY - 38);
+  }
+
+  // handles
+  const cy = barY + barH / 2;
+  for (const [h, idx] of [[G.b1, 0], [G.b2, 1]]) {
+    const hx = px(h);
+    const hot = (G.locks[idx] || G.locks[idx + 1]);
+    ctx.shadowColor = hot ? '#ffc247' : '#ffffff';
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = hot ? '#ffc247' : '#f4fbff';
+    rr(ctx, hx - 5, barY - 14, 10, barH + 28, 5);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(5,6,15,0.55)';
+    ctx.fillRect(hx - 1.5, cy - 8, 3, 16);
+  }
+
+  // particles (additive)
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of G.parts) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.c;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 1.5 + 2.5 * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  // score pops
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  for (const q of G.pops) {
+    ctx.globalAlpha = Math.min(1, q.life * 1.5);
+    ctx.fillStyle = q.c;
+    ctx.font = '800 20px Segoe UI, Arial, sans-serif';
+    ctx.fillText(q.text, q.x, q.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // HUD
+  if (G.flash > 0) {
+    ctx.fillStyle = `rgba(255,60,90,${G.flash * 0.25})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 36px Segoe UI, Arial, sans-serif';
+  ctx.shadowColor = 'rgba(79,255,214,0.9)';
+  ctx.shadowBlur = 12;
+  ctx.fillText(String(G.score), W / 2, 52);
+  ctx.shadowBlur = 0;
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(230,240,255,0.7)';
+  ctx.font = '600 12px Segoe UI, Arial, sans-serif';
+  ctx.fillText('BEST ' + G.best, 16, 28);
+  if (G.combo > 0) {
+    ctx.fillStyle = '#ffc247';
+    ctx.fillText('COMBO ' + G.combo + '  x' + (1 + 0.25 * Math.min(G.combo, 8)).toFixed(2), 16, 46);
+  }
+
+  ctx.textAlign = 'right';
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.arc(W - 22 - i * 22, 24, 7, 0, Math.PI * 2);
+    ctx.fillStyle = i < G.lives ? '#ff5c7a' : 'rgba(255,255,255,0.15)';
+    ctx.fill();
+  }
+}
+
+function syncGlobal() {
+  const r = G.canvas.getBoundingClientRect();
+  const cy = r.top + G.barY + G.barH / 2;
+  const gy = r.top + G.ghostY + G.ghostH / 2;
+  window.__game = {
+    phase: G.phase,
+    score: G.score,
+    best: G.best,
+    lives: G.lives,
+    combo: G.combo,
+    hits: G.hits,
+    elapsed: +G.elapsed.toFixed(2),
+    tolerance: +tolNow().toFixed(2),
+    target: G.goal.slice(),
+    segments: segs().map(v => +v.toFixed(2)),
+    locks: G.locks.slice(),
+    bar: { x: r.left + G.barX, y: r.top + G.barY, width: G.barW, height: G.barH },
+    handles: [
+      { x: r.left + px(G.b1), y: cy },
+      { x: r.left + px(G.b2), y: cy },
+    ],
+    goals: [
+      { x: r.left + px(G.goal[0]), y: gy },
+      { x: r.left + px(G.goal[0] + G.goal[1]), y: gy },
+    ],
+  };
+}
+
+function layout() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  G.W = W; G.H = H; G.dpr = dpr;
+  G.canvas.width = Math.round(W * dpr);
+  G.canvas.height = Math.round(H * dpr);
+  G.barW = clamp(W - 40, 260, 640);
+  G.barX = (W - G.barW) / 2;
+  G.barY = Math.max(120, H * 0.26);
+  G.ghostY = G.barY + G.barH + 62;
+}
+
+function App() {
+  const canvasRef = React.useRef(null);
+  const [ui, setUi] = React.useState({ phase: 'menu', score: 0, best: G.best, lives: 3 });
+
+  React.useEffect(() => {
+    pushUi = setUi;
+    const canvas = canvasRef.current;
+    G.canvas = canvas;
+    G.ctx = canvas.getContext('2d');
+    newGoal();
+    G.goalShown = G.goal.slice();
+    layout();
+    syncGlobal();
+
+    const onResize = () => layout();
+    const onMove2 = e => onMove(e);
+    const onUp2 = e => onUp(e);
+    window.addEventListener('resize', onResize);
+    canvas.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove2);
+    window.addEventListener('pointerup', onUp2);
+    window.addEventListener('pointercancel', onUp2);
+
+    let last = performance.now();
+    let raf = 0;
+    const frame = now => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      step(dt);
+      draw();
+      syncGlobal();
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+      canvas.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove2);
+      window.removeEventListener('pointerup', onUp2);
+      window.removeEventListener('pointercancel', onUp2);
+    };
+  }, []);
+
+  return (
+    <>
+      <canvas className="stage" ref={canvasRef} />
+      {ui.phase !== 'playing' && (
+        <div className="overlay">
+          <div className="panel">
+            {ui.phase === 'menu' ? (
+              <>
+                <div className="kicker">Daily game · {ID}</div>
+                <h1>BOILER QUOTA</h1>
+                <p>Match the dashed ghost bars: drag the white handles, tap a segment to lock it.</p>
+                <p className="small">Hold a match for a moment. Three misses end the shift.</p>
+                <button data-testid="start-btn" onClick={startGame}>START</button>
+              </>
+            ) : (
+              <>
+                <div className="kicker">Shift over</div>
+                <h1>QUOTA LOST</h1>
+                <div className="stats">
+                  <div>Score<b>{ui.score}</b></div>
+                  <div>Best<b>{ui.best}</b></div>
+                </div>
+                <button data-testid="start-btn" onClick={startGame}>RUN AGAIN</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

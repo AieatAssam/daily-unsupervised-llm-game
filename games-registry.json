@@ -4184,5 +4184,29 @@
     "genre": "territory",
     "input": "aim-release",
     "mechanic": "aim-release seeds onto cells before sweep; storm hits, empty turns cost life"
+  },
+  {
+    "id": "2026-11-23",
+    "date": "2026-11-23",
+    "name": "Boiler Quota",
+    "tagline": "Hit the shift quota before the gauges drift.",
+    "description": "Three steam segments share one fixed boiler bar. Each round a dashed ghost bar shows the target split and a timer starts. Drag the white handles so every segment matches its ghost within tolerance, and hold it for a moment to bank points. Tap a segment to lock it while you work on the others. Points scale with precision, time left and combo. A goal that times out costs a life, and three misses end the shift. Goals come faster and tolerance tightens as the shift goes on.",
+    "tags": [
+      "resource",
+      "steam",
+      "sliders",
+      "locking",
+      "neon"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "1-2 minutes",
+    "controls": "Drag the white handles to resize segments; tap a segment to lock or unlock it",
+    "folder": "games/2026-11-23",
+    "file": "games/2026-11-23/index.html",
+    "preview": "games/2026-11-23/preview.png",
+    "rating": 4.0,
+    "genre": "resource-management",
+    "input": "multi",
+    "mechanic": "divide fixed steam into three segments matching shifting targets; misses cost life"
   }
 ]
