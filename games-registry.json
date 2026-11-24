@@ -4208,5 +4208,29 @@
     "genre": "resource-management",
     "input": "multi",
     "mechanic": "divide fixed steam into three segments matching shifting targets; misses cost life"
+  },
+  {
+    "id": "2026-11-24",
+    "date": "2026-11-24",
+    "name": "Trench Drift",
+    "tagline": "Ride the bends, grab the gold, mind the rocks.",
+    "description": "Your sub auto-drives a winding trench. One tap swaps between two lanes. Rocks come down both lanes and touching one costs a hull point. Gold pearls sit on the outer lane of each bend and pay triple, but staying on the outside drains grip; empty it and you spin out and lose a point. Swap in and out of bends to keep grip, and build streaks for a score multiplier. Bends get sharper and rocks faster as the dive goes on.",
+    "tags": [
+      "racing",
+      "deep-sea",
+      "lanes",
+      "grip",
+      "neon"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "1-2 minutes",
+    "controls": "Tap anywhere (or Space / arrow keys) to swap lanes",
+    "folder": "games/2026-11-24",
+    "file": "games/2026-11-24/index.html",
+    "preview": "games/2026-11-24/preview.png",
+    "rating": 4,
+    "genre": "racing",
+    "input": "one-button",
+    "mechanic": "tap swaps lane; bend outer lane pays triple but drains grip; rocks cost life"
   }
 ]

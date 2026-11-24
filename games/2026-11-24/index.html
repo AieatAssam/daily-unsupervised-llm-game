@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Trench Drift</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #03040b; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none; user-select: none;
+  }
+  #root { position: fixed; inset: 0; }
+  .shell { position: fixed; inset: 0; touch-action: none; cursor: pointer; }
+  canvas.stage { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  .overlay {
+    position: fixed; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    padding: 16px; pointer-events: none;
+  }
+  .panel {
+    pointer-events: auto; max-width: 340px; width: 100%;
+    text-align: center; color: #e6f0ff; padding: 20px 18px 22px;
+    background: rgba(6,10,26,0.88);
+    border: 1px solid rgba(79,255,214,0.5); border-radius: 18px;
+    box-shadow: 0 0 30px rgba(79,255,214,0.25), inset 0 0 24px rgba(90,170,255,0.12);
+  }
+  .kicker { font-size: 11px; letter-spacing: 2px; opacity: 0.6; text-transform: uppercase; }
+  h1 {
+    margin: 6px 0 8px; font-size: 36px; letter-spacing: 3px;
+    color: #4fffd6; text-shadow: 0 0 14px rgba(79,255,214,0.9), 0 0 36px rgba(255,92,200,0.5);
+  }
+  .panel p { font-size: 15px; line-height: 1.4; margin: 0 0 16px; opacity: 0.92; }
+  .stats { display: flex; justify-content: space-around; margin: 0 0 18px; }
+  .stats div { font-size: 11px; letter-spacing: 1px; opacity: 0.7; text-transform: uppercase; }
+  .stats b { display: block; font-size: 26px; opacity: 1; color: #fff; letter-spacing: 0; }
+  button {
+    min-width: 200px; min-height: 48px; padding: 12px 32px;
+    font-size: 18px; font-weight: 700; letter-spacing: 2px;
+    color: #03040b; background: linear-gradient(90deg, #4fffd6, #ffc247);
+    border: 0; border-radius: 999px; cursor: pointer;
+    box-shadow: 0 0 22px rgba(79,255,214,0.6);
+    touch-action: manipulation;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const ID = '2026-11-24';
+const BEST_KEY = 'arcade.' + ID + '.best';
+
+const VW = 360, VH = 640;     // logical play field
+const CARY = 530;             // car's fixed screen row
+const R = 96;                 // road half-width
+const LANE_X = 46;            // lane centre offset from road centre
+const F = 2 * Math.PI / 1000; // road phase per world px
+const BEND = 0.6;             // |sin| above this = bend; outer lane is the side the road bends away from
+const DRAIN = 1.4;            // grip lost per second in the outer lane of a bend
+const RECOVER = 0.45;         // grip regained per second otherwise
+const COOLDOWN = 0.12;        // seconds between lane swaps
+const SPAWN_AHEAD = CARY + 30;
+const GOLD = '255,200,71';
+const CYAN = '79,255,214';
+const RED = '255,77,109';
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// Test contract: kept live, read-only state for bots.
+window.__game = { phase: 'menu', score: 0 };
+
+const G = {
+  phase: 'menu', score: 0, best: 0, lives: 3, combo: 0,
+  lane: -1, visLane: -1, lastSwitch: -1,
+  s: 0, t: 0, v: 0, grip: 1, dying: 0,
+  pearls: [], rocks: [], parts: [], pops: [],
+  nextPearl: 0.8, nextRock: 3,
+  shake: 0, flash: 0, flashCol: RED,
+  canvas: null, ctx: null, dpr: 1, scale: 1, ox: 0, oy: 0,
+  last: 0, raf: 0,
+};
+try { G.best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch (e) {}
+
+let uiSet = () => {};
+let audioCtx = null;
+
+function makeGlow(rgb) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const x = cv.getContext('2d');
+  const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, `rgba(${rgb},1)`);
+  gr.addColorStop(0.3, `rgba(${rgb},0.55)`);
+  gr.addColorStop(1, `rgba(${rgb},0)`);
+  x.fillStyle = gr;
+  x.fillRect(0, 0, 64, 64);
+  return cv;
+}
+const SPR = { gold: makeGlow(GOLD), cyan: makeGlow(CYAN), red: makeGlow(RED) };
+const STARS = Array.from({ length: 36 }, (_, i) => ({
+  x: (i * 53) % VW, y: (i * 131) % VH, k: 0.2 + ((i * 37) % 10) / 20, r: 1 + (i % 3),
+}));
+
+// Road centreline: sways left/right; amplitude grows with time.
+const amp = t => 26 + Math.min(44, t * 0.6);
+const centre = p => VW / 2 + amp(G.t) * Math.sin(F * p);
+const sinAt = p => Math.sin(F * p);
+const outerSide = sn => (Math.abs(sn) > BEND ? (sn > 0 ? 1 : -1) : 0);
+const yOf = o => CARY - (o.p - G.s);
+const xOf = o => centre(o.p) + o.lane * LANE_X;
+
+function initAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function tone(f, dur, type = 'square', vol = 0.05, slide = 0) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f, t0);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f * slide), t0 + dur);
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t0);
+  o.stop(t0 + dur + 0.02);
+}
+
+function burst(x, y, rgb, n, sp) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = sp * (0.3 + Math.random() * 0.7);
+    G.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.5 + Math.random() * 0.4, max: 0.9, rgb, sz: 2 + Math.random() * 3 });
+  }
+}
+function popAt(x, y, text, col) { G.pops.push({ x, y, text, col, life: 0.9 }); }
+
+function publish() {
+  const g = G;
+  const sn = sinAt(g.s);
+  window.__game = {
+    phase: g.phase,
+    score: g.score,
+    best: Math.max(g.best, g.score),
+    lives: g.lives,
+    combo: g.combo,
+    lane: g.lane,
+    outerLane: outerSide(sn),        // lane that is on the outside of the current bend (0 = straight)
+    bend: Math.abs(sn) > BEND,
+    grip: Math.round(g.grip * 1000) / 1000,
+    car: { x: centre(g.s) + g.visLane * LANE_X, y: CARY, lane: g.lane },
+    pearls: g.pearls.filter(p => !p.done).map(p => ({ x: xOf(p), y: yOf(p), lane: p.lane, gold: p.gold })),
+    rocks: g.rocks.filter(r => !r.done).map(r => ({ x: xOf(r), y: yOf(r), lane: r.lane })),
+  };
+}
+
+function resize() {
+  const g = G;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  g.dpr = Math.min(2, window.devicePixelRatio || 1);
+  g.canvas.width = Math.round(vw * g.dpr);
+  g.canvas.height = Math.round(vh * g.dpr);
+  g.scale = Math.min(vw / VW, vh / VH);
+  g.ox = (vw - VW * g.scale) / 2;
+  g.oy = (vh - VH * g.scale) / 2;
+}
+
+function startGame() {
+  initAudio();
+  Object.assign(G, {
+    phase: 'playing', score: 0, lives: 3, combo: 0, lane: -1, visLane: -1, lastSwitch: -10,
+    s: 0, t: 0, v: 0, grip: 1, dying: 0, pearls: [], rocks: [], parts: [], pops: [],
+    nextPearl: 0.8, nextRock: 3, shake: 0, flash: 0,
+  });
+  publish();
+  uiSet({ phase: 'playing', score: 0, best: G.best });
+}
+
+function endGame() {
+  G.phase = 'over';
+  G.best = Math.max(G.best, G.score);
+  try { localStorage.setItem(BEST_KEY, String(G.best)); } catch (e) {}
+  publish();
+  uiSet({ phase: 'over', score: G.score, best: G.best });
+}
+
+function tapLane() {
+  initAudio();
+  const g = G;
+  if (g.phase !== 'playing' || g.dying > 0) return;
+  if (g.t - g.lastSwitch < COOLDOWN) return;
+  g.lane = -g.lane;
+  g.lastSwitch = g.t;
+  tone(520, 0.06, 'sine', 0.03);
+}
+
+function hurt(label, x, y) {
+  const g = G;
+  if (g.lives <= 0) return;
+  g.lives--;
+  g.combo = 0;
+  g.shake = 9;
+  g.flash = 0.45;
+  g.flashCol = RED;
+  burst(x, y, RED, 26, 260);
+  popAt(x, y - 24, label, '#ff4d6d');
+  tone(140, 0.35, 'sawtooth', 0.09, 0.4);
+  if (g.lives <= 0) g.dying = 0.9;
+}
+
+function spawnPearl() {
+  const p = G.s + SPAWN_AHEAD;
+  const sn = sinAt(p);
+  let lane = Math.random() < 0.5 ? -1 : 1;
+  let gold = false;
+  if (outerSide(sn) !== 0 && Math.random() < 0.55) { lane = outerSide(sn); gold = true; }
+  G.pearls.push({ p, lane, gold, done: false });
+}
+
+function spawnRock() {
+  G.rocks.push({ p: G.s + SPAWN_AHEAD, lane: Math.random() < 0.5 ? -1 : 1, seed: Math.random() * 6, done: false });
+}
+
+function collect(p) {
+  const g = G;
+  p.done = true;
+  const mult = Math.min(5, 1 + Math.floor(g.combo / 4));
+  const pts = (p.gold ? 30 : 10) * mult;
+  const x = xOf(p), y = CARY;
+  g.score += pts;
+  g.combo++;
+  burst(x, y, p.gold ? GOLD : CYAN, p.gold ? 18 : 8, 180);
+  popAt(x, y - 22, '+' + pts, p.gold ? '#ffc247' : '#8ff7ff');
+  tone(p.gold ? 990 : 660, 0.09, 'triangle', 0.06);
+}
+
+function step(dt) {
+  const g = G;
+  if (g.dying > 0) { g.dying -= dt; if (g.dying <= 0) endGame(); return; }
+  g.t += dt;
+  g.v = 230 + Math.min(170, g.t * 2.2);
+  g.s += g.v * dt;
+  g.visLane += (g.lane - g.visLane) * Math.min(1, dt * 16);
+  g.shake = Math.max(0, g.shake - 30 * dt);
+  g.flash = Math.max(0, g.flash - dt * 2);
+
+  // Grip: staying on the outside of a bend drains it; the inside lets it recover.
+  const sn = sinAt(g.s);
+  if (outerSide(sn) !== 0 && g.lane === outerSide(sn)) g.grip -= DRAIN * dt;
+  else g.grip = Math.min(1, g.grip + RECOVER * dt);
+  if (g.grip <= 0) {
+    hurt('SPIN OUT', centre(g.s) + g.visLane * LANE_X, CARY);
+    g.grip = 0.5;
+  }
+
+  g.nextPearl -= dt;
+  if (g.nextPearl <= 0) {
+    spawnPearl();
+    g.nextPearl = Math.max(0.42, 0.78 - g.t * 0.004) * (0.85 + Math.random() * 0.3);
+  }
+  g.nextRock -= dt;
+  if (g.nextRock <= 0 && g.t > 4) {
+    spawnRock();
+    g.nextRock = Math.max(0.9, 1.9 - g.t * 0.008) * (0.9 + Math.random() * 0.2);
+  }
+
+  for (const p of g.pearls) {
+    if (p.done) continue;
+    const y = yOf(p);
+    if (p.lane === g.lane && Math.abs(y - CARY) < 24) collect(p);
+    else if (y > CARY + 24) {
+      p.done = true;
+      if (p.gold) { g.combo = 0; popAt(xOf(p), CARY - 30, 'MISSED', '#8a8fa8'); }
+    }
+  }
+  g.pearls = g.pearls.filter(p => !p.done);
+
+  for (const r of g.rocks) {
+    if (r.done) continue;
+    const y = yOf(r);
+    if (r.lane === g.lane && Math.abs(y - CARY) < 22) {
+      r.done = true;
+      hurt('HULL HIT', xOf(r), y);
+    } else if (y > VH + 40) r.done = true;
+  }
+  g.rocks = g.rocks.filter(r => !r.done);
+}
+
+function updateFX(dt) {
+  const g = G;
+  for (const q of g.parts) {
+    q.x += q.vx * dt; q.y += q.vy * dt;
+    q.vx *= Math.pow(0.05, dt); q.vy *= Math.pow(0.05, dt);
+    q.life -= dt;
+  }
+  g.parts = g.parts.filter(q => q.life > 0);
+  for (const q of g.pops) { q.y -= 36 * dt; q.life -= dt; }
+  g.pops = g.pops.filter(q => q.life > 0);
+}
+
+function drawRoad(c) {
+  const g = G;
+  c.textAlign = 'center';
+  for (let y = -6; y < VH + 6; y += 6) {
+    const p = g.s + (CARY - y);
+    const cx = centre(p);
+    const sn = sinAt(p);
+    c.fillStyle = 'rgba(12,18,48,0.96)';
+    c.fillRect(cx - R, y, 2 * R, 6);
+    const side = outerSide(sn);
+    if (side !== 0) {
+      // Outer half of a bend glows gold: the telegraph for where gold pearls and grip drain are.
+      c.fillStyle = `rgba(${GOLD},${0.09 + 0.05 * Math.sin(g.t * 8)})`;
+      c.fillRect(side > 0 ? cx : cx - R, y, R, 6);
+    }
+    if (Math.floor(p / 36) % 2 === 0) {
+      c.fillStyle = 'rgba(120,240,255,0.4)';
+      c.fillRect(cx - 1, y, 2, 6);
+    }
+  }
+  // Edges: wide faint glow + thin bright line.
+  for (const [lw, a] of [[8, 0.18], [2, 0.9]]) {
+    c.lineWidth = lw;
+    c.strokeStyle = `rgba(${CYAN},${a})`;
+    for (const sign of [-1, 1]) {
+      c.beginPath();
+      let first = true;
+      for (let y = -6; y <= VH + 6; y += 6) {
+        const x = centre(g.s + (CARY - y)) + sign * R;
+        if (first) { c.moveTo(x, y); first = false; } else c.lineTo(x, y);
+      }
+      c.stroke();
+    }
+  }
+}
+
+function drawHud(c) {
+  const g = G;
+  c.textAlign = 'left';
+  c.font = 'bold 28px Segoe UI, Arial, sans-serif';
+  c.fillStyle = '#ffffff';
+  c.fillText(String(g.score), 14, 40);
+  c.font = 'bold 12px Segoe UI, Arial, sans-serif';
+  c.fillStyle = 'rgba(200,230,255,0.75)';
+  c.fillText('BEST ' + Math.max(g.best, g.score), 14, 58);
+  for (let i = 0; i < 3; i++) {
+    c.fillStyle = i < g.lives ? '#ff4d6d' : 'rgba(255,255,255,0.15)';
+    const x = VW - 24 - i * 22, y = 34;
+    c.beginPath();
+    c.moveTo(x, y - 8); c.lineTo(x + 7, y); c.lineTo(x, y + 8); c.lineTo(x - 7, y); c.closePath();
+    c.fill();
+  }
+  if (g.combo >= 2) {
+    const mult = Math.min(5, 1 + Math.floor(g.combo / 4));
+    c.textAlign = 'center';
+    c.font = 'bold 16px Segoe UI, Arial, sans-serif';
+    c.fillStyle = '#ffc247';
+    c.fillText(`STREAK ${g.combo}  x${mult}`, VW / 2, 40);
+  }
+  // Grip bar.
+  const x0 = 64, w = 232, y0 = VH - 30;
+  c.fillStyle = 'rgba(255,255,255,0.12)';
+  c.fillRect(x0, y0, w, 10);
+  c.fillStyle = g.grip > 0.5 ? '#4fffd6' : (g.grip > 0.25 ? '#ffc247' : '#ff4d6d');
+  c.fillRect(x0, y0, w * clamp(g.grip, 0, 1), 10);
+  c.textAlign = 'left';
+  c.font = 'bold 11px Segoe UI, Arial, sans-serif';
+  c.fillStyle = 'rgba(230,240,255,0.7)';
+  c.fillText('GRIP', 14, y0 + 9);
+  // Hint line above the bar.
+  const side = outerSide(sinAt(g.s));
+  c.textAlign = 'center';
+  c.font = 'bold 13px Segoe UI, Arial, sans-serif';
+  if (side !== 0 && g.lane === side) {
+    c.fillStyle = '#ff8a5c';
+    c.fillText('OUTER LANE: GRIP DRAINING', VW / 2, y0 - 14);
+  } else if (side !== 0) {
+    c.fillStyle = '#ffc247';
+    c.fillText('BEND: SWAP IN FOR GOLD', VW / 2, y0 - 14);
+  }
+}
+
+function drawAll() {
+  const g = G, c = g.ctx;
+  if (!c) return;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = '#03040b';
+  c.fillRect(0, 0, g.canvas.width, g.canvas.height);
+  c.setTransform(g.dpr * g.scale, 0, 0, g.dpr * g.scale, g.ox * g.dpr, g.oy * g.dpr);
+  c.save();
+  if (g.shake > 0) c.translate((Math.random() * 2 - 1) * g.shake, (Math.random() * 2 - 1) * g.shake);
+
+  const bg = c.createLinearGradient(0, 0, 0, VH);
+  bg.addColorStop(0, '#0a0722');
+  bg.addColorStop(0.6, '#050a24');
+  bg.addColorStop(1, '#02060f');
+  c.fillStyle = bg;
+  c.fillRect(-30, -30, VW + 60, VH + 60);
+  c.fillStyle = 'rgba(140,230,255,0.5)';
+  for (const st of STARS) {
+    const y = (((st.y + g.s * st.k) % VH) + VH) % VH;
+    c.fillRect(st.x, y, st.r, st.r);
+  }
+
+  drawRoad(c);
+
+  c.globalCompositeOperation = 'lighter';
+  for (const p of g.pearls) {
+    const x = xOf(p), y = yOf(p);
+    if (y < -30 || y > VH + 30) continue;
+    c.drawImage(p.gold ? SPR.gold : SPR.cyan, x - 16, y - 16, 32, 32);
+  }
+  for (const r of g.rocks) {
+    const x = xOf(r), y = yOf(r);
+    if (y < -40 || y > VH + 40) continue;
+    c.drawImage(SPR.red, x - 26, y - 26, 52, 52);
+  }
+  c.globalCompositeOperation = 'source-over';
+
+  for (const p of g.pearls) {
+    const x = xOf(p), y = yOf(p);
+    if (y < -30 || y > VH + 30) continue;
+    c.beginPath();
+    c.arc(x, y, p.gold ? 5 : 4, 0, Math.PI * 2);
+    c.fillStyle = p.gold ? '#fff3c4' : '#d8fbff';
+    c.fill();
+  }
+  for (const r of g.rocks) {
+    const x = xOf(r), y = yOf(r);
+    if (y < -40 || y > VH + 40) continue;
+    c.beginPath();
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + r.seed;
+      const rad = (k % 2 ? 11 : 15) * (0.85 + 0.15 * Math.sin(r.seed * 7 + k * 3));
+      const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad;
+      if (k) c.lineTo(px, py); else c.moveTo(px, py);
+    }
+    c.closePath();
+    c.fillStyle = '#1d1530';
+    c.fill();
+    c.strokeStyle = '#ff4d6d';
+    c.lineWidth = 2;
+    c.stroke();
+  }
+
+  // Car.
+  const cx = centre(g.s) + g.visLane * LANE_X, cy = CARY;
+  c.globalCompositeOperation = 'lighter';
+  c.drawImage(SPR.cyan, cx - 34, cy - 34, 68, 68);
+  c.fillStyle = `rgba(${GOLD},0.8)`;
+  c.fillRect(cx - 3, cy + 12, 6, 4 + Math.random() * 6);
+  c.globalCompositeOperation = 'source-over';
+  c.beginPath();
+  c.moveTo(cx, cy - 18);
+  c.quadraticCurveTo(cx + 12, cy - 4, cx + 10, cy + 12);
+  c.lineTo(cx - 10, cy + 12);
+  c.quadraticCurveTo(cx - 12, cy - 4, cx, cy - 18);
+  c.closePath();
+  c.fillStyle = g.grip < 0.3 ? '#ff4d6d' : '#23e8ff';
+  c.fill();
+  c.strokeStyle = '#eafcff';
+  c.lineWidth = 1.5;
+  c.stroke();
+
+  c.globalCompositeOperation = 'lighter';
+  for (const q of g.parts) {
+    const a = clamp(q.life / q.max, 0, 1);
+    c.fillStyle = `rgba(${q.rgb},${a})`;
+    c.fillRect(q.x - q.sz / 2, q.y - q.sz / 2, q.sz, q.sz);
+  }
+  c.globalCompositeOperation = 'source-over';
+
+  c.textAlign = 'center';
+  c.font = 'bold 16px Segoe UI, Arial, sans-serif';
+  for (const q of g.pops) {
+    c.globalAlpha = clamp(q.life / 0.9, 0, 1);
+    c.fillStyle = q.col;
+    c.fillText(q.text, q.x, q.y);
+  }
+  c.globalAlpha = 1;
+
+  if (g.phase === 'playing') drawHud(c);
+  if (g.flash > 0) {
+    c.fillStyle = `rgba(${g.flashCol},${g.flash * 0.35})`;
+    c.fillRect(-30, -30, VW + 60, VH + 60);
+  }
+  c.restore();
+}
+
+function frame(now) {
+  const g = G;
+  const dt = clamp((now - g.last) / 1000, 0, 0.05);
+  g.last = now;
+  if (g.phase === 'playing') step(dt);
+  else g.s += 150 * dt; // menu / game over: road keeps drifting behind the panel
+  updateFX(dt);
+  publish();
+  drawAll();
+  g.raf = requestAnimationFrame(frame);
+}
+
+function App() {
+  const [ui, setState] = React.useState({ phase: 'menu', score: 0, best: G.best });
+  const canvasRef = React.useRef(null);
+
+  React.useEffect(() => {
+    uiSet = setState;
+    G.canvas = canvasRef.current;
+    G.ctx = G.canvas.getContext('2d');
+    resize();
+    const onResize = () => resize();
+    const onKey = e => {
+      if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
+        e.preventDefault();
+        if (!e.repeat) tapLane();
+      }
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('keydown', onKey);
+    G.last = performance.now();
+    G.raf = requestAnimationFrame(frame);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('keydown', onKey);
+      cancelAnimationFrame(G.raf);
+    };
+  }, []);
+
+  const onDown = e => {
+    if (e.target.closest && e.target.closest('button')) return;
+    tapLane();
+  };
+
+  return (
+    <div className="shell" onPointerDown={onDown}>
+      <canvas ref={canvasRef} className="stage" />
+      {ui.phase === 'menu' && (
+        <div className="overlay">
+          <div className="panel">
+            <div className="kicker">one button · deep-sea racing</div>
+            <h1>TRENCH DRIFT</h1>
+            <p>Tap to swap lanes and dodge the rocks. Gold pearls sit on the outer lane of each bend and pay triple, but that lane drains your grip.</p>
+            <button data-testid="start-btn" onClick={startGame}>DIVE</button>
+          </div>
+        </div>
+      )}
+      {ui.phase === 'over' && (
+        <div className="overlay">
+          <div className="panel">
+            <div className="kicker">hull breached</div>
+            <h1>GAME OVER</h1>
+            <div className="stats">
+              <div>Score<b>{ui.score}</b></div>
+              <div>Best<b>{ui.best}</b></div>
+            </div>
+            <button data-testid="start-btn" onClick={startGame}>DIVE AGAIN</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
