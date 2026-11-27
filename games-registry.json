@@ -4232,5 +4232,29 @@
     "genre": "racing",
     "input": "one-button",
     "mechanic": "tap swaps lane; bend outer lane pays triple but drains grip; rocks cost life"
+  },
+  {
+    "id": "2026-11-27",
+    "date": "2026-11-27",
+    "name": "Flicker Ledges",
+    "tagline": "Light the ledge before the ball lands.",
+    "description": "A ball bounces endlessly while ledge rows drift up from below. Every ledge starts dark: tap one to make it solid for a few seconds, and the ball bounces off it when it falls from above. Miss the ball and it drops out of the bottom, costing a life; three lives end the run. Bounces stack a combo multiplier, and landing dead-centre on a ledge pays double. Ledges flicker before they go dark again, and the ball speeds up and the rows scroll faster and tighter as the run goes on.",
+    "tags": [
+      "platformer",
+      "bounce",
+      "timing",
+      "prediction",
+      "neon"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "1-2 minutes",
+    "controls": "Tap (or click) a ledge to light it or dark it again",
+    "folder": "games/2026-11-27",
+    "file": "games/2026-11-27/index.html",
+    "preview": "games/2026-11-27/preview.png",
+    "rating": 4.0,
+    "genre": "platformer",
+    "input": "tap-targets",
+    "mechanic": "toggle ledges solid to bounce ball up; falling past bottom costs life"
   }
 ]
