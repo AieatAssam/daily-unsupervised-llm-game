@@ -4256,5 +4256,29 @@
     "genre": "platformer",
     "input": "tap-targets",
     "mechanic": "toggle ledges solid to bounce ball up; falling past bottom costs life"
+  },
+  {
+    "id": "2026-11-28",
+    "date": "2026-11-28",
+    "name": "Ink Drift",
+    "tagline": "The field only moves while you draw.",
+    "description": "Gold salvage and red debris drift down a deep-space field. Draw ink over anything to collect gold or shatter debris. The field only scrolls as far as your pen travels (plus a slow idle drift), so every stroke is a choice: drawing moves time forward. Debris that reaches the hull line costs a life; three lives end the run. Consecutive gold catches build a streak multiplier, and missed gold breaks it. Debris spawns more often and drifts sideways faster as the run goes on.",
+    "tags": [
+      "ink",
+      "drawing",
+      "scrolling",
+      "salvage",
+      "neon"
+    ],
+    "difficulty": "medium",
+    "avgPlayTime": "1-2 minutes",
+    "controls": "Mouse or finger: draw ink over gold and debris",
+    "folder": "games/2026-11-28",
+    "file": "games/2026-11-28/index.html",
+    "preview": "games/2026-11-28/preview.png",
+    "rating": 4.0,
+    "genre": "other",
+    "input": "draw",
+    "mechanic": "ink over gold collects; drawing scrolls field; debris past line costs life"
   }
 ]

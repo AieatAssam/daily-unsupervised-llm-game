@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Ink Drift</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #020309; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    touch-action: none; user-select: none;
+  }
+  #root { position: fixed; inset: 0; }
+  .stage {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(100vw, calc(100vh * 0.5625)); aspect-ratio: 9 / 16;
+    overflow: hidden; background: #05060f; touch-action: none;
+    box-shadow: 0 0 40px rgba(127,247,255,0.12);
+  }
+  .stage canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    display: block; touch-action: none; cursor: crosshair;
+  }
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+    padding: 24px; text-align: center; color: #e6f0ff;
+    background: rgba(3, 4, 12, 0.55);
+  }
+  .overlay h1 {
+    margin: 0; font-size: 40px; letter-spacing: 3px; color: #7ff7ff;
+    text-shadow: 0 0 18px rgba(127,247,255,0.8);
+  }
+  .overlay p { margin: 0; font-size: 16px; line-height: 1.4; max-width: 280px; opacity: 0.92; }
+  .stat { font-size: 16px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.85; }
+  .stat b { display: block; font-size: 34px; color: #ffe45c; text-shadow: 0 0 12px rgba(255,228,92,0.7); letter-spacing: 0; }
+  button {
+    min-width: 180px; min-height: 52px; padding: 0 24px; border: 0; border-radius: 14px;
+    font-size: 20px; font-weight: 700; letter-spacing: 1px; color: #05060f; cursor: pointer;
+    background: linear-gradient(90deg, #7ff7ff, #c58bff);
+    box-shadow: 0 0 22px rgba(127,247,255,0.5);
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const GAME_ID = '2026-11-28';
+const BEST_KEY = `arcade.${GAME_ID}.best`;
+const W = 360, H = 640;          // logical play field
+const HULL_Y = 584;              // debris reaching this line costs a life
+const IDLE_SPEED = 24;           // world px/s while the pen is up (the field never fully stops)
+const PEN_K = 0.45;              // world px moved per px of ink laid down
+const INK_LIFE = 1.2;            // seconds a stroke stays on the field
+const LIVES = 3;
+
+// ---------- audio (created on first input) ----------
+let actx = null;
+function ensureAudio() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; } }
+  if (actx && actx.state === 'suspended') actx.resume();
+}
+function tone(f, dur = 0.12, type = 'sine', vol = 0.08, slide = 0) {
+  if (!actx || actx.state !== 'running') return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator(), a = actx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
+  a.gain.setValueAtTime(vol, t);
+  a.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(a); a.connect(actx.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
+// ---------- helpers ----------
+function readBest() {
+  try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (e) { return 0; }
+}
+function multOf(streak) { return 1 + Math.min(4, Math.floor(streak / 3)); }
+function distSeg(px, py, s) {
+  const vx = s.bx - s.ax, vy = s.by - s.ay;
+  const L = vx * vx + vy * vy;
+  let t = L ? ((px - s.ax) * vx + (py - s.ay) * vy) / L : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(s.ax + vx * t - px, s.ay + vy * t - py);
+}
+function addItem(g, kind, x, y) {
+  const debris = kind === 'debris';
+  g.items.push({
+    id: g.nextId++, kind, x, y, bx: x, r: debris ? 13 : 12, dead: false,
+    vx: debris ? (Math.random() < 0.5 ? -1 : 1) * (18 + 30 * Math.random()) : 0,
+    wob: 0, ph: Math.random() * 6.28,
+    shape: debris ? Array.from({ length: 7 }, () => 0.72 + Math.random() * 0.38) : null,
+  });
+}
+function spawn(g, dens) {
+  const kind = Math.random() < 0.35 + 0.25 * dens ? 'debris' : 'gold';
+  const x = 36 + Math.random() * (W - 72);
+  addItem(g, kind, x, -24);
+  const it = g.items[g.items.length - 1];
+  if (kind === 'debris') it.vx *= 1 + dens; else it.wob = 10 * dens;
+}
+function burst(g, x, y, color, n) {
+  for (let i = 0; i < n && g.parts.length < 300; i++) {
+    const a = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 220;
+    const life = 0.4 + Math.random() * 0.4;
+    g.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life, max: life, color, s: 2 + Math.random() * 3 });
+  }
+}
+function collect(g, it) {
+  it.dead = true;
+  if (it.kind === 'gold') {
+    g.streak++;
+    const m = multOf(g.streak);
+    const pts = 10 * m;
+    g.score += pts;
+    g.pops.push({ x: it.x, y: it.y, text: '+' + pts + (m > 1 ? '  x' + m : ''), color: '#ffe45c', life: 0.9 });
+    burst(g, it.x, it.y, '#ffe45c', 16);
+    tone(660, 0.12, 'triangle', 0.1, 990);
+  } else {
+    g.score += 5;
+    g.pops.push({ x: it.x, y: it.y, text: '+5', color: '#ff6fa0', life: 0.7 });
+    burst(g, it.x, it.y, '#ff3d6e', 14);
+    tone(320, 0.14, 'square', 0.04, 120);
+  }
+}
+
+function makeRun() {
+  const g = {
+    phase: 'playing', t: 0, score: 0, best: readBest(), lives: LIVES, streak: 0,
+    dist: 0, spawnAcc: 0, items: [], parts: [], pops: [], segs: [],
+    pen: 0, down: false, prev: null, cursor: null, flash: 0, shake: 0, nextId: 1,
+  };
+  addItem(g, 'gold', 110, 130);
+  addItem(g, 'gold', 250, 200);
+  return g;
+}
+
+// One sim step. The field only advances by idle drift plus the distance the pen travelled.
+// Returns false when the run ends.
+function update(g, dt) {
+  g.t += dt;
+  const adv = IDLE_SPEED * dt + g.pen;
+  g.pen = 0;
+  g.dist += adv;
+  g.spawnAcc += adv;
+  const dens = Math.min(1, g.dist / 6000);
+  const spacing = 95 - 40 * dens;
+  while (g.spawnAcc >= spacing) { g.spawnAcc -= spacing; spawn(g, dens); }
+
+  for (const it of g.items) {
+    it.y += adv;
+    if (it.kind === 'debris') {
+      it.x += it.vx * dt;
+      if (it.x < it.r || it.x > W - it.r) {
+        it.vx = -it.vx;
+        it.x = Math.max(it.r, Math.min(W - it.r, it.x));
+      }
+    } else {
+      it.x = it.bx + Math.sin(g.t * 2 + it.ph) * it.wob;
+    }
+  }
+
+  g.segs = g.segs.filter(s => g.t - s.t < INK_LIFE);
+  for (const it of g.items) {
+    if (it.dead) continue;
+    const thr = it.r + 9; // touch-friendly slop
+    for (const s of g.segs) {
+      if (distSeg(it.x, it.y, s) < thr) { collect(g, it); break; }
+    }
+  }
+
+  for (const it of g.items) {
+    if (it.dead || it.y - it.r <= HULL_Y) continue;
+    it.dead = true;
+    if (it.kind === 'debris') {
+      g.lives--; g.streak = 0; g.flash = 1; g.shake = 0.6;
+      burst(g, it.x, HULL_Y, '#ff4d8d', 18);
+      tone(140, 0.35, 'sawtooth', 0.1, 60);
+      if (g.lives <= 0) return false;
+    } else {
+      g.streak = 0;
+      g.pops.push({ x: it.x, y: HULL_Y - 14, text: 'MISS', color: '#7ff7ff', life: 0.6 });
+    }
+  }
+  g.items = g.items.filter(it => !it.dead);
+
+  for (const p of g.parts) {
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; p.life -= dt;
+  }
+  g.parts = g.parts.filter(p => p.life > 0);
+  for (const p of g.pops) { p.y -= 40 * dt; p.life -= dt; }
+  g.pops = g.pops.filter(p => p.life > 0);
+  g.flash = Math.max(0, g.flash - dt * 2.5);
+  g.shake = Math.max(0, g.shake - dt * 2);
+  return true;
+}
+
+function draw(ctx, cv, g) {
+  ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
+  ctx.save();
+  if (g.shake > 0) ctx.translate((Math.random() - 0.5) * 14 * g.shake, (Math.random() - 0.5) * 14 * g.shake);
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#120828'); bg.addColorStop(0.55, '#060a1e'); bg.addColorStop(1, '#03121a');
+  ctx.fillStyle = bg; ctx.fillRect(-30, -30, W + 60, H + 60);
+
+  // scrolling grid: it only moves when you draw (or slowly when idle) — the core cue
+  ctx.strokeStyle = 'rgba(127,247,255,0.09)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y = g.dist % 48; y < H; y += 48) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+
+  // hull line
+  ctx.strokeStyle = 'rgba(255,77,141,0.22)'; ctx.lineWidth = 12;
+  ctx.beginPath(); ctx.moveTo(0, HULL_Y); ctx.lineTo(W, HULL_Y); ctx.stroke();
+  ctx.strokeStyle = '#ff4d8d'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(0, HULL_Y); ctx.lineTo(W, HULL_Y); ctx.stroke();
+
+  // items
+  for (const it of g.items) {
+    ctx.save();
+    ctx.translate(it.x, it.y);
+    if (it.kind === 'gold') {
+      ctx.rotate(Math.sin(g.t * 3 + it.ph) * 0.25);
+      ctx.fillStyle = 'rgba(255,228,92,0.22)';
+      ctx.beginPath(); ctx.arc(0, 0, it.r * 1.9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath();
+      ctx.moveTo(0, -it.r); ctx.lineTo(it.r * 0.8, 0); ctx.lineTo(0, it.r); ctx.lineTo(-it.r * 0.8, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#fff6b0'; ctx.lineWidth = 1.5; ctx.stroke();
+    } else {
+      const near = it.y > HULL_Y - 90;
+      ctx.rotate(it.y * 0.02);
+      ctx.fillStyle = near ? `rgba(255,61,110,${0.3 + 0.25 * Math.sin(g.t * 12)})` : 'rgba(255,61,110,0.22)';
+      ctx.beginPath(); ctx.arc(0, 0, it.r * (near ? 2.1 : 1.7), 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff3d6e'; ctx.strokeStyle = '#ffb3c6'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      it.shape.forEach((k, i) => {
+        const a = i / it.shape.length * Math.PI * 2, rr = it.r * k;
+        const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+        if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      });
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ink: the only thing the player controls
+  ctx.lineCap = 'round';
+  for (const s of g.segs) {
+    const a = Math.max(0, 1 - (g.t - s.t) / INK_LIFE);
+    ctx.strokeStyle = `rgba(127,247,255,${0.2 * a})`; ctx.lineWidth = 12;
+    ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke();
+    ctx.strokeStyle = `rgba(235,255,255,${0.95 * a})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke();
+  }
+  if (g.down && g.cursor) {
+    ctx.strokeStyle = 'rgba(127,247,255,0.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(g.cursor.x, g.cursor.y, 14, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // particles (additive)
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of g.parts) {
+    ctx.globalAlpha = Math.max(0, p.life / p.max);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  // score pops
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 16px Arial';
+  for (const p of g.pops) {
+    ctx.globalAlpha = Math.max(0, p.life / 0.9);
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+
+  // HUD
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(230,240,255,0.6)'; ctx.font = 'bold 10px Arial';
+  ctx.fillText('SCORE', 14, 14);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 26px Arial';
+  ctx.fillText(String(g.score), 14, 26);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(230,240,255,0.6)'; ctx.font = 'bold 10px Arial';
+  ctx.fillText('BEST', W - 14, 14);
+  ctx.fillStyle = '#ffe45c'; ctx.font = 'bold 26px Arial';
+  ctx.fillText(String(Math.max(g.best, g.score)), W - 14, 26);
+
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 18px Arial';
+  for (let i = 0; i < LIVES; i++) {
+    ctx.fillStyle = i < g.lives ? '#ff4d8d' : 'rgba(255,77,141,0.2)';
+    ctx.fillText('♥', W / 2 - 30 + i * 30, 16);
+  }
+  if (g.streak >= 3) {
+    ctx.fillStyle = '#ffe45c'; ctx.font = 'bold 20px Arial';
+    ctx.fillText('x' + multOf(g.streak), W / 2, 44);
+    ctx.fillStyle = 'rgba(255,228,92,0.6)'; ctx.font = 'bold 10px Arial';
+    ctx.fillText('STREAK ' + g.streak, W / 2, 68);
+  }
+  if (g.phase === 'playing' && g.t < 9 && g.score === 0) {
+    ctx.globalAlpha = Math.max(0, Math.min(1, (9 - g.t) / 3));
+    ctx.fillStyle = '#e6f0ff'; ctx.font = 'bold 16px Arial';
+    ctx.fillText('Draw over the gold', W / 2, 260);
+    ctx.font = '13px Arial'; ctx.fillStyle = 'rgba(255,140,180,0.95)';
+    ctx.fillText('Red debris: cover it with ink before it hits the line', W / 2, 284);
+    ctx.globalAlpha = 1;
+  }
+
+  if (g.flash > 0) {
+    ctx.fillStyle = `rgba(255,61,110,${g.flash * 0.25})`;
+    ctx.fillRect(-30, -30, W + 60, H + 60);
+  }
+  ctx.restore();
+}
+
+// Read-only snapshot for bots and tests (viewport coordinates).
+function publish(cv, g) {
+  const r = cv.getBoundingClientRect();
+  const sx = r.width / W, sy = r.height / H;
+  const map = it => ({ x: r.left + it.x * sx, y: r.top + it.y * sy, r: it.r * sx });
+  const onScreen = it => !it.dead && it.y > -12;
+  window.__game = {
+    phase: g.phase,
+    score: g.score,
+    lives: g.lives,
+    streak: g.streak,
+    multiplier: multOf(g.streak),
+    hullY: r.top + HULL_Y * sy,
+    gold: g.items.filter(it => it.kind === 'gold' && onScreen(it)).map(map),
+    debris: g.items.filter(it => it.kind === 'debris' && onScreen(it)).map(map),
+  };
+}
+
+function App() {
+  const [phase, setPhase] = useState('menu');
+  const [result, setResult] = useState({ score: 0, best: 0 });
+  const canvasRef = useRef(null);
+  const gRef = useRef(null);
+  const startRef = useRef(() => {});
+  if (!gRef.current) { gRef.current = makeRun(); gRef.current.phase = 'menu'; }
+
+  useEffect(() => {
+    const cv = canvasRef.current;
+    const ctx = cv.getContext('2d');
+    const g = gRef.current;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const fit = () => {
+      const r = cv.getBoundingClientRect();
+      cv.width = Math.round(r.width * dpr) || W;
+      cv.height = Math.round(r.height * dpr) || H;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    window.__game = { phase: 'menu', score: 0 };
+
+    const toLogical = e => {
+      const r = cv.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+    };
+    const onDown = e => {
+      if (g.phase !== 'playing') return;
+      e.preventDefault();
+      ensureAudio();
+      try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+      const p = toLogical(e);
+      g.down = true; g.prev = p; g.cursor = p;
+      g.segs.push({ ax: p.x, ay: p.y, bx: p.x, by: p.y, t: g.t });
+    };
+    const onMove = e => {
+      if (!g.down) return;
+      const p = toLogical(e);
+      const d = Math.hypot(p.x - g.prev.x, p.y - g.prev.y);
+      if (d > 0) {
+        g.segs.push({ ax: g.prev.x, ay: g.prev.y, bx: p.x, by: p.y, t: g.t });
+        g.pen += Math.min(d, 60) * PEN_K;
+      }
+      g.prev = p; g.cursor = p;
+    };
+    const onUp = () => { g.down = false; g.prev = null; };
+    cv.addEventListener('pointerdown', onDown);
+    cv.addEventListener('pointermove', onMove);
+    cv.addEventListener('pointerup', onUp);
+    cv.addEventListener('pointercancel', onUp);
+
+    const finish = () => {
+      g.phase = 'over';
+      g.down = false;
+      const b = Math.max(readBest(), g.score);
+      try { localStorage.setItem(BEST_KEY, String(b)); } catch (_) {}
+      g.best = b;
+      tone(220, 0.5, 'sine', 0.12, 55);
+      setResult({ score: g.score, best: b });
+      setPhase('over');
+    };
+
+    startRef.current = () => {
+      Object.assign(g, makeRun());
+      ensureAudio();
+      setPhase('playing');
+      window.__game = { phase: 'playing', score: 0 };
+    };
+
+    let raf;
+    let last = performance.now();
+    const frame = now => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (g.phase === 'playing' && !update(g, dt)) finish();
+      draw(ctx, cv, g);
+      publish(cv, g);
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', fit);
+      cv.removeEventListener('pointerdown', onDown);
+      cv.removeEventListener('pointermove', onMove);
+      cv.removeEventListener('pointerup', onUp);
+      cv.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
+
+  const go = () => startRef.current();
+
+  return (
+    <div className="stage">
+      <canvas ref={canvasRef} />
+      {phase === 'menu' && (
+        <div className="overlay">
+          <h1>INK DRIFT</h1>
+          <p>Draw over the gold salvage. The field only moves while you draw.</p>
+          <button data-testid="start-btn" onClick={go}>Start</button>
+        </div>
+      )}
+      {phase === 'over' && (
+        <div className="overlay">
+          <h1>HULL BREACHED</h1>
+          <div className="stat">Score<b>{result.score}</b></div>
+          <div className="stat">Best<b>{result.best}</b></div>
+          <button data-testid="start-btn" onClick={go}>Restart</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
